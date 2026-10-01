@@ -134,7 +134,7 @@ function logAddressToBase58(hex: string): string | null {
  * @param topic - A 64-character normalised topic.
  * @returns The base58 address, or null when conversion fails.
  */
-function topicToAddress(topic: string): string | null {
+export function topicToAddress(topic: string): string | null {
     return TronGridClient.toBase58Address(`${TRON_ADDRESS_PREFIX_HEX}${topic.slice(-ADDRESS_HEX)}`);
 }
 
@@ -144,7 +144,7 @@ function topicToAddress(topic: string): string | null {
  * @param word - 64 hex characters.
  * @returns The value as a base-10 string, exact for any uint256.
  */
-function wordToDecimal(word: string): string {
+export function wordToDecimal(word: string): string {
     return BigInt(`0x${word}`).toString(10);
 }
 

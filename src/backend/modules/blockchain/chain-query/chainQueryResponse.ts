@@ -45,6 +45,13 @@ export interface IChainResponseParts {
     prices?: IUsdPricesResult;
     /** Caveats specific to this tool's answer, added to the standard ones. */
     notes?: string[];
+    /**
+     * Whether the answer depends on receipts, which hold logs, internal
+     * transactions, fees, and energy. Defaults to true. A tool reading only
+     * block contents sets false, so a block without receipts does not make it
+     * report its totals as lower bounds when nothing it counts was hidden.
+     */
+    usesReceipts?: boolean;
 }
 
 /** The standard caveat on USD values, added whenever a response carries them. */
@@ -67,10 +74,13 @@ export function buildChainResponse(parts: IChainResponseParts, payload: Record<s
     if (window.clampedToRetention) {
         notes.push('The requested start was older than the stored chain data, so the window was moved forward to where retention begins. Earlier activity is not available here.');
     }
+    const usesReceipts = parts.usesReceipts ?? true;
     if (coverage.presentBlocks === 0) {
         notes.push('No chain data is stored for this window, so an empty result says nothing about activity. Try a more recent window.');
-    } else if (!coverage.complete) {
-        notes.push(`Coverage is incomplete (${coverage.missingBlocks} missing blocks, ${coverage.blocksWithoutReceipts} blocks without receipts, stored data runs ${coverage.dataFrom} to ${coverage.dataTo}). Treat totals as lower bounds; missing blocks and blocks without receipts hide TRC-20 and internal transfers.`);
+    } else if (usesReceipts && !coverage.complete) {
+        notes.push(`Coverage is incomplete (${coverage.missingBlocks} missing blocks, ${coverage.blocksWithoutReceipts} blocks without receipts, stored data runs ${coverage.dataFrom} to ${coverage.dataTo}). Treat totals as lower bounds; missing blocks and blocks without receipts hide TRC-20 transfers, internal transfers, events, fees, and energy.`);
+    } else if (!usesReceipts && !coverage.blocksComplete) {
+        notes.push(`Coverage is incomplete (${coverage.missingBlocks} missing blocks, stored data runs ${coverage.dataFrom} to ${coverage.dataTo}). Treat totals as lower bounds.`);
     }
     const unknownDecimals = [...parts.tokens.entries()].filter(([, info]) => info.decimals === null).map(([key]) => key);
     if (unknownDecimals.length > 0) {

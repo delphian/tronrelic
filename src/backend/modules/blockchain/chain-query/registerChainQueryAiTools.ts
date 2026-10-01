@@ -2,9 +2,11 @@
  * @fileoverview Registering the chain query tools on the core AI tool registry.
  *
  * The tools let an AI agent walk the ClickHouse copy of the chain — a wallet's
- * profile, its transfers and counterparties, multi-hop fund flows, and
- * market-wide token activity — under the `ai-agent` account's server-enforced
- * limits. The registry is published by the AI tools module during its `run()`
+ * profile, its transfers and counterparties, multi-hop fund flows, permission
+ * changes, resource delegation, account activations, token and contract
+ * activity, and network statistics — under the `ai-agent` account's
+ * server-enforced limits. Every query is written in this codebase; no tool
+ * runs SQL the model wrote. The registry is published by the AI tools module during its `run()`
  * phase, after this is called, so the tools subscribe to its presence with
  * `watch()` rather than resolving it once.
  *
@@ -17,6 +19,13 @@ import { createChainQueryToolkit, type IChainQueryToolkit } from './ChainQueryTo
 import { buildAddressCounterpartiesTool } from './tools/buildAddressCounterpartiesTool.js';
 import { buildAddressProfileTool } from './tools/buildAddressProfileTool.js';
 import { buildAddressTransfersTool } from './tools/buildAddressTransfersTool.js';
+import { buildContractActivityTool } from './tools/buildContractActivityTool.js';
+import { buildContractEventsTool } from './tools/buildContractEventsTool.js';
+import { buildFindTokenTool } from './tools/buildFindTokenTool.js';
+import { buildNetworkStatsTool } from './tools/buildNetworkStatsTool.js';
+import { buildNewAccountsTool } from './tools/buildNewAccountsTool.js';
+import { buildPermissionChangesTool } from './tools/buildPermissionChangesTool.js';
+import { buildResourceDelegationsTool } from './tools/buildResourceDelegationsTool.js';
 import { buildTokenActivityTool } from './tools/buildTokenActivityTool.js';
 import { buildTraceFlowTool } from './tools/buildTraceFlowTool.js';
 import { CHAIN_QUERY_PROVIDER_ID } from './tools/chainQueryToolShared.js';
@@ -25,7 +34,8 @@ import { CHAIN_QUERY_PROVIDER_ID } from './tools/chainQueryToolShared.js';
  * Build every chain query tool against one toolkit, so they share its caches.
  *
  * @param toolkit - The shared chain query dependencies.
- * @returns The tools, in the order the admin page lists them.
+ * @returns The tools, in the order the admin page lists them: wallet tools,
+ *          then token, contract, and network tools.
  */
 export function buildChainQueryTools(toolkit: IChainQueryToolkit): IAiTool[] {
     return [
@@ -33,7 +43,14 @@ export function buildChainQueryTools(toolkit: IChainQueryToolkit): IAiTool[] {
         buildAddressCounterpartiesTool(toolkit),
         buildAddressTransfersTool(toolkit),
         buildTraceFlowTool(toolkit),
-        buildTokenActivityTool(toolkit)
+        buildPermissionChangesTool(toolkit),
+        buildResourceDelegationsTool(toolkit),
+        buildNewAccountsTool(toolkit),
+        buildFindTokenTool(toolkit),
+        buildTokenActivityTool(toolkit),
+        buildContractActivityTool(toolkit),
+        buildContractEventsTool(toolkit),
+        buildNetworkStatsTool(toolkit)
     ];
 }
 

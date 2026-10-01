@@ -171,8 +171,9 @@ export class ChainQuerySession {
      *
      * Limit, quota, and concurrency errors keep ClickHouse's own limit name,
      * because it tells the model which way to adjust. Anything else is logged
-     * with its details and reported generically, so SQL text and server
-     * internals never reach the model.
+     * with its details and reported generically: every query is written in
+     * this codebase, so any other failure is ours to fix, and SQL text and
+     * server internals never reach the model.
      *
      * @param error - Whatever the reader threw.
      * @returns The error to throw in its place.

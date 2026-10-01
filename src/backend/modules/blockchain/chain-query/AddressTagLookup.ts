@@ -36,6 +36,35 @@ export class AddressTagLookup {
     constructor(private readonly resolveService: () => IAddressTagService | undefined) {}
 
     /**
+     * Find the addresses carrying any of a set of tags.
+     *
+     * Used where a tag is the evidence a tool reports, such as an operator's
+     * `token:usdt` marking which contract is the real USDT. Only active tags
+     * count, which the service already guarantees.
+     *
+     * @param tags - Tag texts to look for, matched exactly as stored.
+     * @returns The tagged addresses with their matching tags, and whether the lookup could be made at all.
+     */
+    public async findAddresses(tags: readonly string[]): Promise<IAddressTagsResult> {
+        const service = this.resolveService();
+        const result: IAddressTagsResult = { tags: {}, available: service !== undefined };
+        if (service && tags.length > 0) {
+            try {
+                for (const record of await service.getAddressesByTags([...new Set(tags)])) {
+                    if (record.active) {
+                        (result.tags[record.address] ??= []).push(record.tag);
+                    }
+                }
+            } catch (error) {
+                logger.warn({ error, tags }, 'Reverse address tag lookup failed for a chain query; answering without it');
+                result.tags = {};
+                result.available = false;
+            }
+        }
+        return result;
+    }
+
+    /**
      * Find the active tags on a set of addresses.
      *
      * @param addresses - Every address a response names; duplicates are fine.

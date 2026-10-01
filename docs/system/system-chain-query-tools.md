@@ -1,6 +1,6 @@
 # Chain Query AI Tools
 
-Five read-only AI tools let an agent walk TronRelic's ClickHouse copy of the TRON chain: profile a wallet, list its transfers and counterparties, follow funds across several hops, and look at one token's activity across the whole chain. They live in `src/backend/modules/blockchain/chain-query/` and read the `tron` database described in [system-chain-data-clickhouse.md](./system-chain-data-clickhouse.md).
+Twelve read-only AI tools let an agent walk TronRelic's ClickHouse copy of the TRON chain. They profile a wallet, list its transfers and counterparties, follow funds across several hops, and find permission takeovers, resource delegation, and account activations. They also describe token, contract, and network activity. They live in `src/backend/modules/blockchain/chain-query/` and read the `tron` database described in [system-chain-data-clickhouse.md](./system-chain-data-clickhouse.md).
 
 ## Why This Matters
 
@@ -17,8 +17,21 @@ These tools answer the questions agents actually ask in one call each, and every
 | `blockchain-address-transfers` | Individual movements, newest first, filtered by direction, token, counterparty, and minimum amount, paged by cursor | 24h / 168h |
 | `blockchain-trace-flow` | A graph of one token's funds forward or backward from a wallet, up to 3 hops | 24h / 168h |
 | `blockchain-token-activity` | Top senders, top receivers, or hourly volume for one token across the chain | 24h / 24h |
+| `blockchain-permission-changes` | Permission updates, each classified by whether the account's own key still controls it, and transactions signed under a non-owner permission or by several keys | 24h / 168h (48h for signed transactions) |
+| `blockchain-resource-delegations` | Energy and bandwidth delegations as events, per counterparty, or ranked across the chain, plus stake, unstake, and withdrawal series | 24h / 168h |
+| `blockchain-new-accounts` | Which wallets activate new accounts, the activations themselves, or hourly counts | 24h / 72h |
+| `blockchain-find-token` | The TRC-20 contracts claiming a symbol or name, with a day of activity, and which one an operator tagged as the real token | 24h / 24h |
+| `blockchain-contract-activity` | One contract's calls, callers, function selectors, failures by status, and energy and fees | 24h / 72h |
+| `blockchain-contract-events` | One contract's event logs, with well-known events decoded, or its events counted by type | 24h / 168h |
+| `blockchain-network-stats` | Chain-wide series per hour or day: blocks, transactions by type, failures, fees, energy, or value senders | 24h / 168h for blocks, 24h for value senders, 72h otherwise |
 
-All five declare `read` / `internal` with `surfacesUntrustedContent`, because token symbols and names are chosen by whoever deployed the contract. The governor therefore wraps every result as data before the model sees it. `internal` rather than `public` is because results carry operator-assigned address tags.
+All of them declare `read` / `internal` with `surfacesUntrustedContent`, because token symbols and names are chosen by whoever deployed the contract, and memos and event data are written by third parties. The governor therefore wraps every result as data before the model sees it. `internal` rather than `public` is because results carry operator-assigned address tags.
+
+Every tool here passes the MCP safety floor, so an admin can grant any of them to `mcp-users` on `/system/mcp`.
+
+### No tool runs SQL the model wrote
+
+Every query these tools run is written in this codebase, and the model's values reach ClickHouse only as query parameters. Keep it that way. On ClickHouse 24.3 the `ai-agent` account can still read most `system.*` tables, including `system.query_log`, which holds other accounts' queries, so the account's grants alone do not make model-written SQL safe. A free-form SQL tool used to exist and depended on a text filter to refuse those references. That filter could not be shown to be complete, and a review found two ways past it, so the tool was removed. When agents need a question these tools cannot answer, add a tool with a fixed query for it.
 
 A token filter accepts `TRX`, a TRC-20 contract address, or a TRC-10 id. A symbol such as `USDT` is refused, because any contract can answer `symbol()` with `USDT` and address poisoning relies on exactly that.
 
@@ -32,7 +45,7 @@ A token filter accepts `TRX`, a TRC-20 contract address, or a TRC-10 id. A symbo
 - **It adds up the cost.** Queries, rows and bytes read, and the ClickHouse query ids go into every response's `cost`, which comes first in the object so the governor's short audit digest still contains the ids.
 - **It cancels its own reads after 25 seconds.** That is under the governor's 30-second handler budget, so a slow query is cancelled on the server and reported with advice rather than left running after the governor gives up waiting.
 
-`ChainQuerySession.translate` turns ClickHouse limit errors (`TOO_MANY_ROWS`, `TIMEOUT_EXCEEDED`, `QUOTA_EXCEEDED`, and the rest) into a message telling the model how to ask for less. Any other error is logged in full and reported without SQL or server detail.
+`ChainQuerySession.translate` turns ClickHouse limit errors (`TOO_MANY_ROWS`, `TIMEOUT_EXCEEDED`, `QUOTA_EXCEEDED`, and the rest) into a message telling the model how to ask for less. Any other error is logged in full and reported without SQL or server detail, because the SQL is ours and a faulty query is a bug the model cannot fix.
 
 ### The response envelope
 
@@ -70,9 +83,31 @@ Two different counterparties of one wallet that share their first four and last 
 
 A hop stopped by a limit ends the trace and returns the graph so far with `stoppedReason`. Busy addresses such as exchange hot wallets are the usual cause.
 
+### Receipts and coverage
+
+Logs, internal transactions, fees, energy, and TRC-20 transfers come from receipts, so a block without receipts hides them. Delegations, staking, and permission updates come from the block itself. A tool reading only block contents passes `usesReceipts: false` to `buildChainResponse`, which then judges completeness by `coverage.blocksComplete` (every block stored) rather than `coverage.complete` (every block stored with receipts), so it does not call its totals lower bounds when nothing it counts was hidden.
+
+### Permission takeovers
+
+`blockchain-permission-changes` reads the new owner permission from each `AccountPermissionUpdateContract` and classifies the account as `self-controlled`, `shared-owner-control` (its own key needs co-signers), or `owner-control-transferred` (its own key was removed). The last is the pattern of the common TRON account takeover, but exchanges and multisig wallets set it up on purpose, so the description calls it a lead rather than proof. The update replaces every permission, and the previous ones are not stored, so the tool reports the new state, not a change list.
+
+### Recognising activations
+
+The chain data holds no account state, so `blockchain-new-accounts` recognises an activation from what the activating transaction recorded. An `AccountCreateContract` is one by definition. A TRX or TRC-10 transfer to an address that did not exist pays the account-creation fee on top of its bandwidth and energy fees. The tool subtracts those, then the memo fee if the transaction carries a memo and the multi-signature fee if it carries more than one signature, and counts the transfer as an activation when the creation fee remains. This was checked against mainnet block 86,723,912.
+
+The three fees are chain parameters set by governance, each 1 TRX today, and live in `ACTIVATION_FEES_SUN` because the chain parameters service does not track them. If a proposal changes one, that constant must change with it. Accounts created inside smart contract calls pay in energy rather than a separate fee and are not detected.
+
+### Symbols and verified tokens
+
+Every tool refuses a symbol as a token filter. `blockchain-find-token` is the way from a symbol to an address. It lists every contract in `tron._token` claiming the symbol or name, plus any contract tagged for it, and marks `verified: true` only on a contract an operator tagged `token:<symbol>` on `/system/address-tags`, such as `token:usdt` on `TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t`. The mark comes from a person because the chain cannot supply it: an imitation contract reports the same symbol and name as the real one.
+
+Write the tag in lower case. Tags are stored exactly as typed, so the tool looks up the lower-case and upper-case forms, but a mixed-case tag such as `token:Usdt` is not found. Tag a contract only on the issuer's own confirmation of the address. USDD, for example, has a retired 2022 contract that still answers `USDD`, and its issuer names `TXDk8mbtRbXeYuMNS83CfKPaYYT8XWv9Hz` as the current one. When two contracts carry the same token tag, the tool reports both and tells the model not to choose. `blockchain-contract-activity` also reports a contract's token tag when it has one.
+
 ## Cost Guidance
 
 Every query filters on `address` or a time window, and reads with `FINAL` so a block written twice is not counted twice. The address tools read one wallet's rows, which is cheap except for very busy addresses. `blockchain-token-activity` is the expensive one. `tron._transfer` is sorted by address, so a token filter reads every row in the window, which is why its window is capped at 24 hours. If agents hit its limits routinely, a skip index on `token` is the fix, which would be a migration.
+
+The other caps follow the same rule: a tool's window is set by the table it reads without a sort-key filter. `blockchain-contract-events` and `blockchain-find-token` filter `tron.log` by contract and event signature, which lead its sort key, so they are range reads. `blockchain-contract-activity` reads every call and receipt in the window and keeps one contract's, so it stops at 72 hours. `blockchain-network-stats` and the permission-signed view of `blockchain-permission-changes` read `tron.transaction` or `tron.transaction_info` whole. `blockchain-new-accounts` joins three tables of that size. The delegation, staking, and permission update tables are small enough for the full retention.
 
 ## Quick Reference
 
@@ -84,7 +119,8 @@ Every query filters on `address` or a time window, and reads with `FINAL` so a b
 | `chainQueryInput.ts` | Re-validates every argument: checksum-verified addresses, token filters, windows, cursors |
 | `chainQueryResponse.ts` | The envelope and `runChainQueryTool` |
 | `ChainCoverageReader.ts`, `TokenCatalog.ts`, `UsdPricer.ts`, `AddressTagLookup.ts`, `lookalikes.ts` | The shared enrichment |
-| `tools/` | One file per tool, plus `chainQueryToolShared.ts` with `AI_TOOL_NAMES`, the capability, and shared schema pieces |
+| `chainSignatures.ts` | Names for well-known method selectors and event signatures, and decoding of standard token and Tether events. The tests recompute every hash |
+| `tools/` | One file per tool, plus `chainQueryToolShared.ts` with `AI_TOOL_NAMES`, the capability, and shared schema, window, and cursor pieces |
 
 ## Further Reading
 

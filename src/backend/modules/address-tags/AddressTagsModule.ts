@@ -11,7 +11,7 @@
  */
 
 import type { Express, Router } from 'express';
-import type { IDatabaseService, IMenuService, IModule, IModuleMetadata, ISchedulerService, IServiceRegistry } from '@/types';
+import type { IDatabaseService, IMenuService, IModule, IModuleMetadata, ISchedulerService, IServiceRegistry, ServiceWatchDisposer } from '@/types';
 import { logger } from '../../lib/logger.js';
 import { requireLogin } from '../../api/middleware/require-login.js';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
@@ -27,6 +27,7 @@ import { AddressTagsUserController } from './api/address-tags-user.controller.js
 import { AddressTagsAdminController } from './api/address-tags-admin.controller.js';
 import { AddressTagsSourcesController } from './api/address-tags-sources.controller.js';
 import { createAddressTagsAdminRouter, createAddressTagsUserRouter } from './api/address-tags.routes.js';
+import { registerAddressTagAiTools } from './ai-tools.js';
 
 /**
  * Dedicated menu namespace for the page's in-page tab row. Kept out of `main`
@@ -120,6 +121,8 @@ export class AddressTagsModule implements IModule<IAddressTagsModuleDependencies
     private scheduler: ISchedulerService | null = null;
     private service!: AddressTagService;
     private ingestion!: TagIngestionService;
+    /** Removes the `'ai-tools'` watch that keeps the tag AI tools registered. */
+    private unwatchAiTools: ServiceWatchDisposer | null = null;
     private readonly logger = logger.child({ module: 'address-tags' });
 
     /**
@@ -176,6 +179,11 @@ export class AddressTagsModule implements IModule<IAddressTagsModuleDependencies
      */
     async run(): Promise<void> {
         this.serviceRegistry.register('address-tags', this.service);
+
+        // Read-only AI tools over the tags. Watched rather than registered once,
+        // because the AI tools module publishes its registry in its own run()
+        // phase, which may come after this one.
+        this.unwatchAiTools = registerAddressTagAiTools(this.serviceRegistry, this.service, this.logger);
 
         const userController = new AddressTagsUserController(this.service, this.logger);
         const userRouter: Router = createAddressTagsUserRouter(userController);

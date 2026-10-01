@@ -11,7 +11,9 @@
 
 import type { IAiToolCapability } from '@/types';
 import type { JSONSchema7Definition } from 'json-schema';
-import type { IWindowRules } from '../chainQueryInput.js';
+import { formatClickHouseDateTime64Utc } from '../../../../lib/formatClickHouseDateTime64Utc.js';
+import { ChainQueryError } from '../ChainQueryError.js';
+import { WINDOW_CURSOR_KEYS, type IChainTokenFilter, type IChainWindow, type IWindowRules } from '../chainQueryInput.js';
 
 /** Every chain query tool's name. Renaming one drops its stored enabled state and policy overrides. */
 export const AI_TOOL_NAMES = {
@@ -19,7 +21,14 @@ export const AI_TOOL_NAMES = {
     addressCounterparties: 'blockchain-address-counterparties',
     addressProfile: 'blockchain-address-profile',
     traceFlow: 'blockchain-trace-flow',
-    tokenActivity: 'blockchain-token-activity'
+    tokenActivity: 'blockchain-token-activity',
+    resourceDelegations: 'blockchain-resource-delegations',
+    permissionChanges: 'blockchain-permission-changes',
+    contractActivity: 'blockchain-contract-activity',
+    contractEvents: 'blockchain-contract-events',
+    networkStats: 'blockchain-network-stats',
+    newAccounts: 'blockchain-new-accounts',
+    findToken: 'blockchain-find-token'
 } as const;
 
 /** The provider id the tools register under, so the admin page groups them with the other core blockchain tools. */
@@ -68,6 +77,117 @@ export function windowProperties(rules: IWindowRules): Record<string, JSONSchema
             description: 'End of the window as an ISO 8601 time. Defaults to now.'
         }
     };
+}
+
+/**
+ * The address tag an operator puts on the real contract behind a token
+ * symbol, followed by the symbol: `token:usdt` on Tether's contract. Symbols
+ * reported by contracts prove nothing, so this tag, set by a person on
+ * `/system/address-tags`, is the only thing the chain query tools treat as
+ * identifying a token.
+ */
+export const TOKEN_TAG_PREFIX = 'token:';
+
+/**
+ * Longest tag the address-tags service stores. A longer text, or one with a
+ * comma, cannot be a tag, and the service refuses to look it up with an error.
+ */
+const MAX_ADDRESS_TAG_LENGTH = 64;
+
+/**
+ * The tag texts that mark a symbol's real contract.
+ *
+ * Tags are stored exactly as typed, so the documented lower-case form and the
+ * upper-case form an operator might type are both looked up. A form that no
+ * stored tag could have, such as one for a long token name, is left out, so
+ * the lookup reports "not tagged" instead of failing and reporting the tags as
+ * unreadable.
+ *
+ * @param symbol - The symbol, in any case.
+ * @returns The tag texts to look up, possibly none.
+ */
+export function tokenTagsFor(symbol: string): string[] {
+    const trimmed = symbol.trim();
+    return [...new Set([`${TOKEN_TAG_PREFIX}${trimmed.toLowerCase()}`, `${TOKEN_TAG_PREFIX}${trimmed.toUpperCase()}`])]
+        .filter(tag => tag.length <= MAX_ADDRESS_TAG_LENGTH && !tag.includes(','));
+}
+
+/**
+ * The token tag on an address, if it carries one.
+ *
+ * @param tags - The address's active tags.
+ * @returns The first tag starting with `token:`, or undefined.
+ */
+export function findTokenTag(tags: readonly string[] | undefined): string | undefined {
+    return tags?.find(tag => tag.toLowerCase().startsWith(TOKEN_TAG_PREFIX));
+}
+
+/** TRX as a token filter, for tools whose amounts are always TRX, such as staked balances. */
+export const TRX_TOKEN: IChainTokenFilter = { assetType: 'trx', token: '' };
+
+/**
+ * The SQL condition limiting a table to a window, with `{from}` and `{to}`
+ * placeholders that {@link windowParams} fills.
+ *
+ * @param column - The time column to compare; `block_timestamp` on every table but `tron.block`.
+ * @returns The condition text.
+ */
+export function windowCondition(column: string = 'block_timestamp'): string {
+    return `${column} >= {from:DateTime64(3, 'UTC')} AND ${column} < {to:DateTime64(3, 'UTC')}`;
+}
+
+/**
+ * The query parameters {@link windowCondition} refers to.
+ *
+ * @param window - The window the tool is answering for.
+ * @returns `from` and `to` in ClickHouse's datetime form.
+ */
+export function windowParams(window: IChainWindow): Record<string, string> {
+    return { from: formatClickHouseDateTime64Utc(window.from), to: formatClickHouseDateTime64Utc(window.to) };
+}
+
+/** The fields a newest-first listing keyed by time and transaction id puts in its cursor. */
+export const TIME_TX_CURSOR_KEYS = ['time', 'txId', ...WINDOW_CURSOR_KEYS] as const;
+
+/**
+ * Check that a cursor's time field holds a ClickHouse datetime, as every
+ * cursor issued here does.
+ *
+ * A cursor comes back from the model, so it may have been edited. Checking the
+ * time here turns a bad one into an input error the model can act on, instead
+ * of a ClickHouse parse failure reported as a server fault.
+ *
+ * @param value - The cursor's `time` field.
+ * @returns True when it is a parseable `YYYY-MM-DD HH:MM:SS.sss` time.
+ */
+export function isCursorTime(value: unknown): value is string {
+    return typeof value === 'string' && !Number.isNaN(Date.parse(`${value.replace(' ', 'T')}Z`));
+}
+
+/**
+ * The condition that continues a newest-first listing after the last row of
+ * the previous page, for listings with one row per transaction.
+ *
+ * Several listings here have exactly one row per transaction, so the pair of
+ * block time and transaction id identifies a row and orders the pages. The
+ * cursor's values reach ClickHouse as parameters, never as SQL text.
+ *
+ * @param cursor - The decoded cursor, or undefined on a first page.
+ * @returns The condition and its parameters, or null on a first page.
+ * @throws ChainQueryError when the cursor's time is not a time, which means it was not issued here.
+ */
+export function timeTxCursorCondition(cursor: Record<string, string | number> | undefined): { condition: string; params: Record<string, unknown> } | null {
+    let result: { condition: string; params: Record<string, unknown> } | null = null;
+    if (cursor) {
+        if (!isCursorTime(cursor.time)) {
+            throw new ChainQueryError('cursor is not one this tool issued. Pass back nextCursor exactly, or omit it.', 'input');
+        }
+        result = {
+            condition: '(block_timestamp, tx_id) < ({cTime:DateTime64(3, \'UTC\')}, {cTx:String})',
+            params: { cTime: cursor.time, cTx: String(cursor.txId) }
+        };
+    }
+    return result;
 }
 
 /** The sentence every description ends with, stating what all the tools share. */
