@@ -28,7 +28,7 @@
 
 import express from 'express';
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
-import { createMcpHandler } from '@modelcontextprotocol/server';
+import { createMcpHandler, isJSONRPCRequest } from '@modelcontextprotocol/server';
 import type { AuthInfo, McpRequestContext, McpServer } from '@modelcontextprotocol/server';
 import { originValidation, toNodeHandler } from '@modelcontextprotocol/node';
 import type { ISystemLogService } from '@/types';
@@ -435,18 +435,22 @@ function audienceOf(caller: IMcpCaller): IMcpToolAudience {
 /**
  * List the tool names a JSON-RPC body asks to run.
  *
- * The body is the client's input and has only been checked to be JSON, so
- * every field is checked before it is read. A body may hold one message or a
- * batch of them; each name appears once in the result.
+ * The body is the client's input and has only been checked to be JSON, so each
+ * message is tested against the SDK's own JSON-RPC request check before its
+ * fields are read. That keeps the refusal log accurate: a message missing
+ * `jsonrpc` or an id is answered by the SDK as an invalid request and never
+ * reaches a tool, so counting it would log a refusal that never happened. A
+ * body may hold one message or a batch of them; each name appears once in the
+ * result.
  *
  * @param body - The parsed request body.
- * @returns The `params.name` of every `tools/call` message, without duplicates.
+ * @returns The `params.name` of every valid `tools/call` request, without duplicates.
  */
 function calledToolNames(body: unknown): string[] {
     const names = new Set<string>();
     const messages: unknown[] = Array.isArray(body) ? body : [body];
     for (const message of messages) {
-        if (typeof message === 'object' && message !== null) {
+        if (isJSONRPCRequest(message)) {
             const { method, params } = message as { method?: unknown; params?: unknown };
             const name = typeof params === 'object' && params !== null ? (params as { name?: unknown }).name : undefined;
             if (method === 'tools/call' && typeof name === 'string') {
