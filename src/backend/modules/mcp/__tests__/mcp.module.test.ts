@@ -7,6 +7,8 @@ import { describe, it, expect, vi } from 'vitest';
 import { MCP_USERS_GROUP_ID } from '@/types';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 import { McpModule, type IMcpModuleDependencies } from '../index.js';
+import { MCP_TOOL_APPROVALS_COLLECTION } from '../services/mcp-tool-exposure.service.js';
+import { MCP_GROUP_POLICIES_COLLECTION } from '../services/McpGroupPolicyService.js';
 
 /**
  * Build the collaborators the module needs, with spies on every integration
@@ -15,7 +17,10 @@ import { McpModule, type IMcpModuleDependencies } from '../index.js';
  * @param groupExists - Whether the MCP group already exists.
  * @returns Mock dependencies for `init()`.
  */
-function createDeps(groupExists = false): IMcpModuleDependencies & { app: { use: ReturnType<typeof vi.fn>; all: ReturnType<typeof vi.fn>; get: ReturnType<typeof vi.fn> } } {
+function createDeps(groupExists = false): IMcpModuleDependencies & {
+    app: { use: ReturnType<typeof vi.fn>; all: ReturnType<typeof vi.fn>; get: ReturnType<typeof vi.fn> };
+    database: ReturnType<typeof createMockDatabaseService>;
+} {
     return {
         database: createMockDatabaseService(),
         app: { use: vi.fn(), all: vi.fn(), get: vi.fn() } as any,
@@ -30,6 +35,7 @@ function createDeps(groupExists = false): IMcpModuleDependencies & { app: { use:
             getMembers: vi.fn(async () => ({ userIds: [], total: 0 })),
             listGroups: vi.fn(async () => [])
         } as any,
+        hookRegistry: { register: vi.fn(() => () => undefined), invoke: vi.fn() } as any,
         knownSecrets: [],
         resolveEndUser: vi.fn(async () => null),
         endpoint: {
@@ -89,6 +95,38 @@ describe('McpModule', () => {
         await module.init(deps);
         await module.run();
         expect(deps.userGroups.createGroup).not.toHaveBeenCalled();
+    });
+
+    it('registers its http.groupDeleted handler in run(), not init()', async () => {
+        const module = new McpModule();
+        const deps = createDeps(true);
+        await module.init(deps);
+        expect(deps.hookRegistry.register).not.toHaveBeenCalled();
+        await module.run();
+        expect(deps.hookRegistry.register).toHaveBeenCalledWith(
+            'core',
+            expect.objectContaining({ id: 'http.groupDeleted' }),
+            expect.any(Function),
+            expect.anything()
+        );
+    });
+
+    it('removes a deleted group\'s grants and settings when http.groupDeleted fires', async () => {
+        const module = new McpModule();
+        const deps = createDeps(true);
+        await module.init(deps);
+        await module.run();
+        deps.database.getCollectionData(MCP_TOOL_APPROVALS_COLLECTION).push(
+            { toolName: 'chain-lookup', groupId: 'ops', fingerprint: 'x', approvedAt: new Date() },
+            { toolName: 'chain-lookup', groupId: MCP_USERS_GROUP_ID, fingerprint: 'x', approvedAt: new Date() }
+        );
+        deps.database.getCollectionData(MCP_GROUP_POLICIES_COLLECTION).push(
+            { groupId: 'ops', allowRestrictedTools: true, scrubSecrets: false, ipAllowlistEnabled: false, ipAllowlist: [] }
+        );
+        const handler = (deps.hookRegistry.register as ReturnType<typeof vi.fn>).mock.calls[0][2];
+        await handler({ groupId: 'ops' });
+        expect(deps.database.getCollectionData(MCP_TOOL_APPROVALS_COLLECTION).map((doc: { groupId: string }) => doc.groupId)).toEqual([MCP_USERS_GROUP_ID]);
+        expect(deps.database.getCollectionData(MCP_GROUP_POLICIES_COLLECTION)).toEqual([]);
     });
 
     it('run() registers the admin nav item and admin-gated tabs including Database and Logs', async () => {

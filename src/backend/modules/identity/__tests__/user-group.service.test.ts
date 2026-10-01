@@ -1,6 +1,6 @@
 /// <reference types="vitest" />
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ObjectId } from 'mongodb';
 import type { ISystemLogService } from '@/types';
 import { UserGroupService } from '../services/user-group.service.js';
@@ -88,13 +88,17 @@ function seedUser(
 describe('UserGroupService', () => {
     let mockDatabase: ReturnType<typeof createMockDatabaseService>;
     let service: UserGroupService;
+    let hookInvoke: ReturnType<typeof vi.fn>;
 
     beforeEach(async () => {
         mockDatabase = createMockDatabaseService();
         GroupService.resetForTests();
         GroupService.setDependencies(mockDatabase, new StubLogger());
         UserGroupService.resetInstance();
-        UserGroupService.setDependencies(mockDatabase, GroupService.getInstance(), new StubLogger());
+        // Fourth arg is the declared-hook registry; deleteGroup fires the
+        // `http.groupDeleted` observer through it.
+        hookInvoke = vi.fn(async () => undefined);
+        UserGroupService.setDependencies(mockDatabase, GroupService.getInstance(), new StubLogger(), { invoke: hookInvoke } as any);
         service = UserGroupService.getInstance();
         // Seed the admin system row directly. The service's
         // `seedSystemGroups()` upserts via $setOnInsert which the shared
@@ -205,6 +209,19 @@ describe('UserGroupService', () => {
             await service.createGroup({ id: 'vip', name: 'VIP' });
             await service.deleteGroup('vip');
             expect(await service.getGroup('vip')).toBeNull();
+        });
+
+        it('fires http.groupDeleted after deleting a group, so state keyed to the reusable id can be removed', async () => {
+            await service.createGroup({ id: 'vip', name: 'VIP' });
+            await service.deleteGroup('vip');
+            expect(hookInvoke).toHaveBeenCalledTimes(1);
+            expect(hookInvoke).toHaveBeenCalledWith(expect.objectContaining({ id: 'http.groupDeleted' }), { groupId: 'vip' });
+        });
+
+        it('does not fire http.groupDeleted when the deletion is refused', async () => {
+            await expect(service.deleteGroup('admin')).rejects.toThrow();
+            await expect(service.deleteGroup('missing')).rejects.toThrow();
+            expect(hookInvoke).not.toHaveBeenCalled();
         });
     });
 

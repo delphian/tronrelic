@@ -266,6 +266,7 @@ export type {
     ICoreSchedulerHooks,
     ICoreContentHooks,
     IWalletLinkedContext,
+    IUserGroupDeletedContext,
     ISyndicationDeliveredContext,
     IContentPublishedContext,
     IContentWriteContext,

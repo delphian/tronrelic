@@ -39,6 +39,8 @@ export type { ICoreHooks, ICoreSsrHooks, ICoreAiHooks, ICoreHttpHooks, ICoreSche
 
 export type { IWalletLinkedContext } from './IWalletLinkedContext.js';
 
+export type { IUserGroupDeletedContext } from './IUserGroupDeletedContext.js';
+
 export type { ISyndicationDeliveredContext } from './ISyndicationDeliveredContext.js';
 
 export type { IContentPublishedContext } from './IContentPublishedContext.js';

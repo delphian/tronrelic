@@ -333,9 +333,11 @@ export class McpToolExposureService {
     }
 
     /**
-     * Withdraw every restricted tool granted to a group. Called when an admin
-     * switches off "allow restricted tools" for the group, so switching it back
-     * on later does not quietly restore grants nobody re-approved.
+     * Withdraw every restricted tool granted to a group. Called on every
+     * policy save that leaves "allow restricted tools" off for the group, so
+     * switching it back on later does not quietly restore grants nobody
+     * re-approved. Running on every such save, rather than only on the
+     * switch-off, lets a later save clean up after a withdrawal that failed.
      *
      * The served list already ignores these grants once the setting is off;
      * removing them keeps the stored state matching what the page shows.
@@ -361,8 +363,30 @@ export class McpToolExposureService {
         });
         if (withdrawn > 0) {
             this.invalidateApprovals();
+            this.logger.warn({ groupId, withdrawn, actor: actor ?? 'unattributed' }, `MCP restricted tools withdrawn from ${groupId}`);
         }
-        this.logger.warn({ groupId, withdrawn, actor: actor ?? 'unattributed' }, `MCP restricted tools withdrawn from ${groupId}`);
+        return withdrawn;
+    }
+
+    /**
+     * Remove every grant a deleted group held. Called from the
+     * `http.groupDeleted` hook.
+     *
+     * Group ids can be reused, so a grant left behind would start serving
+     * again the moment an admin created a new group under the same id, with
+     * no one having approved it for that group. The served list and the admin
+     * page already ignore grants on a missing group; deleting them is what
+     * stops them coming back.
+     *
+     * @param groupId - The group that was deleted.
+     * @returns How many grants were removed.
+     */
+    async withdrawGroupGrants(groupId: string): Promise<number> {
+        const withdrawn = await this.database.deleteMany(MCP_TOOL_APPROVALS_COLLECTION, { groupId });
+        if (withdrawn > 0) {
+            this.invalidateApprovals();
+        }
+        this.logger.warn({ groupId, withdrawn }, `MCP grants withdrawn from deleted group ${groupId}`);
         return withdrawn;
     }
 

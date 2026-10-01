@@ -34,6 +34,7 @@ import type { IHeadFragment } from '../ssr/IHeadFragment.js';
 import type { IAiToolInvokeContext } from '../ai-tools/IAiToolHookContext.js';
 import type { IToolInvocationRecord } from '../ai-tools/IToolInvocationRecord.js';
 import type { IWalletLinkedContext } from './IWalletLinkedContext.js';
+import type { IUserGroupDeletedContext } from './IUserGroupDeletedContext.js';
 import type { ISyndicationDeliveredContext } from './ISyndicationDeliveredContext.js';
 import type { IContentPublishedContext } from './IContentPublishedContext.js';
 import type { IContentWriteContext } from './IContentWriteContext.js';
@@ -115,6 +116,15 @@ export interface ICoreHttpHooks {
      * cannot enumerate without reaching into the plugin's private storage.
      */
     readonly sitemapEntries: HookDescriptor<ISitemapHookContext, ReadonlyArray<ISitemapEntry>, 'waterfall'>;
+
+    /**
+     * Observer seam fired after an admin deletes a user group and its members
+     * have been removed from it. Group ids can be reused, so a component that
+     * stored something against the group's id (grants, settings) removes it
+     * here, or a later group created under the same id would inherit it.
+     * Handlers cannot change the deletion outcome.
+     */
+    readonly groupDeleted: HookDescriptor<IUserGroupDeletedContext, void, 'observer'>;
 }
 
 /**

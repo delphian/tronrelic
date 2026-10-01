@@ -531,6 +531,13 @@ describe('HOOKS registry — production seams', () => {
         expect(HOOKS.http.walletLinked.order).toBe(100);
     });
 
+    it('declares http.groupDeleted as an observer under http.api at order 300', () => {
+        expect(HOOKS.http.groupDeleted.id).toBe('http.groupDeleted');
+        expect(HOOKS.http.groupDeleted.kind).toBe('observer');
+        expect(HOOKS.http.groupDeleted.phase).toBe('http.api');
+        expect(HOOKS.http.groupDeleted.order).toBe(300);
+    });
+
     it('declares http.sitemapEntries as a waterfall under http.api at order 200', () => {
         expect(HOOKS.http.sitemapEntries.id).toBe('http.sitemapEntries');
         expect(HOOKS.http.sitemapEntries.kind).toBe('waterfall');

@@ -8,6 +8,7 @@
  * same way the kill switch and the tool approvals do.
  */
 
+import type { Filter, UpdateFilter } from 'mongodb';
 import type { IDatabaseService, IMcpGroup, IMcpGroupPolicy, IMcpGroupPolicyPatch, ISystemLogService, IUserGroupService } from '@/types';
 import { MCP_USERS_GROUP_ID, normaliseIpAllowlistEntries } from '@/types';
 import { IpAllowlistMatcher, validateIpAllowlist } from './IpAllowlistMatcher.js';
@@ -39,7 +40,7 @@ export class McpGroupPolicyError extends Error {
      * @param message - Sentence explaining the refusal, returned to the admin.
      * @param status - HTTP status the controller should answer with.
      */
-    constructor(message: string, readonly status: 400 | 404) {
+    constructor(message: string, readonly status: 400 | 404 | 409) {
         super(message);
         this.name = 'McpGroupPolicyError';
     }
@@ -241,20 +242,31 @@ export class McpGroupPolicyService {
      * anything is written.
      *
      * When `previous` is given, only the settings that differ from it are
-     * written, and the others are written only if no document exists yet.
-     * Two admins changing different settings at the same time each preview
-     * from the same stored policy; writing every field would let the later
-     * save silently put back the setting the earlier one changed, such as
-     * turning scrubbing off again, and that reversal would never pass the
+     * written. Two admins changing different settings at the same time each
+     * preview from the same stored policy; writing every field would let the
+     * later save silently put back the setting the earlier one changed, such
+     * as turning scrubbing off again, and that reversal would never pass the
      * widening check that guards the service-token path.
+     *
+     * Two changes to the same setting need more than that. The widening check
+     * runs against the policy `preview` read, so a change that only narrows
+     * what it read can still widen what is stored by the time it lands:
+     * narrowing an IP allowlist from `[A, B]` to `[A]` puts `A` back if an
+     * admin replaced the list with `[C]` in between, and no signed-in admin
+     * stands behind that. Each changed setting is therefore written only while
+     * it still holds the previewed value, and a change that lost the race is
+     * refused so the admin reads the current settings and decides again.
      *
      * @param next - The validated policy to store.
      * @param actor - Better Auth user id of the admin, or undefined on the service-token path.
      * @param previous - The policy {@link preview} merged the change into, so
-     *   only the settings this change touched are overwritten. Omit to write
-     *   every setting.
+     *   only the settings this change touched are overwritten, and only while
+     *   they still hold the values the change was previewed against. Omit to
+     *   write every setting unconditionally.
      * @returns The policy as stored, read back so it includes any setting
      *   another admin changed in the meantime.
+     * @throws {McpGroupPolicyError} 409 when another writer changed one of the
+     *   settings this change touches after {@link preview} read them.
      */
     async save(next: IMcpGroupPolicy, actor: string | undefined, previous?: IMcpGroupPolicy): Promise<IMcpGroupPolicy> {
         const updatedAt = new Date();
@@ -265,24 +277,55 @@ export class McpGroupPolicyService {
             ipAllowlist: next.ipAllowlist
         };
         const changed: Partial<typeof settings> = {};
-        const unchanged: Partial<typeof settings> = {};
         for (const key of Object.keys(settings) as Array<keyof typeof settings>) {
             const same = previous !== undefined && JSON.stringify(previous[key]) === JSON.stringify(settings[key]);
-            Object.assign(same ? unchanged : changed, { [key]: settings[key] });
+            if (!same) {
+                Object.assign(changed, { [key]: settings[key] });
+            }
         }
-        const set = { groupId: next.groupId, ...changed, updatedAt, ...(actor ? { updatedBy: actor } : {}) };
         const collection = this.database.getCollection<IMcpGroupPolicyDocument>(MCP_GROUP_POLICIES_COLLECTION);
         // A change without a named actor clears the stored `updatedBy`, so the
         // page never credits the previous admin with a change they did not make.
-        await collection.updateOne(
-            { groupId: next.groupId },
-            {
-                $set: set,
-                ...(Object.keys(unchanged).length > 0 ? { $setOnInsert: unchanged } : {}),
-                ...(actor ? {} : { $unset: { updatedBy: '' } })
-            },
-            { upsert: true }
-        );
+        const update: UpdateFilter<IMcpGroupPolicyDocument> = {
+            $set: { groupId: next.groupId, ...changed, updatedAt, ...(actor ? { updatedBy: actor } : {}) },
+            ...(actor ? {} : { $unset: { updatedBy: '' } })
+        };
+        if (previous === undefined) {
+            await collection.updateOne({ groupId: next.groupId }, update, { upsert: true });
+        } else {
+            // A group nobody has configured has no document, and `preview`
+            // reported the defaults for it. Storing those values first gives
+            // the guarded write below something to compare against, so
+            // "matched nothing" can only mean the stored settings moved.
+            await collection.updateOne(
+                { groupId: next.groupId },
+                {
+                    $setOnInsert: {
+                        groupId: next.groupId,
+                        allowRestrictedTools: previous.allowRestrictedTools,
+                        scrubSecrets: previous.scrubSecrets,
+                        ipAllowlistEnabled: previous.ipAllowlistEnabled,
+                        ipAllowlist: previous.ipAllowlist
+                    }
+                },
+                { upsert: true }
+            );
+            // Compare and swap: the write lands only while every setting it
+            // changes still holds the value `preview` read. Settings this change
+            // leaves alone stay out of the condition, so two admins can still
+            // change different settings at once.
+            const expected: Filter<IMcpGroupPolicyDocument> = { groupId: next.groupId };
+            for (const key of Object.keys(changed) as Array<keyof typeof settings>) {
+                Object.assign(expected, { [key]: previous[key] });
+            }
+            const result = await collection.updateOne(expected, update);
+            if (result.matchedCount === 0) {
+                throw new McpGroupPolicyError(
+                    'Another admin changed one of these settings while this change was being prepared. Reload the page and make the change again.',
+                    409
+                );
+            }
+        }
         this.generation++;
         this.cache = null;
         this.logger.warn(
@@ -300,6 +343,27 @@ export class McpGroupPolicyService {
         return stored
             ? toPolicy(stored)
             : { ...next, updatedAt: updatedAt.toISOString(), ...(actor ? { updatedBy: actor } : {}) };
+    }
+
+    /**
+     * Remove a deleted group's stored policy. Called from the
+     * `http.groupDeleted` hook.
+     *
+     * Group ids can be reused. Without this, a new group created under the
+     * same id would start with the old group's settings, including "allow
+     * restricted tools", which otherwise only a signed-in admin can switch on.
+     *
+     * @param groupId - The group that was deleted.
+     * @returns True when a stored policy was removed.
+     */
+    async deleteForGroup(groupId: string): Promise<boolean> {
+        const removed = await this.database.deleteMany(MCP_GROUP_POLICIES_COLLECTION, { groupId });
+        this.generation++;
+        this.cache = null;
+        if (removed > 0) {
+            this.logger.warn({ groupId }, `MCP group policy removed with deleted group ${groupId}`);
+        }
+        return removed > 0;
     }
 }
 

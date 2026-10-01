@@ -21,6 +21,7 @@ TronRelic's Model Context Protocol (MCP) endpoint. Members of the `mcp-users` gr
 | Log service | `tronrelic:mcp` |
 | Scheduler jobs | None |
 | Bootstrap order | Inits after `AiToolsModule` (needs the governor and registry) and identity (needs the verifier, grants, groups, and URLs); runs after both |
+| Hooks | Registers a `'core'` handler on `http.groupDeleted` that removes the deleted group's grants and policy |
 
 ## Why This Is a Module
 
@@ -30,7 +31,7 @@ The endpoint needs raw Express requests (the MCP SDK reads Node request and resp
 
 | Path | Responsibility |
 |---|---|
-| `McpModule.ts` | Lifecycle; builds services in `init()`; in `run()` creates the group, registers the menu, mounts `/mcp`, the discovery documents, and the admin router |
+| `McpModule.ts` | Lifecycle; builds services in `init()`; in `run()` creates the group, registers the menu, registers the `http.groupDeleted` handler, mounts `/mcp`, the discovery documents, and the admin router |
 | `api/mcp-endpoint.controller.ts` | The request pipeline (kill switch → Origin → method → token placement → bearer challenge → scope → membership → body parse → SDK) |
 | `api/protected-resource-metadata.ts` | The RFC 9728 document |
 | `api/mcp-admin.controller.ts`, `api/mcp-admin.routes.ts` | Admin API |
@@ -94,6 +95,8 @@ Each group has an `IMcpGroupPolicy`, stored in `module_mcp_group_policies` and e
 
 Scrubbing cannot recognise a secret it has never seen that matches no pattern, and cannot tell a TRON private key from a transaction hash. The admin page asks for confirmation before allowing restricted tools and before withdrawing them.
 
+**Deleting a group removes its grants and policy.** Group ids are reusable slugs, and grants and policies are keyed by group id alone, so anything left behind would apply to a new group created under the same id with nobody approving it, including `allowRestrictedTools`. The identity module fires the `http.groupDeleted` hook after a deletion, and this module's handler calls `withdrawGroupGrants` and `deleteForGroup`. The hook is an observer, so a failed cleanup is logged and does not fail the deletion; the stranded documents are then listed as unserved grants on the Tools tab and can be withdrawn by hand.
+
 ## Governor Integration
 
 Each call becomes `governor.invoke(name, args, ctx)` with:
@@ -124,7 +127,7 @@ All under `/api/admin/mcp`. Changes that widen access need a signed-in admin (`r
 | GET | `/tools` | `IMcpToolExposure[]` for every registered tool, each with its `grants` per group, sorted by owning module or plugin (`provider`), then by name |
 | PUT | `/tools/:name` | `{ exposed, groupId? }`, `groupId` defaulting to `mcp-users`. Granting requires a signed-in admin. 400 restricted and the group may not hold it · 404 unknown tool or group · 409 the old unique `toolName` index refused the grant because `module:mcp:001_tool_approvals_group_id` has not run, or "allow restricted tools" was switched off while a restricted grant was being written (the grant is removed again) |
 | GET | `/groups` | `IMcpGroup[]`: every user group with its policy, `mcp-users` first |
-| PUT | `/groups/:groupId/policy` | Any of `{ allowRestrictedTools, scrubSecrets, ipAllowlistEnabled, ipAllowlist }`. A widening change (`isWideningPolicyChange`: allowing restricted tools, turning scrubbing or the allowlist off, adding an address) requires a signed-in admin. Answers `{ policy, withdrawnRestrictedGrants }`. 400 invalid · 403 · 404 unknown group |
+| PUT | `/groups/:groupId/policy` | Any of `{ allowRestrictedTools, scrubSecrets, ipAllowlistEnabled, ipAllowlist }`. A widening change (`isWideningPolicyChange`: allowing restricted tools, turning scrubbing or the allowlist off, adding an address) requires a signed-in admin. Answers `{ policy, withdrawnRestrictedGrants }`. 400 invalid · 403 · 404 unknown group · 409 another admin changed one of these settings after this change was previewed, so it was refused rather than overwriting the newer value |
 | GET | `/apps` | Connected apps across all users (`limit` 1–200, `offset`) |
 | DELETE | `/apps/:userId?clientId=` | Revoke one grant: consent, refresh tokens, and stored access tokens |
 
