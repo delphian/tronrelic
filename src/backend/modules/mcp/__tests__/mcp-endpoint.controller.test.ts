@@ -233,6 +233,8 @@ describe('McpEndpointController', () => {
             const { controller, explainWithheld } = buildAdmitted(['tronrelic-get-log-statistics']);
             await controller.handle(rpc({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'tronrelic-get-log-statistics' } }), response().res, vi.fn());
             await controller.handle(rpc({ jsonrpc: '2.0', id: 2, method: 'tools/list' }), response().res, vi.fn());
+            // Missing jsonrpc and id: the SDK rejects it as an invalid request, so no tool was refused.
+            await controller.handle(rpc({ method: 'tools/call', params: { name: 'tronrelic-query-system-logs' } }), response().res, vi.fn());
             expect(explainWithheld).not.toHaveBeenCalled();
             expect(logger.error).not.toHaveBeenCalled();
         });
