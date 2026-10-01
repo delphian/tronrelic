@@ -27,8 +27,10 @@ function createDeps(groupExists = false): IMcpModuleDependencies & { app: { use:
         userGroups: {
             getGroup: vi.fn(async () => (groupExists ? { id: MCP_USERS_GROUP_ID } : null)),
             createGroup: vi.fn(async () => ({})),
-            getMembers: vi.fn(async () => ({ userIds: [], total: 0 }))
+            getMembers: vi.fn(async () => ({ userIds: [], total: 0 })),
+            listGroups: vi.fn(async () => [])
         } as any,
+        knownSecrets: [],
         resolveEndUser: vi.fn(async () => null),
         endpoint: {
             resourceUrl: 'https://tronrelic.test/mcp',
@@ -44,7 +46,7 @@ describe('McpModule', () => {
         const module = new McpModule();
         expect(module.metadata.id).toBe('mcp');
         expect(module.metadata.name).toBe('MCP');
-        expect(module.metadata.version).toBe('1.0.0');
+        expect(module.metadata.version).toBe('1.1.0');
     });
 
     it('init() builds services without mounting routes or touching groups', async () => {

@@ -1,7 +1,8 @@
 /**
  * @fileoverview Tests for how the governor and policy engine treat the `mcp`
  * trigger path: allowlist required, untrusted-content screen skipped but the
- * provenance wrap kept, the eligibility floor, approval-needing tools refused
+ * provenance wrap kept, the eligibility floor and its restricted-tool waiver,
+ * approval-needing tools refused
  * rather than parked, per-user rate limits, and origin recorded in the audit.
  */
 
@@ -113,6 +114,29 @@ describe('governor on the mcp trigger path', () => {
         const { governor } = build([tool('log-reader', { sideEffect: 'read', reversible: true, sensitivity: 'secret' })]);
         const result = await governor.invoke('log-reader', {}, mcpContext('user-1', ['log-reader']));
         expect(result.status).toBe('denied');
+    });
+
+    it('runs a secret tool the MCP endpoint served as restricted', async () => {
+        const { governor } = build([tool('log-reader', { sideEffect: 'read', reversible: true, sensitivity: 'secret' })]);
+        const ctx = { ...mcpContext('user-1', ['log-reader']), mcpRestrictedTools: ['log-reader'] };
+        const result = await governor.invoke('log-reader', {}, ctx);
+        expect(result.status).toBe('ok');
+    });
+
+    it('ignores a restricted-tool waiver for a name missing from the allowlist', async () => {
+        const { governor } = build([tool('log-reader', { sideEffect: 'read', reversible: true, sensitivity: 'secret' })]);
+        const ctx = { ...mcpContext('user-1', ['other-tool']), mcpRestrictedTools: ['log-reader'] };
+        const result = await governor.invoke('log-reader', {}, ctx);
+        expect(result.status).toBe('denied');
+    });
+
+    it('still refuses a waived restricted tool whose policy requires approval', async () => {
+        const { governor, policy, approvals } = build([tool('log-reader', { sideEffect: 'read', reversible: true, sensitivity: 'secret' })]);
+        await policy.setOverride('log-reader', { requireApproval: true }, 'admin-1');
+        const ctx = { ...mcpContext('user-1', ['log-reader']), mcpRestrictedTools: ['log-reader'] };
+        const result = await governor.invoke('log-reader', {}, ctx);
+        expect(result.status).toBe('denied');
+        expect(approvals.enqueue).not.toHaveBeenCalled();
     });
 
     it('denies an MCP call with no end user', async () => {

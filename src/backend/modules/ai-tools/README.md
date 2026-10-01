@@ -65,7 +65,7 @@ The [MCP module](../mcp/README.md) calls the governor for tools that a non-admin
 |---|---|
 | A missing `toolAllowlist` is denied (it would otherwise mean "every enabled tool") | Governor, after the allowlist check |
 | A missing end user is denied | Policy engine, first gate |
-| The tool must pass `getMcpToolIneligibility` (declared, read-only, reversible, not `secret`, not paid) | Policy engine, first gate |
+| The tool must pass `getMcpToolIneligibility` (declared, read-only, reversible, not `secret`, not paid), unless its name is in both `ctx.mcpRestrictedTools` and `ctx.toolAllowlist` — which the MCP endpoint sets only for tools it served through a user group an admin cleared for restricted tools | Policy engine, first gate |
 | A tool whose effective policy requires approval is denied rather than parked | Policy engine, first gate |
 | Per-user windows of 30 calls per tool and 60 calls overall per minute, charged before the shared windows; a call over the user's own budget never ticks the shared counters | Policy engine `consumeRate` |
 | The untrusted-content screen is skipped; the wrap is kept | Governor `screenUntrusted` |

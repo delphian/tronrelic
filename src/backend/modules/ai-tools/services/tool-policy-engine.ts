@@ -374,9 +374,9 @@ export class ToolPolicyEngine {
         let decision: IToolPolicyDecision;
         if (mcpDenial !== null) {
             // Evaluated first on the MCP path. The MCP module already lists only
-            // exposed, eligible tools, but a confused or injected model can name
-            // any tool, and this floor must hold even if the module's own
-            // filtering is wrong.
+            // the tools served to this caller, but a confused or injected model
+            // can name any tool, and this floor must hold even if the module's
+            // own filtering is wrong.
             counters.denied++;
             decision = { verdict: 'deny', reason: mcpDenial };
         } else if (cap.operatesOnUserOwnedObjects === true && !ctx.endUser?.userId?.trim()) {
@@ -441,9 +441,13 @@ export class ToolPolicyEngine {
      * control, so three rules apply on top of the usual ones. The call must name
      * the end user it runs for, because per-user rate limits and the audit trail
      * key on it. The tool must pass the eligibility floor that
-     * {@link getMcpToolIneligibility} defines. And a tool whose effective policy
-     * requires approval is refused outright: parking a public user's call in the
-     * admin approval queue does not scale, and a user's client cannot wait on it.
+     * {@link getMcpToolIneligibility} defines, unless the MCP endpoint served it
+     * to this caller as a restricted tool, which it does only through a user
+     * group an admin cleared for restricted tools; that waiver needs the name in
+     * both `mcpRestrictedTools` and `toolAllowlist`. And a tool whose effective
+     * policy requires approval is refused outright, waiver or not: parking a
+     * public user's call in the admin approval queue does not scale, and a
+     * user's client cannot wait on it.
      *
      * @param tool - The resolved tool.
      * @param ctx - The invocation context, already known to be on the `mcp` path.
@@ -455,7 +459,9 @@ export class ToolPolicyEngine {
         if (!ctx.endUser?.userId?.trim()) {
             reason = 'MCP calls must carry the signed-in user they run for.';
         } else {
-            const ineligible = getMcpToolIneligibility(tool.capability);
+            const waived = ctx.mcpRestrictedTools?.includes(tool.name) === true
+                && ctx.toolAllowlist?.includes(tool.name) === true;
+            const ineligible = waived ? null : getMcpToolIneligibility(tool.capability);
             if (ineligible !== null) {
                 reason = `Tool "${tool.name}" is not available over MCP. ${ineligible}`;
             } else if (policy.requireApproval) {

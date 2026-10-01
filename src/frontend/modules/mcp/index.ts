@@ -8,6 +8,7 @@ export {
     setMcpEnabled,
     listMcpTools,
     setMcpToolExposure,
+    updateMcpGroupPolicy,
     listMcpApps,
     revokeMcpApp
 } from './api/client';

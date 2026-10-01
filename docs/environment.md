@@ -48,6 +48,10 @@ Rotating the salt does not break anything. It only means events recorded before 
 
 Besides authenticating the shared ClickHouse connection, `CLICKHOUSE_PASSWORD` is the key every managed ClickHouse account's password is derived from, such as the AI agent's read-only user. Nothing else stores those passwords. Changing `CLICKHOUSE_PASSWORD` therefore changes every account password too, and the backend applies the new ones to ClickHouse at its next startup. With the variable empty, as in local development, the derived passwords can be worked out from the account id alone, and the backend logs a warning. See the [ClickHouse Accounts README](../src/backend/modules/clickhouse-accounts/README.md#passwords).
 
+## New Secret Variables Must Be Listed for Scrubbing
+
+A user group on `/system/mcp` can ask for the results of its MCP tools to be scrubbed of secrets before they reach the user's AI client. The surest part of that scrubbing is an exact match against this deployment's own secret values, and the list of which variables count as secret lives in `src/backend/config/collectDeploymentSecrets.ts`. When you add a variable holding a credential, add its name there too, or its value passes through the exact-match step unscrubbed. Values shorter than 12 characters are not matched, because they would blank out ordinary text.
+
 ## TronGrid Rate Limits
 
 With no API key configured, the backend uses TronGrid's shared pool for anonymous callers, capped at 100 requests per second across every user of that pool by IP address. The blockchain sync can saturate that limit on its own while catching up on a backlog of blocks.

@@ -2,8 +2,10 @@
  * @fileoverview The MCP module: TronRelic's Model Context Protocol endpoint.
  *
  * Lets members of the `mcp-users` group connect their own AI client (Claude,
- * Cursor, Claude Code) to TronRelic and call an admin-approved set of
- * read-only AI tools as themselves. The identity module is the OAuth
+ * Cursor, Claude Code) to TronRelic and call the AI tools an admin approved
+ * for one of their user groups, as themselves. Each group can carry its own
+ * protections (secret scrubbing, an IP allowlist) and, outside `mcp-users`,
+ * can be cleared for restricted tools. The identity module is the OAuth
  * authorization server; this module is the protected resource. Every tool call
  * runs through the AI tool governor under the `mcp` trigger path, so MCP gets
  * the same validation, policy, rate limits, and audit as every other path.
@@ -30,6 +32,8 @@ import { logger } from '../../lib/logger.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
 import { McpSettingsStore } from './services/mcp-settings.store.js';
 import { McpToolExposureService } from './services/mcp-tool-exposure.service.js';
+import { McpGroupPolicyService } from './services/McpGroupPolicyService.js';
+import { SecretScrubber } from './services/SecretScrubber.js';
 import type { EndUserResolver } from '../ai-tools/index.js';
 import { McpCallerResolver } from './services/mcp-caller.resolver.js';
 import { McpServerFactory } from './services/mcp-server.factory.js';
@@ -84,8 +88,18 @@ export interface IMcpModuleDependencies {
      */
     connectedApps: IConnectedAppsService;
 
-    /** Group service, used to create the MCP group and count its members. */
+    /**
+     * Group service, used to create the MCP group, count its members, list
+     * the groups tools can be granted to, and read each caller's groups.
+     */
     userGroups: IUserGroupService;
+
+    /**
+     * The deployment's own secret values (admin token, auth secrets, API keys,
+     * database URLs). Results of tools served through a group that asks for
+     * scrubbing have every occurrence of these replaced before they leave.
+     */
+    knownSecrets: string[];
 
     /** Resolves a user id to the live principal the governor scopes calls to. */
     resolveEndUser: EndUserResolver;
@@ -119,8 +133,8 @@ export class McpModule implements IModule<IMcpModuleDependencies> {
     readonly metadata: IModuleMetadata = {
         id: 'mcp',
         name: 'MCP',
-        version: '1.0.0',
-        description: 'Model Context Protocol endpoint serving admin-approved read-only AI tools to the mcp-users group'
+        version: '1.1.0',
+        description: 'Model Context Protocol endpoint serving AI tools an admin approved per user group to members of mcp-users'
     };
 
     private app!: Express;
@@ -148,10 +162,12 @@ export class McpModule implements IModule<IMcpModuleDependencies> {
         this.endpoint = deps.endpoint;
 
         const settings = new McpSettingsStore(deps.database, this.logger);
-        const exposure = new McpToolExposureService(deps.database, deps.toolRegistry, this.logger);
+        const policies = new McpGroupPolicyService(deps.database, deps.userGroups, this.logger);
+        await policies.createIndexes();
+        const exposure = new McpToolExposureService(deps.database, deps.toolRegistry, policies, deps.userGroups, this.logger);
         await exposure.createIndexes();
         const callers = new McpCallerResolver(deps.tokenVerifier, deps.resolveEndUser, deps.connectedApps, this.logger);
-        const serverFactory = new McpServerFactory(deps.governor, this.logger);
+        const serverFactory = new McpServerFactory(deps.governor, new SecretScrubber(deps.knownSecrets), this.logger);
 
         this.endpointController = new McpEndpointController(
             settings,
@@ -168,6 +184,7 @@ export class McpModule implements IModule<IMcpModuleDependencies> {
         this.adminController = new McpAdminController(
             settings,
             exposure,
+            policies,
             deps.connectedApps,
             deps.userGroups,
             { resourceUrl: deps.endpoint.resourceUrl, issuer: deps.endpoint.issuer },

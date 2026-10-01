@@ -135,6 +135,44 @@
 }
 
 /* ---------------------------------------------------------------------------
+ * Group selector and protections card
+ * ------------------------------------------------------------------------- */
+
+/* The selector names a group, so it only needs to be as wide as a group name,
+   not the whole panel the Field would otherwise stretch it to. */
+.group_picker {
+    max-width: var(--max-width-xs);
+}
+
+/* One setting: the switch beside its name and explanation. The text column
+   may shrink, so a long explanation wraps instead of pushing the switch off. */
+.policy_row {
+    display: flex;
+    gap: var(--gap-sm);
+    align-items: flex-start;
+}
+
+.policy_text {
+    min-width: 0;
+}
+
+.policy_label {
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+}
+
+/* Addresses are short, so the list is capped at a readable width instead of
+   spanning a wide panel. */
+.address_field {
+    max-width: var(--max-width-md);
+}
+
+.address_list {
+    font-family: var(--font-mono);
+}
+
+/* ---------------------------------------------------------------------------
  * Tools
  * ------------------------------------------------------------------------- */
 .tool_name {

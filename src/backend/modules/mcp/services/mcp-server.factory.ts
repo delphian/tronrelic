@@ -7,6 +7,12 @@
  * callback runs through the AI tool governor under the `mcp` trigger path,
  * with the verified user as the end user. No tool handler is ever called
  * directly from here.
+ *
+ * Two per-group settings take effect here. A restricted tool the caller was
+ * served through a group that allows restricted tools is named to the governor
+ * as such, which is the only way past its MCP safety floor. And a tool served
+ * through a group that asks for scrubbing has its result passed through the
+ * secret scrubber before it is written to the client.
  */
 
 import { McpServer, fromJsonSchema } from '@modelcontextprotocol/server';
@@ -22,6 +28,8 @@ import type {
     IToolInvocationResult
 } from '@/types';
 import { UNTRUSTED_CONTENT_SYSTEM_CLAUSE } from '@/types';
+import type { IMcpServedTool } from './mcp-tool-exposure.service.js';
+import type { SecretScrubber } from './SecretScrubber.js';
 
 /** Server name reported to clients in `serverInfo`. */
 const SERVER_NAME = 'tronrelic';
@@ -59,7 +67,7 @@ const TOOL_FAILED_MESSAGE = 'The tool call failed. Try again later.';
  * that is always present.
  */
 const SERVER_INSTRUCTIONS = [
-    'TronRelic exposes read-only tools over TRON blockchain data and TronRelic content.',
+    'TronRelic exposes tools over TRON blockchain data and TronRelic content. Each tool\'s annotations say whether it only reads.',
     UNTRUSTED_CONTENT_SYSTEM_CLAUSE
 ].join('\n\n');
 
@@ -78,6 +86,17 @@ export interface IMcpCaller {
 }
 
 /**
+ * The tool names one request may call, as the governor needs them.
+ */
+interface IMcpCallAccess {
+    /** Every tool served to the caller; the governor refuses any other name. */
+    allowlist: string[];
+
+    /** The restricted tools among them, which the governor lets past its MCP safety floor. */
+    restricted: string[];
+}
+
+/**
  * Creates per-request MCP servers for verified callers.
  */
 export class McpServerFactory {
@@ -91,10 +110,13 @@ export class McpServerFactory {
 
     /**
      * @param governor - The AI tool governor every call runs through.
+     * @param scrubber - Removes secrets from results of tools served through a
+     *   group that asks for scrubbing.
      * @param logger - Module logger, used when a governed call throws.
      */
     constructor(
         private readonly governor: IAiToolGovernor,
+        private readonly scrubber: SecretScrubber,
         private readonly logger: ISystemLogService
     ) {}
 
@@ -102,10 +124,12 @@ export class McpServerFactory {
      * Build a server that offers exactly the given tools to the given caller.
      *
      * @param caller - The verified caller the tools will run for.
-     * @param tools - The tools the caller may use, already filtered and sorted.
+     * @param served - The tools the caller may use, already filtered and
+     *   sorted, each with whether it is restricted and whether its results are
+     *   scrubbed.
      * @returns A server ready to handle one request.
      */
-    create(caller: IMcpCaller, tools: IAiTool[]): McpServer {
+    create(caller: IMcpCaller, served: IMcpServedTool[]): McpServer {
         const server = new McpServer(
             { name: SERVER_NAME, version: SERVER_VERSION, title: 'TronRelic' },
             {
@@ -114,8 +138,11 @@ export class McpServerFactory {
                 cacheHints: { 'tools/list': { ttlMs: TOOLS_LIST_TTL_MS, cacheScope: 'private' } }
             }
         );
-        const allowlist = tools.map(tool => tool.name);
-        for (const tool of tools) {
+        const access: IMcpCallAccess = {
+            allowlist: served.map(entry => entry.tool.name),
+            restricted: served.filter(entry => entry.restricted).map(entry => entry.tool.name)
+        };
+        for (const { tool, scrubSecrets } of served) {
             server.registerTool(
                 tool.name,
                 {
@@ -132,7 +159,7 @@ export class McpServerFactory {
                  *   against the tool's schema by the SDK.
                  * @returns The governed result shaped for MCP.
                  */
-                async (args: unknown) => this.callTool(tool.name, args, caller, allowlist)
+                async (args: unknown) => this.callTool(tool.name, args, caller, access, scrubSecrets)
             );
         }
         return server;
@@ -148,16 +175,20 @@ export class McpServerFactory {
      * @param name - The tool the client asked for.
      * @param args - Arguments the client supplied, already schema-checked by the SDK.
      * @param caller - The verified caller.
-     * @param allowlist - The names of every tool served to this caller, which
-     *   the governor enforces again on its side.
+     * @param access - The names of every tool served to this caller and of the
+     *   restricted ones among them, which the governor enforces again on its side.
+     * @param scrubSecrets - Whether a successful result is scrubbed before it
+     *   is returned, because a group serving this tool asks for it.
      * @returns The MCP tool result.
      */
-    private async callTool(name: string, args: unknown, caller: IMcpCaller, allowlist: string[]): Promise<CallToolResult> {
+    private async callTool(name: string, args: unknown, caller: IMcpCaller, access: IMcpCallAccess, scrubSecrets: boolean): Promise<CallToolResult> {
         const input = typeof args === 'object' && args !== null && !Array.isArray(args) ? args as Record<string, unknown> : {};
         let result: CallToolResult;
         try {
-            const governed = await this.governor.invoke(name, input, buildContext(caller, allowlist));
-            result = toCallToolResult(governed);
+            const governed = await this.governor.invoke(name, input, buildContext(caller, access));
+            result = toCallToolResult(scrubSecrets && governed.status === 'ok'
+                ? { ...governed, content: this.scrubber.scrub(governed.content) }
+                : governed);
         } catch (error: unknown) {
             this.logger.error({ err: error, tool: name, userId: caller.claims.userId }, 'MCP tool call failed outside governance');
             result = { content: [{ type: 'text', text: TOOL_FAILED_MESSAGE }], isError: true };
@@ -191,10 +222,10 @@ export class McpServerFactory {
  * making every call a user ever made look like one run in the audit trail.
  *
  * @param caller - The verified caller.
- * @param allowlist - The tools served to this caller.
+ * @param access - The tools served to this caller, and the restricted ones among them.
  * @returns The context the governor applies policy and audit from.
  */
-function buildContext(caller: IMcpCaller, allowlist: string[]): IToolInvocationContext {
+function buildContext(caller: IMcpCaller, access: IMcpCallAccess): IToolInvocationContext {
     const origin: IToolInvocationOrigin = {};
     if (caller.claims.clientId) {
         origin.clientId = caller.claims.clientId;
@@ -211,7 +242,8 @@ function buildContext(caller: IMcpCaller, allowlist: string[]): IToolInvocationC
         aiProviderId: MCP_AI_PROVIDER_ID,
         quotaKey: `mcp-user:${caller.claims.userId}`,
         endUser: caller.endUser,
-        toolAllowlist: allowlist,
+        toolAllowlist: access.allowlist,
+        ...(access.restricted.length > 0 ? { mcpRestrictedTools: access.restricted } : {}),
         origin
     };
 }
