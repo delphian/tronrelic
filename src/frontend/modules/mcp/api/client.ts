@@ -61,7 +61,7 @@ export async function setMcpEnabled(enabled: boolean): Promise<IMcpSettings> {
 /**
  * List every registered tool with its MCP state.
  *
- * @returns The tool rows, sorted by name.
+ * @returns The tool rows, sorted by owning module or plugin and then by name.
  */
 export async function listMcpTools(): Promise<IMcpToolExposure[]> {
     const body = await parse<{ tools: IMcpToolExposure[] }>(await fetch(`${BASE}/tools`, { cache: 'no-store' }), 'load MCP tools');
