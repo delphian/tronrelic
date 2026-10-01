@@ -16,6 +16,7 @@ import { execSync } from 'node:child_process';
 import { writeSync } from 'node:fs';
 import http from 'node:http';
 import { env } from './config/env.js';
+import { collectDeploymentSecrets } from './config/collectDeploymentSecrets.js';
 import { QueueService } from './services/queue.service.js';
 import { createExpressApp } from './loaders/express.js';
 import { errorHandler } from './api/middleware/error-handler.js';
@@ -575,6 +576,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
         tokenVerifier: identityModule.getAccessTokenVerifier(),
         connectedApps: identityModule.getConnectedAppsService(),
         userGroups: identityModule.getUserGroupService(),
+        knownSecrets: collectDeploymentSecrets(env, process.env),
         resolveEndUser: createAccountEndUserResolver(() => identityModule.getAccountDirectoryService()),
         endpoint: {
             resourceUrl: oauthConfig.mcpResourceUrl,

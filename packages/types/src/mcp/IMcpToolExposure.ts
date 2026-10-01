@@ -1,20 +1,20 @@
 /**
  * @file IMcpToolExposure.ts
  *
- * One row of the MCP tool list on `/system/mcp`: a registered AI tool and
- * whether members of the MCP group can see and call it.
+ * One row of the MCP tool list on `/system/mcp`: a registered AI tool and the
+ * user groups it is approved for.
  */
 
 import type { IAiToolCapability } from '../ai-tools/IAiToolCapability.js';
+import type { IMcpToolGrant } from './IMcpToolGrant.js';
 
 /**
  * A registered AI tool as the MCP admin page shows it.
  *
- * Every tool starts hidden from MCP. An admin approves each one explicitly,
- * and the approval is stored together with a fingerprint of the tool's
- * capability declaration. When a tool's declaration later changes, `stale`
- * turns true and the tool drops back to hidden until an admin approves it
- * again, so a plugin update cannot silently widen what MCP users reach.
+ * Every tool starts hidden from MCP. An admin approves it for one group at a
+ * time, and each approval is a separate {@link IMcpToolGrant}. A member of
+ * `mcp-users` sees the tool when one of their groups holds a grant that is
+ * currently served.
  */
 export interface IMcpToolExposure {
     /** Registered tool name. */
@@ -33,23 +33,19 @@ export interface IMcpToolExposure {
     capability?: IAiToolCapability;
 
     /**
-     * Why the tool can never be exposed over MCP, or null when it may be.
+     * Why the tool is restricted, or null when it passes the MCP safety floor.
      * Comes from `getMcpToolIneligibility`, the same rule the governor applies.
+     * A restricted tool can be granted only to a group whose policy allows
+     * restricted tools, and never to `mcp-users`.
      */
-    ineligibleReason: string | null;
+    restrictedReason: string | null;
 
-    /** Whether an admin approved the tool for MCP (it may still be stale). */
-    approved: boolean;
+    /** The tool's approvals, one per group, sorted by group id. */
+    grants: IMcpToolGrant[];
 
-    /** True when the tool's capability changed after it was approved; a stale tool is not served. */
-    stale: boolean;
-
-    /** Whether MCP group members can currently see and call the tool. */
+    /** Whether any grant currently serves the tool. */
     served: boolean;
 
-    /** ISO 8601 time the tool was approved, when approved. */
-    approvedAt?: string;
-
-    /** Better Auth user id of the admin who approved it, when approved. */
-    approvedBy?: string;
+    /** Whether any grant is stale because the tool's capability changed after it was approved. */
+    stale: boolean;
 }

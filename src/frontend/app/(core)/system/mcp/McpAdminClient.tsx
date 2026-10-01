@@ -9,7 +9,7 @@
  * (a namespaced menu rendered with `MenuNavClient`), and the panels are:
  *
  * - Overview: the connection URL and headline counts.
- * - Tools: approve or withdraw each tool for MCP.
+ * - Tools: pick a user group, set its protections, and grant or withdraw each tool for it.
  * - Connected apps: every user's grants, revocable.
  * - Activity: the governor's audit feed, locked to the `mcp` trigger path.
  * - Database: the module's own collections.
@@ -18,7 +18,7 @@
 
 import { useCallback, useState } from 'react';
 import type { MenuNodeSerialized } from '@/shared';
-import type { IConnectedAppAdminRow, IMcpSettings, IMcpStatus, IMcpToolExposure } from '@/types';
+import type { IConnectedAppAdminRow, IMcpGroup, IMcpSettings, IMcpStatus, IMcpToolExposure } from '@/types';
 import { Page, PageHeader } from '../../../../components/layout';
 import { MenuNavClient } from '../../../../components/layout/MenuNav/MenuNavClient';
 import { CollectionBrowser } from '../../../../modules/database';
@@ -38,7 +38,7 @@ const SUBMENU_NAMESPACE = 'mcp';
 
 /**
  * Physical collection prefix for everything the MCP module owns: its settings
- * document and its tool approvals. OAuth grants are identity-owned and live in
+ * document, its tool grants, and its per-group settings. OAuth grants are identity-owned and live in
  * the `module_user_auth_oauth_*` collections instead.
  */
 const COLLECTION_PREFIX = 'module_mcp_';
@@ -81,6 +81,8 @@ interface IMcpAdminClientProps {
     initialStatus: IMcpStatus | null;
     /** SSR-fetched tool rows. */
     initialTools: IMcpToolExposure[];
+    /** SSR-fetched user groups with their MCP settings; empty when the fetch failed. */
+    initialGroups: IMcpGroup[];
     /** SSR-fetched first page of connected apps. */
     initialApps: IConnectedAppAdminRow[];
     /** Total connected apps across all users. */
@@ -99,6 +101,7 @@ export function McpAdminClient({
     initialTab,
     initialStatus,
     initialTools,
+    initialGroups,
     initialApps,
     initialAppsTotal
 }: IMcpAdminClientProps) {
@@ -143,7 +146,7 @@ export function McpAdminClient({
         <Page>
             <PageHeader
                 title="MCP"
-                subtitle="Let members of the mcp-users group connect their own AI client to TronRelic and call the read-only tools you approve."
+                subtitle="Let members of the mcp-users group connect their own AI client to TronRelic and call the tools you grant to their user groups."
             />
 
             <KillSwitchCard status={status} onSettingsChange={handleSettingsChanged} />
@@ -166,7 +169,7 @@ export function McpAdminClient({
                     tab switch would bring back the SSR snapshot, so an approval or
                     a revocation made earlier would appear to be undone. */}
                 <div hidden={activeTab !== 'tools'}>
-                    <ToolsTab initialTools={initialTools} onToolsChanged={handleToolsChanged} />
+                    <ToolsTab initialTools={initialTools} initialGroups={initialGroups} onToolsChanged={handleToolsChanged} />
                 </div>
                 <div hidden={activeTab !== 'apps'}>
                     <AppsTab initialApps={initialApps} initialTotal={initialAppsTotal} />

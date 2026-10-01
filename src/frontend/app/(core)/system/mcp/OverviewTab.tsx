@@ -32,7 +32,7 @@ export function OverviewTab({ status }: IOverviewTabProps) {
     ) : (
         <Stack gap="md">
             <StatGrid size="sm">
-                <StatTile size="sm" label="Tools served" value={status.servedToolCount} tone={status.servedToolCount > 0 ? 'primary' : 'neutral'} note="Approved, eligible, and enabled" />
+                <StatTile size="sm" label="Tools served" value={status.servedToolCount} tone={status.servedToolCount > 0 ? 'primary' : 'neutral'} note="Granted to at least one group and enabled" />
                 <StatTile size="sm" label="Needs re-approval" value={status.staleToolCount} tone={status.staleToolCount > 0 ? 'warning' : 'neutral'} note="Capability changed since approval" />
                 <StatTile size="sm" label="Group members" value={status.memberCount} note={`Members of ${status.groupId}`} />
             </StatGrid>
@@ -55,7 +55,7 @@ export function OverviewTab({ status }: IOverviewTabProps) {
                         <dt>Who can connect</dt>
                         <dd>Members of the <code>{status.groupId}</code> group, managed on /system/users</dd>
                         <dt>What they can call</dt>
-                        <dd>Only read-only, non-secret tools an admin approves on the Tools tab</dd>
+                        <dd>The tools an admin grants to one of their user groups on the Tools tab. Restricted tools go only to groups an admin has cleared for them</dd>
                     </dl>
                 </Stack>
             </Card>

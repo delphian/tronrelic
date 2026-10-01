@@ -6,7 +6,7 @@
  * backend's message on a non-2xx response so the page can toast the reason.
  */
 
-import type { IConnectedAppAdminRow, IMcpSettings, IMcpStatus, IMcpToolExposure } from '@/types';
+import type { IConnectedAppAdminRow, IMcpGroupPolicy, IMcpGroupPolicyPatch, IMcpSettings, IMcpStatus, IMcpToolExposure } from '@/types';
 
 const BASE = '/api/admin/mcp';
 
@@ -69,20 +69,37 @@ export async function listMcpTools(): Promise<IMcpToolExposure[]> {
 }
 
 /**
- * Approve or withdraw one tool for MCP.
+ * Approve or withdraw one tool for one user group.
  *
  * @param name - Registered tool name.
+ * @param groupId - The group the approval is for.
  * @param exposed - True to approve, false to withdraw.
  * @returns The updated row, or null when a withdrawn tool is no longer
  *   registered (its approval was removed, but it has no row any more).
  */
-export async function setMcpToolExposure(name: string, exposed: boolean): Promise<IMcpToolExposure | null> {
+export async function setMcpToolExposure(name: string, groupId: string, exposed: boolean): Promise<IMcpToolExposure | null> {
     const body = await parse<{ tool: IMcpToolExposure | null }>(await fetch(`${BASE}/tools/${encodeURIComponent(name)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ exposed })
+        body: JSON.stringify({ exposed, groupId })
     }), exposed ? 'expose the tool' : 'withdraw the tool');
     return body.tool;
+}
+
+/**
+ * Change one group's MCP settings.
+ *
+ * @param groupId - The group to change.
+ * @param change - The settings to change.
+ * @returns The stored policy, and how many restricted tools were withdrawn
+ *   because "allow restricted tools" was switched off.
+ */
+export async function updateMcpGroupPolicy(groupId: string, change: IMcpGroupPolicyPatch):Promise<{ policy: IMcpGroupPolicy; withdrawnRestrictedGrants: number }> {
+    return parse(await fetch(`${BASE}/groups/${encodeURIComponent(groupId)}/policy`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(change)
+    }), 'update the group settings');
 }
 
 /**

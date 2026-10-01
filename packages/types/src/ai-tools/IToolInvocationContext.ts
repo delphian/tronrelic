@@ -153,6 +153,21 @@ export interface IToolInvocationContext {
     toolAllowlist?: string[];
 
     /**
+     * Restricted tools the MCP endpoint served to this caller through a user
+     * group whose policy an admin set to allow restricted tools. Only read on
+     * the `mcp` trigger path, where the policy engine otherwise refuses every
+     * tool that fails `getMcpToolIneligibility`. A name listed here is let past
+     * that one check, and only when it is also in {@link toolAllowlist}. Every
+     * other gate still applies: the end-user requirement, the refusal of tools
+     * that need admin approval, the external-tool default-deny, and the rate
+     * and cost limits.
+     *
+     * Set by the MCP endpoint from the caller's verified groups, never from
+     * model input.
+     */
+    mcpRestrictedTools?: string[];
+
+    /**
      * The external client, credential, and address the call arrived through,
      * when it entered over a protocol such as MCP. Set by the entry point from
      * the verified token, never from model input. Copied onto the audit record.

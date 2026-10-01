@@ -168,8 +168,8 @@ export type {
     IStaticPromptVariableInput,
     IStaticPromptVariableUpdate
 } from './ai-tools/index.js';
-export { MCP_TOOLS_SCOPE, MCP_OAUTH_SCOPES, MCP_USERS_GROUP_ID } from './mcp/index.js';
-export type { IMcpSettings, IMcpStatus, IMcpToolExposure, IMcpAccessTokenClaims, IMcpAccessTokenVerifier } from './mcp/index.js';
+export { MCP_TOOLS_SCOPE, MCP_OAUTH_SCOPES, MCP_USERS_GROUP_ID, mcpGroupMayHoldTool, normaliseIpAllowlistEntries } from './mcp/index.js';
+export type { IMcpSettings, IMcpStatus, IMcpToolExposure, IMcpToolGrant, IMcpGroup, IMcpGroupPolicy, IMcpGroupPolicyPatch, IMcpAccessTokenClaims, IMcpAccessTokenVerifier } from './mcp/index.js';
 export { isPrivateIp, assertPublicHttpUrl } from './egress/index.js';
 export type { IEgressCheckResult, IEgressCheckOptions } from './egress/index.js';
 export type {

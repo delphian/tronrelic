@@ -28,10 +28,10 @@ import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import { createMcpHandler } from '@modelcontextprotocol/server';
 import type { AuthInfo, McpRequestContext, McpServer } from '@modelcontextprotocol/server';
 import { originValidation, toNodeHandler } from '@modelcontextprotocol/node';
-import type { IAiTool, ISystemLogService } from '@/types';
+import type { ISystemLogService } from '@/types';
 import { MCP_OAUTH_SCOPES, MCP_TOOLS_SCOPE } from '@/types';
 import type { McpSettingsStore } from '../services/mcp-settings.store.js';
-import type { McpToolExposureService } from '../services/mcp-tool-exposure.service.js';
+import type { IMcpServedTool, McpToolExposureService } from '../services/mcp-tool-exposure.service.js';
 import type { McpCallerOutcome, McpCallerResolver } from '../services/mcp-caller.resolver.js';
 import type { IMcpCaller, McpServerFactory } from '../services/mcp-server.factory.js';
 
@@ -55,7 +55,7 @@ export interface IMcpEndpointUrls {
 /** What the SDK receives on `req.auth.extra` for one request. */
 interface IMcpRequestExtra {
     caller: IMcpCaller;
-    tools: IAiTool[];
+    tools: IMcpServedTool[];
     [key: string]: unknown;
 }
 
@@ -69,7 +69,7 @@ export class McpEndpointController {
 
     /**
      * @param settings - The kill switch, read on every request.
-     * @param exposure - Computes the tools served to MCP group members.
+     * @param exposure - Computes the tools served to each caller from their groups and address.
      * @param callers - Verifies tokens and group membership.
      * @param serverFactory - Builds the per-request MCP server.
      * @param urls - Public URLs used in challenges and the Origin check.
@@ -249,10 +249,11 @@ export class McpEndpointController {
     /**
      * Hand an admitted request to the MCP SDK.
      *
-     * The tools served to MCP group members are computed now, per request, so
-     * an approval or withdrawal on the admin page applies to the next call.
-     * The caller and tools ride on `req.auth.extra`, which is how the SDK
-     * passes per-request data to the server factory.
+     * The tools served to this caller are computed now, per request, from
+     * their groups and address, so an approval, a withdrawal, or a group
+     * setting changed on the admin page applies to the next call. The caller
+     * and tools ride on `req.auth.extra`, which is how the SDK passes
+     * per-request data to the server factory.
      *
      * @param req - The request, body parsed.
      * @param res - The response the SDK writes.
@@ -261,7 +262,7 @@ export class McpEndpointController {
      */
     private async dispatch(req: Request, res: Response, admitted: { caller: IMcpCaller; token: string }): Promise<void> {
         const { caller, token } = admitted;
-        const tools = await this.readServedTools();
+        const tools = await this.readServedTools(caller);
         if (tools === null) {
             // The approvals store is down. Answer the same temporary 503 as a
             // failed kill-switch or grant read, not the global handler's 500.
@@ -275,12 +276,14 @@ export class McpEndpointController {
      * Read the served tool list without letting a storage failure escape, so
      * the client sees a temporary 503 rather than a 500 it cannot act on.
      *
-     * @returns The served tools, or null when the approvals could not be read.
+     * @param caller - The verified caller, whose groups and address decide what is served.
+     * @returns The served tools, or null when the approvals or group settings
+     *   could not be read.
      */
-    private async readServedTools(): Promise<IAiTool[] | null> {
-        let tools: IAiTool[] | null;
+    private async readServedTools(caller: IMcpCaller): Promise<IMcpServedTool[] | null> {
+        let tools: IMcpServedTool[] | null;
         try {
-            tools = await this.exposure.getServedTools();
+            tools = await this.exposure.getServedTools({ groups: caller.endUser.groups ?? [], ip: caller.ip });
         } catch (error: unknown) {
             this.logger.error({ err: error }, 'Could not read MCP tool approvals; refusing the request');
             tools = null;
@@ -299,7 +302,7 @@ export class McpEndpointController {
      * @param tools - The tools served to this caller.
      * @returns Resolves when the SDK has written the response.
      */
-    private async handOff(req: Request, res: Response, caller: IMcpCaller, token: string, tools: IAiTool[]): Promise<void> {
+    private async handOff(req: Request, res: Response, caller: IMcpCaller, token: string, tools: IMcpServedTool[]): Promise<void> {
         const extra: IMcpRequestExtra = { caller, tools };
         const authInfo: AuthInfo = {
             token,
