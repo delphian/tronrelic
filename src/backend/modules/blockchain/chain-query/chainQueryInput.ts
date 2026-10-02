@@ -233,12 +233,28 @@ export function parseWindow(input: Record<string, unknown>, rules: IWindowRules,
     if (to.getTime() - from.getTime() > rules.maxHours * HOUR_MS) {
         throw new ChainQueryError(`The window may span at most ${rules.maxHours} hours for this tool. Narrow since/until or pass a smaller hours value.`, 'input');
     }
-    const retentionStart = new Date(now.getTime() - retentionDays * 24 * HOUR_MS);
-    const clampedToRetention = from.getTime() < retentionStart.getTime();
-    if (clampedToRetention && to.getTime() <= retentionStart.getTime()) {
+    const start = retentionStart(now, retentionDays);
+    const clampedToRetention = from.getTime() < start.getTime();
+    if (clampedToRetention && to.getTime() <= start.getTime()) {
         throw new ChainQueryError(`Chain data is kept for ${retentionDays} days only. The whole window is older than that, so nothing can be answered for it.`, 'input');
     }
-    return { from: clampedToRetention ? retentionStart : from, to, clampedToRetention };
+    return { from: clampedToRetention ? start : from, to, clampedToRetention };
+}
+
+/**
+ * The earliest moment the stored chain data is promised to cover.
+ *
+ * Tools that look across all of retention, such as a transaction lookup or a
+ * recipient's history, start their reads here. Keeping the arithmetic in one
+ * place means every tool agrees with {@link parseWindow} about where the
+ * stored data begins.
+ *
+ * @param now - The current time, from the toolkit's clock so tests can pin it.
+ * @param retentionDays - How many days ClickHouse keeps, from the toolkit.
+ * @returns The retention start.
+ */
+export function retentionStart(now: Date, retentionDays: number): Date {
+    return new Date(now.getTime() - retentionDays * 24 * HOUR_MS);
 }
 
 /** The cursor fields that pin a paged listing to the window its first page answered for. */

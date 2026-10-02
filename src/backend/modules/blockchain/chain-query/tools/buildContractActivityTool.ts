@@ -130,7 +130,7 @@ export function buildContractActivityTool(toolkit: IChainQueryToolkit): IAiTool 
             '"callers": the wallets calling it most, with call and failure counts. ' +
             '"methods": calls grouped by function selector (the first 4 bytes of call data), with well-known selectors named, such as transfer(address,uint256). ' +
             '"hourly": calls, callers, and failures per hour. ' +
-            'Use for questions such as how busy a contract is, who uses it, what it costs to call, or why calls are failing. For a token\'s transfer volume, use ' + AI_TOOL_NAMES.tokenActivity + '; for the events a contract emitted, use ' + AI_TOOL_NAMES.contractEvents + '. ' +
+            'Use for questions such as how busy a contract is, who uses it, what it costs to call, or why calls are failing. This sees only wallets calling the contract directly; for contracts calling it from inside their own execution, such as a DEX router, use ' + AI_TOOL_NAMES.contractCallGraph + '. For a token\'s transfer volume, use ' + AI_TOOL_NAMES.tokenActivity + '; for the events a contract emitted, use ' + AI_TOOL_NAMES.contractEvents + '. ' +
             'A selector name only means the hash matches; any contract can define a function with that name. ' +
             'Parameters: contract (required, base58 or hex); view; hours or since/until (default 24 hours, at most 72); limit for callers and methods (default 25, at most 100). ' +
             SHARED_DESCRIPTION,

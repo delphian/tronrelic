@@ -30,6 +30,7 @@
 
 import type { IAiTool } from '@/types';
 import { CHAIN_DATA_DATABASE } from '../../chain-data/buildChainDataSchema.js';
+import { readAssetId } from '../../chain-data/buildTransferRows.js';
 import {
     decodeCursor,
     encodeCursor,
@@ -51,6 +52,7 @@ import {
     SHARED_DESCRIPTION,
     TIME_TX_CURSOR_KEYS,
     TRX_TOKEN,
+    blockRangeCondition,
     timeTxCursorCondition,
     windowCondition,
     windowParams,
@@ -71,8 +73,21 @@ export const ACTIVATION_FEES_SUN = {
     multiSign: 1_000_000
 } as const;
 
-/** The window this tool accepts. It joins three transaction-sized tables, so three days at most. */
-const WINDOW_RULES: IWindowRules = { defaultHours: 24, maxHours: 72 };
+/**
+ * The window for a call naming a funder or an account. The receipt and
+ * transaction reads are then limited to that party's own transfers, so they
+ * stay small, and three days fits easily inside the ai-agent account's limits.
+ */
+const LOOKUP_WINDOW_RULES: IWindowRules = { defaultHours: 24, maxHours: 72 };
+
+/**
+ * The window for a call naming neither. Recognising every activation means
+ * reading every transaction and every receipt in the window, about 10 million
+ * rows each per day on mainnet, plus the transfer tables. One day stays inside
+ * the ai-agent account's default limit of 50 million rows read; three days
+ * would not.
+ */
+const SCAN_WINDOW_RULES: IWindowRules = { defaultHours: 24, maxHours: 24 };
 
 /** Rows returned when the caller does not say. */
 const DEFAULT_LIMIT = 25;
@@ -116,12 +131,42 @@ interface IHourRow {
 /**
  * Every activation in the window as one row set: a subquery for a FROM clause.
  *
+ * Five things keep this inside the ai-agent account's limits.
+ *
+ * - Both big reads are bounded by {@link blockRangeCondition} as well as by
+ *   time, so a window crossing midnight does not read two whole days.
+ * - `activating`, which reads `tron.transaction` and `tron.transaction_info`
+ *   in full for the window, appears once. The TRX and TRC-10 transfers are
+ *   combined first and joined to it a single time, so those two tables are
+ *   read once rather than once per transfer table.
+ * - The signature count is read from `signature.size0`, the array's stored
+ *   length, instead of `length(signature)`. With `length(signature)` the
+ *   production query read about 120 bytes per row, which only the signatures
+ *   themselves, 130 hex characters each, can account for, so do not rely on
+ *   ClickHouse making that swap on its own.
+ * - When a funder or account is named, the receipt and transaction reads are
+ *   limited to that party's transfers by their `(block_number,
+ *   transaction_index)` pair, which leads both tables' sort key, so ClickHouse
+ *   reads only the parts holding them. Without a party that list would be
+ *   every transfer in the window and would narrow nothing, so it is left out.
+ * - When a funder or account is named, the transfer tables are read without
+ *   `FINAL`, and a block written twice is removed with `LIMIT 1 BY tx_id`
+ *   instead. ClickHouse 24.3 ignores skip indexes in a `FINAL` read, so an
+ *   `account` lookup would otherwise read every transfer in the window
+ *   instead of using the `to_address` bloom filter. That matters because the
+ *   transfer subquery runs three times (as the join's left side and in both
+ *   IN lists, which sit in different subqueries, so 24.3 builds each set
+ *   separately); at 72 hours with `FINAL`, the three reads passed the 50
+ *   million row limit. Without a party the subquery runs once and covers
+ *   the whole window, where `FINAL` is cheaper in memory than `LIMIT 1 BY`
+ *   over millions of ids, so it keeps `FINAL`.
+ *
  * `fees` keeps receipts whose fee, less bandwidth and energy, could hold the
- * creation fee. That is a small set, so it sits on the right of the join,
+ * creation fee. That is a small set, so it sits on the right of its join,
  * which is the side ClickHouse holds in memory. `activating` then subtracts the
  * memo and multi-signature fees using the transaction itself and keeps those
- * where the creation fee remains. It is evaluated once for each of the two
- * transfer tables that use it.
+ * where the creation fee remains, and it sits on the right of the join to the
+ * transfers for the same reason.
  *
  * @param funderFilter - Whether to keep only one funder (`{funder}`).
  * @param accountFilter - Whether to keep only one activated account (`{account}`).
@@ -130,17 +175,6 @@ interface IHourRow {
 function activationRows(funderFilter: boolean, accountFilter: boolean): string {
     const db = CHAIN_DATA_DATABASE;
     const window = windowCondition();
-    const fees = `SELECT block_number, transaction_index, fee - receipt_net_fee - receipt_energy_fee AS extra
-        FROM ${db}.transaction_info FINAL
-        WHERE ${window} AND fee - receipt_net_fee - receipt_energy_fee >= {createFee:Int64}`;
-    const activating = `SELECT x.block_number, x.transaction_index
-    FROM (
-        SELECT block_number, transaction_index, data != '' AS has_memo, length(signature) > 1 AS multi_signed
-        FROM ${db}.transaction FINAL
-        WHERE ${window} AND contract_type IN ('TransferContract', 'TransferAssetContract') AND contract_ret = 'SUCCESS'
-    ) AS x
-    INNER JOIN (${fees}) AS f ON x.block_number = f.block_number AND x.transaction_index = f.transaction_index
-    WHERE f.extra >= {createFee:Int64} + if(x.has_memo, {memoFee:Int64}, 0) + if(x.multi_signed, {multiSignFee:Int64}, 0)`;
     /**
      * The conditions one source table adds, naming its own funder and account columns.
      *
@@ -152,36 +186,41 @@ function activationRows(funderFilter: boolean, accountFilter: boolean): string {
         ...(funderFilter ? [`${funderColumn} = {funder:String}`] : []),
         ...(accountFilter ? [`${accountColumn} = {account:String}`] : [])
     ].map(condition => ` AND ${condition}`).join('');
+    const hasParty = funderFilter || accountFilter;
+    const transferFinal = hasParty ? '' : ' FINAL';
+    const transferDedupe = hasParty ? '\n        LIMIT 1 BY tx_id' : '';
+    const transfers = `SELECT block_number, transaction_index, block_timestamp, tx_id, owner_address AS funder, to_address AS account, 'trx-transfer' AS method, amount, '' AS asset
+        FROM ${db}.transfer_contract${transferFinal}
+        WHERE ${window} AND contract_ret = 'SUCCESS'${partyConditions('owner_address', 'to_address')}${transferDedupe}
+        UNION ALL
+        SELECT block_number, transaction_index, block_timestamp, tx_id, owner_address AS funder, to_address AS account, 'trc10-transfer' AS method, amount, asset_name AS asset
+        FROM ${db}.transfer_asset_contract${transferFinal}
+        WHERE ${window} AND contract_ret = 'SUCCESS'${partyConditions('owner_address', 'to_address')}${transferDedupe}`;
+    const partyTransfers = hasParty
+        ? ` AND (block_number, transaction_index) IN (SELECT block_number, transaction_index FROM (${transfers}))`
+        : '';
+    const scanned = `${window} AND ${blockRangeCondition()}${partyTransfers}`;
+    const fees = `SELECT block_number, transaction_index, fee - receipt_net_fee - receipt_energy_fee AS extra
+            FROM ${db}.transaction_info FINAL
+            WHERE ${scanned} AND fee - receipt_net_fee - receipt_energy_fee >= {createFee:Int64}`;
+    const activating = `SELECT x.block_number AS a_block, x.transaction_index AS a_index
+        FROM (
+            SELECT block_number, transaction_index, data != '' AS has_memo, signature.size0 > 1 AS multi_signed
+            FROM ${db}.transaction FINAL
+            WHERE ${scanned} AND contract_type IN ('TransferContract', 'TransferAssetContract') AND contract_ret = 'SUCCESS'
+        ) AS x
+        INNER JOIN (${fees}) AS f ON x.block_number = f.block_number AND x.transaction_index = f.transaction_index
+        WHERE f.extra >= {createFee:Int64} + if(x.has_memo, {memoFee:Int64}, 0) + if(x.multi_signed, {multiSignFee:Int64}, 0)`;
 
     return `(
-    SELECT block_number, block_timestamp, tx_id, owner_address AS funder, to_address AS account, 'trx-transfer' AS method, amount, '' AS asset
-    FROM ${db}.transfer_contract FINAL
-    WHERE ${window} AND contract_ret = 'SUCCESS'${partyConditions('owner_address', 'to_address')}
-      AND (block_number, transaction_index) IN (${activating})
-    UNION ALL
-    SELECT block_number, block_timestamp, tx_id, owner_address AS funder, to_address AS account, 'trc10-transfer' AS method, amount, asset_name AS asset
-    FROM ${db}.transfer_asset_contract FINAL
-    WHERE ${window} AND contract_ret = 'SUCCESS'${partyConditions('owner_address', 'to_address')}
-      AND (block_number, transaction_index) IN (${activating})
+    SELECT block_number, block_timestamp, tx_id, funder, account, method, amount, asset
+    FROM (${transfers}) AS t
+    INNER JOIN (${activating}) AS a ON t.block_number = a.a_block AND t.transaction_index = a.a_index
     UNION ALL
     SELECT block_number, block_timestamp, tx_id, owner_address AS funder, account_address AS account, 'account-create' AS method, toInt64(0) AS amount, '' AS asset
     FROM ${db}.account_create_contract FINAL
     WHERE ${window} AND contract_ret = 'SUCCESS'${partyConditions('owner_address', 'account_address')}
 )`;
-}
-
-/**
- * Turn a stored TRC-10 asset name into its token id.
- *
- * `transfer_asset_contract.asset_name` holds the id as java-tron writes it,
- * which is the decimal id's text encoded as hex.
- *
- * @param assetName - The stored value.
- * @returns The decimal id, or the stored value when it is not hex text of digits.
- */
-function trc10Id(assetName: string): string {
-    const decoded = /^[0-9a-f]+$/i.test(assetName) && assetName.length % 2 === 0 ? Buffer.from(assetName, 'hex').toString('utf8') : '';
-    return /^\d+$/.test(decoded) ? decoded : assetName;
 }
 
 /**
@@ -200,7 +239,7 @@ export function buildNewAccountsTool(toolkit: IChainQueryToolkit): IAiTool {
             '"hourly" counts activations and distinct activators per hour. ' +
             'Use to find mass-activation campaigns (dust and address-poisoning operators activate thousands of addresses), or to learn who activated a given account (pass account), which is often the best lead to who controls it. ' +
             'Activations by TRX or TRC-10 transfer are recognised from the account-creation fee in the receipt, so they need receipts; accounts created inside smart contract calls are not detected. Only activations inside the stored window are visible; an older account\'s activator is not here. ' +
-            'Parameters: view; funder (only activations this wallet paid for); account (only this new account); hours or since/until (default 24 hours, at most 72); limit (default 25, at most 200); cursor (accounts view only; pass nextCursor back). ' +
+            'Parameters: view; funder (only activations this wallet paid for); account (only this new account); hours or since/until (default 24 hours; at most 72 with funder or account, 24 without, because a chain-wide view reads every transaction in the window); limit (default 25, at most 200); cursor (accounts view only; pass nextCursor back). ' +
             SHARED_DESCRIPTION,
         capability: CHAIN_QUERY_CAPABILITY,
         inputSchema: {
@@ -210,7 +249,7 @@ export function buildNewAccountsTool(toolkit: IChainQueryToolkit): IAiTool {
                 view: { type: 'string', enum: [...VIEWS], description: '"activators" (default), "accounts", or "hourly".' },
                 funder: { type: 'string', description: 'Only activations this wallet paid for, base58 (T…) or hex (41…).' },
                 account: { type: 'string', description: 'Only the activation of this account, to find who activated it.' },
-                ...windowProperties(WINDOW_RULES),
+                ...windowProperties(LOOKUP_WINDOW_RULES),
                 limit: { type: 'integer', minimum: 1, maximum: MAX_LIMIT, description: `Rows returned. Default ${DEFAULT_LIMIT}, at most ${MAX_LIMIT}.` },
                 cursor: { type: 'string', description: 'Accounts view only: nextCursor from the previous response. Keep every other argument the same.' }
             },
@@ -227,7 +266,8 @@ export function buildNewAccountsTool(toolkit: IChainQueryToolkit): IAiTool {
             const account = parseOptionalAddress(input.account, 'account');
             const limit = parseInteger(input.limit, 'limit', DEFAULT_LIMIT, 1, MAX_LIMIT);
             const cursor = view === 'accounts' ? decodeCursor(input.cursor, TIME_TX_CURSOR_KEYS) : undefined;
-            const window = pinWindowToCursor(cursor, parseWindow(input, WINDOW_RULES, toolkit.now(), toolkit.retentionDays), WINDOW_RULES);
+            const rules = funder || account ? LOOKUP_WINDOW_RULES : SCAN_WINDOW_RULES;
+            const window = pinWindowToCursor(cursor, parseWindow(input, rules, toolkit.now(), toolkit.retentionDays), rules);
             const params: Record<string, unknown> = {
                 ...windowParams(window),
                 createFee: ACTIVATION_FEES_SUN.createAccount,
@@ -297,7 +337,7 @@ LIMIT {limit:UInt32}`,
                         activatedBy: row.funder,
                         method: row.method,
                         ...(row.method === 'trx-transfer' ? { amount: toChainAmount(row.amount_text, trx) } : {}),
-                        ...(row.method === 'trc10-transfer' ? { trc10Token: trc10Id(row.asset), amountRaw: row.amount_text } : {})
+                        ...(row.method === 'trc10-transfer' ? { trc10Token: readAssetId(row.asset), amountRaw: row.amount_text } : {})
                     }))
                 };
                 addresses = rows.flatMap(row => [row.account, row.funder]);

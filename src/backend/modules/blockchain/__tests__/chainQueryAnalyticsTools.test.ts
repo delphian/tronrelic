@@ -206,6 +206,51 @@ describe('blockchain-new-accounts', () => {
             amount: { raw: '100000', value: '0.1' }
         })]);
     });
+
+    it('reads the transaction and receipt tables once, with signature counts and a block range', async () => {
+        const { toolkit, reads } = buildToolkit(() => []);
+
+        await buildNewAccountsTool(toolkit).handler({ view: 'hourly' }, undefined, CONTEXT);
+
+        const sql = reads.find(entry => entry.sql.includes('transfer_contract'))?.sql ?? '';
+        expect(sql.split('tron.transaction FINAL')).toHaveLength(2);
+        expect(sql.split('tron.transaction_info FINAL')).toHaveLength(2);
+        expect(sql).toContain('signature.size0');
+        expect(sql).not.toContain('length(signature)');
+        expect(sql).toContain('block_number BETWEEN (SELECT min(block_number)');
+        expect(sql).not.toContain('(block_number, transaction_index) IN (SELECT');
+        expect(sql).toContain('tron.transfer_contract FINAL');
+        expect(sql).not.toContain('LIMIT 1 BY tx_id');
+    });
+
+    it('limits the transaction and receipt reads to the named party\'s transfers', async () => {
+        const { toolkit, reads } = buildToolkit(() => []);
+
+        await buildNewAccountsTool(toolkit).handler({ view: 'accounts', funder: PEER, hours: 72 }, undefined, CONTEXT);
+
+        const sql = reads.find(entry => entry.sql.includes('transfer_contract'))?.sql ?? '';
+        expect(sql.split('(block_number, transaction_index) IN (SELECT block_number, transaction_index')).toHaveLength(3);
+    });
+
+    it('reads a named party\'s transfers without FINAL so the to_address skip index applies', async () => {
+        const { toolkit, reads } = buildToolkit(() => []);
+
+        await buildNewAccountsTool(toolkit).handler({ view: 'accounts', account: WALLET, hours: 72 }, undefined, CONTEXT);
+
+        const sql = reads.find(entry => entry.sql.includes('transfer_contract'))?.sql ?? '';
+        expect(sql).not.toContain('transfer_contract FINAL');
+        expect(sql).not.toContain('transfer_asset_contract FINAL');
+        expect(sql.split('LIMIT 1 BY tx_id')).toHaveLength(7);
+    });
+
+    it('caps a chain-wide window at 24 hours', async () => {
+        const { toolkit, reads } = buildToolkit(() => []);
+
+        const result = await buildNewAccountsTool(toolkit).handler({ view: 'activators', hours: 72 }, undefined, CONTEXT) as Record<string, unknown>;
+
+        expect(result).toEqual(expect.objectContaining({ success: false, errorKind: 'input' }));
+        expect(reads).toHaveLength(0);
+    });
 });
 
 describe('blockchain-find-token', () => {

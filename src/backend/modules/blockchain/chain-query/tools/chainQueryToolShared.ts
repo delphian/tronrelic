@@ -12,6 +12,7 @@
 import type { IAiToolCapability } from '@/types';
 import type { JSONSchema7Definition } from 'json-schema';
 import { formatClickHouseDateTime64Utc } from '../../../../lib/formatClickHouseDateTime64Utc.js';
+import { CHAIN_DATA_DATABASE } from '../../chain-data/buildChainDataSchema.js';
 import { ChainQueryError } from '../ChainQueryError.js';
 import { WINDOW_CURSOR_KEYS, type IChainTokenFilter, type IChainWindow, type IWindowRules } from '../chainQueryInput.js';
 
@@ -26,6 +27,10 @@ export const AI_TOOL_NAMES = {
     permissionChanges: 'blockchain-permission-changes',
     contractActivity: 'blockchain-contract-activity',
     contractEvents: 'blockchain-contract-events',
+    contractPayouts: 'blockchain-contract-payouts',
+    contractCallGraph: 'blockchain-contract-call-graph',
+    contractDeployments: 'blockchain-contract-deployments',
+    transactionTrace: 'blockchain-transaction-trace',
     networkStats: 'blockchain-network-stats',
     newAccounts: 'blockchain-new-accounts',
     findToken: 'blockchain-find-token'
@@ -134,6 +139,28 @@ export const TRX_TOKEN: IChainTokenFilter = { assetType: 'trx', token: '' };
  */
 export function windowCondition(column: string = 'block_timestamp'): string {
     return `${column} >= {from:DateTime64(3, 'UTC')} AND ${column} < {to:DateTime64(3, 'UTC')}`;
+}
+
+/**
+ * The SQL condition limiting a table sorted by block number to the blocks
+ * stored inside the window. Use it beside {@link windowCondition}, never
+ * instead of it, and fill it with the same {@link windowParams}.
+ *
+ * `tron.transaction` and `tron.transaction_info` lead their sort key with
+ * `block_number`, so a condition on `block_timestamp` alone lets ClickHouse
+ * skip only whole daily partitions. A 24-hour window that crosses midnight
+ * then reads both days in full. Bounding `block_number` as well lets
+ * ClickHouse skip the unneeded parts of each day. The two scalar subqueries
+ * read `tron.block`, which holds one row per block, and ClickHouse runs them
+ * before it decides which parts of the table to read. When the window holds
+ * no blocks, both return 0 and the condition matches nothing, which is right
+ * because there is nothing stored to match.
+ *
+ * @returns The condition text.
+ */
+export function blockRangeCondition(): string {
+    const blocks = `FROM ${CHAIN_DATA_DATABASE}.block WHERE ${windowCondition('timestamp')}`;
+    return `block_number BETWEEN (SELECT min(block_number) ${blocks}) AND (SELECT max(block_number) ${blocks})`;
 }
 
 /**
