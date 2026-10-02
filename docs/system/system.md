@@ -68,7 +68,7 @@ These documents are not owned by any single component row above.
 | [system-api-websockets.md](./system-api-websockets.md) | WebSocket metrics for administrators, and the catalog of real-time events |
 | [system-block-provider-migration.md](./system-block-provider-migration.md) | The proposal to decouple from TronGrid: the `IBlockProvider` design, research into alternative providers, and the migration plan |
 | [system-chain-data-clickhouse.md](./system-chain-data-clickhouse.md) | The short-term copy of every committed block in ClickHouse's `tron` database, laid out after java-tron's protobuf messages: tables, naming rules, write path, and gaps |
-| [system-chain-query-tools.md](./system-chain-query-tools.md) | The twelve read-only AI tools that walk the `tron` database as the `ai-agent` account: wallet profile, transfers, counterparties, multi-hop tracing, permission changes, delegations, activations, token, contract, and network activity, with the response envelope they share and the rule that no tool runs model-written SQL |
+| [system-chain-query-tools.md](./system-chain-query-tools.md) | The sixteen read-only AI tools that walk the `tron` database as the `ai-agent` account: wallet profile, transfers, counterparties, multi-hop tracing, permission changes, delegations, activations, one transaction's full trace, token activity, contract activity, payouts, call graph, and deployments, and network activity, with the response envelope they share and the rule that no tool runs model-written SQL |
 | [system-domain-types.md](./system-domain-types.md) | Why the types package must not depend on any one data source, the test for admitting a type, `IBlockTransaction`, and the known exceptions |
 
 ## Related

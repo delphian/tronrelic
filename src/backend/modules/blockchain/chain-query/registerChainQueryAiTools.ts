@@ -3,8 +3,9 @@
  *
  * The tools let an AI agent walk the ClickHouse copy of the chain — a wallet's
  * profile, its transfers and counterparties, multi-hop fund flows, permission
- * changes, resource delegation, account activations, token and contract
- * activity, and network statistics — under the `ai-agent` account's
+ * changes, resource delegation, account activations, one transaction's full
+ * trace, token activity, contract activity, payouts, call graph, and
+ * deployments, and network statistics — under the `ai-agent` account's
  * server-enforced limits. Every query is written in this codebase; no tool
  * runs SQL the model wrote. The registry is published by the AI tools module during its `run()`
  * phase, after this is called, so the tools subscribe to its presence with
@@ -20,7 +21,10 @@ import { buildAddressCounterpartiesTool } from './tools/buildAddressCounterparti
 import { buildAddressProfileTool } from './tools/buildAddressProfileTool.js';
 import { buildAddressTransfersTool } from './tools/buildAddressTransfersTool.js';
 import { buildContractActivityTool } from './tools/buildContractActivityTool.js';
+import { buildContractCallGraphTool } from './tools/buildContractCallGraphTool.js';
+import { buildContractDeploymentsTool } from './tools/buildContractDeploymentsTool.js';
 import { buildContractEventsTool } from './tools/buildContractEventsTool.js';
+import { buildContractPayoutsTool } from './tools/buildContractPayoutsTool.js';
 import { buildFindTokenTool } from './tools/buildFindTokenTool.js';
 import { buildNetworkStatsTool } from './tools/buildNetworkStatsTool.js';
 import { buildNewAccountsTool } from './tools/buildNewAccountsTool.js';
@@ -28,6 +32,7 @@ import { buildPermissionChangesTool } from './tools/buildPermissionChangesTool.j
 import { buildResourceDelegationsTool } from './tools/buildResourceDelegationsTool.js';
 import { buildTokenActivityTool } from './tools/buildTokenActivityTool.js';
 import { buildTraceFlowTool } from './tools/buildTraceFlowTool.js';
+import { buildTransactionTraceTool } from './tools/buildTransactionTraceTool.js';
 import { CHAIN_QUERY_PROVIDER_ID } from './tools/chainQueryToolShared.js';
 
 /**
@@ -35,7 +40,7 @@ import { CHAIN_QUERY_PROVIDER_ID } from './tools/chainQueryToolShared.js';
  *
  * @param toolkit - The shared chain query dependencies.
  * @returns The tools, in the order the admin page lists them: wallet tools,
- *          then token, contract, and network tools.
+ *          then the single-transaction trace, then token, contract, and network tools.
  */
 export function buildChainQueryTools(toolkit: IChainQueryToolkit): IAiTool[] {
     return [
@@ -46,10 +51,14 @@ export function buildChainQueryTools(toolkit: IChainQueryToolkit): IAiTool[] {
         buildPermissionChangesTool(toolkit),
         buildResourceDelegationsTool(toolkit),
         buildNewAccountsTool(toolkit),
+        buildTransactionTraceTool(toolkit),
         buildFindTokenTool(toolkit),
         buildTokenActivityTool(toolkit),
         buildContractActivityTool(toolkit),
         buildContractEventsTool(toolkit),
+        buildContractPayoutsTool(toolkit),
+        buildContractCallGraphTool(toolkit),
+        buildContractDeploymentsTool(toolkit),
         buildNetworkStatsTool(toolkit)
     ];
 }

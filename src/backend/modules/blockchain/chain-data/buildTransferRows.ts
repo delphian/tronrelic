@@ -106,13 +106,15 @@ function readAddress(value: unknown): string | null {
  * Since `ALLOW_SAME_TOKEN_NAME`, `asset_name` holds the token's numeric id, but
  * java-tron renders it as hex bytes (`31303030303031` for `1000001`). Internal
  * transfers name the same token as plain text, so the ledger stores the plain
- * id, which lets one `token` value match both sources.
+ * id, which lets one `token` value match both sources. Exported because the
+ * chain query tools read the same stored `asset_name` and must report the same
+ * id the ledger stores.
  *
  * @param value - The raw `asset_name`.
  * @returns The decimal token id, or the text as it arrived when it does not
  *          decode to one.
  */
-function readAssetId(value: unknown): string {
+export function readAssetId(value: unknown): string {
     let tokenId = typeof value === 'string' ? value : '';
     if (HEX_BYTES.test(tokenId)) {
         const decoded = Buffer.from(tokenId, 'hex').toString('utf8');
