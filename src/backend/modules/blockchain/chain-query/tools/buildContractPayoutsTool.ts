@@ -345,7 +345,25 @@ async function readFirstSeen(toolkit: IChainQueryToolkit, session: ChainQuerySes
         WHERE ${query.where} AND asset_type IN ('trx', 'trc10')`;
     // Chain order: transactions in one block share a timestamp, so they are
     // ordered by their position in the block, never by tx_id, which is a hash.
-    const order = '(block_timestamp, transaction_index, source, event_index)';
+    // One call or internal transaction can carry TRX and a TRC-10 token at
+    // once, and those movements share a chain position, so the asset columns
+    // are what tell them apart. Without them the tie is settled by physical row
+    // order, which picks arbitrarily which asset the view reports. A token
+    // filter ranks ahead of them, so when one of the equally earliest payments
+    // is the filtered token, `argMin` keeps that row and the outer filter does
+    // not drop the recipient.
+    // `source` is a String column, so it orders alphabetically (contract,
+    // internal, log) rather than by execution order, and `event_index` counts
+    // within one source only. The only pair that leaves ambiguous is an
+    // internal transfer against a log, which does not matter here: a log row is
+    // always TRC-20, which cannot activate an account. `contract` before
+    // `internal` is the real order, because a call's attached value arrives
+    // before its code runs. So the TRX or TRC-10 payment this tuple reports is
+    // the earliest such movement in the recipient's earliest stored transaction.
+    const filteredFirst = query.params.assetType !== undefined
+        ? ', if(asset_type = {assetType:String} AND token = {token:String}, 0, 1)'
+        : '';
+    const order = `(block_timestamp, transaction_index, source, event_index${filteredFirst}, asset_type, token, direction)`;
     // A token filter narrows which payment counts as the first one, not only
     // which recipients are checked.
     const firstToken = query.params.assetType !== undefined

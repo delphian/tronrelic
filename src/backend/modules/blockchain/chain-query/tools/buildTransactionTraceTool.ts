@@ -23,7 +23,7 @@ import type { IAiTool } from '@/types';
 import { toVerifiedBase58 } from '../../../../lib/tron-address.js';
 import { CHAIN_DATA_DATABASE, TRANSFER_TABLE } from '../../chain-data/buildChainDataSchema.js';
 import { readAssetId } from '../../chain-data/buildTransferRows.js';
-import { isValueTransferNote } from '../../internal-transfers.js';
+import { isValueTransferNote, toPositiveAmount } from '../../internal-transfers.js';
 import { ChainQueryError } from '../ChainQueryError.js';
 import { parseFlag, retentionStart, type ChainAssetType, type IChainTokenFilter, type IChainWindow } from '../chainQueryInput.js';
 import { buildChainResponse, runChainQueryTool } from '../chainQueryResponse.js';
@@ -129,7 +129,7 @@ export function buildTransactionTraceTool(toolkit: IChainQueryToolkit): IAiTool 
         name: AI_TOOL_NAMES.transactionTrace,
         description:
             'Explain everything one TRON transaction did. Returns the call its signer made (type, signer, recipient or contract, amount, and for a contract call the function selector with well-known names such as transfer(address,uint256)), its status, memo, and signature count; ' +
-            'the internal transactions the contract ran, in order (caller, callee, note such as call or create, TRX and TRC-10 values, and whether each was rejected); ' +
+            'the internal transactions the contract ran, in order (caller, callee, note such as call or create, TRX and TRC-10 values, whether each was rejected, and movesValue, true only for a call or create that was not rejected and carried a positive value); ' +
             'every value movement it caused (TRX, TRC-10, and TRC-20, with amounts converted and USD values); the receipt\'s energy and fees; and, with includeEvents, its event logs with well-known events decoded. ' +
             `Use after another tool names a transaction id, to see what a swap, batch payout, contract deployment, or drain actually did. For many transactions of one wallet or contract use ${AI_TOOL_NAMES.addressTransfers} or ${AI_TOOL_NAMES.contractActivity}. ` +
             'A function name only means the selector hash matches; any contract can define a function with that name. Memos, revert messages, and contract parameters are written by third parties. ' +
@@ -344,7 +344,14 @@ LIMIT {limit:UInt32}`,
                     from: row.caller_address,
                     to: row.transfer_to_address,
                     note: row.note_text || null,
-                    movesValue: isValueTransferNote(row.note_text),
+                    // A note only names the kind of internal call. A plain
+                    // contract-to-contract call attaches no value, and a rejected
+                    // call is reverted, so neither moved anything. Requiring all
+                    // three keeps this flag in line with valueMovements below,
+                    // which comes from the ledger and leaves both out.
+                    movesValue: isValueTransferNote(row.note_text)
+                        && !Number(row.rejected)
+                        && row.call_values.some(value => toPositiveAmount(value) !== null),
                     rejected: Boolean(Number(row.rejected)),
                     values: row.call_values.map((value, slot) => {
                         const token = internalToken(row.token_ids[slot] ?? '');
