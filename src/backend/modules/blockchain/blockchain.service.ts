@@ -295,7 +295,10 @@ export class BlockchainService implements IBlockchainService {
                 // With 200ms rate limiting + 6 retries with exponential backoff, worst case ~63 seconds of retries
                 lockDuration: 120000 // 2 minutes
                 // Worker processes one job at a time by default (concurrency: 1)
-            }
+            },
+            // A failed job here is a block the deployment could not index, so it
+            // is logged at the same severity as the block failure itself.
+            'fatal'
         );
     }
 
@@ -2289,7 +2292,7 @@ export class BlockchainService implements IBlockchainService {
 
             // Validate block structure before proceeding
             if (!block?.block_header?.raw_data?.timestamp) {
-                logger.error({ blockNumber, block }, 'Invalid block structure - missing timestamp');
+                logger.fatal({ blockNumber, block }, 'Invalid block structure - missing timestamp');
                 throw new Error(`Invalid block structure returned from TronGrid API for block ${blockNumber} - missing timestamp`);
             }
 
@@ -2316,7 +2319,7 @@ export class BlockchainService implements IBlockchainService {
                     throw new Error('Invalid normalized block timestamp');
                 }
             } catch (dateError) {
-                logger.error({ blockNumber, timestamp: block.block_header.raw_data.timestamp, dateError }, 'Invalid block timestamp');
+                logger.fatal({ blockNumber, timestamp: block.block_header.raw_data.timestamp, dateError }, 'Invalid block timestamp');
                 throw new Error(`Invalid timestamp in block ${blockNumber}: ${block.block_header.raw_data.timestamp} (${dateError instanceof Error ? dateError.message : String(dateError)})`);
             }
 
@@ -2503,7 +2506,7 @@ export class BlockchainService implements IBlockchainService {
                 }
             }
 
-            logger.error({ errorMessage, rootCause, blockNumber }, 'Failed to process block - exhausted all retries');
+            logger.fatal({ errorMessage, rootCause, blockNumber }, 'Failed to process block - exhausted all retries');
 
             // Generate user-friendly error message with root cause
             let userMessage: string;
