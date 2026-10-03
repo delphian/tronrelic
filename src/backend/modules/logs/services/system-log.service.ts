@@ -1,4 +1,13 @@
-import type { ISystemLogService, ISystemLogQuery, ISystemLogPaginatedResponse, ISaveLogData, LogLevel } from '@/types';
+import type {
+    ISystemLogService,
+    ISystemLogQuery,
+    ISystemLogPaginatedResponse,
+    ISystemLogCursor,
+    ISystemLogCursorQuery,
+    ISystemLogCursorPage,
+    ISaveLogData,
+    LogLevel
+} from '@/types';
 import { shouldLog } from '@/types';
 import { SystemLog, ISystemLogDocument } from '../database/index.js';
 import type pino from 'pino';
@@ -867,20 +876,140 @@ export class SystemLogService implements ISystemLogService {
      * @returns Paginated logs response
      */
     public async getLogs(query: ISystemLogQuery = {}): Promise<ISystemLogPaginatedResponse> {
+        const { page = 1, limit = 50 } = query;
+        const filter = this.buildLogFilter(query);
+
+        // Calculate pagination
+        const skip = (page - 1) * limit;
+
+        // When filter is empty (all levels, no service/date/resolved filters), use
+        // estimatedDocumentCount() which reads from collection metadata instead of
+        // scanning the entire collection. This avoids a 1M+ document count on every poll.
+        const isUnfiltered = Object.keys(filter).length === 0;
+
+        const [logs, total] = await Promise.all([
+            SystemLog.find(filter)
+                .sort({ timestamp: -1 })
+                .skip(skip)
+                .limit(limit)
+                .lean()
+                .exec(),
+            isUnfiltered
+                ? SystemLog.estimatedDocumentCount().exec()
+                : SystemLog.countDocuments(filter).exec()
+        ]);
+
+        const totalPages = Math.ceil(total / limit);
+
+        return {
+            logs,
+            total,
+            page,
+            limit,
+            totalPages,
+            hasNextPage: page < totalPages,
+            hasPrevPage: page > 1
+        };
+    }
+
+    /**
+     * Fetch one page of system logs, newest first, starting after a cursor.
+     *
+     * Page-number paging skips a fixed number of rows, so entries written
+     * between two requests shift every later page and the caller sees
+     * duplicates or gaps. This method instead starts each page where the
+     * previous one stopped, using the timestamp of the last returned entry.
+     *
+     * Timestamps are not unique, so the cursor also carries the ids of the
+     * entries at that exact millisecond that were already returned. The next
+     * page asks for entries at or before the timestamp and excludes those ids.
+     * That keeps the query on the existing `{timestamp: -1, ...}` index. The
+     * usual `(timestamp, _id)` tie-break would need a new index, because no
+     * existing one returns entries in that order.
+     *
+     * It fetches one entry more than `limit` to learn whether another page
+     * exists, and skips the total count that `getLogs` performs.
+     *
+     * @param query - The same filters `getLogs` accepts, plus `before`, the
+     *                cursor the previous page returned. Omit `before` to start
+     *                from the newest entry.
+     * @returns The page of entries and the cursor for the next page, which is
+     *          `null` when no matching entries remain.
+     */
+    public async getLogsByCursor(query: ISystemLogCursorQuery = {}): Promise<ISystemLogCursorPage> {
+        const { limit = 50, before } = query;
+        const filter = this.buildLogFilter(query);
+
+        if (before && before.timestamp instanceof Date && !isNaN(before.timestamp.getTime())) {
+            // Narrow the upper time bound to the cursor, keeping a caller's
+            // endDate when it is already earlier.
+            const existingEnd: Date | undefined = filter.timestamp?.$lte;
+            const upperBound = existingEnd && existingEnd < before.timestamp ? existingEnd : before.timestamp;
+            filter.timestamp = { ...(filter.timestamp ?? {}), $lte: upperBound };
+
+            // Only well-formed ids reach the query, so a bad value cannot turn
+            // into a cast error or an operator.
+            const seenIds = before.seenIds.filter(
+                (id): id is string => typeof id === 'string' && /^[a-f0-9]{24}$/i.test(id)
+            );
+            if (seenIds.length > 0) {
+                filter._id = { $nin: seenIds };
+            }
+        }
+
+        const fetched = await SystemLog.find(filter)
+            .sort({ timestamp: -1 })
+            .limit(limit + 1)
+            .lean()
+            .exec();
+
+        const logs = fetched.slice(0, limit);
+        let next: ISystemLogCursor | null = null;
+
+        if (fetched.length > limit && logs.length > 0) {
+            const boundary = new Date(logs[logs.length - 1].timestamp);
+            const boundaryMs = boundary.getTime();
+            const idsAtBoundary = logs
+                .filter(log => new Date(log.timestamp).getTime() === boundaryMs)
+                .map(log => String(log._id));
+
+            // When this page stopped at the same millisecond as the previous
+            // cursor, the entries earlier pages returned at that millisecond
+            // must stay excluded too.
+            const carriedIds = before && before.timestamp.getTime() === boundaryMs ? before.seenIds : [];
+
+            next = {
+                timestamp: boundary,
+                seenIds: [...carriedIds, ...idsAtBoundary]
+            };
+        }
+
+        return { logs, next };
+    }
+
+    /**
+     * Turn caller-supplied log filters into a MongoDB filter object.
+     *
+     * Both query methods filter the same way, so the sanitization lives here
+     * once. Query parameters can originate from req.query, which Express can
+     * parse as objects (e.g. service[$gt]= becomes { $gt: '' }), so every value
+     * is coerced to its expected primitive type before it enters the filter, to
+     * prevent NoSQL injection.
+     *
+     * @param query - The level, service, resolved, and date filters from either
+     *                query method. Paging fields are ignored.
+     * @returns A filter ready for `SystemLog.find`, empty when nothing narrows
+     *          the result.
+     */
+    private buildLogFilter(query: Omit<ISystemLogQuery, 'page' | 'limit'>): any {
         const {
             levels,
             service,
             resolved,
             startDate,
-            endDate,
-            page = 1,
-            limit = 50
+            endDate
         } = query;
 
-        // Build MongoDB filter with input sanitization to prevent NoSQL injection.
-        // Query parameters originate from req.query which Express can parse as
-        // objects (e.g., service[$gt]= becomes { $gt: '' }). Coerce all values
-        // to their expected primitive types before including them in the filter.
         const filter: any = {};
 
         // Track whether the level filter is effectively "all levels" (no real filtering).
@@ -917,37 +1046,7 @@ export class SystemLogService implements ISystemLogService {
             }
         }
 
-        // Calculate pagination
-        const skip = (page - 1) * limit;
-
-        // When filter is empty (all levels, no service/date/resolved filters), use
-        // estimatedDocumentCount() which reads from collection metadata instead of
-        // scanning the entire collection. This avoids a 1M+ document count on every poll.
-        const isUnfiltered = Object.keys(filter).length === 0;
-
-        const [logs, total] = await Promise.all([
-            SystemLog.find(filter)
-                .sort({ timestamp: -1 })
-                .skip(skip)
-                .limit(limit)
-                .lean()
-                .exec(),
-            isUnfiltered
-                ? SystemLog.estimatedDocumentCount().exec()
-                : SystemLog.countDocuments(filter).exec()
-        ]);
-
-        const totalPages = Math.ceil(total / limit);
-
-        return {
-            logs,
-            total,
-            page,
-            limit,
-            totalPages,
-            hasNextPage: page < totalPages,
-            hasPrevPage: page > 1
-        };
+        return filter;
     }
 
     /**

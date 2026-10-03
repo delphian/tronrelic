@@ -37,7 +37,8 @@ export type {
 export { WIDGET_ICON_FORMAT } from './widget/index.js';
 export type { ISystemConfig, ISystemConfigService } from './system-config/index.js';
 export type { ISystemLogService, ISystemLogQuery, ISystemLogPaginatedResponse, ISaveLogData, LogLevel } from './system-log/index.js';
-export { LOG_LEVELS, shouldLog, type LogLevelName, LOG_MONITOR_LEVELS_SETTING } from './system-log/index.js';
+export type { ISystemLogCursor, ISystemLogCursorQuery, ISystemLogCursorPage } from './system-log/index.js';
+export { LOG_LEVELS, shouldLog, type LogLevelName, LOG_MONITOR_LEVELS_SETTING, extractLogErrorText } from './system-log/index.js';
 export type { ISchedulerService, CronJobHandler } from './scheduler/ISchedulerService.js';
 export type { ISchedulerJobOptions } from './scheduler/ISchedulerJobOptions.js';
 export type { ISchedulerJobStatus, ISchedulerMonitorProps } from './scheduler/ISchedulerJobStatus.js';
