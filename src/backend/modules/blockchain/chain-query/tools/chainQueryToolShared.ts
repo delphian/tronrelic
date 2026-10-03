@@ -31,6 +31,7 @@ export const AI_TOOL_NAMES = {
     contractCallGraph: 'blockchain-contract-call-graph',
     contractDeployments: 'blockchain-contract-deployments',
     transactionTrace: 'blockchain-transaction-trace',
+    getBlock: 'blockchain-get-block',
     networkStats: 'blockchain-network-stats',
     newAccounts: 'blockchain-new-accounts',
     findToken: 'blockchain-find-token'

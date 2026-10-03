@@ -37,15 +37,35 @@ function buildQueueConnection(): ConnectionOptions {
   return connection;
 }
 
+/**
+ * The levels a failed job may be logged at. A queue whose failures mean lost
+ * work, such as a block that was never indexed, needs `fatal` so an operator
+ * filtering for the most severe entries sees it.
+ */
+export type QueueFailureLogLevel = 'error' | 'fatal';
+
 export class QueueService<T = unknown> {
   public readonly queue: Queue<unknown, unknown, string>;
   private worker?: Worker<unknown, unknown, string>;
 
+  /**
+   * Create a BullMQ queue and, when a processor is given, a worker for it.
+   *
+   * @param name - Queue name; colons and spaces are replaced with hyphens.
+   * @param processor - Job handler. Without one, the instance only enqueues.
+   * @param queueOptions - Overrides for the BullMQ queue, such as job retention.
+   * @param workerOptions - Overrides for the BullMQ worker, such as lock duration.
+   * @param failureLogLevel - How severely a failed job is logged. Each queue
+   *                          chooses, because the cost of a failure differs:
+   *                          a failed block-sync job is a missing block, while
+   *                          a failed AI hook prompt is not.
+   */
   constructor(
     name: string,
     processor?: Processor<T, unknown, string>,
     queueOptions?: Partial<QueueOptions>,
-    workerOptions?: Partial<WorkerOptions>
+    workerOptions?: Partial<WorkerOptions>,
+    private readonly failureLogLevel: QueueFailureLogLevel = 'error'
   ) {
     const queuePrefix = env.REDIS_NAMESPACE ?? 'tronrelic';
     const queueName = name.replace(/[:\s]+/g, '-');
@@ -77,6 +97,17 @@ export class QueueService<T = unknown> {
     return this.queue.add(name, data as unknown, options);
   }
 
+  /**
+   * Record a finished job in the system log, so job outcomes are visible on
+   * `/system/logs` without querying Redis.
+   *
+   * Completions are logged at debug to keep them out of the stored log.
+   * Failures are logged at the queue's `failureLogLevel`.
+   *
+   * @param job - The job BullMQ reported; undefined when BullMQ has lost it.
+   * @param status - Whether the job completed or failed.
+   * @param error - The error a failed job threw.
+   */
   private logJob(job: Job<unknown, unknown, string> | undefined, status: 'completed' | 'failed', error?: Error) {
     if (!job) {
       return;
@@ -85,7 +116,7 @@ export class QueueService<T = unknown> {
     if (status === 'completed') {
       logger.debug(base, 'Queue job completed');
     } else {
-      logger.error({ ...base, error }, 'Queue job failed');
+      logger[this.failureLogLevel]({ ...base, error }, 'Queue job failed');
     }
   }
 }

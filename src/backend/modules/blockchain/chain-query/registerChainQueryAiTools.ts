@@ -4,7 +4,7 @@
  * The tools let an AI agent walk the ClickHouse copy of the chain — a wallet's
  * profile, its transfers and counterparties, multi-hop fund flows, permission
  * changes, resource delegation, account activations, one transaction's full
- * trace, token activity, contract activity, payouts, call graph, and
+ * trace, one block's contents, token activity, contract activity, payouts, call graph, and
  * deployments, and network statistics — under the `ai-agent` account's
  * server-enforced limits. Every query is written in this codebase; no tool
  * runs SQL the model wrote. The registry is published by the AI tools module during its `run()`
@@ -26,6 +26,7 @@ import { buildContractDeploymentsTool } from './tools/buildContractDeploymentsTo
 import { buildContractEventsTool } from './tools/buildContractEventsTool.js';
 import { buildContractPayoutsTool } from './tools/buildContractPayoutsTool.js';
 import { buildFindTokenTool } from './tools/buildFindTokenTool.js';
+import { buildGetBlockTool } from './tools/buildGetBlockTool.js';
 import { buildNetworkStatsTool } from './tools/buildNetworkStatsTool.js';
 import { buildNewAccountsTool } from './tools/buildNewAccountsTool.js';
 import { buildPermissionChangesTool } from './tools/buildPermissionChangesTool.js';
@@ -40,7 +41,8 @@ import { CHAIN_QUERY_PROVIDER_ID } from './tools/chainQueryToolShared.js';
  *
  * @param toolkit - The shared chain query dependencies.
  * @returns The tools, in the order the admin page lists them: wallet tools,
- *          then the single-transaction trace, then token, contract, and network tools.
+ *          then the single-transaction trace and single-block view, then token,
+ *          contract, and network tools.
  */
 export function buildChainQueryTools(toolkit: IChainQueryToolkit): IAiTool[] {
     return [
@@ -52,6 +54,7 @@ export function buildChainQueryTools(toolkit: IChainQueryToolkit): IAiTool[] {
         buildResourceDelegationsTool(toolkit),
         buildNewAccountsTool(toolkit),
         buildTransactionTraceTool(toolkit),
+        buildGetBlockTool(toolkit),
         buildFindTokenTool(toolkit),
         buildTokenActivityTool(toolkit),
         buildContractActivityTool(toolkit),
