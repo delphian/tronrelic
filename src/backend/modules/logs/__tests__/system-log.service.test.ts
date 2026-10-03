@@ -1309,6 +1309,129 @@ describe('SystemLogService - MongoDB Operations', () => {
         });
     });
 
+    describe('getLogsByCursor', () => {
+        /**
+         * Build a chainable SystemLog.find stub resolving to the given rows,
+         * so each test controls exactly what the query returns.
+         *
+         * @param rows - The documents the stubbed query resolves with.
+         * @returns The chain object, so a test can assert on sort and limit.
+         */
+        function stubFind(rows: any[]) {
+            const chain = {
+                sort: vi.fn().mockReturnThis(),
+                limit: vi.fn().mockReturnThis(),
+                lean: vi.fn().mockReturnThis(),
+                exec: vi.fn().mockResolvedValue(rows)
+            };
+            (SystemLog.find as any) = vi.fn().mockReturnValue(chain);
+            (SystemLog.countDocuments as any) = vi.fn();
+            (SystemLog.estimatedDocumentCount as any) = vi.fn();
+            return chain;
+        }
+
+        /**
+         * Make a log row with a 24-hex id derived from a single character,
+         * which keeps the fixtures short and readable.
+         *
+         * @param idChar - Character repeated to form the ObjectId string.
+         * @param iso - The row's timestamp.
+         * @returns A lean log document shape.
+         */
+        function row(idChar: string, iso: string) {
+            return { _id: idChar.repeat(24), level: 'error', message: idChar, timestamp: new Date(iso) };
+        }
+
+        it('fetches one extra row to detect more pages and never counts', async () => {
+            const chain = stubFind([
+                row('a', '2026-06-09T03:00:00Z'),
+                row('b', '2026-06-09T02:00:00Z'),
+                row('c', '2026-06-09T01:00:00Z')
+            ]);
+
+            const result = await service.getLogsByCursor({ limit: 2 });
+
+            expect(SystemLog.find).toHaveBeenCalledWith({});
+            expect(chain.sort).toHaveBeenCalledWith({ timestamp: -1 });
+            expect(chain.limit).toHaveBeenCalledWith(3);
+            expect(result.logs.map(log => log.message)).toEqual(['a', 'b']);
+            expect(result.next).toEqual({
+                timestamp: new Date('2026-06-09T02:00:00Z'),
+                seenIds: ['b'.repeat(24)]
+            });
+            expect(SystemLog.countDocuments).not.toHaveBeenCalled();
+            expect(SystemLog.estimatedDocumentCount).not.toHaveBeenCalled();
+        });
+
+        it('returns a null cursor on the last page', async () => {
+            stubFind([row('a', '2026-06-09T03:00:00Z')]);
+
+            const result = await service.getLogsByCursor({ limit: 2 });
+
+            expect(result.logs).toHaveLength(1);
+            expect(result.next).toBeNull();
+        });
+
+        it('records every returned id sharing the boundary millisecond', async () => {
+            stubFind([
+                row('a', '2026-06-09T02:00:00Z'),
+                row('b', '2026-06-09T01:00:00Z'),
+                row('c', '2026-06-09T01:00:00Z'),
+                row('d', '2026-06-09T01:00:00Z')
+            ]);
+
+            const result = await service.getLogsByCursor({ limit: 3 });
+
+            expect(result.next?.seenIds).toEqual(['b'.repeat(24), 'c'.repeat(24)]);
+        });
+
+        it('bounds the next query by the cursor and excludes ids already seen', async () => {
+            stubFind([]);
+            const cursorTime = new Date('2026-06-09T02:00:00Z');
+
+            await service.getLogsByCursor({
+                levels: ['error'],
+                before: { timestamp: cursorTime, seenIds: ['b'.repeat(24), 'not-an-id'] }
+            });
+
+            expect(SystemLog.find).toHaveBeenCalledWith({
+                level: { $in: ['error'] },
+                timestamp: { $lte: cursorTime },
+                _id: { $nin: ['b'.repeat(24)] }
+            });
+        });
+
+        it('keeps an endDate that is earlier than the cursor', async () => {
+            stubFind([]);
+            const startDate = new Date('2026-06-01T00:00:00Z');
+            const endDate = new Date('2026-06-05T00:00:00Z');
+
+            await service.getLogsByCursor({
+                startDate,
+                endDate,
+                before: { timestamp: new Date('2026-06-09T00:00:00Z'), seenIds: [] }
+            });
+
+            expect(SystemLog.find).toHaveBeenCalledWith({
+                timestamp: { $gte: startDate, $lte: endDate }
+            });
+        });
+
+        it('carries seen ids forward when a page ends on the cursor millisecond', async () => {
+            const sameMs = '2026-06-09T01:00:00Z';
+            stubFind([row('c', sameMs), row('d', sameMs), row('e', sameMs)]);
+
+            const result = await service.getLogsByCursor({
+                limit: 2,
+                before: { timestamp: new Date(sameMs), seenIds: ['a'.repeat(24), 'b'.repeat(24)] }
+            });
+
+            expect(result.next?.seenIds).toEqual([
+                'a'.repeat(24), 'b'.repeat(24), 'c'.repeat(24), 'd'.repeat(24)
+            ]);
+        });
+    });
+
     /**
      * Test: getStatistics should return aggregated counts.
      *

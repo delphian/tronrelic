@@ -4,7 +4,9 @@
  * @file ai-tools.test.ts
  *
  * Tests for the logs module's AI tool registrations: parameter
- * validation, default/capped pagination, list-view context truncation,
+ * validation, default/capped page size, cursor round-tripping and
+ * rejection of forged cursors, the context-free list view with its short
+ * error summary,
  * and the omission of the deprecated `resolved` fields from every tool
  * surface.
  */
@@ -34,15 +36,7 @@ function createMockLogger(): any {
  */
 function createMockLogService() {
     return {
-        getLogs: vi.fn().mockResolvedValue({
-            logs: [],
-            total: 0,
-            page: 1,
-            limit: 20,
-            totalPages: 0,
-            hasNextPage: false,
-            hasPrevPage: false
-        }),
+        getLogsByCursor: vi.fn().mockResolvedValue({ logs: [], next: null }),
         getLogById: vi.fn().mockResolvedValue(null),
         getStatistics: vi.fn().mockResolvedValue({
             total: 12,
@@ -80,26 +74,55 @@ describe('logs AI tools', () => {
     });
 
     describe(AI_TOOL_NAMES.queryLogs, () => {
-        it('should default to error and warn levels with default pagination', async () => {
+        it('should default to error and warn levels, the default page size, and no cursor', async () => {
             await tools[AI_TOOL_NAMES.queryLogs].handler({});
 
-            expect(logService.getLogs).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    levels: ['error', 'warn'],
-                    page: 1,
-                    limit: 20
-                })
-            );
+            const query = logService.getLogsByCursor.mock.calls[0][0];
+            expect(query).toEqual(expect.objectContaining({ levels: ['error', 'warn'], limit: 20 }));
+            expect(query.before).toBeUndefined();
             // The deprecated resolved filter must never be sent
-            expect(logService.getLogs.mock.calls[0][0]).not.toHaveProperty('resolved');
+            expect(query).not.toHaveProperty('resolved');
         });
 
         it('should cap limit at the maximum', async () => {
-            await tools[AI_TOOL_NAMES.queryLogs].handler({ limit: 500 });
+            await tools[AI_TOOL_NAMES.queryLogs].handler({ limit: 5000 });
 
-            expect(logService.getLogs).toHaveBeenCalledWith(
-                expect.objectContaining({ limit: 50 })
+            expect(logService.getLogsByCursor).toHaveBeenCalledWith(
+                expect.objectContaining({ limit: 500 })
             );
+        });
+
+        it('should hand back an opaque cursor that round-trips into the next query', async () => {
+            const next = { timestamp: new Date('2026-06-09T01:00:00.000Z'), seenIds: ['a'.repeat(24)] };
+            logService.getLogsByCursor.mockResolvedValueOnce({ logs: [], next });
+
+            const first: any = await tools[AI_TOOL_NAMES.queryLogs].handler({});
+            expect(first.hasMore).toBe(true);
+            expect(typeof first.nextCursor).toBe('string');
+
+            await tools[AI_TOOL_NAMES.queryLogs].handler({ cursor: first.nextCursor });
+            expect(logService.getLogsByCursor.mock.calls[1][0].before).toEqual(next);
+        });
+
+        it('should report no further pages with a null cursor', async () => {
+            const result: any = await tools[AI_TOOL_NAMES.queryLogs].handler({});
+
+            expect(result.nextCursor).toBeNull();
+            expect(result.hasMore).toBe(false);
+            expect(result).not.toHaveProperty('total');
+        });
+
+        it('should reject a cursor it did not produce', async () => {
+            const notJson = Buffer.from('not json').toString('base64url');
+            const badId = Buffer.from(JSON.stringify({ t: '2026-06-09T01:00:00Z', ids: ['nope'] })).toString('base64url');
+            const badDate = Buffer.from(JSON.stringify({ t: 'later', ids: [] })).toString('base64url');
+
+            for (const cursor of ['has spaces!', notJson, badId, badDate, 42]) {
+                await expect(
+                    tools[AI_TOOL_NAMES.queryLogs].handler({ cursor })
+                ).rejects.toThrow('not a valid cursor');
+            }
+            expect(logService.getLogsByCursor).not.toHaveBeenCalled();
         });
 
         it('should reject invalid levels', async () => {
@@ -120,35 +143,55 @@ describe('logs AI tools', () => {
                 endTime: '2026-06-09T12:00:00Z'
             });
 
-            const query = logService.getLogs.mock.calls[0][0];
+            const query = logService.getLogsByCursor.mock.calls[0][0];
             expect(query.startDate).toEqual(new Date('2026-06-09T00:00:00Z'));
             expect(query.endDate).toEqual(new Date('2026-06-09T12:00:00Z'));
         });
 
-        it('should omit resolved fields and truncate long context in list view', async () => {
-            logService.getLogs.mockResolvedValue({
+        it('should omit context and resolved fields, and summarize the error, in list view', async () => {
+            logService.getLogsByCursor.mockResolvedValue({
                 logs: [{
                     _id: 'aaaaaaaaaaaaaaaaaaaaaaaa',
                     timestamp: new Date('2026-06-09T01:00:00Z'),
                     level: 'error',
                     message: 'boom',
                     service: 'blockchain',
-                    context: { stack: 'x'.repeat(2000) },
+                    context: { error: { message: 'e'.repeat(400), stack: 'x'.repeat(2000) } },
                     resolved: false,
                     resolvedBy: null
                 }],
-                total: 1, page: 1, limit: 20, totalPages: 1,
-                hasNextPage: false, hasPrevPage: false
+                next: null
             });
 
             const result: any = await tools[AI_TOOL_NAMES.queryLogs].handler({});
             const entry = result.logs[0];
 
+            expect(entry).not.toHaveProperty('context');
             expect(entry).not.toHaveProperty('resolved');
             expect(entry).not.toHaveProperty('resolvedBy');
-            expect(typeof entry.context).toBe('string');
-            expect(entry.context).toContain('[truncated');
-            expect(result).not.toHaveProperty('hasPrevPage');
+            expect(entry.message).toBe('boom');
+            expect(entry.error).toBe(`${'e'.repeat(150)}… [truncated]`);
+            expect(result.note).toContain(AI_TOOL_NAMES.getLog);
+        });
+
+        it('should shorten long messages and report a null error when the context has none', async () => {
+            logService.getLogsByCursor.mockResolvedValue({
+                logs: [{
+                    _id: 'aaaaaaaaaaaaaaaaaaaaaaaa',
+                    timestamp: new Date('2026-06-09T01:00:00Z'),
+                    level: 'warn',
+                    message: 'm'.repeat(1000),
+                    service: 'blockchain',
+                    context: { slug: 'sohu' }
+                }],
+                next: null
+            });
+
+            const result: any = await tools[AI_TOOL_NAMES.queryLogs].handler({});
+            const entry = result.logs[0];
+
+            expect(entry.message).toBe(`${'m'.repeat(300)}… [truncated]`);
+            expect(entry.error).toBeNull();
         });
     });
 

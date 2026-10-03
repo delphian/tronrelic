@@ -126,7 +126,7 @@ const tool: IAiTool = {
 |---|---|---|
 | `tronrelic-get-transaction` (blockchain) | read / internal | Input regex; global rate limiter (`TransactionToolGuard`) + usage stats |
 | `blockchain-*` chain query tools | read / internal / untrusted | Per-run quota key from the handler `context`; a response envelope with cost, coverage, truncation, and notes; errors written for the model. See [system-chain-query-tools.md](./system-chain-query-tools.md) |
-| logs `tronrelic-query-system-logs` | read / secret | Result + context caps; truncate-and-point-to-detail |
+| logs `tronrelic-query-system-logs` | read / secret | Cursor paging; list view drops the bulky field and points to a detail tool for it |
 | `propose-social-post` (core) | external / irreversible / forces-curator-review | `curationTypeId` binding; `publishesToSinks` fan-out to curator-selected sinks |
 | `trp-image-gen` | external / spends money | Per-call forensic history; sanitized vs raw error split |
 

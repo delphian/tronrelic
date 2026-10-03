@@ -87,9 +87,11 @@ All under `/api/admin/system/logs`, all require `X-Admin-Token` header.
 
 | Tool | Backed By | Parameters |
 |------|-----------|------------|
-| `tronrelic-query-system-logs` | `getLogs()` | `levels` (default `["error","warn"]`), `service`, `startTime`/`endTime` (ISO 8601), `page`, `limit` (default 20, cap 50). List-view context truncated at 500 chars |
+| `tronrelic-query-system-logs` | `getLogsByCursor()` | `levels` (default `["error","warn"]`), `service`, `startTime`/`endTime` (ISO 8601), `cursor`, `limit` (default 20, cap 500). Returns `{ logs, nextCursor, hasMore, note }`, no total. List entries omit `context`, carry `error` instead (from `extractLogErrorText` in `@/types`, cut at 150 chars), and cut `message` at 300; `note` points the agent at the get tool |
 | `tronrelic-get-system-log` | `getLogById()` | `id` (required, 24-hex). Full untruncated context |
 | `tronrelic-get-log-statistics` | `getStatistics()` | None. Total + per-level + per-service counts; doubles as `service` value discovery |
+
+**Cursor paging.** The query tool pages by cursor, not page number, so logs written between calls never shift later pages into duplicates or gaps. `getLogsByCursor()` sorts `timestamp` descending, fetches `limit + 1` to detect another page, and returns `next` as `ISystemLogCursor` (`timestamp` of the last returned entry plus `seenIds`, the returned ids at that exact millisecond, carried forward when consecutive pages stop on the same millisecond). The next query is `timestamp <= cursor` with `_id $nin seenIds`. That stays on the existing `{timestamp: -1, level: 1, resolved: 1}` index; a `(timestamp, _id)` tie-break sort would need a new index. The tool hands the cursor to the model as base64url JSON and re-validates it on the way back (length, encoding, date, at most 1,000 well-formed ids). No total count is computed, which saves a `countDocuments` scan per call. The page-number `getLogs()` still backs the REST endpoint and `SystemLogsMonitor`.
 
 ## Service Patterns
 

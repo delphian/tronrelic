@@ -8,6 +8,7 @@
  */
 
 import type { LogLevel } from '@/types';
+import { extractLogErrorText } from '@/types';
 import type { BadgeTone } from '../../../components/ui/Badge';
 import type { SystemLog } from '../types';
 
@@ -77,20 +78,13 @@ export function splitLogTimestamp(timestamp: string): { date: string; time: stri
  * Pull the error text out of an entry's context, when it carries one, so the
  * table can show why something failed without the operator opening the entry.
  *
- * Log calls pass the failure as `{ error }`, either as a string or as a
- * serialized error object with a `message`. Anything else yields nothing, and
- * the row shows only the message.
+ * The rule lives in `extractLogErrorText` from `@/types`, which the log query
+ * AI tool also uses, so the table and the tool agree on an entry's error.
+ * When it yields nothing, the row shows only the message.
  *
  * @param log - The log entry
  * @returns The error text, or null when the context has none
  */
 export function contextErrorText(log: SystemLog): string | null {
-    const error: unknown = log.context?.error;
-    let text: string | null = null;
-    if (typeof error === 'string' && error.trim().length > 0) {
-        text = error;
-    } else if (error && typeof error === 'object' && typeof (error as { message?: unknown }).message === 'string') {
-        text = (error as { message: string }).message;
-    }
-    return text;
+    return extractLogErrorText(log.context);
 }
