@@ -130,7 +130,7 @@ export function buildGetBlockTool(toolkit: IChainQueryToolkit): IAiTool {
             'Describe one stored TRON block by its number. Returns its header (blockId, parentHash, txTrieRoot, time, producer address and witness id, version), ' +
             'transactionCount as the block reports it beside the number of transactions actually stored, whether its receipts were fetched and how many are stored, ' +
             'totals (internal transactions and how many were rejected, energy used, bandwidth used, TRX burned for fees), transaction counts by contract type and status, ' +
-            'any ingest gap records for the height (written when TronRelic failed to store the block), and a page of its transactions in chain order with index, txId, type, status, signer, recipient or contract, ' +
+            'any ingest gap records for the height (written when TronRelic failed to store the block; on a found block, one means the block may be stored only in part), and a page of its transactions in chain order with index, txId, type, status, signer, recipient or contract, ' +
             'and, when receipts exist, each transaction\'s receipt result, energy, fee, and internal transaction count. ' +
             `Use to inspect a block another answer named, to check whether a height was stored completely, or to see who produced it. For everything one transaction did, use ${AI_TOOL_NAMES.transactionTrace}; ` +
             `for activity across many blocks, use ${AI_TOOL_NAMES.networkStats}. Event logs are not counted here, because reading them for one block scans its whole day; ${AI_TOOL_NAMES.transactionTrace} with includeEvents reads one transaction's. ` +
@@ -281,7 +281,7 @@ WHERE timestamp >= {from:DateTime64(3, 'UTC')} AND timestamp < {to:DateTime64(3,
  * @param session - The call's session, so every read is charged to the run's quota and deadline.
  * @param blockNumber - The block's height, which leads the sort key of every table read here.
  * @param block - The header row, whose time names the one partition the other reads open.
- * @param gaps - Ingest gap records for the height. A stored block can still have one, from a failed write before a later one succeeded.
+ * @param gaps - Ingest gap records for the height. A stored block can still have one, because a batch that wrote some tables and then gave up on another records a gap and is never retried, so the block may be stored only in part.
  * @param limit - How many transactions to list; 0 lists none.
  * @param afterIndex - The transaction index the page starts after, -1 for the first page.
  * @returns The response.
@@ -373,7 +373,7 @@ LIMIT {limit:UInt32}`,
         ...(stored === reported ? [] : [`The block reports ${reported} transactions but ${stored} are stored. The missing ones are absent from every chain query tool.`]),
         ...(receiptsFetched ? [] : ['This block was stored without receipts, so its energy, fees, internal transactions, and each transaction\'s receipt are unknown here, not zero.']),
         ...(receiptsFetched && receipts.length !== stored ? [`Receipts are stored for ${receipts.length} of ${stored} transactions, so the totals are lower bounds.`] : []),
-        ...(gaps.length > 0 ? ['ingestGaps lists failed attempts to store this block. The block is stored now, so a later attempt succeeded.'] : [])
+        ...(gaps.length > 0 ? ['ingestGaps lists failed attempts to store this block. The header row is stored, but a write that stored some of the block\'s tables and then gave up on another records a gap and is never retried, so this block may be stored only in part. Treat storedTransactions, storedReceipts, byType, totals, and each transaction\'s receipt and internalTransactions as lower bounds, and do not read a zero among them as proof the block held none.'] : [])
     ];
 
     return buildChainResponse(
