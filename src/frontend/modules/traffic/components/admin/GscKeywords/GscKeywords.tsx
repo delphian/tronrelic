@@ -24,9 +24,11 @@
  * query anonymization); the pairs table is limited to non-anonymized queries
  * by the GSC API itself. The header surfaces the fetch status (configured /
  * last fetch) so a stalled `gsc:fetch` job is visible, and the window picker
- * shows the actual delay-shifted dates covered.
+ * shows the actual dates covered.
  *
- * Data is delayed ~3 days by GSC's ingestion lag (handled server-side).
+ * Google delivers each day several days late. The backend ends every picker
+ * window on the newest day Google has delivered, and this panel formats days
+ * in UTC so the labels match the calendar day Google reported.
  * Mirrors the TrafficDashboard pattern: client-only, session-cookie auth,
  * fetch-on-mount, per-panel loading/error state.
  */
@@ -61,6 +63,25 @@ const PERIOD_OPTIONS: ReadonlyArray<{ id: GscWindowId; label: string; hours: num
 
 /** Days of daily buckets for the trend charts. */
 const TREND_DAYS = 30;
+
+/**
+ * Format a GSC calendar day for display.
+ *
+ * Google reports search data per calendar day, and the backend stores each
+ * day as midnight UTC. Formatting in the browser's own time zone turns
+ * midnight UTC on 9/30 into the evening of 9/29 for anyone west of UTC, so
+ * every label would read one day early. Pinning the formatter to UTC shows
+ * the day Google actually reported. Calling it during render is safe here
+ * because this panel fetches on mount and only formats data that arrived in
+ * the browser, so the server never renders a date to mismatch against.
+ *
+ * @param value - A day as a Date or ISO string; the charts pass a Date and
+ *   the coverage label passes the backend's window bounds.
+ * @returns The day as a localized date string, such as "9/30/2026".
+ */
+function formatGscDay(value: Date | string): string {
+    return new Date(value).toLocaleDateString(undefined, { timeZone: 'UTC' });
+}
 
 /**
  * Resolve a CSS variable to its computed value with an SSR-safe fallback.
@@ -202,8 +223,9 @@ export function GscKeywords() {
                     <h2 className={styles.title}>Search keywords</h2>
                     <p className={styles.subtitle}>
                         Google Search Console queries that surfaced this site,
-                        refreshed daily by the <code>gsc:fetch</code> job. GSC
-                        delays its data ~3 days; windows are shifted to match.
+                        refreshed daily by the <code>gsc:fetch</code> job. Google
+                        delivers each day several days late, so every window
+                        ends on the newest day Google has delivered.
                         Keyword rows exclude queries Google anonymizes, so the
                         charts use true daily totals fetched separately.
                         Configure credentials in the Settings tab.
@@ -235,9 +257,7 @@ export function GscKeywords() {
                     />
                     {pairsWindow && (
                         <p className={styles.meta}>
-                            Covers <ClientTime date={pairsWindow.start} format="date" />
-                            {' – '}
-                            <ClientTime date={pairsWindow.end} format="date" />
+                            Covers {formatGscDay(pairsWindow.start)} – {formatGscDay(pairsWindow.end)}
                         </p>
                     )}
                 </div>
@@ -257,6 +277,7 @@ export function GscKeywords() {
                         <LineChart
                             series={clicksSeries}
                             height={220}
+                            xAxisFormatter={formatGscDay}
                             yAxisFormatter={(v) => numberFormatter.format(v)}
                             emptyLabel="No GSC data yet — configure credentials in Settings."
                         />
@@ -276,6 +297,7 @@ export function GscKeywords() {
                         <LineChart
                             series={impressionsSeries}
                             height={220}
+                            xAxisFormatter={formatGscDay}
                             yAxisFormatter={(v) => numberFormatter.format(v)}
                             emptyLabel="No GSC data yet — configure credentials in Settings."
                         />

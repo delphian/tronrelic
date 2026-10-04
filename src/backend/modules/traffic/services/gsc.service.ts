@@ -111,7 +111,7 @@ export interface IGscDailyTotalDocument {
 export interface IGscKeywordsPeriodResult {
     /** Inclusive window start (ISO-8601 UTC). */
     windowStart: string;
-    /** Inclusive window end (ISO-8601 UTC) — always ~3 days behind now. */
+    /** Inclusive window end (ISO-8601 UTC) — the end of the newest day Google has delivered. */
     windowEnd: string;
     /** Aggregated keywords sorted by clicks descending. */
     keywords: IGscKeyword[];
@@ -168,7 +168,7 @@ export interface IGscPage {
 export interface IGscPagesPeriodResult {
     /** Inclusive window start (ISO-8601 UTC). */
     windowStart: string;
-    /** Inclusive window end (ISO-8601 UTC) — always ~3 days behind now. */
+    /** Inclusive window end (ISO-8601 UTC) — the end of the newest day Google has delivered. */
     windowEnd: string;
     /** Aggregated pages sorted by clicks descending. */
     pages: IGscPage[];
@@ -210,7 +210,7 @@ export interface IGscKeywordPage {
 export interface IGscKeywordPagesPeriodResult {
     /** Inclusive window start (ISO-8601 UTC). */
     windowStart: string;
-    /** Inclusive window end (ISO-8601 UTC) — always ~3 days behind now. */
+    /** Inclusive window end (ISO-8601 UTC) — the end of the newest day Google has delivered. */
     windowEnd: string;
     /** Aggregated pairs sorted by clicks descending. */
     pairs: IGscKeywordPage[];
@@ -249,6 +249,9 @@ const GSC_DEFAULT_LOOKBACK_DAYS = 30;
 
 /** Maximum pagination pages to prevent runaway fetches (100 × 5000 = 500k rows). */
 const GSC_MAX_PAGES = 100;
+
+/** Milliseconds in one day, used to step period windows in whole UTC days. */
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Google Search Console integration service.
@@ -839,28 +842,55 @@ export class GscService {
     }
 
     /**
+     * Resolve the whole UTC days a period read covers, ending on the newest
+     * day Google has actually delivered.
+     *
+     * Google finalizes a day on its own schedule, often more than
+     * GSC_DATA_DELAY_DAYS after the fact. A window that ends at a fixed
+     * "now minus 3 days" therefore often lands on days Google has not
+     * returned yet, and the "24h" view shows nothing even though data
+     * exists one day earlier. Anchoring on the newest row in the date-only
+     * totals collection makes "24h" mean "the latest day available",
+     * "7d" the latest 7 available days, and so on. The totals collection
+     * is the anchor because the same `gsc:fetch` run writes it alongside
+     * the keyword and page rows, and it holds exactly one row per
+     * delivered day. When it is empty (nothing fetched yet) the window
+     * falls back to the fixed delay so callers still get sensible bounds.
+     *
+     * @param periodHours - Lookback period the caller asked for; rounded up
+     *   to whole days because GSC data is daily.
+     * @returns Inclusive window bounds: `since` is midnight UTC on the first
+     *   day, `end` is the last millisecond of the newest delivered day.
+     */
+    private async resolvePeriodWindow(periodHours: number): Promise<{ since: Date; end: Date }> {
+        const latest = await this.totalsCollection.findOne({}, { sort: { date: -1 }, projection: { date: 1 } });
+        const now = new Date();
+        const lastDay = latest?.date
+            ?? new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - GSC_DATA_DELAY_DAYS));
+        const days = Math.max(1, Math.ceil(periodHours / 24));
+        const since = new Date(lastDay.getTime() - (days - 1) * DAY_MS);
+        const end = new Date(lastDay.getTime() + DAY_MS - 1);
+        return { since, end };
+    }
+
+    /**
      * Get aggregated keyword data for a given time period.
      *
      * Aggregates stored GSC query rows by keyword, summing clicks and
      * impressions, and averaging CTR and position. Results are sorted
      * by clicks descending.
      *
-     * The window is shifted back by the GSC ingestion delay, so "last 7
-     * days" covers the 7 days ending ~3 days ago — the returned
-     * `windowStart`/`windowEnd` carry the actual dates so the UI can show
-     * true coverage instead of an off-by-three-days period label.
+     * The window ends on the newest day Google has delivered (see
+     * {@link resolvePeriodWindow}), so "last 7 days" covers the 7 latest
+     * available days — the returned `windowStart`/`windowEnd` carry the
+     * actual dates so the UI can show true coverage.
      *
      * @param periodHours - Lookback period in hours
      * @param limit - Maximum keywords to return (default: 10)
-     * @returns The delay-shifted window and its aggregated keywords
+     * @returns The covered window and its aggregated keywords
      */
     async getKeywordsForPeriod(periodHours: number, limit: number = 10): Promise<IGscKeywordsPeriodResult> {
-        // Shift window by the GSC ingestion delay so the period aligns
-        // with available data (e.g. "last 7 days" queries the 7 days
-        // ending at now - GSC_DATA_DELAY_DAYS, not ending at now).
-        const delayMs = GSC_DATA_DELAY_DAYS * 24 * 60 * 60 * 1000;
-        const end = new Date(Date.now() - delayMs);
-        const since = new Date(end.getTime() - (periodHours * 60 * 60 * 1000));
+        const { since, end } = await this.resolvePeriodWindow(periodHours);
 
         const results = await this.collection.aggregate<{
             _id: string;
@@ -910,18 +940,16 @@ export class GscService {
      * that drew no click still appear (with zero clicks) — the page-level view
      * of "surfaced in search, clicked or not".
      *
-     * The window is shifted back by the GSC ingestion delay identically to the
-     * keyword read, and `windowStart`/`windowEnd` carry the true dates so the
-     * UI can label coverage honestly.
+     * The window ends on the newest day Google has delivered, identically to
+     * the keyword read, and `windowStart`/`windowEnd` carry the true dates so
+     * the UI can label coverage honestly.
      *
      * @param periodHours - Lookback period in hours.
      * @param limit - Maximum pages to return (default: 10).
-     * @returns The delay-shifted window and its aggregated pages.
+     * @returns The covered window and its aggregated pages.
      */
     async getPagesForPeriod(periodHours: number, limit: number = 10): Promise<IGscPagesPeriodResult> {
-        const delayMs = GSC_DATA_DELAY_DAYS * 24 * 60 * 60 * 1000;
-        const end = new Date(Date.now() - delayMs);
-        const since = new Date(end.getTime() - (periodHours * 60 * 60 * 1000));
+        const { since, end } = await this.resolvePeriodWindow(periodHours);
 
         const results = await this.pageTotalsCollection.aggregate<{
             _id: string;
@@ -975,21 +1003,19 @@ export class GscService {
      * Reads the query-dimensioned collection, so it inherits GSC's low-volume
      * query anonymization exactly as the keyword panel does: anonymized queries
      * never produced a row here, so their clicks are absent and will not
-     * reconcile with the anonymization-immune page totals. The window is
-     * delay-shifted identically to the sibling reads and the true dates are
-     * returned for honest labelling.
+     * reconcile with the anonymization-immune page totals. The window ends on
+     * the newest delivered day, identically to the sibling reads, and the true
+     * dates are returned for honest labelling.
      *
      * @param periodHours - Lookback period in hours.
      * @param limit - Maximum pairs to return; omit (or pass 0) for all pairs.
      *   This view is meant to be exhaustive — it accounts for every
      *   keyword→page combination in the window — so callers default to
      *   uncapped rather than a top-N slice.
-     * @returns The delay-shifted window and its aggregated keyword→page pairs.
+     * @returns The covered window and its aggregated keyword→page pairs.
      */
     async getKeywordPagePairsForPeriod(periodHours: number, limit?: number): Promise<IGscKeywordPagesPeriodResult> {
-        const delayMs = GSC_DATA_DELAY_DAYS * 24 * 60 * 60 * 1000;
-        const end = new Date(Date.now() - delayMs);
-        const since = new Date(end.getTime() - (periodHours * 60 * 60 * 1000));
+        const { since, end } = await this.resolvePeriodWindow(periodHours);
 
         const results = await this.collection.aggregate<{
             _id: { query: string; page: string };
