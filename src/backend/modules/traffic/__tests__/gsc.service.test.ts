@@ -4,7 +4,8 @@
  * GscService unit tests.
  *
  * Covers the read-side behaviors that keep the /system/traffic SEO tab
- * honest: the delay-shifted keyword window (and its returned bounds),
+ * honest: period windows anchored on the newest delivered day (and their
+ * returned bounds),
  * zero-filled daily buckets, the true-daily-totals override that corrects
  * for GSC's anonymized-query undercount, and the totals-collection indexes.
  * The network fetch path (googleapis) is intentionally untested here —
@@ -41,7 +42,9 @@ function createMockLogger(): ISystemLogService {
 /**
  * In-memory Mongo collection double covering the surface GscService's
  * read paths touch: createIndex (spied), aggregate().toArray() served
- * from `aggregateRows`, find().toArray() served from `findRows`, and
+ * from `aggregateRows`, find().toArray() served from `findRows`,
+ * findOne() returning the `findRows` entry with the newest `date` (the
+ * only findOne the service issues is the newest-day lookup), and
  * bulkWrite (spied).
  */
 interface IFakeCollection {
@@ -51,6 +54,7 @@ interface IFakeCollection {
     findRows: unknown[];
     aggregate(pipeline: unknown): { toArray(): Promise<unknown[]> };
     find(filter: unknown): { toArray(): Promise<unknown[]> };
+    findOne(filter: unknown, options?: unknown): Promise<unknown>;
 }
 
 /**
@@ -69,9 +73,28 @@ function createFakeCollection(): IFakeCollection {
         },
         find() {
             return { toArray: async () => fake.findRows };
+        },
+        async findOne() {
+            const rows = fake.findRows as Array<{ date: Date }>;
+            const newest = rows.reduce<{ date: Date } | null>(
+                (best, row) => (!best || row.date > best.date ? row : best),
+                null
+            );
+            return newest;
         }
     };
     return fake;
+}
+
+/**
+ * Compute the newest day the service falls back to when no daily totals
+ * are stored — midnight UTC, DELAY_DAYS before today.
+ *
+ * @returns The fallback anchor day as a UTC-midnight timestamp in ms.
+ */
+function fallbackAnchorDay(): number {
+    const now = new Date();
+    return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - DELAY_DAYS);
 }
 
 /**
@@ -168,40 +191,47 @@ describe('GscService', () => {
     });
 
     describe('getKeywordsForPeriod()', () => {
-        it('returns the delay-shifted window bounds alongside the keywords', async () => {
-            // The UI labels windows "7d"; without the returned bounds an
-            // operator cannot see that "7d" ends three days ago.
+        it('ends the window on the newest delivered day, not a fixed delay', async () => {
+            // Google often finalizes a day later than the fixed delay assumes.
+            // "24h" must mean the latest day Google returned, or the view sits
+            // on an undelivered day and shows nothing.
+            const { service, totals } = setup();
+            totals.findRows = [
+                { date: new Date('2026-09-28T00:00:00.000Z'), clicks: 1, impressions: 50, fetchedAt: new Date() },
+                { date: new Date('2026-09-29T00:00:00.000Z'), clicks: 2, impressions: 39, fetchedAt: new Date() }
+            ];
+
+            const result = await service.getKeywordsForPeriod(24, 10);
+
+            expect(result.windowStart).toBe('2026-09-29T00:00:00.000Z');
+            expect(result.windowEnd).toBe('2026-09-29T23:59:59.999Z');
+        });
+
+        it('covers whole days and falls back to the fixed delay with no totals', async () => {
+            // Before the first fetch there is no newest day to anchor on, so
+            // the window must still resolve to sensible whole-day bounds.
             const { service } = setup();
-            const periodHours = 168;
+            const anchor = fallbackAnchorDay();
 
-            const before = Date.now();
-            const result = await service.getKeywordsForPeriod(periodHours, 10);
-            const after = Date.now();
+            const result = await service.getKeywordsForPeriod(168, 10);
 
-            const end = new Date(result.windowEnd).getTime();
-            const start = new Date(result.windowStart).getTime();
-            expect(end).toBeGreaterThanOrEqual(before - DELAY_DAYS * DAY_MS);
-            expect(end).toBeLessThanOrEqual(after - DELAY_DAYS * DAY_MS);
-            expect(end - start).toBe(periodHours * 60 * 60 * 1000);
+            expect(new Date(result.windowStart).getTime()).toBe(anchor - 6 * DAY_MS);
+            expect(new Date(result.windowEnd).getTime()).toBe(anchor + DAY_MS - 1);
             expect(result.keywords).toEqual([]);
         });
     });
 
     describe('getPagesForPeriod()', () => {
-        it('returns the delay-shifted window bounds alongside the pages', async () => {
-            // Mirrors the keyword window so the page table can share the picker.
-            const { service } = setup();
-            const periodHours = 168;
+        it('shares the keyword window so the page table can share the picker', async () => {
+            const { service, totals } = setup();
+            totals.findRows = [
+                { date: new Date('2026-09-29T00:00:00.000Z'), clicks: 2, impressions: 39, fetchedAt: new Date() }
+            ];
 
-            const before = Date.now();
-            const result = await service.getPagesForPeriod(periodHours, 10);
-            const after = Date.now();
+            const result = await service.getPagesForPeriod(168, 10);
 
-            const end = new Date(result.windowEnd).getTime();
-            const start = new Date(result.windowStart).getTime();
-            expect(end).toBeGreaterThanOrEqual(before - DELAY_DAYS * DAY_MS);
-            expect(end).toBeLessThanOrEqual(after - DELAY_DAYS * DAY_MS);
-            expect(end - start).toBe(periodHours * 60 * 60 * 1000);
+            expect(result.windowStart).toBe('2026-09-23T00:00:00.000Z');
+            expect(result.windowEnd).toBe('2026-09-29T23:59:59.999Z');
             expect(result.pages).toEqual([]);
         });
 
