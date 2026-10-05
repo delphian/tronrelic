@@ -377,6 +377,8 @@ export class BlockCommitter implements IBlockCommitSink {
      * chain data must describe blocks that were actually committed, so its height
      * matches every other surface. The sink returns at once and does its own
      * writing, so ClickHouse being slow or down cannot hold up the next block.
+     * A hand-off that throws loses the block from ClickHouse with no gap
+     * recorded, and nothing fetches it again, so it is logged at `fatal`.
      *
      * @param prepared - The committed block, read only for its chain data rows.
      */
@@ -385,7 +387,10 @@ export class BlockCommitter implements IBlockCommitSink {
             try {
                 this.deps.chainData.submit(prepared.chainData);
             } catch (error) {
-                logger.error({ error, blockNumber: prepared.blockNumber }, 'Failed to hand a committed block to the chain data writer');
+                logger.fatal(
+                    { error, blockNumber: prepared.blockNumber },
+                    'Failed to hand a committed block to the chain data writer: this block is missing from ClickHouse and from _ingest_gap'
+                );
             }
         }
     }
