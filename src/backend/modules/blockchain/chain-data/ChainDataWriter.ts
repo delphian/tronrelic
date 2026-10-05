@@ -459,7 +459,8 @@ export class ChainDataWriter implements IChainDataSink {
      * method adds only what the writer needs on top: each failed attempt that
      * will be retried is logged as a warning, and when every attempt has failed
      * the failure is logged at `fatal` with the consequence the caller
-     * describes, because data is now missing from ClickHouse, and returned
+     * describes, because data is now missing from ClickHouse, unless the caller
+     * says the call is tried again later. Either way the failure is returned
      * rather than thrown so the write loop can record gaps and carry on. After
      * shutdown begins, a failure is not retried, so the shutdown timeout is not
      * spent waiting between attempts.
@@ -470,12 +471,15 @@ export class ChainDataWriter implements IChainDataSink {
      *                  table and the blocks involved.
      * @param call - The ClickHouse call to make. Called once per attempt.
      * @param triedAgainLater - True when the writer runs this call again on a
-     *                          later pass, as schema creation does once its
-     *                          retry delay has passed. Nothing is finally lost
-     *                          at that point, and the caller logs the one
-     *                          `fatal` naming the blocks it had to give up on,
-     *                          so this call's own failure is a warning instead
-     *                          of a second `fatal` for the same loss.
+     *                          later pass: schema creation once its retry
+     *                          delay has passed, and the `_ingest_state` read
+     *                          and write on the next batch. This call's failure
+     *                          loses no block by itself. Either nothing is lost
+     *                          at all, as with progress, or the caller logs the
+     *                          one `fatal` naming the blocks it gave up on, as
+     *                          with schema creation. So the failure is a
+     *                          warning, and `fatal` stays reserved for a block
+     *                          that is gone for good.
      * @returns Whether some attempt succeeded, with the last error when none did.
      */
     private async withRetry(
@@ -624,7 +628,10 @@ export class ChainDataWriter implements IChainDataSink {
                     block_number: highest.blockNumber,
                     block_timestamp: highest.blockTimestamp,
                     ...stamp
-                }], INSERT_OPTIONS)
+                }], INSERT_OPTIONS),
+                // Every block's rows are already stored, and the next batch
+                // writes the progress row again, so nothing is lost: a warning.
+                true
             );
             if (outcome.succeeded) {
                 this.recordedProgress = highest.blockNumber;
@@ -655,7 +662,10 @@ export class ChainDataWriter implements IChainDataSink {
                     );
                     const stored = Number(rows[0]?.block_number ?? 0);
                     this.recordedProgress = Number.isFinite(stored) && stored > 0 ? stored : null;
-                }
+                },
+                // The next batch reads it again, and the blocks themselves were
+                // written, so nothing is lost: a warning.
+                true
             );
             this.progressLoaded = outcome.succeeded;
         }

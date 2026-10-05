@@ -7,7 +7,8 @@
  * quiet one. `_ingest_state` must never claim a block that was only partly
  * written, and must never move backwards, even across a restart. A brief
  * ClickHouse failure must be ridden out by retrying, and a failure that
- * outlasts every retry must be logged at `fatal`. And a stalled ClickHouse must
+ * loses a block for good must be logged at `fatal`, while one the writer tries
+ * again later is only a warning. And a stalled ClickHouse must
  * cost memory up to a bound and no more.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -485,10 +486,13 @@ describe('ChainDataWriter', () => {
         await writer.drain();
         expect(insertsInto(fake, 'tron._ingest_state')).toHaveLength(0);
         expect(insertsInto(fake, 'tron._ingest_gap')).toHaveLength(0);
-        expect(loggerMock.fatal).toHaveBeenCalledWith(
+        // The block was written and the read is tried again on the next
+        // batch, so nothing is lost and the failure is only a warning.
+        expect(loggerMock.warn).toHaveBeenCalledWith(
             expect.objectContaining({ table: 'tron._ingest_state' }),
             expect.stringContaining('progress is not recorded')
         );
+        expect(loggerMock.fatal).not.toHaveBeenCalled();
 
         fake.setFailQuery(false);
         writer.submit(buildRows(302));
@@ -506,6 +510,13 @@ describe('ChainDataWriter', () => {
         await writer.drain();
 
         expect(insertsInto(fake, 'tron._ingest_gap')).toHaveLength(0);
+        // No block is lost and the next batch writes progress again, so the
+        // failure is a warning rather than a fatal.
+        expect(loggerMock.warn).toHaveBeenCalledWith(
+            expect.objectContaining({ table: 'tron._ingest_state' }),
+            expect.stringContaining('recorded progress is behind')
+        );
+        expect(loggerMock.fatal).not.toHaveBeenCalled();
     });
 
     it('stops retrying once shutdown has begun, so a failing block becomes a gap within the timeout', async () => {
