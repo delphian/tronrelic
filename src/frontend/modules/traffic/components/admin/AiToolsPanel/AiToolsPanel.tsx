@@ -20,13 +20,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { ShieldAlert } from 'lucide-react';
-import { Card } from '../../../../../components/ui/Card';
+import { Panel } from '../../../../../components/ui/Panel';
 import { Badge } from '../../../../../components/ui/Badge';
 import { Switch } from '../../../../../components/ui/Switch';
 import { Skeleton } from '../../../../../components/ui/Skeleton';
-import { Stack } from '../../../../../components/layout';
 import { adminGetTrafficAiTools, adminSetTrafficAiToolEnabled } from '../../../api/client';
 import type { IAiToolSummary } from '../../../api/client';
+import { AboutDetails } from '../AboutDetails';
 import styles from './AiToolsPanel.module.scss';
 
 /** Badge tone per side-effect class, so risk reads at a glance. */
@@ -68,7 +68,15 @@ function capabilityBadges(capability: IAiToolSummary['capability']): Array<{ lab
 }
 
 /**
- * Render the traffic module's AI tool cards with enable/disable switches.
+ * Render the traffic module's AI tools as one panel with enable/disable
+ * switches.
+ *
+ * The tools used to render as one card each, which put seven framed boxes and
+ * every tool's JSON examples on screen at once. They are now hairline-separated
+ * entries flowing into two columns on a wide page, with the input examples
+ * folded under each description until the operator asks for them.
+ *
+ * @returns The AI tools panel.
  */
 export function AiToolsPanel() {
     const [tools, setTools] = useState<IAiToolSummary[] | null>(null);
@@ -125,73 +133,74 @@ export function AiToolsPanel() {
         }
     }, []);
 
+    const enabledCount = tools?.filter(tool => tool.enabled).length ?? 0;
+    const meta = tools === null
+        ? 'Tools the AI assistant may call against traffic analytics'
+        : `${tools.length} tools, ${enabledCount} enabled. Each switch is the same setting the AI tool registry controls.`;
+
     return (
-        <Stack gap="md">
-            <p className="text-muted">
-                Tools the AI assistant may call against traffic analytics. The switch is the same enabled state the
-                central <Link className="link" href="/system/ai-tools">AI tool registry</Link> governs — disabling a tool here
-                removes it from every AI query. Per-visitor clickstreams are deliberately not exposed to any tool.
+        <Panel
+            title="AI tools"
+            meta={meta}
+            actions={<Link className="link" href="/system/ai-tools">Open the registry</Link>}
+        >
+            <p className={styles.intro}>
+                Disabling a tool here removes it from every AI query. Per-visitor clickstreams are
+                deliberately not exposed to any tool.
             </p>
 
             {error !== null && (
-                <Card>
-                    <div className={styles.error_row}>
-                        <ShieldAlert size={18} aria-hidden="true" />
-                        <span>{error}</span>
-                    </div>
-                </Card>
+                <div className={styles.error_row} role="alert">
+                    <ShieldAlert size={16} aria-hidden="true" />
+                    <span>{error}</span>
+                </div>
             )}
 
-            {tools === null && error === null && (
-                <Card><Skeleton style={{ height: '4em' }} /></Card>
-            )}
+            {tools === null && error === null && <Skeleton style={{ height: '4em' }} />}
 
             {tools !== null && tools.length === 0 && (
-                <Card>
-                    <p className="text-muted">
-                        No traffic AI tools are registered. The core AI tools module may be unavailable.
-                    </p>
-                </Card>
+                <p className={styles.intro}>
+                    No traffic AI tools are registered. The core AI tools module may be unavailable.
+                </p>
             )}
 
-            {tools?.map(tool => (
-                <Card key={tool.name}>
-                    <Stack gap="sm">
-                        <div className={styles.tool_header}>
-                            <div className={styles.tool_identity}>
-                                <code className={styles.tool_name}>{tool.name}</code>
-                                <span className={styles.tool_badges}>
-                                    {capabilityBadges(tool.capability).map(badge => (
-                                        <Badge key={badge.label} tone={badge.tone}>{badge.label}</Badge>
-                                    ))}
-                                </span>
-                            </div>
-                            <Switch
-                                on={tool.enabled}
-                                onChange={next => void toggleTool(tool.name, next)}
-                                disabled={busyTools.has(tool.name)}
-                                aria-label={`Toggle the ${tool.name} AI tool`}
-                            />
-                        </div>
-                        <div className={styles.tool_section}>
-                            <span className={styles.tool_section_label}>Description prompt</span>
-                            <p className={styles.tool_description}>{tool.description}</p>
-                        </div>
-                        {(tool.inputExamples?.length ?? 0) > 0 && (
-                            <div className={styles.tool_section}>
-                                <span className={styles.tool_section_label}>Input examples</span>
-                                <div className={styles.tool_examples}>
-                                    {tool.inputExamples?.map((example, index) => (
-                                        <pre key={index} className={styles.tool_example}>
-                                            {JSON.stringify(example, null, 2)}
-                                        </pre>
-                                    ))}
+            {tools !== null && tools.length > 0 && (
+                <ul className={styles.tools}>
+                    {tools.map(tool => (
+                        <li key={tool.name} className={styles.tool}>
+                            <div className={styles.tool_header}>
+                                <div className={styles.tool_identity}>
+                                    <code className={styles.tool_name}>{tool.name}</code>
+                                    <span className={styles.tool_badges}>
+                                        {capabilityBadges(tool.capability).map(badge => (
+                                            <Badge key={badge.label} size="xs" tone={badge.tone}>{badge.label}</Badge>
+                                        ))}
+                                    </span>
                                 </div>
+                                <Switch
+                                    size="sm"
+                                    on={tool.enabled}
+                                    onChange={next => void toggleTool(tool.name, next)}
+                                    disabled={busyTools.has(tool.name)}
+                                    aria-label={`Toggle the ${tool.name} AI tool`}
+                                />
                             </div>
-                        )}
-                    </Stack>
-                </Card>
-            ))}
-        </Stack>
+                            <p className={styles.tool_description}>{tool.description}</p>
+                            {(tool.inputExamples?.length ?? 0) > 0 && (
+                                <AboutDetails summary={`Input examples (${tool.inputExamples?.length})`}>
+                                    <div className={styles.tool_examples}>
+                                        {tool.inputExamples?.map((example, index) => (
+                                            <pre key={index} className={styles.tool_example}>
+                                                {JSON.stringify(example, null, 2)}
+                                            </pre>
+                                        ))}
+                                    </div>
+                                </AboutDetails>
+                            )}
+                        </li>
+                    ))}
+                </ul>
+            )}
+        </Panel>
     );
 }

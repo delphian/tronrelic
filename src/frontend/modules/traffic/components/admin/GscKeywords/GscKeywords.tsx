@@ -7,9 +7,9 @@
  * position rows in Mongo since the GSC integration shipped, but until this
  * panel the only admin surface was the credentials form. This panel renders:
  *
- * - **Clicks / impressions trend** — two stacked line charts from the daily
- *   buckets (separate charts because impressions dwarf clicks by orders of
- *   magnitude and would flatten a shared axis).
+ * - **Clicks / impressions trend** — two line charts side by side from the
+ *   daily buckets (separate charts because impressions dwarf clicks by orders
+ *   of magnitude and would flatten a shared axis).
  * - **Top pages table** — the landing pages search surfaced over a selectable
  *   window, backed by the [page, date] totals. Because that request omits the
  *   `query` dimension it escapes GSC's query anonymization, so it accounts for
@@ -34,16 +34,18 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, FileText, Link2, TrendingUp } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { AlertTriangle } from 'lucide-react';
 import { LineChart } from '../../../../../features/charts/components/LineChart';
 import type { ChartSeries } from '../../../../../features/charts/components/LineChart';
-import { Stack, Grid } from '../../../../../components/layout';
-import { Card } from '../../../../../components/ui/Card';
+import { Panel } from '../../../../../components/ui/Panel';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { SegmentedControl } from '../../../../../components/ui/SegmentedControl';
 import { adminGetGscPages, adminGetGscKeywordPages, adminGetGscKeywordsByDay, adminGetGscStatus } from '../../../api';
 import type { IGscPage, IGscKeywordPage, IGscDailyKeywords, IGscStatus } from '../../../api';
+import { TabToolbar } from '../TabToolbar';
+import { PanelBody } from '../PanelBody';
 import styles from './GscKeywords.module.scss';
 
 /** Selectable lookback window ids, which double as the button labels. */
@@ -216,187 +218,177 @@ export function GscKeywords() {
 
     const numberFormatter = useMemo(() => new Intl.NumberFormat(), []);
 
+    // Fetch health and the window actually covered, stated once in the toolbar.
+    // A warning replaces the freshness line, because a stalled or unconfigured
+    // fetch is the one fact that changes how every figure below should be read.
+    let statusLine: ReactNode = null;
+    if (status && !status.configured) {
+        statusLine = (
+            <span className={styles.meta_warning}>
+                <AlertTriangle size={14} aria-hidden="true" />
+                Search Console is not configured, so no data is being fetched.
+            </span>
+        );
+    } else if (status?.configured && !status.lastFetch) {
+        statusLine = (
+            <span className={styles.meta_warning}>
+                <AlertTriangle size={14} aria-hidden="true" />
+                The daily gsc:fetch job has not stored data yet.
+            </span>
+        );
+    } else if (status?.configured && status.lastFetch) {
+        statusLine = <>Fetched <ClientTime date={status.lastFetch} format="relative" /></>;
+    }
+    const coverage = pairsWindow
+        ? `covers ${formatGscDay(pairsWindow.start)} – ${formatGscDay(pairsWindow.end)}`
+        : null;
+
     return (
-        <Stack gap="lg" className={styles.container}>
-            <header className={styles.header}>
-                <div>
-                    <h2 className={styles.title}>Search keywords</h2>
-                    <p className={styles.subtitle}>
-                        Google Search Console queries that surfaced this site,
-                        refreshed daily by the <code>gsc:fetch</code> job. Google
-                        delivers each day several days late, so every window
-                        ends on the newest day Google has delivered.
-                        Keyword rows exclude queries Google anonymizes, so the
-                        charts use true daily totals fetched separately.
-                        Configure credentials in the Settings tab.
-                    </p>
-                    {status && !status.configured && (
-                        <p className={styles.meta_warning}>
-                            <AlertTriangle size={14} aria-hidden="true" />
-                            GSC credentials are not configured — no data is being fetched.
-                        </p>
-                    )}
-                    {status?.configured && !status.lastFetch && (
-                        <p className={styles.meta_warning}>
-                            <AlertTriangle size={14} aria-hidden="true" />
-                            The daily <code>gsc:fetch</code> job has not stored data yet.
-                        </p>
-                    )}
-                    {status?.configured && status.lastFetch && (
-                        <p className={styles.meta}>
-                            Last fetched <ClientTime date={status.lastFetch} format="relative" />.
-                        </p>
-                    )}
-                </div>
-                <div className={styles.picker_stack}>
+        <section className={styles.container}>
+            <TabToolbar
+                title="Search keywords"
+                meta={(
+                    <>
+                        {statusLine}
+                        {statusLine && coverage ? ', ' : null}
+                        {coverage}
+                    </>
+                )}
+                actions={(
                     <SegmentedControl
                         label="Lookback window"
                         value={windowId}
                         options={PERIOD_OPTIONS}
                         onChange={setWindowId}
                     />
-                    {pairsWindow && (
-                        <p className={styles.meta}>
-                            Covers {formatGscDay(pairsWindow.start)} – {formatGscDay(pairsWindow.end)}
+                )}
+                aboutSummary="Where this data comes from"
+                about={(
+                    <>
+                        <p>
+                            Google Search Console queries that surfaced this site, refreshed daily by
+                            the <code>gsc:fetch</code> job. Google delivers each day several days late,
+                            so every window ends on the newest day Google has delivered.
                         </p>
-                    )}
-                </div>
-            </header>
+                        <p>
+                            Keyword rows exclude queries Google anonymizes, so the charts and the top
+                            pages table use totals fetched without the query dimension, and the
+                            keyword-to-page pairs will not fully reconcile with them. Configure
+                            credentials in the Settings tab.
+                        </p>
+                    </>
+                )}
+            />
 
-            <Grid columns="responsive" gap="md">
-                <Card padding="md" className={styles.panel}>
-                    <div className={styles.panel_header}>
-                        <TrendingUp size={18} aria-hidden="true" />
-                        <h3 className={styles.panel_title}>Clicks — {TREND_DAYS}d</h3>
-                    </div>
-                    {dailyError ? (
-                        <p className={styles.panel_error}>{dailyError}</p>
-                    ) : dailyLoading ? (
-                        <p className={styles.panel_loading}>Loading…</p>
-                    ) : (
+            <div className={styles.band}>
+                <Panel title="Clicks" titleAs="h3" meta={`Last ${TREND_DAYS} days`}>
+                    <PanelBody loading={dailyLoading} error={dailyError}>
                         <LineChart
                             series={clicksSeries}
-                            height={220}
+                            height={180}
                             xAxisFormatter={formatGscDay}
                             yAxisFormatter={(v) => numberFormatter.format(v)}
                             emptyLabel="No GSC data yet — configure credentials in Settings."
                         />
-                    )}
-                </Card>
+                    </PanelBody>
+                </Panel>
 
-                <Card padding="md" className={styles.panel}>
-                    <div className={styles.panel_header}>
-                        <TrendingUp size={18} aria-hidden="true" />
-                        <h3 className={styles.panel_title}>Impressions — {TREND_DAYS}d</h3>
-                    </div>
-                    {dailyError ? (
-                        <p className={styles.panel_error}>{dailyError}</p>
-                    ) : dailyLoading ? (
-                        <p className={styles.panel_loading}>Loading…</p>
-                    ) : (
+                <Panel title="Impressions" titleAs="h3" meta={`Last ${TREND_DAYS} days`}>
+                    <PanelBody loading={dailyLoading} error={dailyError}>
                         <LineChart
                             series={impressionsSeries}
-                            height={220}
+                            height={180}
                             xAxisFormatter={formatGscDay}
                             yAxisFormatter={(v) => numberFormatter.format(v)}
                             emptyLabel="No GSC data yet — configure credentials in Settings."
                         />
+                    </PanelBody>
+                </Panel>
+            </div>
+
+            <div className={`${styles.band} ${styles.band__wide}`}>
+                <Panel
+                    title="Top pages"
+                    titleAs="h3"
+                    meta={(
+                        <span title="Page totals fetched without the query dimension, so they escape Google's query anonymization and include pages shown with zero clicks.">
+                            All clicks, including anonymized queries
+                        </span>
                     )}
-                </Card>
-            </Grid>
-
-            <Card padding="md" className={styles.panel}>
-                <div className={styles.panel_header}>
-                    <FileText size={18} aria-hidden="true" />
-                    <h3 className={styles.panel_title}>Top pages</h3>
-                </div>
-                {pagesError ? (
-                    <p className={styles.panel_error}>{pagesError}</p>
-                ) : pagesLoading ? (
-                    <p className={styles.panel_loading}>Loading…</p>
-                ) : !pages || pages.length === 0 ? (
-                    <p className={styles.panel_empty}>
-                        No page data in this window yet. Page totals populate on
-                        the next <code>gsc:fetch</code> run after this feature
-                        ships — trigger a refresh in the Settings tab to backfill
-                        the current window immediately.
-                    </p>
-                ) : (
-                    <Table flush>
-                        <Thead>
-                            <Tr>
-                                <Th scope="col">page</Th>
-                                <Th scope="col" className={styles.numeric_col}>clicks</Th>
-                                <Th scope="col" className={styles.numeric_col}>impressions</Th>
-                                <Th scope="col" className={styles.numeric_col}>CTR</Th>
-                                <Th scope="col" className={styles.numeric_col}>position</Th>
-                            </Tr>
-                        </Thead>
-                        <Tbody>
-                            {pages.map(pg => (
-                                <Tr key={pg.page}>
-                                    <Td className={styles.keyword_cell}>{pg.page}</Td>
-                                    <Td className={styles.numeric}>{numberFormatter.format(pg.clicks)}</Td>
-                                    <Td className={styles.numeric}>{numberFormatter.format(pg.impressions)}</Td>
-                                    <Td className={styles.numeric}>{(pg.ctr * 100).toFixed(1)}%</Td>
-                                    <Td className={styles.numeric}>{pg.position.toFixed(1)}</Td>
+                >
+                    <PanelBody
+                        loading={pagesLoading}
+                        error={pagesError}
+                        empty={!pages || pages.length === 0}
+                        emptyMessage="No page data in this window yet. Trigger a refresh in the Settings tab to backfill the current window."
+                    >
+                        <Table variant="compact" flush className={styles.dense_table}>
+                            <Thead>
+                                <Tr>
+                                    <Th scope="col" width="expand">Page</Th>
+                                    <Th scope="col" width="shrink" numeric>Clicks</Th>
+                                    <Th scope="col" width="shrink" numeric>Impr.</Th>
+                                    <Th scope="col" width="shrink" numeric>CTR</Th>
+                                    <Th scope="col" width="shrink" numeric>Pos.</Th>
                                 </Tr>
-                            ))}
-                        </Tbody>
-                    </Table>
-                )}
-            </Card>
+                            </Thead>
+                            <Tbody>
+                                {(pages ?? []).map(pg => (
+                                    <Tr key={pg.page}>
+                                        <Td className={styles.wrap_cell}>{pg.page}</Td>
+                                        <Td numeric>{numberFormatter.format(pg.clicks)}</Td>
+                                        <Td numeric muted>{numberFormatter.format(pg.impressions)}</Td>
+                                        <Td numeric muted>{(pg.ctr * 100).toFixed(1)}%</Td>
+                                        <Td numeric muted>{pg.position.toFixed(1)}</Td>
+                                    </Tr>
+                                ))}
+                            </Tbody>
+                        </Table>
+                    </PanelBody>
+                </Panel>
 
-            <Card padding="md" className={styles.panel}>
-                <div className={styles.panel_header}>
-                    <Link2 size={18} aria-hidden="true" />
-                    <h3 className={styles.panel_title}>Keyword → page pairs</h3>
-                </div>
-                <p className={styles.panel_note}>
-                    Which page each keyword surfaced — every keyword→page
-                    combination in the window, uncapped. Drawn from the raw
-                    query cache, so it carries GSC's low-volume-query
-                    anonymization; clicks here won&apos;t fully reconcile with
-                    the anonymization-immune top pages totals.
-                </p>
-                {pairsError ? (
-                    <p className={styles.panel_error}>{pairsError}</p>
-                ) : pairsLoading ? (
-                    <p className={styles.panel_loading}>Loading…</p>
-                ) : !pairs || pairs.length === 0 ? (
-                    <p className={styles.panel_empty}>
-                        No keyword→page pairs in this window — Google omits
-                        anonymized low-volume queries from the underlying rows,
-                        so quiet windows can be empty even when the top pages
-                        table shows clicks. Check the fetch status above.
-                    </p>
-                ) : (
-                    <Table flush>
-                        <Thead>
-                            <Tr>
-                                <Th scope="col">keyword</Th>
-                                <Th scope="col">page</Th>
-                                <Th scope="col" className={styles.numeric_col}>clicks</Th>
-                                <Th scope="col" className={styles.numeric_col}>impressions</Th>
-                                <Th scope="col" className={styles.numeric_col}>CTR</Th>
-                                <Th scope="col" className={styles.numeric_col}>position</Th>
-                            </Tr>
-                        </Thead>
-                        <Tbody>
-                            {pairs.map(pair => (
-                                <Tr key={`${pair.keyword} ${pair.page}`}>
-                                    <Td className={styles.keyword_cell}>{pair.keyword}</Td>
-                                    <Td className={styles.keyword_cell}>{pair.page}</Td>
-                                    <Td className={styles.numeric}>{numberFormatter.format(pair.clicks)}</Td>
-                                    <Td className={styles.numeric}>{numberFormatter.format(pair.impressions)}</Td>
-                                    <Td className={styles.numeric}>{(pair.ctr * 100).toFixed(1)}%</Td>
-                                    <Td className={styles.numeric}>{pair.position.toFixed(1)}</Td>
+                <Panel
+                    title="Keyword → page pairs"
+                    titleAs="h3"
+                    meta={(
+                        <span title="Every keyword→page combination in the window, uncapped. Drawn from the raw query cache, so it carries Google's low-volume-query anonymization; clicks here won't fully reconcile with the top pages totals.">
+                            Every pair, anonymized queries excluded
+                        </span>
+                    )}
+                >
+                    <PanelBody
+                        loading={pairsLoading}
+                        error={pairsError}
+                        empty={!pairs || pairs.length === 0}
+                        emptyMessage="No keyword→page pairs in this window. Google omits anonymized low-volume queries, so a quiet window can be empty even when top pages shows clicks."
+                    >
+                        <Table variant="compact" flush stickyHeader className={styles.dense_table}>
+                            <Thead>
+                                <Tr>
+                                    <Th scope="col">Keyword</Th>
+                                    <Th scope="col">Page</Th>
+                                    <Th scope="col" width="shrink" numeric>Clicks</Th>
+                                    <Th scope="col" width="shrink" numeric>Impr.</Th>
+                                    <Th scope="col" width="shrink" numeric>CTR</Th>
+                                    <Th scope="col" width="shrink" numeric>Pos.</Th>
                                 </Tr>
-                            ))}
-                        </Tbody>
-                    </Table>
-                )}
-            </Card>
-        </Stack>
+                            </Thead>
+                            <Tbody>
+                                {(pairs ?? []).map(pair => (
+                                    <Tr key={`${pair.keyword} ${pair.page}`}>
+                                        <Td className={styles.wrap_cell}>{pair.keyword}</Td>
+                                        <Td className={styles.wrap_cell} muted>{pair.page}</Td>
+                                        <Td numeric>{numberFormatter.format(pair.clicks)}</Td>
+                                        <Td numeric muted>{numberFormatter.format(pair.impressions)}</Td>
+                                        <Td numeric muted>{(pair.ctr * 100).toFixed(1)}%</Td>
+                                        <Td numeric muted>{pair.position.toFixed(1)}</Td>
+                                    </Tr>
+                                ))}
+                            </Tbody>
+                        </Table>
+                    </PanelBody>
+                </Panel>
+            </div>
+        </section>
     );
 }

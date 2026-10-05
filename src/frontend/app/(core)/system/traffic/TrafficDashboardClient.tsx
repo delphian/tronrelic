@@ -26,6 +26,7 @@ import { useEffect, useMemo, useState, useCallback } from 'react';
 import { Radio } from 'lucide-react';
 import type { MenuNodeSerialized } from '@/shared';
 import { MenuNavClient } from '../../../../components/layout/MenuNav/MenuNavClient';
+import { SegmentedControl } from '../../../../components/ui/SegmentedControl';
 import {
     AnalyticsDashboard,
     VisitorsExplorer,
@@ -53,6 +54,26 @@ const SUBMENU_NAMESPACE = 'traffic';
 
 /** Tabs governed by the global period picker. */
 const GOVERNED_TABS: ReadonlySet<TrafficTab> = new Set(['analytics', 'visitors']);
+
+/**
+ * Bot-filter segments for the governed tabs. A two-segment control rather than
+ * a switch because both readings are legitimate views of the same data, and the
+ * shared `SegmentedControl` supplies the pressed state and arrow-key traversal
+ * the former hand-rolled button pair lacked. Each title carries the filter's
+ * exact semantics, since "exclude known bots" is not "humans only".
+ */
+const BOT_FILTER_OPTIONS: ReadonlyArray<{ id: 'exclude' | 'include'; label: string; title: string }> = [
+    {
+        id: 'exclude',
+        label: 'Exclude known bots',
+        title: 'Counts only visitors that loaded a page (ran JavaScript) and were not classified as bots. Cookieless bots that never run JS are already excluded from every visitor number; unclassified rows are kept, so JS-running bots that spoof a browser may remain.'
+    },
+    {
+        id: 'include',
+        label: 'Include bots',
+        title: 'Also counts JavaScript-running bots the classifier caught (headless scrapers). Cookieless bots that never run JS stay excluded regardless — a visitor must have loaded a page.'
+    }
+];
 
 /** Polling interval for the live-visitor counter (ms). */
 const LIVE_POLL_MS = 30_000;
@@ -225,37 +246,21 @@ export function TrafficDashboardClient({ submenuTree, submenuGeneratedAt, initia
 
             {showGlobalControls && (
                 <div className={styles.global_controls}>
-                    <div className={styles.control_group}>
-                        <PeriodPicker
-                            period={period}
-                            onPeriodChange={setPeriod}
-                            customStart={customStart}
-                            customEnd={customEnd}
-                            onCustomStartChange={setCustomStart}
-                            onCustomEndChange={setCustomEnd}
-                        />
-                    </div>
+                    <PeriodPicker
+                        period={period}
+                        onPeriodChange={setPeriod}
+                        customStart={customStart}
+                        customEnd={customEnd}
+                        onCustomStartChange={setCustomStart}
+                        onCustomEndChange={setCustomEnd}
+                    />
                     {showBotToggle && (
-                        <div className={styles.bot_toggle} role="group" aria-label="Bot traffic filter">
-                            <button
-                                type="button"
-                                className={!includeBots ? styles.bot_btn__active : styles.bot_btn}
-                                onClick={() => setIncludeBots(false)}
-                                aria-pressed={!includeBots}
-                                title="Counts only visitors that loaded a page (ran JavaScript) and were not classified as bots. Cookieless bots that never run JS are already excluded from every visitor number; unclassified rows are kept, so JS-running bots that spoof a browser may remain."
-                            >
-                                Exclude known bots
-                            </button>
-                            <button
-                                type="button"
-                                className={includeBots ? styles.bot_btn__active : styles.bot_btn}
-                                onClick={() => setIncludeBots(true)}
-                                aria-pressed={includeBots}
-                                title="Also counts JavaScript-running bots the classifier caught (headless scrapers). Cookieless bots that never run JS stay excluded regardless — a visitor must have loaded a page."
-                            >
-                                Include bots
-                            </button>
-                        </div>
+                        <SegmentedControl
+                            label="Bot traffic filter"
+                            value={includeBots ? 'include' : 'exclude'}
+                            options={BOT_FILTER_OPTIONS}
+                            onChange={(id) => setIncludeBots(id === 'include')}
+                        />
                     )}
                 </div>
             )}
@@ -272,21 +277,23 @@ export function TrafficDashboardClient({ submenuTree, submenuGeneratedAt, initia
                     />
                 )}
                 {activeTab === 'crawlers' && (
-                    <div className={styles.crawler_stack}>
+                    <div className={styles.tab_stack}>
                         <CrawlerDashboard refreshSignal={dashboardRefresh} />
                         <TrafficDashboard refreshSignal={dashboardRefresh} />
                     </div>
                 )}
                 {activeTab === 'seo' && <GscKeywords />}
                 {activeTab === 'redirects' && (
-                    <div className={styles.redirect_stack}>
+                    <div className={styles.tab_stack}>
                         <RedirectAnalytics />
                         <RedirectsManager />
                     </div>
                 )}
                 {activeTab === 'ai' && <AiToolsPanel />}
+                {/* Two short, independent settings panels: side by side when
+                    the page is wide enough, stacked otherwise. */}
                 {activeTab === 'settings' && (
-                    <div className={styles.settings_stack}>
+                    <div className={styles.settings_band}>
                         <IgnoredUsers />
                         <GscSettings />
                     </div>

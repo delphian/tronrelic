@@ -111,7 +111,7 @@ export function OAuthConsent({ context, signedInOnServer }: IOAuthConsentProps) 
                 <Stack gap="md">
                     <p>An app is asking to connect to your TronRelic account. Sign in to review the request.</p>
                     <div>
-                        <Button variant="primary" icon={<LogIn size={18} aria-hidden />} onClick={openSignInDialog}>
+                        <Button variant="primary" icon={<LogIn size={18} aria-hidden />} onClick={() => openSignInDialog()}>
                             Sign in to continue
                         </Button>
                     </div>

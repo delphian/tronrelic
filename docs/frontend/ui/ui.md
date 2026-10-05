@@ -71,6 +71,8 @@ Buttons and badges are React components backed by scoped SCSS Modules, so use `<
 | Button | `<Button>` from `components/ui/Button` (variants `primary/secondary/ghost/danger/warning`; sizes `xs/sm/md/lg`) |
 | Badge | `<Badge>` from `components/ui/Badge` (tones `neutral/info/success/warning/danger`; sizes `xs/sm/md/lg`, which step the pill's padding only — the label already sits at the type floor) |
 | Headline statistic | `<StatGrid>` with `<StatTile>` from `components/ui/StatTile`, using `size="md"` for a page band and `size="sm"` for an admin strip. Never hand-write label and value markup, and do not use the legacy `.stat-grid` or `.stat-card__*` global classes. |
+| Many figures in one section | `<FigureList>` from `components/ui/FigureList`, as label-and-value rows. Use it where a band of tiles would spend more space on borders than on numbers |
+| Titled data section | `<Panel>` from `components/ui/Panel`, one card with a single header row. Do not box each figure inside it |
 | Labelled or validated field | `<Field>` from `components/ui/Field`, wrapping the control. Owns the label, the `hint`/`error` message, and the `aria-describedby` between them. Set `invalid` on the control itself for the danger border and `aria-invalid` |
 | Table filling a card | `<Table flush>` from `components/ui/Table`, when the table is the last thing in the `<Card>` and fills its width. Runs the table out to the card's edges instead of drawing a second boundary inside the first. See [ui-components.md](./ui-components.md#a-table-inside-a-card-runs-to-the-cards-edges) |
 | Muted text | The `text-muted` class |

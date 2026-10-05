@@ -1,0 +1,45 @@
+/*
+ * AboutDetails styles.
+ *
+ * The summary reads as a quiet link-like line so it does not compete with
+ * the data beside it. The opened body keeps a readable line length.
+ */
+
+.details {
+    min-width: 0;
+}
+
+.summary {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    cursor: pointer;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-caption);
+    list-style: none;
+}
+
+/* Remove the default disclosure triangle; the icon carries the affordance. */
+.summary::-webkit-details-marker {
+    display: none;
+}
+
+.summary:hover {
+    color: var(--color-text);
+}
+
+.body {
+    max-width: var(--max-width-prose);
+    margin-top: var(--gap-xs);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+    line-height: var(--line-height-relaxed);
+}
+
+.body p {
+    margin: 0 0 var(--gap-xs);
+}
+
+.body p:last-child {
+    margin-bottom: 0;
+}

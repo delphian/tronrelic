@@ -6,9 +6,12 @@
  * tokens only.
  */
 
-.container {
-    container-type: inline-size;
-    container-name: ignored-users;
+/* Everything under the panel header, in the panel's compact rhythm. */
+.body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+    min-width: 0;
 }
 
 .error {
@@ -101,28 +104,27 @@
 }
 
 .empty {
+    margin: 0;
     color: var(--color-text-muted);
     font-size: var(--font-size-body-sm);
 }
 
-/* Current ignore list. */
+/* Current ignore list: hairline-separated rows rather than a boxed card per
+   account, which inside the panel read as boxes inside a box. */
 .list {
     list-style: none;
     margin: 0;
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: var(--gap-2xs);
 }
 
 .item {
     display: flex;
     align-items: center;
     gap: var(--gap-sm);
-    padding: var(--padding-xs) var(--padding-sm);
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
-    background: var(--color-surface-muted);
+    padding: var(--padding-xs) 0;
+    border-top: var(--border-width-thin) solid var(--color-border-strong);
 }
 
 .item_icon {
@@ -131,15 +133,19 @@
     flex-shrink: 0;
 }
 
+/* Email and name on one line, the name wrapping under only when the row is
+   too narrow for both. */
 .item_main {
     display: flex;
-    flex-direction: column;
-    gap: var(--gap-2xs);
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: var(--gap-xs);
     min-width: 0;
     flex: 1 1 auto;
 }
 
 .item_email {
+    max-width: 100%;
     color: var(--color-text);
     font-size: var(--font-size-body-sm);
     overflow: hidden;

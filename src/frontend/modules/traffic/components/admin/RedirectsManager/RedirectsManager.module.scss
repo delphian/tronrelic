@@ -1,81 +1,76 @@
+/**
+ * RedirectsManager styles.
+ *
+ * One panel: a collapsed explanation, a single-row add form, then the rules
+ * table run to the panel's edges. The form sits directly on the panel rather
+ * than in a tinted box of its own, because a framed box inside the panel's
+ * frame is the boxes-inside-boxes pattern Panel exists to remove. Responsive
+ * rules query the Panel's own container, named `panel` by the core component.
+ */
+
 @use '../../../../../app/breakpoints' as *;
 
-.container {
-    container-type: inline-size;
-    container-name: redirects-manager;
-}
-
-.header {
+.body {
     display: flex;
-    align-items: center;
+    flex-direction: column;
     gap: var(--gap-sm);
-
-    svg {
-        color: var(--color-primary);
-    }
+    min-width: 0;
 }
 
-/* Add-rule form: two-up source/destination row, then note, then options. */
+/*
+ * Add-rule form on one row: source, destination, and note share the width,
+ * and the options and submit button sit at the end on the fields' baseline.
+ * Collapses to a single column in a narrow panel.
+ */
 .form {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-md);
-    padding: var(--card-padding-sm);
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
-    background: var(--color-surface-muted);
-}
-
-.form_row {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: var(--gap-md);
-}
-
-.field {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-2xs);
-}
-
-.label {
-    font-size: var(--font-size-caption);
-    font-weight: var(--font-weight-medium);
-    color: var(--color-text-muted);
-    letter-spacing: var(--letter-spacing-wide);
-    text-transform: uppercase;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+    align-items: end;
+    gap: var(--gap-sm);
 }
 
 .options {
     display: flex;
     align-items: center;
-    gap: var(--gap-md);
+    gap: var(--gap-sm);
     flex-wrap: wrap;
 }
 
 .checkbox {
     display: inline-flex;
     align-items: center;
-    gap: var(--gap-sm);
+    gap: var(--gap-xs);
     font-size: var(--font-size-body-sm);
     color: var(--color-text);
     cursor: pointer;
+    white-space: nowrap;
 }
 
 .error {
     font-size: var(--font-size-body-sm);
-    color: var(--color-danger-text);
-    background: var(--color-danger-alpha-18);
-    border: var(--border-width-thin) solid var(--color-danger-alpha-50);
-    border-radius: var(--radius-sm);
-    padding: var(--padding-sm) var(--padding-md);
+    color: var(--alert-danger-color);
+    background: var(--alert-danger-background);
+    border: var(--alert-border-width) solid var(--alert-danger-border);
+    border-radius: var(--alert-border-radius);
+    padding: var(--padding-xs) var(--padding-sm);
+}
+
+.message {
+    margin: 0;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+}
+
+/* One type step down from body, the same density the market detail tables use. */
+.dense_table {
+    --table-font-size: var(--font-size-body-sm);
 }
 
 /* Source/destination paths render monospace so trailing slashes and casing
    read unambiguously. */
 .path {
     font-family: var(--font-mono);
-    font-size: var(--font-size-body-sm);
+    font-size: var(--font-size-caption);
     color: var(--color-text);
     word-break: break-all;
 }
@@ -98,68 +93,38 @@
     }
 }
 
+/* Match type and status code side by side in one column. */
+.badges {
+    display: inline-flex;
+    gap: var(--gap-2xs);
+    white-space: nowrap;
+}
+
+.nowrap {
+    white-space: nowrap;
+}
+
 .row_disabled {
     opacity: var(--opacity-55);
 }
 
-/* Inline row edit stacks the source path over its optional note, mirroring how
-   the two read as one cell in view mode. */
+/* Inline row edit stacks related controls, mirroring how they read as one
+   cell in view mode. */
 .edit_stack {
     display: flex;
     flex-direction: column;
     gap: var(--gap-2xs);
 }
 
-.actions_col {
-    text-align: right;
-}
-
 .actions {
     display: inline-flex;
     align-items: center;
     justify-content: flex-end;
-    gap: var(--gap-sm);
+    gap: var(--gap-2xs);
 }
 
-/* Borderless inline row actions; icon tone flips to the semantic action color
-   on hover, per the bare icon-button pattern. */
-.icon_btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: var(--icon-button-bare-padding-md);
-    border: none;
-    border-radius: var(--icon-button-bare-border-radius);
-    background: transparent;
-    color: var(--icon-button-bare-color);
-    cursor: pointer;
-    transition: color var(--transition-base), background var(--transition-base);
-}
-
-.icon_btn:hover {
-    color: var(--icon-button-bare-color-primary-hover);
-    background: var(--color-surface-elevated);
-}
-
-.icon_btn__danger:hover {
-    color: var(--icon-button-bare-color-danger-hover);
-}
-
-/* While a row is being edited or its save is in flight the inactive row actions
-   are disabled; dim them and suppress the hover treatment so the lock reads
-   clearly instead of relying on the browser's default disabled dimming. */
-.icon_btn:disabled {
-    opacity: var(--opacity-55);
-    cursor: not-allowed;
-}
-
-.icon_btn:disabled:hover {
-    color: var(--icon-button-bare-color);
-    background: transparent;
-}
-
-@container redirects-manager (max-width: #{$breakpoint-mobile-md}) {
-    .form_row {
-        grid-template-columns: 1fr;
+@container panel (max-width: #{$breakpoint-mobile-lg}) {
+    .form {
+        grid-template-columns: minmax(0, 1fr);
     }
 }

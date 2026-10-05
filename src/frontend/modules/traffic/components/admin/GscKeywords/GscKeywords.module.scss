@@ -1,133 +1,48 @@
 /**
  * GscKeywords styles.
  *
- * GSC keyword dashboard — clicks/impressions trend pair plus the
- * top-keywords table. The chart pair collapses to one column by its own
- * width via the shared <Grid columns="responsive"> (auto-fit); the
- * container context here backs the .header collapse.
+ * A one-line toolbar, the clicks and impressions charts side by side, then
+ * the two tables side by side once both fit at a readable width. Each band
+ * judges its columns against the section's own width, so the layout holds in
+ * a slideout as well as on a full page. Panels, tables, and the toolbar carry
+ * their own styles; this module only lays them out.
  */
 
-@use '../../../../../app/breakpoints' as *;
-
 .container {
-    container-type: inline-size;
-    container-name: gsc-keywords;
-}
-
-.header {
-    display: flex;
-    flex-direction: row;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: var(--gap-md);
-    flex-wrap: wrap;
-}
-
-.title {
-    font-size: var(--font-size-heading-md);
-    font-weight: var(--font-weight-bold);
-    color: var(--color-text);
-    margin: 0;
-}
-
-.subtitle {
-    font-size: var(--font-size-body-sm);
-    color: var(--color-text-muted);
-    margin: var(--gap-2xs) 0 0 0;
-    max-width: var(--max-width-prose);
-}
-
-.picker_stack {
     display: flex;
     flex-direction: column;
-    align-items: flex-end;
-    gap: var(--gap-2xs);
+    gap: var(--gap-sm);
+    min-width: 0;
 }
 
-.meta {
-    font-size: var(--font-size-caption);
-    color: var(--color-text-muted);
-    margin: var(--gap-2xs) 0 0 0;
+/* Top alignment keeps the shorter panel at its own height. */
+.band {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--max-width-sm)), 1fr));
+    align-items: start;
+    gap: var(--gap-sm);
 }
 
+/* The tables carry five and six columns, so they need the wider floor before
+   they sit side by side. */
+.band__wide {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--max-width-md)), 1fr));
+}
+
+/* Fetch-health warning inside the toolbar's meta line. */
 .meta_warning {
     display: inline-flex;
     align-items: center;
     gap: var(--gap-2xs);
-    font-size: var(--font-size-caption);
-    color: var(--color-warning);
-    margin: var(--gap-2xs) 0 0 0;
+    color: var(--color-warning-text);
 }
 
-/* The lookback picker's own styling was removed with the local button row: the
-   window switch is now <SegmentedControl>, which carries the shared
-   --segmented-control-* tokens so this panel matches every other chart toolbar. */
-
-.panel {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-sm);
+/* One type step down from body, the same density the market detail tables use. */
+.dense_table {
+    --table-font-size: var(--font-size-body-sm);
 }
 
-.panel_header {
-    display: flex;
-    align-items: center;
-    gap: var(--gap-sm);
-    color: var(--color-text);
-}
-
-.panel_title {
-    font-size: var(--font-size-heading-sm);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text);
-    margin: 0;
-}
-
-.panel_loading,
-.panel_empty {
-    font-size: var(--font-size-body-sm);
-    color: var(--color-text-muted);
-    margin: 0;
-}
-
-.panel_note {
-    font-size: var(--font-size-caption);
-    color: var(--color-text-muted);
-    margin: 0;
-    max-width: var(--max-width-prose);
-}
-
-.panel_error {
-    font-size: var(--font-size-body-sm);
-    color: var(--color-danger);
-    margin: 0;
-}
-
-.numeric_col {
-    width: 1%;
-    white-space: nowrap;
-    text-align: right;
-}
-
-.numeric {
-    text-align: right;
-    white-space: nowrap;
-    font-variant-numeric: tabular-nums;
-    color: var(--color-text);
-}
-
-.keyword_cell {
+/* Keywords and page URLs wrap rather than widen the table. */
+.wrap_cell {
     word-break: break-word;
-    color: var(--color-text);
-}
-
-@container gsc-keywords (max-width: #{$breakpoint-mobile-lg}) {
-    .header {
-        flex-direction: column;
-        align-items: stretch;
-    }
-
-    .picker_stack {
-        align-items: flex-start;
-    }
 }

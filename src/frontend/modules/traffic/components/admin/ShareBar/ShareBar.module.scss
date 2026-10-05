@@ -1,0 +1,37 @@
+/*
+ * ShareBar styles.
+ *
+ * A fixed-length track rather than a flexible one: in a table every row's bar
+ * has to be the same length for the fills to compare, and a track that grew
+ * into whatever space a row had left would vary with the width of the figure
+ * beside it. The length is a multiple of the meter height so it scales with
+ * the same token the bar's thickness comes from.
+ */
+
+.track {
+    display: inline-block;
+    flex: 0 0 auto;
+    width: calc(var(--meter-height) * 8);
+    height: var(--meter-height);
+    border-radius: var(--radius-full);
+    background: var(--meter-background);
+    overflow: hidden;
+    vertical-align: middle;
+}
+
+/* Stretches to the parent's width, for a bar that sits in a shared grid
+   column where every row's track already has the same length. */
+.track_fluid {
+    display: block;
+    width: 100%;
+}
+
+.fill {
+    display: block;
+    height: 100%;
+    /* A visible sliver for a row whose share rounds to zero, so the row does
+       not read as missing data. */
+    min-width: var(--border-width-medium);
+    border-radius: var(--radius-full);
+    background: var(--meter-value-background);
+}

@@ -1,0 +1,19 @@
+/*
+ * PanelBody styles: one compact line for each state, so a panel waiting on
+ * data is no taller than a panel holding one row of it.
+ */
+
+.message,
+.error {
+    margin: 0;
+    font-size: var(--font-size-body-sm);
+    line-height: var(--line-height-normal);
+}
+
+.message {
+    color: var(--color-text-muted);
+}
+
+.error {
+    color: var(--color-danger-text);
+}

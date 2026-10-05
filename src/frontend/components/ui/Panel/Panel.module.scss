@@ -1,0 +1,69 @@
+/*
+ * Panel: one card per section, one header row, no framed boxes inside.
+ *
+ * The panel declares its own container so content inside it (a figure list,
+ * a table) can respond to the panel's width rather than the page's, which is
+ * what lets the same panel sit in a two-up band or a narrow column.
+ */
+
+.panel {
+    container-type: inline-size;
+    container-name: panel;
+}
+
+.section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+    min-width: 0;
+}
+
+/*
+ * Title, context, and controls share one row and wrap only when the panel is
+ * too narrow for them. Baseline alignment keeps the smaller meta text sitting
+ * on the title's line instead of floating at its vertical centre.
+ */
+.header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: var(--gap-sm);
+    row-gap: var(--gap-2xs);
+}
+
+/*
+ * A class selector, so it outranks the global heading rules and their
+ * responsive multiplier: a panel title is a compact label for a block of
+ * figures, not a page section heading, and should not grow past the figures.
+ * The size is the same whichever heading level the caller picks.
+ */
+.title {
+    margin: 0;
+    color: var(--color-text);
+    font-size: var(--font-size-heading-sm);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-height-tight);
+    letter-spacing: var(--letter-spacing-normal);
+}
+
+/*
+ * Grows to take the slack so the controls are pushed to the row's end, and
+ * shrinks rather than forcing the controls onto a second line.
+ */
+.meta {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+    line-height: var(--line-height-normal);
+    font-variant-numeric: tabular-nums;
+}
+
+.actions {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    margin-left: auto;
+    align-self: center;
+}

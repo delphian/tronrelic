@@ -27,16 +27,17 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Bot, Route } from 'lucide-react';
 import { LineChart } from '../../../../../features/charts/components/LineChart';
 import type { ChartSeries } from '../../../../../features/charts/components/LineChart';
-import { Card } from '../../../../../components/ui/Card';
+import { Panel } from '../../../../../components/ui/Panel';
 import { Select } from '../../../../../components/ui/Select';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
-import { Stack } from '../../../../../components/layout';
 import { adminGetBotTrend, adminGetBotPaths } from '../../../api';
 import type { IBotClassDailyPoint, ITrafficBucket } from '../../../api';
 import { SegmentedControl } from '../../../../../components/ui/SegmentedControl';
+import { TabToolbar } from '../TabToolbar';
+import { PanelBody } from '../PanelBody';
+import { ClickHouseNotice } from '../ClickHouseNotice';
 import styles from './CrawlerDashboard.module.scss';
 
 /** Selectable lookback window ids, which double as the button labels. */
@@ -235,61 +236,50 @@ export function CrawlerDashboard({ refreshSignal }: ICrawlerDashboardProps) {
     const numberFormatter = useMemo(() => new Intl.NumberFormat(), []);
 
     return (
-        <Stack gap="lg" className={styles.container}>
-            <header className={styles.header}>
-                <div>
-                    <h2 className={styles.title}>Crawlers</h2>
-                    <p className={styles.subtitle}>
-                        Daily crawler pressure per <code>bot_class</code> and the
-                        paths each class actually fetches. AI crawlers (GPTBot,
-                        ClaudeBot, PerplexityBot, …) reaching content pages is
-                        the signal that AI-search standing is improving.
-                    </p>
-                </div>
-                <SegmentedControl
-                    label="Lookback window"
-                    value={windowId}
-                    options={SINCE_OPTIONS}
-                    onChange={setWindowId}
-                />
-            </header>
-
-            {!clickhouseEnabled && (
-                <Card padding="md" className={styles.notice_card}>
-                    <p>
-                        ClickHouse is not configured on this deployment.
-                        Traffic events are not being recorded; crawler panels
-                        will report zero rows.
-                    </p>
-                </Card>
-            )}
-
-            <Card padding="md" className={styles.panel}>
-                <div className={styles.panel_header}>
-                    <Bot size={18} aria-hidden="true" />
-                    <h3 className={styles.panel_title}>Crawler trend</h3>
-                </div>
-                {trendError ? (
-                    <p className={styles.panel_error}>{trendError}</p>
-                ) : trendLoading ? (
-                    <p className={styles.panel_loading}>Loading…</p>
-                ) : (
-                    <LineChart
-                        series={trendSeries}
-                        height={280}
-                        yAxisFormatter={(v) => numberFormatter.format(v)}
-                        emptyLabel="No events in this window."
+        <section className={styles.container}>
+            <TabToolbar
+                title="Crawlers"
+                meta="Daily requests per bot class, and the paths each class fetches"
+                actions={(
+                    <SegmentedControl
+                        label="Lookback window"
+                        value={windowId}
+                        options={SINCE_OPTIONS}
+                        onChange={setWindowId}
                     />
                 )}
-            </Card>
+                aboutSummary="Why crawler paths matter"
+                about={(
+                    <p>
+                        Classes come from the <code>bot_class</code> column, set when each request is
+                        recorded. AI crawlers (GPTBot, ClaudeBot, PerplexityBot, …) reaching content
+                        pages rather than only the homepage is the signal that AI-search standing is
+                        improving. Human traffic never appears on this tab.
+                    </p>
+                )}
+            />
 
-            <Card padding="md" className={styles.panel}>
-                <div className={styles.panel_header}>
-                    <Route size={18} aria-hidden="true" />
-                    <h3 className={styles.panel_title}>Paths fetched by bot class</h3>
-                    <label className={styles.class_select_label}>
-                        <span className="text-muted">Class</span>
+            {!clickhouseEnabled && <ClickHouseNotice affected="the crawler panels" />}
+
+            <div className={styles.band}>
+                <Panel title="Crawler trend" titleAs="h3" meta="Events per day">
+                    <PanelBody loading={trendLoading} error={trendError}>
+                        <LineChart
+                            series={trendSeries}
+                            height={220}
+                            yAxisFormatter={(v) => numberFormatter.format(v)}
+                            emptyLabel="No events in this window."
+                        />
+                    </PanelBody>
+                </Panel>
+
+                <Panel
+                    title="Paths fetched"
+                    titleAs="h3"
+                    meta="Top 15 by events"
+                    actions={(
                         <Select
+                            size="xs"
                             value={pathBotClass}
                             onChange={e => setPathBotClass(e.target.value)}
                             aria-label="Bot class"
@@ -298,33 +288,33 @@ export function CrawlerDashboard({ refreshSignal }: ICrawlerDashboardProps) {
                                 <option key={cls.key} value={cls.key}>{cls.label}</option>
                             ))}
                         </Select>
-                    </label>
-                </div>
-                {pathsError ? (
-                    <p className={styles.panel_error}>{pathsError}</p>
-                ) : pathsLoading ? (
-                    <p className={styles.panel_loading}>Loading…</p>
-                ) : !paths || paths.length === 0 ? (
-                    <p className={styles.panel_empty}>No events for this class in this window.</p>
-                ) : (
-                    <Table flush>
-                        <Thead>
-                            <Tr>
-                                <Th scope="col">path</Th>
-                                <Th scope="col" className={styles.numeric_col}>events</Th>
-                            </Tr>
-                        </Thead>
-                        <Tbody>
-                            {paths.map((b, i) => (
-                                <Tr key={`${b.key ?? 'null'}_${i}`}>
-                                    <Td><code className={styles.code}>{b.key ?? '(null)'}</code></Td>
-                                    <Td className={styles.numeric}>{numberFormatter.format(b.count)}</Td>
+                    )}
+                >
+                    <PanelBody
+                        loading={pathsLoading}
+                        error={pathsError}
+                        empty={!paths || paths.length === 0}
+                        emptyMessage="No events for this class in this window."
+                    >
+                        <Table variant="compact" flush className={styles.dense_table}>
+                            <Thead>
+                                <Tr>
+                                    <Th scope="col" width="expand">Path</Th>
+                                    <Th scope="col" width="shrink" numeric>Events</Th>
                                 </Tr>
-                            ))}
-                        </Tbody>
-                    </Table>
-                )}
-            </Card>
-        </Stack>
+                            </Thead>
+                            <Tbody>
+                                {(paths ?? []).map((b, i) => (
+                                    <Tr key={`${b.key ?? 'null'}_${i}`}>
+                                        <Td className={styles.code}>{b.key ?? '(null)'}</Td>
+                                        <Td numeric>{numberFormatter.format(b.count)}</Td>
+                                    </Tr>
+                                ))}
+                            </Tbody>
+                        </Table>
+                    </PanelBody>
+                </Panel>
+            </div>
+        </section>
     );
 }

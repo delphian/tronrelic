@@ -103,12 +103,21 @@ export function WalletButton({ imageUrl = null, onActivate, expanded = false, co
         router.push('/profile');
     }, [router]);
 
+    /**
+     * Open the plain sign-in dialog. Wrapped rather than passed to `onClick`
+     * directly, because React would hand the click event to the dialog as
+     * if it were its options.
+     */
+    const signIn = useCallback(() => {
+        openSignInDialog();
+    }, [openSignInDialog]);
+
     const user = isLoggedIn ? session?.user ?? null : null;
     const identity = user ? buildIdentityLabel(user) : null;
     // With a tray the button no longer signs in or navigates by itself, so
     // its accessible name says what the click does now, and the ARIA pair
     // tells assistive technology which element it opens and whether it is open.
-    const onClick = onActivate ?? (user ? goToProfile : openSignInDialog);
+    const onClick = onActivate ?? (user ? goToProfile : signIn);
     const trayAria = onActivate
         ? { 'aria-expanded': expanded, 'aria-controls': controlsId }
         : {};

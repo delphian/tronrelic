@@ -1,0 +1,47 @@
+/*
+ * BarList styles.
+ *
+ * One grid for the whole list, with each row taking its columns through
+ * subgrid, so the label column sizes to the longest label and every bar
+ * starts and ends at the same place. Without the shared columns, each row
+ * would size its own label and the bars would start at different points,
+ * which defeats comparing them.
+ */
+
+.list {
+    display: grid;
+    grid-template-columns: minmax(0, max-content) minmax(0, 1fr) max-content;
+    column-gap: var(--gap-sm);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.row {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+    align-items: center;
+    padding: var(--padding-2xs) 0;
+    border-bottom: var(--border-width-thin) solid var(--color-border-subtle);
+}
+
+.row:last-child {
+    border-bottom: none;
+}
+
+.label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--color-text);
+    font-size: var(--font-size-body-sm);
+}
+
+.figure {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-caption);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
+}

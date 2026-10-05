@@ -1,0 +1,50 @@
+/*
+ * TabToolbar styles.
+ *
+ * Mirrors the core Panel header: title, meta, and controls on one baseline,
+ * the meta taking the slack so the controls sit at the row's end, wrapping
+ * only when the section is too narrow for all three. The title is a class
+ * selector so it outranks the global `h2` size and its responsive multiplier.
+ */
+
+.toolbar {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    min-width: 0;
+}
+
+.row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: var(--gap-sm);
+    row-gap: var(--gap-xs);
+}
+
+.title {
+    margin: 0;
+    color: var(--color-text);
+    font-size: var(--font-size-heading-sm);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-height-tight);
+    letter-spacing: var(--letter-spacing-normal);
+}
+
+.meta {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+    line-height: var(--line-height-normal);
+    font-variant-numeric: tabular-nums;
+}
+
+.actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-xs);
+    margin-left: auto;
+    align-self: center;
+}

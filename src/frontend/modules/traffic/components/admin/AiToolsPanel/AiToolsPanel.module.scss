@@ -1,19 +1,49 @@
+/**
+ * AiToolsPanel styles.
+ *
+ * One panel holding every tool as a hairline-separated entry. The entries
+ * flow into columns rather than a row-aligned grid because their descriptions
+ * differ a lot in length, and a grid would leave empty space under every
+ * shorter entry in a row. Each entry stays whole within its column.
+ */
+
 @use '../../../../../app/breakpoints' as *;
 
+.intro {
+    margin: 0;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+}
+
+.tools {
+    columns: 2 var(--max-width-md);
+    column-gap: var(--gap-lg);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.tool {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-xs);
+    break-inside: avoid;
+    padding: var(--padding-sm) 0;
+    border-top: var(--border-width-thin) solid var(--color-border-strong);
+}
+
 .tool_header {
-    container-type: inline-size;
-    container-name: ai-tool-header;
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: var(--gap-md);
+    gap: var(--gap-sm);
 }
 
 .tool_identity {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: var(--gap-sm);
+    gap: var(--gap-xs);
     min-width: 0;
 }
 
@@ -31,20 +61,6 @@
     gap: var(--gap-2xs);
 }
 
-.tool_section {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-2xs);
-}
-
-.tool_section_label {
-    font-size: var(--font-size-caption);
-    font-weight: var(--font-weight-semibold);
-    letter-spacing: var(--letter-spacing-wide);
-    color: var(--color-text-muted);
-    text-transform: uppercase;
-}
-
 .tool_description {
     margin: 0;
     font-size: var(--font-size-body-sm);
@@ -54,17 +70,17 @@
 
 .tool_examples {
     display: flex;
-    flex-wrap: wrap;
-    gap: var(--gap-sm);
+    flex-direction: column;
+    gap: var(--gap-xs);
 }
 
 .tool_example {
-    flex: 1 1 auto;
     min-width: 0;
     max-width: 100%;
+    max-height: var(--code-block-max-height);
     margin: 0;
-    padding: var(--padding-sm);
-    overflow-x: auto;
+    padding: var(--padding-xs) var(--padding-sm);
+    overflow: auto;
     border: var(--border-width-thin) solid var(--color-border);
     border-radius: var(--radius-sm);
     background: var(--color-surface-muted);
@@ -78,15 +94,17 @@
     align-items: center;
     gap: var(--gap-sm);
     font-size: var(--font-size-body-sm);
-    color: var(--color-danger);
+    color: var(--color-danger-text);
 }
 
-/* Narrow containers (slideout, mobile) stack the switch under the tool name
-   rather than letting the long tool id squeeze it off the row. */
-@container ai-tool-header (max-width: #{$breakpoint-mobile-md}) {
+/* Narrow panels (slideout, mobile) stack the switch under the tool name rather
+   than letting the long tool id squeeze it off the row. The query targets the
+   Panel's container: an element cannot match a container query against
+   itself, which is why the former rule on a self-declared header container
+   never applied. */
+@container panel (max-width: #{$breakpoint-mobile-md}) {
     .tool_header {
         flex-direction: column;
         align-items: stretch;
-        gap: var(--gap-sm);
     }
 }

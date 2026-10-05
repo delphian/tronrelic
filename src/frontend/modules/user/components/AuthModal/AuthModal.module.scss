@@ -90,6 +90,16 @@
     line-height: var(--line-height-relaxed);
 }
 
+/* Caller-supplied reason for signing in, such as "Saving alerts needs an
+   account". Body-sized so it reads as the dialog's lead text rather than
+   as the muted fine print `.hint` is used for. */
+.message {
+    margin: 0;
+    font-size: var(--font-size-body);
+    color: var(--color-text);
+    line-height: var(--line-height-relaxed);
+}
+
 .hint {
     font-size: var(--font-size-caption);
     color: var(--color-text-muted);

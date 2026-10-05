@@ -190,6 +190,9 @@ Memoize the subscription object — passing a fresh identity each render re-regi
 
 - [component-icon-picker-modal.md](./component-icon-picker-modal.md) — IconPickerModal + ModalProvider integration
 - [component-scheduler-monitor.md](./component-scheduler-monitor.md) — SchedulerMonitor admin panel
+- [component-panel.md](./component-panel.md) — Panel, one titled section of a data page as a single card
+- [component-figure-list.md](./component-figure-list.md) — FigureList, many figures as label-and-value rows, and when to choose it over StatTile
+- [component-price-rail.md](./component-price-rail.md) — PriceRail, listed and observed values on one scale
 
 ## Further Reading
 

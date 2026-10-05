@@ -1,23 +1,28 @@
 /**
  * GscSettings Styles
  *
- * Configuration panel for Google Search Console credentials.
- * Uses design tokens for all values.
+ * One panel: connection state in the header, a collapsed explanation, then
+ * either the connection details and actions or the setup guide and form.
+ * Form labels, hints, and the details list come from the core Field and
+ * FigureList components; this module styles only what is unique here.
+ * Responsive rules query the Panel's own container, named `panel` by the core
+ * component.
  */
 
 @use '../../../../../app/breakpoints' as *;
 
-.container {
-    container-type: inline-size;
-    container-name: gsc-settings;
+.body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+    min-width: 0;
 }
 
+/* Connection state inside the panel header's meta line. */
 .status {
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    gap: var(--gap-sm);
-    font-size: var(--font-size-body-sm);
-    color: var(--color-text-muted);
+    gap: var(--gap-xs);
 }
 
 .status_dot {
@@ -35,130 +40,97 @@
     background: var(--color-text-muted);
 }
 
+/* The setup guide keeps a tinted rule on its left edge: it is instructions to
+   follow in order, and the rule separates it from the form it leads into. */
 .setup_guide {
-    padding: var(--input-group-gap) var(--gap-md);
-    background: color-mix(in srgb, var(--color-primary) 6%, transparent);
-    border-radius: var(--radius-md);
+    padding: var(--padding-xs) var(--padding-sm);
+    background: var(--color-primary-alpha-10);
+    border-radius: var(--radius-sm);
     border-left: var(--border-width-medium) solid var(--color-primary);
 }
 
+/* A class selector, so it outranks the global `h3` size. */
 .setup_guide__title {
     font-size: var(--font-size-body-sm);
     font-weight: var(--font-weight-semibold);
     color: var(--color-text);
-    margin: 0 0 var(--gap-sm) 0;
+    margin: 0 0 var(--gap-xs) 0;
 }
 
 .setup_guide__steps {
     margin: 0;
     padding-left: var(--gap-md);
     font-size: var(--font-size-body-sm);
+    line-height: var(--line-height-normal);
     color: var(--color-text-muted);
     display: flex;
     flex-direction: column;
-    gap: var(--gap-xs);
+    gap: var(--gap-2xs);
 }
 
-.setup_guide__steps a {
+.setup_guide__steps a,
+.hint a {
     color: var(--color-primary);
     text-decoration: none;
 }
 
-.setup_guide__steps a:hover {
+.setup_guide__steps a:hover,
+.hint a:hover {
     text-decoration: underline;
 }
 
 .setup_guide__steps code {
     font-size: var(--font-size-caption);
     background: color-mix(in srgb, var(--color-text) 8%, transparent);
-    padding: var(--gap-2xs) var(--gap-xs);
-    border-radius: var(--radius-sm);
+    padding: 0 var(--gap-xs);
+    border-radius: var(--radius-xs);
 }
 
 .form {
     display: flex;
     flex-direction: column;
-    gap: var(--gap-md);
+    gap: var(--gap-sm);
 }
 
-.field {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-xs);
-}
-
-.label {
-    font-size: var(--font-size-body-sm);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text);
-}
-
+/* Inherits the Field hint's type and colour; only the link inside is styled. */
 .hint {
-    font-size: var(--font-size-caption);
-    color: var(--color-text-muted);
-}
-
-.hint a {
-    color: var(--color-primary);
-    text-decoration: none;
-}
-
-.hint a:hover {
-    text-decoration: underline;
+    display: inline;
 }
 
 /* Slim override: the shared <Textarea> owns sizing/border/focus; this only
- * supplies the JSON-key field's monospace font and taller default height. */
+ * supplies the JSON-key field's monospace font. Its height comes from the
+ * element's `rows` attribute. */
 .textarea {
-    min-height: 120px;
     font-family: var(--font-mono);
 }
 
 .actions {
     display: flex;
-    gap: var(--input-group-gap);
+    gap: var(--gap-xs);
     flex-wrap: wrap;
 }
 
-.error {
+.error,
+.success {
     font-size: var(--font-size-body-sm);
-    color: var(--color-danger);
-    padding: var(--gap-sm) var(--input-group-gap);
-    background: color-mix(in srgb, var(--color-danger) 10%, transparent);
-    border-radius: var(--radius-md);
+    padding: var(--padding-xs) var(--padding-sm);
+    border: var(--alert-border-width) solid;
+    border-radius: var(--alert-border-radius);
+}
+
+.error {
+    color: var(--alert-danger-color);
+    background: var(--alert-danger-background);
+    border-color: var(--alert-danger-border);
 }
 
 .success {
-    font-size: var(--font-size-body-sm);
-    color: var(--color-success);
-    padding: var(--gap-sm) var(--input-group-gap);
-    background: color-mix(in srgb, var(--color-success) 10%, transparent);
-    border-radius: var(--radius-md);
+    color: var(--alert-success-color);
+    background: var(--alert-success-background);
+    border-color: var(--alert-success-border);
 }
 
-.info_row {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    font-size: var(--font-size-body-sm);
-}
-
-.info_label {
-    color: var(--color-text-muted);
-}
-
-.info_value {
-    color: var(--color-text);
-    font-weight: var(--font-weight-medium);
-}
-
-/* Container queries for responsive behavior */
-@container gsc-settings (max-width: #{$breakpoint-mobile-md}) {
-    .info_row {
-        flex-direction: column;
-        gap: var(--gap-xs);
-    }
-
+@container panel (max-width: #{$breakpoint-mobile-md}) {
     .actions {
         flex-direction: column;
     }

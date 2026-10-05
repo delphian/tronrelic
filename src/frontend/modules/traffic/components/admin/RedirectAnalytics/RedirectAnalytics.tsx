@@ -19,15 +19,15 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CornerUpRight, ListOrdered } from 'lucide-react';
 import { LineChart } from '../../../../../features/charts/components/LineChart';
 import type { ChartSeries } from '../../../../../features/charts/components/LineChart';
-import { Card } from '../../../../../components/ui/Card';
+import { Panel } from '../../../../../components/ui/Panel';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
-import { Stack } from '../../../../../components/layout';
 import { adminGetRedirectAnalytics } from '../../../api';
 import type { AnalyticsPeriod, IRedirectAnalytics } from '../../../api';
 import { SegmentedControl } from '../../../../../components/ui/SegmentedControl';
+import { TabToolbar } from '../TabToolbar';
+import { PanelBody } from '../PanelBody';
 import styles from './RedirectAnalytics.module.scss';
 
 /** Lookback windows offered by the panel's own picker. */
@@ -137,98 +137,88 @@ export function RedirectAnalytics() {
     const coloredSeries: ChartSeries[] = series.map(s => ({ ...s, color: resolveCSSColor('--chart-color-1', '#3b82f6') }));
 
     const hasHits = data !== null && data.total > 0;
+    // Only the first load blanks the panels; a control change keeps the last
+    // result on screen while the new one loads.
+    const firstLoad = loading && data === null;
 
     return (
-        <Stack gap="lg" className={styles.container}>
-            <header className={styles.header}>
-                <div>
-                    <h2 className={styles.title}>Redirect analytics</h2>
-                    <p className={styles.subtitle}>
-                        How often each admin-managed redirect is served. A rule
-                        with steady hits is earning its keep; one with zero hits
-                        over a long window is a candidate for removal. Bots hammer
-                        stale legacy URLs, so the default view excludes them.
-                    </p>
-                </div>
-                <div className={styles.controls}>
-                    <SegmentedControl
-                        label="Lookback window"
-                        value={period}
-                        options={PERIOD_OPTIONS}
-                        onChange={setPeriod}
-                    />
-                    <SegmentedControl
-                        label="Bot traffic filter"
-                        value={humansOnly ? 'humans' : 'all'}
-                        options={BOT_FILTER_OPTIONS}
-                        onChange={(id) => setHumansOnly(id === 'humans')}
-                    />
-                </div>
-            </header>
-
-            <Card padding="md" className={styles.panel}>
-                <div className={styles.panel_header}>
-                    <CornerUpRight size={18} aria-hidden="true" />
-                    <h3 className={styles.panel_title}>Redirects served</h3>
-                </div>
-                {error ? (
-                    <p className={styles.panel_error}>{error}</p>
-                ) : loading && data === null ? (
-                    <p className={styles.panel_loading}>Loading…</p>
-                ) : (
+        <section className={styles.container}>
+            <TabToolbar
+                title="Redirect analytics"
+                meta={data
+                    ? `${numberFormatter.format(data.total)} served: ${numberFormatter.format(data.humanTotal)} human, ${numberFormatter.format(data.botTotal)} bot`
+                    : undefined}
+                actions={(
                     <>
-                        <div className={styles.summary}>
-                            <span className={styles.summary_total}>{numberFormatter.format(data?.total ?? 0)}</span>
-                            <span className={styles.summary_split}>
-                                {numberFormatter.format(data?.humanTotal ?? 0)} human · {numberFormatter.format(data?.botTotal ?? 0)} bot
-                            </span>
-                        </div>
+                        <SegmentedControl
+                            label="Lookback window"
+                            value={period}
+                            options={PERIOD_OPTIONS}
+                            onChange={setPeriod}
+                        />
+                        <SegmentedControl
+                            label="Bot traffic filter"
+                            value={humansOnly ? 'humans' : 'all'}
+                            options={BOT_FILTER_OPTIONS}
+                            onChange={(id) => setHumansOnly(id === 'humans')}
+                        />
+                    </>
+                )}
+                aboutSummary="Reading these figures"
+                about={(
+                    <p>
+                        How often each admin-managed redirect is served. A rule with steady hits is
+                        earning its keep; one with zero hits over a long window is a candidate for
+                        removal, and appears only in the rules table below because it has no hits to
+                        chart. Bots hammer stale legacy URLs, so the default view excludes them.
+                    </p>
+                )}
+            />
+
+            <div className={styles.band}>
+                <Panel title="Redirects served" titleAs="h3" meta="Hits over time">
+                    <PanelBody loading={firstLoad} error={error}>
                         <LineChart
                             series={coloredSeries}
-                            height={260}
+                            height={200}
                             yAxisMin={0}
                             showLegend={false}
                             yAxisFormatter={(v) => numberFormatter.format(v)}
                             emptyLabel="No redirects served in this window."
                         />
-                    </>
-                )}
-            </Card>
+                    </PanelBody>
+                </Panel>
 
-            <Card padding="md" className={styles.panel}>
-                <div className={styles.panel_header}>
-                    <ListOrdered size={18} aria-hidden="true" />
-                    <h3 className={styles.panel_title}>By redirect rule</h3>
-                </div>
-                {error ? (
-                    <p className={styles.panel_error}>{error}</p>
-                ) : loading && data === null ? (
-                    <p className={styles.panel_loading}>Loading…</p>
-                ) : !hasHits || !data || data.byPattern.length === 0 ? (
-                    <p className={styles.panel_empty}>No redirects served in this window.</p>
-                ) : (
-                    <Table flush>
-                        <Thead>
-                            <Tr>
-                                <Th scope="col">Source</Th>
-                                <Th scope="col">Destination</Th>
-                                <Th scope="col" className={styles.center_col}>Code</Th>
-                                <Th scope="col" className={styles.numeric_col}>Hits</Th>
-                            </Tr>
-                        </Thead>
-                        <Tbody>
-                            {data.byPattern.map(row => (
-                                <Tr key={row.pattern}>
-                                    <Td><code className={styles.code}>{row.pattern}</code></Td>
-                                    <Td><code className={styles.code}>{row.destination}</code></Td>
-                                    <Td className={styles.center}>{row.permanent ? '301' : '302'}</Td>
-                                    <Td className={styles.numeric}>{numberFormatter.format(row.hits)}</Td>
+                <Panel title="By redirect rule" titleAs="h3" meta="Rules hit in this window">
+                    <PanelBody
+                        loading={firstLoad}
+                        error={error}
+                        empty={!hasHits || !data || data.byPattern.length === 0}
+                        emptyMessage="No redirects served in this window."
+                    >
+                        <Table variant="compact" flush className={styles.dense_table}>
+                            <Thead>
+                                <Tr>
+                                    <Th scope="col">Source</Th>
+                                    <Th scope="col">Destination</Th>
+                                    <Th scope="col" width="shrink">Code</Th>
+                                    <Th scope="col" width="shrink" numeric>Hits</Th>
                                 </Tr>
-                            ))}
-                        </Tbody>
-                    </Table>
-                )}
-            </Card>
-        </Stack>
+                            </Thead>
+                            <Tbody>
+                                {(data?.byPattern ?? []).map(row => (
+                                    <Tr key={row.pattern}>
+                                        <Td className={styles.code}>{row.pattern}</Td>
+                                        <Td className={styles.code}>{row.destination}</Td>
+                                        <Td muted>{row.permanent ? '301' : '302'}</Td>
+                                        <Td numeric>{numberFormatter.format(row.hits)}</Td>
+                                    </Tr>
+                                ))}
+                            </Tbody>
+                        </Table>
+                    </PanelBody>
+                </Panel>
+            </div>
+        </section>
     );
 }

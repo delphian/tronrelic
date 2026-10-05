@@ -52,6 +52,15 @@ export interface IAuthModalProps {
     callbackURL?: string;
 
     /**
+     * Text shown above the sign-in options, explaining why the visitor is
+     * being asked to sign in. A feature that only signed-in users may use
+     * passes this when it opens the dialog, so the visitor learns the
+     * feature needs an account instead of seeing a bare sign-in form.
+     * Omitted keeps the plain dialog the sign-in button opens.
+     */
+    message?: string;
+
+    /**
      * Invoked when sign-in completes synchronously inside the modal
      * (email-OTP, passkey). The modal cannot close itself reliably
      * without this callback because the global ModalProvider owns the
@@ -63,9 +72,13 @@ export interface IAuthModalProps {
 /**
  * Email-OTP / OAuth / passkey sign-in modal.
  *
+ * When `message` is set it appears above the email field on the first
+ * step only. Once the visitor has asked for a code they have already
+ * accepted the reason, so the code step shows just its own instructions.
+ *
  * @param props - {@link IAuthModalProps}.
  */
-export function AuthModal({ callbackURL, onSuccess }: IAuthModalProps) {
+export function AuthModal({ callbackURL, message, onSuccess }: IAuthModalProps) {
     const router = useRouter();
     const { push } = useToast();
     const [email, setEmail] = useState('');
@@ -226,6 +239,7 @@ export function AuthModal({ callbackURL, onSuccess }: IAuthModalProps) {
 
     return (
         <div className={styles.modal}>
+            {message ? <p className={styles.message}>{message}</p> : null}
             <form className={styles.form} onSubmit={handleSendCode} noValidate>
                 <label className={styles.label} htmlFor="auth-modal-email">
                     Email

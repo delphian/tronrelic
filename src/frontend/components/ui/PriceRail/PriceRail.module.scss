@@ -1,0 +1,197 @@
+/*
+ * Price rail: listed values as ticks on one line, observed values pinned to it.
+ *
+ * Positions come from inline `left` percentages computed in the component;
+ * everything here is the drawing. Labels are absolutely positioned against
+ * their row, and each row holds an invisible in-flow copy of a label so it
+ * reserves exactly the height the visible label needs.
+ */
+
+.rail {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    min-width: 0;
+}
+
+/* -------------------------------------------------------------------------
+ * Tick labels (term above value), above the track
+ * ----------------------------------------------------------------------- */
+
+.tick_row {
+    position: relative;
+    margin-bottom: var(--gap-xs);
+}
+
+.tick_label {
+    position: absolute;
+    top: 0;
+    display: flex;
+    flex-direction: column;
+    white-space: nowrap;
+    line-height: var(--line-height-tight);
+}
+
+.tick_label__spacer {
+    position: static;
+    visibility: hidden;
+}
+
+.tick_term {
+    color: var(--color-text-subtle);
+    font-size: var(--font-size-caption);
+}
+
+.tick_value {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+    font-weight: var(--font-weight-medium);
+    font-variant-numeric: tabular-nums;
+}
+
+/* -------------------------------------------------------------------------
+ * Track: the line, the listed band, tick marks, and marker dots
+ * ----------------------------------------------------------------------- */
+
+.track {
+    position: relative;
+    height: var(--meter-height);
+    border-radius: var(--radius-full);
+    background: var(--meter-background);
+}
+
+/*
+ * The span between the lowest and highest listed value. Brand-tinted because
+ * it is the seller's own claim; the markers on it are the evidence.
+ */
+.band {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    border-radius: var(--radius-full);
+    background: var(--color-primary-alpha-38);
+}
+
+.tick_mark {
+    position: absolute;
+    top: 50%;
+    width: var(--border-width-medium);
+    height: calc(var(--meter-height) * 2);
+    transform: translate(-50%, -50%);
+    border-radius: var(--radius-full);
+    background: var(--color-primary);
+}
+
+/*
+ * A ring in the marker's tone around a surface-coloured centre, so it stays
+ * distinct from the tick marks and the band it sits on.
+ */
+.marker_dot {
+    position: absolute;
+    top: 50%;
+    width: calc(var(--meter-height) * 2);
+    height: calc(var(--meter-height) * 2);
+    transform: translate(-50%, -50%);
+    border-radius: var(--radius-full);
+    border: var(--border-width-thick) solid currentColor;
+    background: var(--color-surface-accent);
+    box-shadow: var(--shadow-sm);
+}
+
+/* -------------------------------------------------------------------------
+ * Marker labels, one row each, under the track
+ * ----------------------------------------------------------------------- */
+
+.marker_row {
+    position: relative;
+    margin-top: var(--gap-xs);
+}
+
+.marker_label {
+    position: absolute;
+    top: 0;
+    max-width: min(100%, var(--max-width-sm));
+    width: max-content;
+    line-height: var(--line-height-tight);
+}
+
+.marker_label__spacer {
+    position: static;
+    display: block;
+    visibility: hidden;
+}
+
+.marker_value {
+    font-size: var(--font-size-body-lg);
+    font-weight: var(--font-weight-bold);
+    font-variant-numeric: tabular-nums;
+}
+
+.marker_text {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+}
+
+/* -------------------------------------------------------------------------
+ * Anchoring: centred on the position, or held to the nearer end of the rail
+ * ----------------------------------------------------------------------- */
+
+.align_center {
+    transform: translateX(-50%);
+    align-items: center;
+    text-align: center;
+}
+
+.align_start {
+    align-items: flex-start;
+    text-align: left;
+}
+
+.align_end {
+    transform: translateX(-100%);
+    align-items: flex-end;
+    text-align: right;
+}
+
+/* -------------------------------------------------------------------------
+ * Tones. Dots take the colour through currentColor.
+ * ----------------------------------------------------------------------- */
+
+.tone_neutral {
+    color: var(--color-text);
+}
+
+.tone_success {
+    color: var(--color-success-text);
+}
+
+.tone_warning {
+    color: var(--color-warning-text);
+}
+
+/* -------------------------------------------------------------------------
+ * Caption
+ * ----------------------------------------------------------------------- */
+
+.caption {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-xs) var(--gap-md);
+    margin-top: var(--gap-sm);
+    color: var(--color-text-subtle);
+    font-size: var(--font-size-caption);
+}
+
+.caption_item {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-xs);
+}
+
+.swatch {
+    display: inline-block;
+    width: calc(var(--meter-height) * 2);
+    height: var(--meter-height);
+    border-radius: var(--radius-full);
+    background: var(--color-primary-alpha-38);
+}

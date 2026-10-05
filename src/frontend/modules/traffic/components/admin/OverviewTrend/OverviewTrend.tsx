@@ -174,10 +174,10 @@ export function OverviewTrend({ period, customRange, includeBots, refreshSignal 
     // data with an error over a transient failure (stale-while-revalidate,
     // matching the sibling dashboards' background-refresh contract).
     if (error && !trend) {
-        return <Card padding="md"><p className={styles.error}>{error}</p></Card>;
+        return <Card padding="sm"><p className={styles.error}>{error}</p></Card>;
     }
     if (!trend) {
-        return <Card padding="md"><p className={styles.loading}>Loading overview…</p></Card>;
+        return <Card padding="sm"><p className={styles.loading}>Loading overview…</p></Card>;
     }
 
     const { current, previous } = trend;
@@ -256,7 +256,7 @@ export function OverviewTrend({ period, customRange, includeBots, refreshSignal 
     };
 
     return (
-        <Card padding="md" className={isFetching ? `${styles.container} ${styles.container_fetching}` : styles.container} aria-busy={isFetching}>
+        <Card padding="sm" className={isFetching ? `${styles.container} ${styles.container_fetching}` : styles.container} aria-busy={isFetching}>
             <div className={styles.kpi_strip} role="group" aria-label="Headline metrics">
                 <button
                     type="button"
@@ -270,8 +270,10 @@ export function OverviewTrend({ period, customRange, includeBots, refreshSignal 
                     <span className={styles.kpi_label}>
                         {includeBots ? 'Unique Visitors (incl. JS bots)' : 'Unique Visitors'}
                     </span>
-                    <span className={styles.kpi_value}>{numberFormatter.format(current.visitors)}</span>
-                    <Delta change={percentChange(current.visitors, previous.visitors)} />
+                    <span className={styles.kpi_figure}>
+                        <span className={styles.kpi_value}>{numberFormatter.format(current.visitors)}</span>
+                        <Delta change={percentChange(current.visitors, previous.visitors)} />
+                    </span>
                 </button>
                 {includeBots && (
                     <div
@@ -279,10 +281,12 @@ export function OverviewTrend({ period, customRange, includeBots, refreshSignal 
                         title="Page-loading visitors split by bot classification. The bot side is JavaScript-running bots the classifier caught (headless scrapers); cookieless non-JS bots are excluded from both sides. Delta tracks the human side."
                     >
                         <span className={styles.kpi_label}>Human / Bot Split</span>
-                        <span className={styles.kpi_value}>
-                            {numberFormatter.format(current.humanVisitors ?? 0)} / {numberFormatter.format(current.botVisitors ?? 0)}
+                        <span className={styles.kpi_figure}>
+                            <span className={styles.kpi_value}>
+                                {numberFormatter.format(current.humanVisitors ?? 0)} / {numberFormatter.format(current.botVisitors ?? 0)}
+                            </span>
+                            <Delta change={percentChange(current.humanVisitors ?? 0, previous.humanVisitors ?? 0)} />
                         </span>
-                        <Delta change={percentChange(current.humanVisitors ?? 0, previous.humanVisitors ?? 0)} />
                     </div>
                 )}
                 <button
@@ -292,43 +296,51 @@ export function OverviewTrend({ period, customRange, includeBots, refreshSignal 
                     aria-pressed={metric === 'pageviews'}
                 >
                     <span className={styles.kpi_label}>Pageviews</span>
-                    <span className={styles.kpi_value}>{numberFormatter.format(current.pageviews)}</span>
-                    <Delta change={percentChange(current.pageviews, previous.pageviews)} />
+                    <span className={styles.kpi_figure}>
+                        <span className={styles.kpi_value}>{numberFormatter.format(current.pageviews)}</span>
+                        <Delta change={percentChange(current.pageviews, previous.pageviews)} />
+                    </span>
                 </button>
                 <div className={styles.kpi_static}>
                     <span className={styles.kpi_label}>Views / Visit</span>
-                    <span className={styles.kpi_value}>{viewsPerVisit.toFixed(1)}</span>
-                    <Delta change={percentChange(viewsPerVisit, prevViewsPerVisit)} />
+                    <span className={styles.kpi_figure}>
+                        <span className={styles.kpi_value}>{viewsPerVisit.toFixed(1)}</span>
+                        <Delta change={percentChange(viewsPerVisit, prevViewsPerVisit)} />
+                    </span>
                 </div>
                 <div
                     className={styles.kpi_static}
                     title="Single-page sessions / sessions (derived, 30-minute inactivity rule)"
                 >
                     <span className={styles.kpi_label}>Bounce Rate</span>
-                    <span className={styles.kpi_value}>
-                        {sessionsAvailable ? `${Math.round(current.bounceRate * 100)}%` : '—'}
+                    <span className={styles.kpi_figure}>
+                        <span className={styles.kpi_value}>
+                            {sessionsAvailable ? `${Math.round(current.bounceRate * 100)}%` : '—'}
+                        </span>
+                        {sessionsAvailable
+                            ? <Delta change={percentChange(current.bounceRate, previous.bounceRate)} invert />
+                            : <span className={styles.kpi_note}>no sessions in window</span>}
                     </span>
-                    {sessionsAvailable
-                        ? <Delta change={percentChange(current.bounceRate, previous.bounceRate)} invert />
-                        : <span className={styles.kpi_note}>no sessions in window</span>}
                 </div>
                 <div
                     className={styles.kpi_static}
                     title="Average derived-session duration (last hit minus first hit)"
                 >
                     <span className={styles.kpi_label}>Visit Duration</span>
-                    <span className={styles.kpi_value}>
-                        {sessionsAvailable ? formatDurationMs(current.avgDurationMs) : '—'}
+                    <span className={styles.kpi_figure}>
+                        <span className={styles.kpi_value}>
+                            {sessionsAvailable ? formatDurationMs(current.avgDurationMs) : '—'}
+                        </span>
+                        {sessionsAvailable
+                            ? <Delta change={percentChange(current.avgDurationMs, previous.avgDurationMs)} />
+                            : <span className={styles.kpi_note}>no sessions in window</span>}
                     </span>
-                    {sessionsAvailable
-                        ? <Delta change={percentChange(current.avgDurationMs, previous.avgDurationMs)} />
-                        : <span className={styles.kpi_note}>no sessions in window</span>}
                 </div>
             </div>
 
             <BarChart
                 series={series}
-                height={280}
+                height={220}
                 yAxisMin={0}
                 integerTicks
                 yAxisFormatter={(v) => numberFormatter.format(v)}
