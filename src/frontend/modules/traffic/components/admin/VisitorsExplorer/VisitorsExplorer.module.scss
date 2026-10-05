@@ -1,43 +1,43 @@
 /**
  * VisitorsExplorer Styles
  *
- * The unified Visitors table: one wide row per visitor (identity, behaviour,
- * acquisition) with an expandable page-hit clickstream. Consolidates the
- * treatments previously split across VisitorAnalytics and PageActivity. Uses
- * container queries so the table adapts to whatever container holds it.
+ * The unified Visitors table: one row per visitor (identity, behaviour,
+ * acquisition) with an expandable page-hit clickstream, inside a single
+ * Panel whose header carries the window size and the pager. Responsive rules
+ * query the Panel's own container (named `panel` by the core component), so
+ * the table adapts to whatever holds it rather than to the viewport.
  */
 
 @use '../../../../../app/breakpoints' as *;
 
+/* Everything under the panel header: the collapsed explanation, the notes,
+   and the table, which stays last so it can run to the panel's edges. */
 .container {
-    container-type: inline-size;
-    container-name: visitors-explorer;
-}
-
-.section {
     display: flex;
     flex-direction: column;
-    gap: var(--gap-md);
+    gap: var(--gap-xs);
+    min-width: 0;
 }
 
-.section_header {
-    display: flex;
-    justify-content: space-between;
+/* One type step down from body, the same density the market detail tables use. */
+.dense_table {
+    --table-font-size: var(--font-size-body-sm);
+}
+
+/* Pager in the panel header. */
+.pager {
+    display: inline-flex;
     align-items: center;
-    gap: var(--input-group-gap);
-    flex-wrap: wrap;
+    gap: var(--gap-2xs);
 }
 
-.section_title {
-    font-size: var(--font-size-heading-sm);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text);
-    margin: 0;
-}
-
-/* The row is wide by design — scroll it here so the page body never scrolls. */
-.table_wrapper {
-    overflow-x: auto;
+.pager_status {
+    margin-right: var(--gap-xs);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-xs);
+    white-space: nowrap;
+    /* Tabular figures so the status does not jitter as pages turn. */
+    font-variant-numeric: tabular-nums;
 }
 
 /* Clicking the row toggles the drill-down, so it needs the affordance. It is
@@ -164,16 +164,22 @@
 /* Inline annotation summarizing how many source networks were flagged. */
 .flagged_note {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: var(--gap-2xs);
     margin: 0;
     font-size: var(--font-size-caption);
     color: var(--color-warning-text);
+
+    svg {
+        flex-shrink: 0;
+        margin-top: var(--gap-2xs);
+    }
 }
 
 /* Active account filter, carrying its own escape hatch. */
 .filter_note {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--gap-sm);
     margin: 0;
@@ -226,34 +232,37 @@
 
 /* Expanded per-row detail: full attribute set, then the page-hit clickstream */
 .detail_row td {
-    background: var(--color-surface);
-    padding: var(--card-padding-sm);
+    background: var(--color-surface-muted);
+    padding: var(--padding-sm) var(--padding-md);
 }
 
 .detail {
     display: flex;
     flex-direction: column;
-    gap: var(--gap-md);
+    gap: var(--gap-sm);
 }
 
+/* A class selector, so it outranks the global `h4` size. */
 .detail_section_title {
-    margin: 0 0 var(--gap-sm);
-    font-size: var(--font-size-caption);
+    margin: 0 0 var(--gap-xs);
+    color: var(--color-text);
+    font-size: var(--font-size-body-sm);
     font-weight: var(--font-weight-semibold);
-    letter-spacing: var(--letter-spacing-wide);
-    text-transform: uppercase;
-    color: var(--color-text-muted);
+    line-height: var(--line-height-tight);
+    letter-spacing: var(--letter-spacing-normal);
 }
 
 /*
  * Attribute grid. `auto-fit` with a floor rather than a fixed column count so
  * the panel reflows on its own — it renders inside a cell spanning the whole
- * table, so its width tracks the table, not the container query above.
+ * table, so its width tracks the table. The floor is three quarters of the
+ * narrowest max width: wide enough for a hashed id to wrap to two lines rather
+ * than five, narrow enough to fit four or five fields per row on a desktop.
  */
 .detail_grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(var(--max-width-xs), 1fr));
-    gap: var(--gap-sm) var(--gap-md);
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, calc(var(--max-width-xs) * 0.75)), 1fr));
+    gap: var(--gap-xs) var(--gap-md);
     margin: 0;
 }
 
@@ -313,20 +322,27 @@
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: var(--gap-2xs);
 }
 
+/* Hairline-separated rows, the same rhythm as the tables around them. */
 .hit {
     display: flex;
     align-items: baseline;
     gap: var(--gap-sm);
+    padding: var(--padding-2xs) 0;
+    border-bottom: var(--border-width-thin) solid var(--color-border-subtle);
     font-size: var(--font-size-caption);
+}
+
+.hit:last-child {
+    border-bottom: none;
 }
 
 .hit_time {
     color: var(--color-text-muted);
     white-space: nowrap;
     flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
 }
 
 .hit_path {
@@ -343,58 +359,31 @@
     white-space: nowrap;
 }
 
-.pagination {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: var(--gap-md);
-    padding-top: var(--input-group-gap);
-}
-
-.page_info {
-    font-size: var(--font-size-body-sm);
+.hits_note {
+    margin: var(--gap-xs) 0 0;
     color: var(--color-text-muted);
+    font-size: var(--font-size-caption);
 }
 
 .loading,
 .empty {
-    padding: var(--card-padding-md);
-    text-align: center;
+    margin: 0;
     color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
 }
 
-/* Container query responsive overrides */
+/* Container query responsive overrides, against the Panel's own width. */
 
-/* iPad and below: drop the three optional columns — see .col_optional. */
-@container visitors-explorer (max-width: #{$breakpoint-tablet}) {
+/* iPad and below: drop the optional columns — see .col_optional. */
+@container panel (max-width: #{$breakpoint-tablet}) {
     .col_optional {
         display: none;
     }
 }
 
-@container visitors-explorer (max-width: #{$breakpoint-mobile-lg}) {
-    .section_header {
-        flex-direction: column;
-        align-items: flex-start;
-    }
-
-    .filter_note {
-        flex-direction: column;
-        align-items: flex-start;
-    }
-
+@container panel (max-width: #{$breakpoint-mobile-lg}) {
     .hit {
         flex-direction: column;
         gap: var(--gap-2xs);
-    }
-}
-
-@container visitors-explorer (max-width: #{$breakpoint-mobile-md}) {
-    .container {
-        gap: var(--gap-md);
-    }
-
-    .section {
-        padding: var(--input-group-gap);
     }
 }

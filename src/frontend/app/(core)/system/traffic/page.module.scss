@@ -1,15 +1,17 @@
 /**
  * System Traffic Page Styles
  *
- * Tabbed layout for the traffic analytics, crawler, and SEO admin
- * sections. Follows the same tab pattern established by the Pages and
- * Users admin pages.
+ * The tab row, the global period and bot-filter controls, and the wrappers
+ * that stack or band each tab's sections. Spacing between regions uses the
+ * medium gap rather than the large one: the regions on this page are related
+ * parts of one dashboard, and the large gap left a band of empty background
+ * between every section, which is space an operator scrolls past for nothing.
  */
 
 .container {
     display: flex;
     flex-direction: column;
-    gap: var(--gap-lg);
+    gap: var(--gap-md);
     container-type: inline-size;
     container-name: traffic-admin;
 }
@@ -48,77 +50,37 @@
     }
 }
 
-/* Global period + bot-filter bar governing Analytics and Visitors. */
+/* Global period + bot-filter bar governing Analytics and Visitors. The bot
+   filter is pushed to the row's end and wraps under the period picker when
+   the page is too narrow for both. */
 .global_controls {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: var(--gap-md);
+    gap: var(--gap-sm);
     flex-wrap: wrap;
-}
-
-/* Left cluster: the period picker, kept as its own group so the bot toggle
-   stays anchored to the right via space-between. */
-.control_group {
-    display: flex;
-    align-items: center;
-    gap: var(--gap-md);
-    flex-wrap: wrap;
-}
-
-.bot_toggle {
-    display: flex;
-    gap: 0;
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
-    overflow: hidden;
-}
-
-.bot_btn,
-.bot_btn__active {
-    padding: var(--padding-xs) var(--gap-md);
-    font-size: var(--font-size-caption);
-    font-weight: var(--font-weight-medium);
-    border: none;
-    cursor: pointer;
-    transition: background var(--transition-fast), color var(--transition-fast);
-}
-
-.bot_btn {
-    color: var(--color-text-muted);
-    background: var(--color-surface);
-}
-
-.bot_btn:hover {
-    color: var(--color-text);
-}
-
-.bot_btn__active {
-    color: var(--color-text);
-    background: var(--gradient-primary);
 }
 
 .content {
     flex: 1;
+    min-width: 0;
 }
 
-/* Crawlers tab stacks the crawler trend above the raw traffic breakdowns. */
-.crawler_stack {
+/* Crawlers and Redirects each stack two independent dashboards. */
+.tab_stack {
     display: flex;
     flex-direction: column;
-    gap: var(--gap-lg);
+    gap: var(--gap-md);
 }
 
-/* Redirects tab stacks the hit analytics above the rule-management table. */
-.redirect_stack {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-lg);
-}
-
-/* Settings tab stacks the ignore-list panel above the GSC settings. */
-.settings_stack {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-lg);
+/*
+ * Settings: the ignore list and the Search Console settings side by side once
+ * both fit at a readable width, stacked otherwise. Top alignment keeps the
+ * shorter panel at its own height.
+ */
+.settings_band {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--max-width-sm)), 1fr));
+    align-items: start;
+    gap: var(--gap-md);
 }

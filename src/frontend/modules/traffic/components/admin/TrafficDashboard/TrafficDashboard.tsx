@@ -29,12 +29,14 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Bot, Globe, MapPin, RefreshCw } from 'lucide-react';
-import { Button } from '../../../../../components/ui/Button';
-import { Card } from '../../../../../components/ui/Card';
+import { RefreshCw } from 'lucide-react';
+import { IconButton } from '../../../../../components/ui/IconButton';
+import { Panel } from '../../../../../components/ui/Panel';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
-import { Stack, Grid } from '../../../../../components/layout';
 import { SegmentedControl } from '../../../../../components/ui/SegmentedControl';
+import { TabToolbar } from '../TabToolbar';
+import { PanelBody } from '../PanelBody';
+import { ClickHouseNotice } from '../ClickHouseNotice';
 import styles from './TrafficDashboard.module.scss';
 
 interface AggregateBucket {
@@ -238,198 +240,170 @@ export function TrafficDashboard({ refreshSignal }: ITrafficDashboardProps) {
     const clickhouseDisabledNotice = summary && !summary.clickhouseEnabled;
 
     return (
-        <Stack gap="lg" className={styles.container}>
-            <header className={styles.header}>
-                <div>
-                    <h1 className={styles.title}>Traffic</h1>
-                    <p className={styles.subtitle}>
-                        ClickHouse <code>traffic_events</code> — every cookieless
-                        and pre-session HTTP request we see, classified at write
-                        time. Use this to investigate bot pressure, classifier
-                        coverage, and geographic / landing distribution.
-                    </p>
-                </div>
-                <div className={styles.controls}>
-                    <SegmentedControl
-                        label="Lookback window"
-                        value={windowId}
-                        options={SINCE_OPTIONS}
-                        onChange={setWindowId}
-                    />
-                    <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => setRefreshNonce(n => n + 1)}
-                        aria-label="Refresh dashboard"
-                    >
-                        <RefreshCw size={16} aria-hidden="true" /> Refresh
-                    </Button>
-                </div>
-            </header>
-
-            {clickhouseDisabledNotice && (
-                <Card padding="md" className={styles.notice_card}>
+        <section className={styles.container}>
+            <TabToolbar
+                title="All requests"
+                meta="Every request in traffic_events, classified when recorded"
+                actions={(
+                    <>
+                        <SegmentedControl
+                            label="Lookback window"
+                            value={windowId}
+                            options={SINCE_OPTIONS}
+                            onChange={setWindowId}
+                        />
+                        <IconButton
+                            size="sm"
+                            onClick={() => setRefreshNonce(n => n + 1)}
+                            aria-label="Refresh request panels"
+                            title="Refresh"
+                        >
+                            <RefreshCw size={16} aria-hidden="true" />
+                        </IconButton>
+                    </>
+                )}
+                aboutSummary="What these panels count"
+                about={(
                     <p>
-                        ClickHouse is not configured on this deployment.
-                        Traffic events are not being recorded; all panels will
-                        report zero rows.
+                        ClickHouse <code>traffic_events</code> holds every cookieless and pre-session
+                        HTTP request the site sees, classified at write time. These are raw event
+                        counts across all traffic, with no bot filter and no ignore list, so they do not
+                        reconcile with the visitor figures on the Analytics tab. Use them to investigate
+                        bot pressure, classifier coverage, and where requests land and come from.
                     </p>
-                </Card>
-            )}
+                )}
+            />
 
-            <Card padding="md" className={styles.panel}>
-                <div className={styles.panel_header}>
-                    <Bot size={18} aria-hidden="true" />
-                    <h2 className={styles.panel_title}>Bot class breakdown</h2>
-                    {summary && (
-                        <span className={styles.panel_meta}>
-                            {formatNumber(summary.total)} events
-                        </span>
-                    )}
-                </div>
-                <PanelBody loading={summaryLoading} error={summaryError} empty={summary?.buckets.length === 0}>
-                    {summary && (
-                        <Table flush>
-                            <Thead>
-                                <Tr>
-                                    <Th scope="col">bot_class</Th>
-                                    <Th scope="col" className={styles.numeric_col}>events</Th>
-                                    <Th scope="col" className={styles.numeric_col}>share</Th>
-                                </Tr>
-                            </Thead>
-                            <Tbody>
-                                {summary.buckets.map(b => {
-                                    const share = summary.total > 0
-                                        ? ((b.count / summary.total) * 100).toFixed(1)
-                                        : '0.0';
-                                    return (
-                                        <Tr key={b.key ?? '__null__'}>
-                                            <Td><code className={styles.code}>{renderKey(b.key)}</code></Td>
-                                            <Td className={styles.numeric}>{formatNumber(b.count)}</Td>
-                                            <Td className={styles.numeric}>{share}%</Td>
+            {clickhouseDisabledNotice && <ClickHouseNotice affected="these panels" />}
+
+            <div className={styles.band}>
+                <Panel title="Bot classes" titleAs="h3" meta={summary ? `${formatNumber(summary.total)} events` : undefined}>
+                    <PanelBody
+                        loading={summaryLoading}
+                        error={summaryError}
+                        empty={summary?.buckets.length === 0}
+                        emptyMessage="No events in this window."
+                    >
+                        {summary && (
+                            <Table variant="compact" flush className={styles.dense_table}>
+                                <Thead>
+                                    <Tr>
+                                        <Th scope="col" width="expand">Class</Th>
+                                        <Th scope="col" width="shrink" numeric>Events</Th>
+                                        <Th scope="col" width="shrink" numeric>Share</Th>
+                                    </Tr>
+                                </Thead>
+                                <Tbody>
+                                    {summary.buckets.map(b => {
+                                        const share = summary.total > 0
+                                            ? ((b.count / summary.total) * 100).toFixed(1)
+                                            : '0.0';
+                                        return (
+                                            <Tr key={b.key ?? '__null__'}>
+                                                <Td className={styles.code}>{renderKey(b.key)}</Td>
+                                                <Td numeric>{formatNumber(b.count)}</Td>
+                                                <Td numeric muted>{share}%</Td>
+                                            </Tr>
+                                        );
+                                    })}
+                                </Tbody>
+                            </Table>
+                        )}
+                    </PanelBody>
+                </Panel>
+
+                <Panel title="Top landing paths" titleAs="h3" meta="Top 15 by events">
+                    <PanelBody
+                        loading={topPathsLoading}
+                        error={topPathsError}
+                        empty={topPaths?.buckets.length === 0}
+                        emptyMessage="No events in this window."
+                    >
+                        {topPaths && (
+                            <Table variant="compact" flush className={styles.dense_table}>
+                                <Thead>
+                                    <Tr>
+                                        <Th scope="col" width="expand">Path</Th>
+                                        <Th scope="col" width="shrink" numeric>Events</Th>
+                                    </Tr>
+                                </Thead>
+                                <Tbody>
+                                    {topPaths.buckets.map((b, i) => (
+                                        <Tr key={`${b.key ?? 'null'}_${i}`}>
+                                            <Td className={styles.code}>{renderKey(b.key)}</Td>
+                                            <Td numeric>{formatNumber(b.count)}</Td>
                                         </Tr>
-                                    );
-                                })}
-                            </Tbody>
-                        </Table>
-                    )}
-                </PanelBody>
-            </Card>
+                                    ))}
+                                </Tbody>
+                            </Table>
+                        )}
+                    </PanelBody>
+                </Panel>
 
-            <Card padding="md" className={styles.panel}>
-                <div className={styles.panel_header}>
-                    <Bot size={18} aria-hidden="true" />
-                    <h2 className={styles.panel_title}>bot_other — classifier gaps</h2>
-                </div>
-                <p className={styles.panel_help}>
-                    UAs that <code>isbot()</code> flagged but no explicit
-                    fragment rule matched. Recurring entries are candidates for
-                    explicit rules in <code>bot-classifier.ts</code>.
-                </p>
-                <PanelBody loading={botOtherLoading} error={botOtherError} empty={botOther?.buckets.length === 0}>
+                <Panel title="Top countries" titleAs="h3" meta="Top 15 by events">
+                    <PanelBody
+                        loading={topCountriesLoading}
+                        error={topCountriesError}
+                        empty={topCountries?.buckets.length === 0}
+                        emptyMessage="No events in this window."
+                    >
+                        {topCountries && (
+                            <Table variant="compact" flush className={styles.dense_table}>
+                                <Thead>
+                                    <Tr>
+                                        <Th scope="col" width="expand">Country</Th>
+                                        <Th scope="col" width="shrink" numeric>Events</Th>
+                                    </Tr>
+                                </Thead>
+                                <Tbody>
+                                    {topCountries.buckets.map((b, i) => (
+                                        <Tr key={`${b.key ?? 'null'}_${i}`}>
+                                            <Td className={styles.code}>{renderKey(b.key)}</Td>
+                                            <Td numeric>{formatNumber(b.count)}</Td>
+                                        </Tr>
+                                    ))}
+                                </Tbody>
+                            </Table>
+                        )}
+                    </PanelBody>
+                </Panel>
+            </div>
+
+            <Panel
+                title="Classifier gaps"
+                titleAs="h3"
+                meta={(
+                    <span title="User agents that isbot() flagged but no explicit fragment rule matched, so they were classified bot_other. Recurring entries are candidates for explicit rules in bot-classifier.ts.">
+                        User agents classified bot_other; recurring ones need a rule
+                    </span>
+                )}
+            >
+                <PanelBody
+                    loading={botOtherLoading}
+                    error={botOtherError}
+                    empty={botOther?.buckets.length === 0}
+                    emptyMessage="No unclassified bot user agents in this window."
+                >
                     {botOther && (
-                        <Table flush>
+                        <Table variant="compact" flush className={styles.dense_table}>
                             <Thead>
                                 <Tr>
-                                    <Th scope="col">user_agent</Th>
-                                    <Th scope="col" className={styles.numeric_col}>events</Th>
+                                    <Th scope="col" width="expand">User agent</Th>
+                                    <Th scope="col" width="shrink" numeric>Events</Th>
                                 </Tr>
                             </Thead>
                             <Tbody>
                                 {botOther.buckets.map((b, i) => (
                                     <Tr key={`${b.key ?? 'null'}_${i}`}>
-                                        <Td className={styles.ua_cell}>
-                                            <code className={styles.code}>{renderKey(b.key)}</code>
-                                        </Td>
-                                        <Td className={styles.numeric}>{formatNumber(b.count)}</Td>
+                                        <Td className={styles.code}>{renderKey(b.key)}</Td>
+                                        <Td numeric>{formatNumber(b.count)}</Td>
                                     </Tr>
                                 ))}
                             </Tbody>
                         </Table>
                     )}
                 </PanelBody>
-            </Card>
-
-            <Grid columns={2} gap="md">
-                <Card padding="md" className={styles.panel}>
-                    <div className={styles.panel_header}>
-                        <MapPin size={18} aria-hidden="true" />
-                        <h2 className={styles.panel_title}>Top landing paths</h2>
-                    </div>
-                    <PanelBody loading={topPathsLoading} error={topPathsError} empty={topPaths?.buckets.length === 0}>
-                        {topPaths && (
-                            <Table flush>
-                                <Thead>
-                                    <Tr>
-                                        <Th scope="col">path</Th>
-                                        <Th scope="col" className={styles.numeric_col}>events</Th>
-                                    </Tr>
-                                </Thead>
-                                <Tbody>
-                                    {topPaths.buckets.map((b, i) => (
-                                        <Tr key={`${b.key ?? 'null'}_${i}`}>
-                                            <Td><code className={styles.code}>{renderKey(b.key)}</code></Td>
-                                            <Td className={styles.numeric}>{formatNumber(b.count)}</Td>
-                                        </Tr>
-                                    ))}
-                                </Tbody>
-                            </Table>
-                        )}
-                    </PanelBody>
-                </Card>
-
-                <Card padding="md" className={styles.panel}>
-                    <div className={styles.panel_header}>
-                        <Globe size={18} aria-hidden="true" />
-                        <h2 className={styles.panel_title}>Top countries</h2>
-                    </div>
-                    <PanelBody loading={topCountriesLoading} error={topCountriesError} empty={topCountries?.buckets.length === 0}>
-                        {topCountries && (
-                            <Table flush>
-                                <Thead>
-                                    <Tr>
-                                        <Th scope="col">country</Th>
-                                        <Th scope="col" className={styles.numeric_col}>events</Th>
-                                    </Tr>
-                                </Thead>
-                                <Tbody>
-                                    {topCountries.buckets.map((b, i) => (
-                                        <Tr key={`${b.key ?? 'null'}_${i}`}>
-                                            <Td><code className={styles.code}>{renderKey(b.key)}</code></Td>
-                                            <Td className={styles.numeric}>{formatNumber(b.count)}</Td>
-                                        </Tr>
-                                    ))}
-                                </Tbody>
-                            </Table>
-                        )}
-                    </PanelBody>
-                </Card>
-            </Grid>
-        </Stack>
+            </Panel>
+        </section>
     );
-}
-
-interface PanelBodyProps {
-    loading: boolean;
-    error: string | null;
-    empty: boolean | undefined;
-    children: React.ReactNode;
-}
-
-/**
- * Shared loading / error / empty rendering for every panel. Keeps the
- * three states centrally typed so a missed empty-check in one panel
- * doesn't render a phantom table.
- */
-function PanelBody({ loading, error, empty, children }: PanelBodyProps) {
-    if (error) {
-        return <p className={styles.panel_error}>{error}</p>;
-    }
-    if (loading) {
-        return <p className={styles.panel_loading}>Loading…</p>;
-    }
-    if (empty) {
-        return <p className={styles.panel_empty}>No events in this window.</p>;
-    }
-    return <>{children}</>;
 }

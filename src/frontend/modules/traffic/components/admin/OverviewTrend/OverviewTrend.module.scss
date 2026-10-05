@@ -13,7 +13,7 @@
     container-name: overview-trend;
     display: flex;
     flex-direction: column;
-    gap: var(--gap-md);
+    gap: var(--gap-sm);
     transition: opacity var(--transition-base);
 }
 
@@ -22,10 +22,19 @@
     opacity: var(--opacity-60);
 }
 
+/*
+ * The KPIs sit in one strip separated by a hairline under the row, not as six
+ * boxed tiles inside the card: a box per figure inside the card that already
+ * frames them is the boxes-inside-boxes pattern Panel exists to remove. The
+ * column floor is half the narrowest max width, so six figures fit across a
+ * desktop card and wrap to two or three in a narrow one.
+ */
 .kpi_strip {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: var(--grid-gap-sm);
+    grid-template-columns: repeat(auto-fit, minmax(calc(var(--max-width-xs) / 2), 1fr));
+    gap: var(--gap-2xs);
+    padding-bottom: var(--padding-xs);
+    border-bottom: var(--border-width-thin) solid var(--color-border-strong);
 }
 
 .kpi,
@@ -35,27 +44,30 @@
     flex-direction: column;
     align-items: flex-start;
     gap: var(--gap-2xs);
-    padding: var(--card-padding-xs) var(--padding-sm);
-    border-radius: var(--radius-md);
-    border: var(--border-width-thin) solid var(--color-border);
-    background: var(--color-surface-muted);
+    padding: var(--padding-xs) var(--padding-sm);
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: inherit;
     text-align: left;
 }
 
 .kpi,
 .kpi_active {
     cursor: pointer;
-    transition: border-color var(--transition-base), background-color var(--transition-base);
+    transition: background-color var(--transition-base), box-shadow var(--transition-base);
     font-family: inherit;
 }
 
 .kpi:hover {
-    border-color: var(--color-border-strong);
+    background: var(--color-surface-elevated);
 }
 
+/* The selected chart metric: a tint plus an underline, so it stays readable
+   as selected without a border box around it. */
 .kpi_active {
-    border-color: var(--color-primary-alpha-38);
     background: var(--color-primary-alpha-10);
+    box-shadow: inset 0 calc(-1 * var(--border-width-medium)) 0 var(--color-primary);
 }
 
 .kpi_label {
@@ -65,8 +77,16 @@
     letter-spacing: var(--letter-spacing-wide);
 }
 
+/* The value and its period delta share one line, saving a row per figure. */
+.kpi_figure {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: var(--gap-xs);
+}
+
 .kpi_value {
-    font-size: var(--font-size-heading-md);
+    font-size: var(--font-size-heading-sm);
     font-weight: var(--font-weight-bold);
     color: var(--color-text);
     font-variant-numeric: tabular-nums;
@@ -88,12 +108,13 @@
     font-variant-numeric: tabular-nums;
 }
 
+/* The -text steps are calibrated for coloured text on a dark surface. */
 .delta_good {
-    color: var(--color-success);
+    color: var(--color-success-text);
 }
 
 .delta_bad {
-    color: var(--color-danger);
+    color: var(--color-danger-text);
 }
 
 .delta_flat {
@@ -183,9 +204,5 @@
 @container overview-trend (max-width: #{$breakpoint-mobile-md}) {
     .kpi_strip {
         grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .kpi_value {
-        font-size: var(--font-size-heading-sm);
     }
 }

@@ -50,6 +50,12 @@ export type { ICollectionBrowserProps } from './ui/ICollectionBrowserProps.js';
 export type { IClickHouseTableBrowserProps } from './ui/IClickHouseTableBrowserProps.js';
 export type { ISystemLogsMonitorProps } from './ui/ISystemLogsMonitorProps.js';
 export type { IAiToolSchemaViewProps } from './ui/IAiToolSchemaViewProps.js';
+export type { IPanelProps } from './ui/IPanelProps.js';
+export type { IFigureListRow } from './ui/IFigureListRow.js';
+export type { IFigureListProps } from './ui/IFigureListProps.js';
+export type { IPriceRailTick } from './ui/IPriceRailTick.js';
+export type { IPriceRailMarker } from './ui/IPriceRailMarker.js';
+export type { IPriceRailProps } from './ui/IPriceRailProps.js';
 export type { IDatabaseService } from './database/IDatabaseService.js';
 export type { IMigration, IMigrationContext, MigrationTarget } from './database/IMigration.js';
 export type {

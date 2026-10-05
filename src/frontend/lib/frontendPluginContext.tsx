@@ -12,6 +12,9 @@ import type {
     IPluginUserState
 } from '@/types';
 import { Card } from '../components/ui/Card';
+import { Panel } from '../components/ui/Panel';
+import { FigureList } from '../components/ui/FigureList';
+import { PriceRail } from '../components/ui/PriceRail';
 import { Badge } from '../components/ui/Badge';
 import { Skeleton } from '../components/ui/Skeleton';
 import { StatTile, StatGrid } from '../components/ui/StatTile';
@@ -343,6 +346,8 @@ export function FrontendPluginContextProvider({ children }: { children: React.Re
     const context = useMemo<IFrontendPluginContext>(() => {
         const ui: IUIComponents = {
             Card,
+            Panel,
+            FigureList,
             Badge,
             Skeleton,
             StatTile,
@@ -394,7 +399,8 @@ export function FrontendPluginContextProvider({ children }: { children: React.Re
 
         const charts: IChartComponents = {
             LineChart,
-            BarChart
+            BarChart,
+            PriceRail
         };
 
         const system: ISystemComponents = {
@@ -470,6 +476,8 @@ export function useFrontendPluginContext(): IFrontendPluginContext {
 export function createPluginContext(pluginId: string): IFrontendPluginContext {
     const ui: IUIComponents = {
         Card,
+        Panel,
+        FigureList,
         Badge,
         Skeleton,
         StatTile,
@@ -516,7 +524,8 @@ export function createPluginContext(pluginId: string): IFrontendPluginContext {
 
     const charts: IChartComponents = {
         LineChart,
-        BarChart
+        BarChart,
+        PriceRail
     };
 
     const system: ISystemComponents = {

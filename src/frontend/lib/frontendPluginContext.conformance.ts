@@ -30,6 +30,9 @@
 import type { ComponentProps } from 'react';
 import type { IUIComponents, ILayoutComponents, IChartComponents, ISystemComponents } from '@/types';
 import type { Card as Impl_Card } from '../components/ui/Card';
+import type { Panel as Impl_Panel } from '../components/ui/Panel';
+import type { FigureList as Impl_FigureList } from '../components/ui/FigureList';
+import type { PriceRail as Impl_PriceRail } from '../components/ui/PriceRail';
 import type { Badge as Impl_Badge } from '../components/ui/Badge';
 import type { Skeleton as Impl_Skeleton } from '../components/ui/Skeleton';
 import type { StatTile as Impl_StatTile } from '../components/ui/StatTile';
@@ -93,6 +96,8 @@ type AssertConformant<T extends true> = T;
 
 // IUIComponents
 type _Conformance_Card = AssertConformant<NoPhantomProps<ComponentProps<IUIComponents['Card']>, ComponentProps<typeof Impl_Card>>>;
+type _Conformance_Panel = AssertConformant<NoPhantomProps<ComponentProps<IUIComponents['Panel']>, ComponentProps<typeof Impl_Panel>>>;
+type _Conformance_FigureList = AssertConformant<NoPhantomProps<ComponentProps<IUIComponents['FigureList']>, ComponentProps<typeof Impl_FigureList>>>;
 type _Conformance_Badge = AssertConformant<NoPhantomProps<ComponentProps<IUIComponents['Badge']>, ComponentProps<typeof Impl_Badge>>>;
 type _Conformance_Skeleton = AssertConformant<NoPhantomProps<ComponentProps<IUIComponents['Skeleton']>, ComponentProps<typeof Impl_Skeleton>>>;
 type _Conformance_StatTile = AssertConformant<NoPhantomProps<ComponentProps<IUIComponents['StatTile']>, ComponentProps<typeof Impl_StatTile>>>;
@@ -133,6 +138,7 @@ type _Conformance_SubMenu = AssertConformant<NoPhantomProps<ComponentProps<ILayo
 // IChartComponents
 type _Conformance_LineChart = AssertConformant<NoPhantomProps<ComponentProps<IChartComponents['LineChart']>, ComponentProps<typeof Impl_LineChart>>>;
 type _Conformance_BarChart = AssertConformant<NoPhantomProps<ComponentProps<IChartComponents['BarChart']>, ComponentProps<typeof Impl_BarChart>>>;
+type _Conformance_PriceRail = AssertConformant<NoPhantomProps<ComponentProps<IChartComponents['PriceRail']>, ComponentProps<typeof Impl_PriceRail>>>;
 
 // ISystemComponents
 type _Conformance_SchedulerMonitor = AssertConformant<NoPhantomProps<ComponentProps<ISystemComponents['SchedulerMonitor']>, ComponentProps<typeof Impl_SchedulerMonitor>>>;

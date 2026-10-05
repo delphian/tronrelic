@@ -3,3 +3,4 @@
  */
 
 export { useSignInDialog } from './useSignInDialog';
+export type { ISignInDialogOptions } from './useSignInDialog';

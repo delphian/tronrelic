@@ -22,9 +22,9 @@ import { isAxiosError } from 'axios';
 import { Search, UserX, X } from 'lucide-react';
 import { Button } from '../../../../../components/ui/Button';
 import { Input } from '../../../../../components/ui/Input';
-import { Card } from '../../../../../components/ui/Card';
+import { Panel } from '../../../../../components/ui/Panel';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
-import { Stack } from '../../../../../components/layout';
+import { AboutDetails } from '../AboutDetails';
 import {
     adminGetIgnoredUsers,
     adminAddIgnoredUser,
@@ -154,109 +154,113 @@ export function IgnoredUsers() {
         && !results.some(r => r.id === trimmed)
         && !users.some(u => u.userId === trimmed);
 
+    const meta = loading
+        ? 'Loading…'
+        : `${users.length.toLocaleString()} ${users.length === 1 ? 'account' : 'accounts'} excluded from every stat`;
+
     return (
-        <div className={styles.container}>
-            <Card padding="lg">
-                <Stack gap="md">
-                    <h3>Ignored Registered Users</h3>
-                    <p className="text-muted">
+        <Panel title="Ignored accounts" meta={meta}>
+            <div className={styles.body}>
+                <AboutDetails summary="How ignoring works">
+                    <p>
                         Accounts on this list are excluded from every stat &mdash; the whole person,
                         including their anonymous browsing before they logged in. Filtering happens at
                         read time and no data is deleted, so removing an account restores its full
                         history to every stat immediately. Use it to keep your own and staff traffic
                         out of the numbers.
                     </p>
+                </AboutDetails>
 
-                    {error && <div className={styles.error} role="alert">{error}</div>}
+                {error && <div className={styles.error} role="alert">{error}</div>}
 
-                    <div className={styles.search}>
-                        <div className={styles.search_input}>
-                            <Search size={16} aria-hidden="true" className={styles.search_icon} />
-                            <Input
-                                type="text"
-                                role="combobox"
-                                className={styles.search_field}
-                                value={query}
-                                onChange={e => setQuery(e.target.value)}
-                                placeholder="Search accounts by email, name, or paste a user id"
-                                aria-label="Search accounts to ignore"
-                                aria-controls={listId}
-                                aria-expanded={results.length > 0 || searching || !!rawIdOffer}
-                                aria-autocomplete="list"
-                            />
-                        </div>
-
-                        {(results.length > 0 || searching || rawIdOffer) && (
-                            <ul className={styles.results} id={listId} role="listbox" aria-label="Account search results">
-                                {searching && <li className={styles.results_note}>Searching…</li>}
-                                {!searching && results.map(a => (
-                                    <li key={a.id} role="option" aria-selected={false}>
-                                        <button
-                                            type="button"
-                                            className={styles.result}
-                                            onClick={() => handleAdd(a.id)}
-                                            disabled={adding || users.some(u => u.userId === a.id)}
-                                        >
-                                            <span className={styles.result_email}>{a.email || '(no email)'}</span>
-                                            {a.name && <span className={styles.result_name}>{a.name}</span>}
-                                            {users.some(u => u.userId === a.id) && (
-                                                <span className={styles.result_already}>already ignored</span>
-                                            )}
-                                        </button>
-                                    </li>
-                                ))}
-                                {!searching && rawIdOffer && (
-                                    <li role="option" aria-selected={false}>
-                                        <button
-                                            type="button"
-                                            className={styles.result}
-                                            onClick={() => handleAdd(trimmed)}
-                                            disabled={adding}
-                                        >
-                                            <span className={styles.result_email}>Ignore user id {trimmed}</span>
-                                            <span className={styles.result_name}>no directory match — id still filters</span>
-                                        </button>
-                                    </li>
-                                )}
-                                {!searching && results.length === 0 && !rawIdOffer && (
-                                    <li className={styles.results_note}>No matching accounts.</li>
-                                )}
-                            </ul>
-                        )}
+                <div className={styles.search}>
+                    <div className={styles.search_input}>
+                        <Search size={16} aria-hidden="true" className={styles.search_icon} />
+                        <Input
+                            type="text"
+                            size="sm"
+                            role="combobox"
+                            className={styles.search_field}
+                            value={query}
+                            onChange={e => setQuery(e.target.value)}
+                            placeholder="Search accounts by email, name, or paste a user id"
+                            aria-label="Search accounts to ignore"
+                            aria-controls={listId}
+                            aria-expanded={results.length > 0 || searching || !!rawIdOffer}
+                            aria-autocomplete="list"
+                        />
                     </div>
 
-                    {loading ? (
-                        <p className="text-muted">Loading the ignore list…</p>
-                    ) : users.length === 0 ? (
-                        <p className={styles.empty}>No accounts are ignored. Every registered user counts in the stats.</p>
-                    ) : (
-                        <ul className={styles.list}>
-                            {users.map(u => (
-                                <li key={u.userId} className={styles.item}>
-                                    <span className={styles.item_icon}><UserX size={16} aria-hidden="true" /></span>
-                                    <span className={styles.item_main}>
-                                        <span className={styles.item_email}>{u.email || u.userId}</span>
-                                        {u.name && <span className={styles.item_name}>{u.name}</span>}
-                                    </span>
-                                    <span className={styles.item_added}>
-                                        <ClientTime date={u.addedAt} format="date" />
-                                    </span>
-                                    <Button
+                    {(results.length > 0 || searching || rawIdOffer) && (
+                        <ul className={styles.results} id={listId} role="listbox" aria-label="Account search results">
+                            {searching && <li className={styles.results_note}>Searching…</li>}
+                            {!searching && results.map(a => (
+                                <li key={a.id} role="option" aria-selected={false}>
+                                    <button
                                         type="button"
-                                        size="xs"
-                                        variant="ghost"
-                                        onClick={() => handleRemove(u.userId)}
-                                        loading={busyId === u.userId}
-                                        aria-label={`Stop ignoring ${u.email || u.userId}`}
+                                        className={styles.result}
+                                        onClick={() => handleAdd(a.id)}
+                                        disabled={adding || users.some(u => u.userId === a.id)}
                                     >
-                                        <X size={14} aria-hidden="true" /> Remove
-                                    </Button>
+                                        <span className={styles.result_email}>{a.email || '(no email)'}</span>
+                                        {a.name && <span className={styles.result_name}>{a.name}</span>}
+                                        {users.some(u => u.userId === a.id) && (
+                                            <span className={styles.result_already}>already ignored</span>
+                                        )}
+                                    </button>
                                 </li>
                             ))}
+                            {!searching && rawIdOffer && (
+                                <li role="option" aria-selected={false}>
+                                    <button
+                                        type="button"
+                                        className={styles.result}
+                                        onClick={() => handleAdd(trimmed)}
+                                        disabled={adding}
+                                    >
+                                        <span className={styles.result_email}>Ignore user id {trimmed}</span>
+                                        <span className={styles.result_name}>no directory match — id still filters</span>
+                                    </button>
+                                </li>
+                            )}
+                            {!searching && results.length === 0 && !rawIdOffer && (
+                                <li className={styles.results_note}>No matching accounts.</li>
+                            )}
                         </ul>
                     )}
-                </Stack>
-            </Card>
-        </div>
+                </div>
+
+                {loading ? (
+                    <p className={styles.empty}>Loading the ignore list…</p>
+                ) : users.length === 0 ? (
+                    <p className={styles.empty}>No accounts are ignored. Every registered user counts in the stats.</p>
+                ) : (
+                    <ul className={styles.list}>
+                        {users.map(u => (
+                            <li key={u.userId} className={styles.item}>
+                                <span className={styles.item_icon}><UserX size={16} aria-hidden="true" /></span>
+                                <span className={styles.item_main}>
+                                    <span className={styles.item_email}>{u.email || u.userId}</span>
+                                    {u.name && <span className={styles.item_name}>{u.name}</span>}
+                                </span>
+                                <span className={styles.item_added}>
+                                    <ClientTime date={u.addedAt} format="date" />
+                                </span>
+                                <Button
+                                    type="button"
+                                    size="xs"
+                                    variant="ghost"
+                                    onClick={() => handleRemove(u.userId)}
+                                    loading={busyId === u.userId}
+                                    aria-label={`Stop ignoring ${u.email || u.userId}`}
+                                >
+                                    <X size={14} aria-hidden="true" /> Remove
+                                </Button>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </div>
+        </Panel>
     );
 }

@@ -1,0 +1,20 @@
+/*
+ * ClickHouseNotice styles: one warning line on the shared alert warning
+ * tokens, with the padding a dense admin page can afford.
+ */
+
+.notice {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    padding: var(--padding-xs) var(--padding-sm);
+    border: var(--alert-border-width) solid var(--alert-warning-border);
+    border-radius: var(--alert-border-radius);
+    background: var(--alert-warning-background);
+    color: var(--alert-warning-color);
+    font-size: var(--alert-font-size);
+
+    svg {
+        flex-shrink: 0;
+    }
+}

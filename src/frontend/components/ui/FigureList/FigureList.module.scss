@@ -1,0 +1,78 @@
+/*
+ * Figure list: a statement-style column of labels and values.
+ *
+ * Rows are separated by a hairline rather than boxed, so a dozen figures read
+ * as one block instead of a dozen cards. Columns come from an auto-fill grid
+ * against the list's own width, so a narrow panel gets one column and a wide
+ * one gets several without the caller choosing.
+ */
+
+.list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--max-width-xs)), 1fr));
+    column-gap: var(--gap-lg);
+    /* Rows keep their own height when the list is stretched to fill a taller
+       neighbour, instead of spreading apart across the extra space. */
+    align-content: start;
+    margin: 0;
+}
+
+.list__single {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+/*
+ * Label and value share the first line; the note spans both columns under
+ * them. The value column is auto-sized so a long label wraps instead of
+ * pushing the number out of its right-aligned column.
+ */
+.row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: var(--gap-sm);
+    row-gap: var(--gap-2xs);
+    align-items: baseline;
+    padding: var(--padding-xs) 0;
+    border-bottom: var(--border-width-thin) solid var(--color-border-strong);
+}
+
+.label {
+    margin: 0;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+    line-height: var(--line-height-tight);
+}
+
+.value {
+    margin: 0;
+    color: var(--color-text);
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-height-tight);
+    text-align: right;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+/* The -text steps are calibrated for coloured text on a dark surface. */
+.value__success {
+    color: var(--color-success-text);
+}
+
+.value__warning {
+    color: var(--color-warning-text);
+}
+
+.unit {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-xs);
+    font-weight: var(--font-weight-normal);
+}
+
+.note {
+    grid-column: 1 / -1;
+    margin: 0;
+    color: var(--color-text-subtle);
+    font-size: var(--font-size-caption);
+    line-height: var(--line-height-normal);
+}

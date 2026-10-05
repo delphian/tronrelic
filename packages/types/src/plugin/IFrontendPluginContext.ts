@@ -6,6 +6,9 @@ import type { ICollectionBrowserProps } from '../ui/ICollectionBrowserProps.js';
 import type { IClickHouseTableBrowserProps } from '../ui/IClickHouseTableBrowserProps.js';
 import type { ISystemLogsMonitorProps } from '../ui/ISystemLogsMonitorProps.js';
 import type { IAiToolSchemaViewProps } from '../ui/IAiToolSchemaViewProps.js';
+import type { IPanelProps } from '../ui/IPanelProps.js';
+import type { IFigureListProps } from '../ui/IFigureListProps.js';
+import type { IPriceRailProps } from '../ui/IPriceRailProps.js';
 
 /**
  * User state exposed to frontend plugins.
@@ -83,6 +86,30 @@ export interface IUIComponents {
         className?: string;
         style?: React.CSSProperties;
     }>;
+
+    /**
+     * Panel — one titled section of a data page, drawn as a single card.
+     *
+     * A header row carries the title, a muted line of context shared by the
+     * whole section (`meta`), and any controls (`actions`), then the content
+     * follows with no second framed box inside it. Use it instead of a `Card`
+     * plus a hand-built heading row, and instead of boxing each figure inside
+     * a card, which reads as boxes inside boxes. The panel declares itself as
+     * a size container named `panel`, so content inside it can use container
+     * queries against the panel's width.
+     */
+    Panel: ComponentType<IPanelProps>;
+
+    /**
+     * FigureList — figures as statement-style label-and-value rows.
+     *
+     * Label on the left, value right-aligned in tabular figures on the right,
+     * a muted unit after the value, and an optional note under the label. Rows
+     * flow into as many columns as the list's width allows. Reach for it when
+     * a section has many figures; keep `StatGrid` + `StatTile` for a short
+     * headline band of a few figures. Values render exactly as passed.
+     */
+    FigureList: ComponentType<IFigureListProps>;
 
     /** Badge component for labels and status indicators */
     Badge: ComponentType<{
@@ -836,6 +863,19 @@ export interface IChartComponents {
         /** Fixed maximum value for Y-axis (overrides auto-calculated maximum) */
         yAxisMax?: number;
     }>;
+
+    /**
+     * PriceRail — listed values and observed values on one horizontal scale.
+     *
+     * Ticks mark the listed values (a rate card's tiers, say) with the span
+     * from cheapest to dearest shaded; markers pin observed values (what
+     * buyers paid) to the same axis, each with its own label line. Tick labels
+     * that would overlap are dropped from the label row while the tick mark
+     * stays, with its value in a tooltip. Unit-agnostic: pass plain numbers and
+     * a `formatValue`. Renders server-side with no client state, so it is safe
+     * to use straight from SSR data.
+     */
+    PriceRail: ComponentType<IPriceRailProps>;
 }
 
 /**

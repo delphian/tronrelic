@@ -28,6 +28,7 @@ export { WalletButton } from './components';
 export { AccountTray } from './components';
 export type { IAccountTrayProps } from './components';
 export { useSignInDialog } from './hooks';
+export type { ISignInDialogOptions } from './hooks';
 export { SessionProvider, useAuthSession } from './components';
 export type { IAuthSessionContext, ISessionProviderProps } from './components';
 export { AuthModal } from './components';

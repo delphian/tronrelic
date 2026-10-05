@@ -14,8 +14,8 @@ Layout components carry typed props — `<layout.Stack gap="md">` fails compilat
 interface IFrontendPluginContext {
     pluginId: string;              // Used internally for namespacing events and API routes
     layout: ILayoutComponents;     // Page, PageHeader, Stack, Grid, Section, SubMenu
-    ui: IUIComponents;             // Card, Badge, Button, CopyButton, IconButton, Switch, Input, Field, Skeleton, ClientTime, Tooltip, TronAddress, TronContractAddress, TronTransactionId, IconPickerModal, Table family
-    charts: IChartComponents;      // LineChart, BarChart
+    ui: IUIComponents;             // Card, Panel, FigureList, Badge, Button, CopyButton, IconButton, Switch, Input, Field, Skeleton, ClientTime, Tooltip, TronAddress, TronContractAddress, TronTransactionId, IconPickerModal, Table family
+    charts: IChartComponents;      // LineChart, BarChart, PriceRail
     system: ISystemComponents;     // SchedulerMonitor, CollectionBrowser, ClickHouseTableBrowser, SystemLogsMonitor, AiToolSchemaView (admin)
     api: IApiClient;               // get/post/put/patch/delete
     websocket: IWebSocketClient;   // socket + auto-prefixed helpers
@@ -75,6 +75,8 @@ const [tab, setTab] = useState('query');
 | Component | Props |
 |-----------|-------|
 | `Card` | `tone?: 'default'\|'muted'\|'accent'`, `padding?: 'sm'\|'md'\|'lg'`, `elevated?`, `className?`, `style?`, `children?` |
+| `Panel` | `title: ReactNode` (required), `titleAs?: 'h2'\|'h3'\|'h4'`, `meta?`, `actions?`, `tone?: 'default'\|'muted'`, `id?`, `className?`, `children?` |
+| `FigureList` | `rows: IFigureListRow[]` (required; each `{ key, label, value, unit?, note?, tone?: 'default'\|'success'\|'warning' }`), `label?`, `columns?: 'auto'\|'single'`, `className?` |
 | `Badge` | `tone?: 'neutral'\|'info'\|'success'\|'warning'\|'danger'`, `title?`, `className?`, `children?` |
 | `Skeleton` | `width?`, `height?`, `className?`, `style?` |
 | `Button` | `variant?: 'primary'\|'secondary'\|'ghost'\|'danger'\|'warning'`, `size?: 'xs'\|'sm'\|'md'\|'lg'`, `loading?`, `icon?: ReactNode`, `disabled?`, `onClick?`, `type?`, `aria-label?`, `className?`, `children?` |
@@ -105,6 +107,8 @@ const [tab, setTab] = useState('query');
 
 `TronContractAddress` is `TronAddress` for a smart contract, with the same props. Use it for a token contract, a DEX router, or an observer's `contract_address`. Its out-link opens Tronscan's contract page instead of the address page, and its tools menu offers only the tool pages that accept a contract, so a reader is never sent to the Signature Verifier or Address Origins for an address those tools cannot answer about. The tag editor is still in the menu for admins, and tags are shared with `TronAddress` because both are keyed by the address string.
 
+`Panel` is one titled section of a data page as a single card: the title, a muted `meta` line for context the whole section shares, and `actions` such as a pager sit on one header row, and the content follows with no second box inside it. `FigureList` lays many figures out as label-and-value rows, the way a statement reads, and is the right choice over `StatGrid` with `StatTile` once a section holds more than a handful of figures. The two are usually used together. Their props are declared once as `IPanelProps`, `IFigureListProps`, and `IFigureListRow` in the types package. See [component-panel.md](../frontend/react/component-panel.md) and [component-figure-list.md](../frontend/react/component-figure-list.md).
+
 `ClientTime` is the canonical fix for SSR/client timezone hydration mismatches — never call `new Date().toLocaleString()` directly. Prefer `format="relative"` ("2m ago") for a column of closely-spaced events, where repeating the same absolute date down every row spends the widest column on its least useful value; `format="short"` is the compact absolute form.
 
 ### Table Family
@@ -128,6 +132,10 @@ Six related components matching the `/system/*` admin tables. Compose them to in
 |-----------|-------|
 | `LineChart` | `series: { id, label, data: { date, value, max?, count? }[], color?, fill?, legendValue? }[]`, `title?`, `actions?`, `yAxisFormatter?`, `xAxisFormatter?`, `tooltipDateFormatter?`, `showLegend?`, `emptyLabel?`, `height?`, `minDate?`, `maxDate?`, `yAxisMin?`, `yAxisMax?`, `className?` |
 | `BarChart` | `series: { id, label, data: { date, value, metadata? }[], color?, legendValue? }[]`, `title?`, `actions?`, `mode?: 'normal'\|'widget'`, `yAxisFormatter?`, `xAxisFormatter?`, `showLegend?`, `emptyLabel?`, `height?`, `yAxisMin?`, `yAxisMax?`, `className?` |
+
+| `PriceRail` | `ticks: IPriceRailTick[]`, `markers: IPriceRailMarker[]`, `formatValue: (value) => string`, `bandLabel`, `unit`, `label` (all required) |
+
+`PriceRail` places listed values (ticks, such as a rate card's tiers) and observed values (markers, such as what buyers paid) on one linear scale, with the span from the lowest to the highest tick shaded. It knows nothing about units, so pass plain numbers in one unit and a `formatValue`. It holds no state and renders from SSR data. See [component-price-rail.md](../frontend/react/component-price-rail.md).
 
 `minDate`/`maxDate`/`yAxisMin`/`yAxisMax` are fixed-axis overrides for sparse data — without them the chart auto-scales tightly.
 

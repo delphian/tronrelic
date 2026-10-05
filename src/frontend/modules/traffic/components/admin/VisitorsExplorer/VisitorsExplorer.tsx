@@ -46,12 +46,13 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, ChevronDown, ChevronRight, X } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { Button } from '../../../../../components/ui/Button';
-import { Card } from '../../../../../components/ui/Card';
+import { IconButton } from '../../../../../components/ui/IconButton';
+import { Panel } from '../../../../../components/ui/Panel';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
-import { Stack } from '../../../../../components/layout';
+import { AboutDetails } from '../AboutDetails';
 import { adminGetVisitors, adminGetFlaggedSubnets, adminGetPageHits } from '../../../api';
 import type {
     AnalyticsPeriod, ICustomDateRange, IPageHit, IVisitorRow, VisitorPeriod
@@ -232,7 +233,7 @@ function VisitorDetailRow({ row, isFlagged, window }: IVisitorDetailRowProps) {
             <Td colSpan={COLUMN_COUNT}>
                 <div className={styles.detail}>
                     <section>
-                        <h3 className={styles.detail_section_title}>Visitor detail</h3>
+                        <h4 className={styles.detail_section_title}>Visitor detail</h4>
                         <dl className={styles.detail_grid}>
                             <DetailField label="Traffic id">
                                 <code className={styles.detail_mono}>{row.id}</code>
@@ -306,7 +307,7 @@ function VisitorDetailRow({ row, isFlagged, window }: IVisitorDetailRowProps) {
                     </section>
 
                     <section>
-                        <h3 className={styles.detail_section_title}>Pages hit</h3>
+                        <h4 className={styles.detail_section_title}>Pages hit</h4>
                         {loading ? (
                             <div className={styles.loading}>Loading pages…</div>
                         ) : hits.length === 0 ? (
@@ -329,7 +330,7 @@ function VisitorDetailRow({ row, isFlagged, window }: IVisitorDetailRowProps) {
                                     ))}
                                 </ol>
                                 {hits.length >= HITS_LIMIT && (
-                                    <p className="text-muted">
+                                    <p className={styles.hits_note}>
                                         Showing the newest {HITS_LIMIT} page hits — more exist in this window.
                                     </p>
                                 )}
@@ -452,25 +453,57 @@ export function VisitorsExplorer({ period, customRange, includeBots }: IVisitors
         setExpandedId(prev => (prev === id ? null : id));
     }, []);
 
+    // The window's size, stated once in the panel header rather than in a
+    // pagination line under the table.
+    const meta = loading
+        ? 'Loading…'
+        : `${total.toLocaleString()} ${total === 1 ? 'visitor' : 'visitors'} in this window. Select a row for the full record.`;
+
+    // Pager in the header row, so the table is the last thing in the panel and
+    // can run to its edges. Hidden while there is only one page to show.
+    const pager = totalPages > 1 ? (
+        <span className={styles.pager}>
+            <span className={styles.pager_status}>Page {page} of {totalPages}</span>
+            <IconButton
+                size="sm"
+                onClick={() => setPage(page - 1)}
+                disabled={loading || page <= 1}
+                aria-label="Previous page of visitors"
+            >
+                <ChevronLeft size={16} aria-hidden="true" />
+            </IconButton>
+            <IconButton
+                size="sm"
+                onClick={() => setPage(page + 1)}
+                disabled={loading || page >= totalPages}
+                aria-label="Next page of visitors"
+            >
+                <ChevronRight size={16} aria-hidden="true" />
+            </IconButton>
+        </span>
+    ) : undefined;
+
     return (
-        <Stack gap="lg" className={styles.container}>
-            <Card tone="muted" padding="sm" className={styles.section}>
-                <div className={styles.section_header}>
-                    <h2 className={styles.section_title}>Visitors</h2>
-                </div>
-                <p className="text-muted">
-                    One row per visitor in this window. A visitor is a tid that loaded a page (ran
-                    JavaScript), so cookieless bots that never run JS are excluded here and from every
-                    visitor count. The Visitor column shows the account when the visitor signed in,
-                    otherwise the traffic id; an asterisk marks a visitor whose first-ever contact
-                    falls inside this window. Acquisition columns read the visitor&apos;s first
-                    server-recorded hit, whenever that was — so a returning visitor still shows where
-                    they originally came from. Select a row to see that visitor&apos;s full record and
-                    every page they hit — on narrower screens some columns move there instead.{' '}
-                    {includeBots
-                        ? 'JavaScript-running bots the classifier caught are included; referrers are client-supplied and often spoofed.'
-                        : 'Known bots are excluded — unclassified visitors are kept, so this is not "humans only".'}
-                </p>
+        <Panel title="Visitors" meta={meta} actions={pager}>
+            <div className={styles.container}>
+                <AboutDetails summary="How this table is built">
+                    <p>
+                        One row per visitor in this window. A visitor is a tid that loaded a page (ran
+                        JavaScript), so cookieless bots that never run JS are excluded here and from every
+                        visitor count. The Visitor column shows the account when the visitor signed in,
+                        otherwise the traffic id; an asterisk marks a visitor whose first-ever contact
+                        falls inside this window.
+                    </p>
+                    <p>
+                        Acquisition columns read the visitor&apos;s first server-recorded hit, whenever
+                        that was — so a returning visitor still shows where they originally came from.
+                        Select a row to see that visitor&apos;s full record and every page they hit — on
+                        narrower screens some columns move there instead.{' '}
+                        {includeBots
+                            ? 'JavaScript-running bots the classifier caught are included; referrers are client-supplied and often spoofed.'
+                            : 'Known bots are excluded — unclassified visitors are kept, so this is not "humans only".'}
+                    </p>
+                </AboutDetails>
 
                 {flaggedSubnets.size > 0 && (
                     <p className={styles.flagged_note}>
@@ -495,173 +528,146 @@ export function VisitorsExplorer({ period, customRange, includeBots }: IVisitors
                 )}
 
                 {loading ? (
-                    <div className={styles.loading}>Loading visitors…</div>
+                    <p className={styles.loading}>Loading visitors…</p>
                 ) : rows.length === 0 ? (
-                    <div className={styles.empty}>No visitors found in this period.</div>
+                    <p className={styles.empty}>No visitors found in this period.</p>
                 ) : (
-                    <>
-                        <div className={styles.table_wrapper}>
-                            <Table>
-                                <Thead>
-                                    <Tr>
-                                        <Th scope="col">Visitor</Th>
-                                        <Th scope="col" className={styles.col_optional}>First Seen</Th>
-                                        <Th scope="col">Last Seen</Th>
-                                        <Th scope="col">Views</Th>
-                                        <Th scope="col" className={styles.col_optional}>Paths</Th>
-                                        <Th scope="col" className={styles.col_optional}>Channel</Th>
-                                        <Th scope="col">Source</Th>
-                                        <Th scope="col">Landing</Th>
-                                        <Th scope="col">Country</Th>
-                                        <Th scope="col" className={styles.col_optional}>Device</Th>
-                                    </Tr>
-                                </Thead>
-                                <Tbody>
-                                    {rows.map(row => {
-                                        const utm = formatUtm(row.utm);
-                                        const isFlagged = Boolean(row.subnetHash && flaggedSubnets.has(row.subnetHash));
-                                        const accountId = row.accountId;
-                                        return (
-                                            <React.Fragment key={row.id}>
-                                                <Tr
-                                                    className={styles.row}
-                                                    // Keeps the open row tinted now that the View/Hide
-                                                    // button no longer marks which one is expanded.
-                                                    isExpanded={expandedId === row.id}
-                                                    // Mouse-only convenience. The row stays a real <tr> —
-                                                    // role="button" would make every <td> presentational and
-                                                    // orphan the cell/header relationships — so the keyboard
-                                                    // and screen-reader path is the disclosure button below.
-                                                    onClick={() => toggleExpand(row.id)}
-                                                >
-                                                    <Td className={styles.id_cell} title={row.id}>
-                                                        <span className={styles.id_inner}>
-                                                            {/* The accessible drill-down control: a chevron, not the
-                                                                removed View/Hide button, but a real focusable element
-                                                                so expanding is not mouse-only. */}
-                                                            <button
-                                                                type="button"
-                                                                className={styles.disclosure}
-                                                                // The row also toggles, so stop the event or the
-                                                                // click would toggle twice and cancel itself out.
-                                                                onClick={event => {
-                                                                    event.stopPropagation();
-                                                                    toggleExpand(row.id);
-                                                                }}
-                                                                aria-expanded={expandedId === row.id}
-                                                                aria-label={`${expandedId === row.id ? 'Hide' : 'Show'} pages for ${row.id}`}
-                                                            >
-                                                                {expandedId === row.id
-                                                                    ? <ChevronDown size={14} aria-hidden="true" />
-                                                                    : <ChevronRight size={14} aria-hidden="true" />}
-                                                            </button>
-                                                            {/* Decorative: the accessible labels below carry "new visitor" in words. */}
-                                                            {row.isNew && (
-                                                                <span className={styles.new_marker} aria-hidden="true">*</span>
-                                                            )}
-                                                            {accountId ? (
-                                                                <button
-                                                                    type="button"
-                                                                    className={styles.account_link}
-                                                                    // The row itself toggles the drill-down, so this nested
-                                                                    // control must stop the event or filtering by account
-                                                                    // would also expand the row it was clicked in.
-                                                                    onClick={event => {
-                                                                        event.stopPropagation();
-                                                                        setAccountFilter(accountId);
-                                                                    }}
-                                                                    aria-label={`Filter to account ${accountId}${row.isNew ? ' (new visitor)' : ''}`}
-                                                                >
-                                                                    {accountId}
-                                                                </button>
-                                                            ) : (
-                                                                <span
-                                                                    className={styles.id_value}
-                                                                    aria-label={row.isNew ? `${row.id} (new visitor)` : undefined}
-                                                                >
-                                                                    {row.id}
-                                                                </span>
-                                                            )}
-                                                            {row.botClass && row.botClass !== 'human' && (
-                                                                <span className={styles.bot_tag}>{row.botClass}</span>
-                                                            )}
+                    <Table variant="compact" flush className={styles.dense_table}>
+                        <Thead>
+                            <Tr>
+                                <Th scope="col">Visitor</Th>
+                                <Th scope="col" className={styles.col_optional}>First Seen</Th>
+                                <Th scope="col">Last Seen</Th>
+                                <Th scope="col" numeric>Views</Th>
+                                <Th scope="col" numeric className={styles.col_optional}>Paths</Th>
+                                <Th scope="col" className={styles.col_optional}>Channel</Th>
+                                <Th scope="col">Source</Th>
+                                <Th scope="col">Landing</Th>
+                                <Th scope="col">Country</Th>
+                                <Th scope="col" className={styles.col_optional}>Device</Th>
+                            </Tr>
+                        </Thead>
+                        <Tbody>
+                            {rows.map(row => {
+                                const utm = formatUtm(row.utm);
+                                const isFlagged = Boolean(row.subnetHash && flaggedSubnets.has(row.subnetHash));
+                                const accountId = row.accountId;
+                                return (
+                                    <React.Fragment key={row.id}>
+                                        <Tr
+                                            className={styles.row}
+                                            // Keeps the open row tinted now that the View/Hide
+                                            // button no longer marks which one is expanded.
+                                            isExpanded={expandedId === row.id}
+                                            // Mouse-only convenience. The row stays a real <tr> —
+                                            // role="button" would make every <td> presentational and
+                                            // orphan the cell/header relationships — so the keyboard
+                                            // and screen-reader path is the disclosure button below.
+                                            onClick={() => toggleExpand(row.id)}
+                                        >
+                                            <Td className={styles.id_cell} title={row.id}>
+                                                <span className={styles.id_inner}>
+                                                    {/* The accessible drill-down control: a chevron, not the
+                                                        removed View/Hide button, but a real focusable element
+                                                        so expanding is not mouse-only. */}
+                                                    <button
+                                                        type="button"
+                                                        className={styles.disclosure}
+                                                        // The row also toggles, so stop the event or the
+                                                        // click would toggle twice and cancel itself out.
+                                                        onClick={event => {
+                                                            event.stopPropagation();
+                                                            toggleExpand(row.id);
+                                                        }}
+                                                        aria-expanded={expandedId === row.id}
+                                                        aria-label={`${expandedId === row.id ? 'Hide' : 'Show'} pages for ${row.id}`}
+                                                    >
+                                                        {expandedId === row.id
+                                                            ? <ChevronDown size={14} aria-hidden="true" />
+                                                            : <ChevronRight size={14} aria-hidden="true" />}
+                                                    </button>
+                                                    {/* Decorative: the accessible labels below carry "new visitor" in words. */}
+                                                    {row.isNew && (
+                                                        <span className={styles.new_marker} aria-hidden="true">*</span>
+                                                    )}
+                                                    {accountId ? (
+                                                        <button
+                                                            type="button"
+                                                            className={styles.account_link}
+                                                            // The row itself toggles the drill-down, so this nested
+                                                            // control must stop the event or filtering by account
+                                                            // would also expand the row it was clicked in.
+                                                            onClick={event => {
+                                                                event.stopPropagation();
+                                                                setAccountFilter(accountId);
+                                                            }}
+                                                            aria-label={`Filter to account ${accountId}${row.isNew ? ' (new visitor)' : ''}`}
+                                                        >
+                                                            {accountId}
+                                                        </button>
+                                                    ) : (
+                                                        <span
+                                                            className={styles.id_value}
+                                                            aria-label={row.isNew ? `${row.id} (new visitor)` : undefined}
+                                                        >
+                                                            {row.id}
                                                         </span>
-                                                    </Td>
-                                                    <Td className={styles.col_optional}>
-                                                        <ClientTime date={row.firstSeen} format="relative" />
-                                                    </Td>
-                                                    <Td><ClientTime date={row.lastSeen} format="relative" /></Td>
-                                                    <Td>{row.pageViews.toLocaleString()}</Td>
-                                                    <Td className={styles.col_optional}>
-                                                        {row.distinctPaths.toLocaleString()}
-                                                    </Td>
-                                                    <Td className={`${styles.channel_cell} ${styles.col_optional}`}>
-                                                        {row.channel || <span className={styles.muted}>—</span>}
-                                                    </Td>
-                                                    <Td className={styles.source_cell}>
-                                                        <span className={styles.source_inner}>
-                                                            <span className={styles.source_value} title={row.referrerDomain ?? 'direct'}>
-                                                                {row.referrerDomain || 'direct'}
-                                                            </span>
-                                                            {utm && <span className={styles.utm} title={utm}>{utm}</span>}
-                                                            {isFlagged && (
-                                                                <AlertTriangle
-                                                                    size={14}
-                                                                    className={styles.flag_icon}
-                                                                    aria-label="High-volume source network"
-                                                                />
-                                                            )}
-                                                        </span>
-                                                    </Td>
-                                                    <Td className={styles.path_cell} title={row.landingPage ?? undefined}>
-                                                        {row.landingPage || <span className={styles.muted}>—</span>}
-                                                    </Td>
-                                                    <Td className={styles.country_cell}>
-                                                        {row.country || <span className={styles.muted}>—</span>}
-                                                    </Td>
-                                                    <Td className={`${styles.device_cell} ${styles.col_optional}`}>
-                                                        {getDeviceIcon(row.device)}
-                                                    </Td>
-                                                </Tr>
-                                                {expandedId === row.id && (
-                                                    <VisitorDetailRow
-                                                        row={row}
-                                                        isFlagged={isFlagged}
-                                                        window={window}
-                                                    />
-                                                )}
-                                            </React.Fragment>
-                                        );
-                                    })}
-                                </Tbody>
-                            </Table>
-                        </div>
-
-                        <div className={styles.pagination}>
-                            <Button
-                                onClick={() => setPage(page - 1)}
-                                disabled={page <= 1}
-                                size="sm"
-                                variant="ghost"
-                            >
-                                Previous
-                            </Button>
-                            <span className={styles.page_info}>
-                                Page {page} of {totalPages} ({total.toLocaleString()}{' '}
-                                {total === 1 ? 'visitor' : 'visitors'})
-                            </span>
-                            <Button
-                                onClick={() => setPage(page + 1)}
-                                disabled={page >= totalPages}
-                                size="sm"
-                                variant="ghost"
-                            >
-                                Next
-                            </Button>
-                        </div>
-                    </>
+                                                    )}
+                                                    {row.botClass && row.botClass !== 'human' && (
+                                                        <span className={styles.bot_tag}>{row.botClass}</span>
+                                                    )}
+                                                </span>
+                                            </Td>
+                                            <Td className={styles.col_optional}>
+                                                <ClientTime date={row.firstSeen} format="relative" />
+                                            </Td>
+                                            <Td><ClientTime date={row.lastSeen} format="relative" /></Td>
+                                            <Td numeric>{row.pageViews.toLocaleString()}</Td>
+                                            <Td numeric muted className={styles.col_optional}>
+                                                {row.distinctPaths.toLocaleString()}
+                                            </Td>
+                                            <Td className={`${styles.channel_cell} ${styles.col_optional}`}>
+                                                {row.channel || <span className={styles.muted}>—</span>}
+                                            </Td>
+                                            <Td className={styles.source_cell}>
+                                                <span className={styles.source_inner}>
+                                                    <span className={styles.source_value} title={row.referrerDomain ?? 'direct'}>
+                                                        {row.referrerDomain || 'direct'}
+                                                    </span>
+                                                    {utm && <span className={styles.utm} title={utm}>{utm}</span>}
+                                                    {isFlagged && (
+                                                        <AlertTriangle
+                                                            size={14}
+                                                            className={styles.flag_icon}
+                                                            aria-label="High-volume source network"
+                                                        />
+                                                    )}
+                                                </span>
+                                            </Td>
+                                            <Td className={styles.path_cell} title={row.landingPage ?? undefined}>
+                                                {row.landingPage || <span className={styles.muted}>—</span>}
+                                            </Td>
+                                            <Td className={styles.country_cell}>
+                                                {row.country || <span className={styles.muted}>—</span>}
+                                            </Td>
+                                            <Td className={`${styles.device_cell} ${styles.col_optional}`}>
+                                                {getDeviceIcon(row.device)}
+                                            </Td>
+                                        </Tr>
+                                        {expandedId === row.id && (
+                                            <VisitorDetailRow
+                                                row={row}
+                                                isFlagged={isFlagged}
+                                                window={window}
+                                            />
+                                        )}
+                                    </React.Fragment>
+                                );
+                            })}
+                        </Tbody>
+                    </Table>
                 )}
-            </Card>
-        </Stack>
+            </div>
+        </Panel>
     );
 }
