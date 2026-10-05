@@ -10,6 +10,7 @@
 
 import type { Request, Response } from 'express';
 import type { IAddressTagPair, IAddressTagRename, IAddressTagService, ISystemLogService } from '@/types';
+import { actorFromAdminRequest } from '../../../services/content-actor.js';
 
 /**
  * Controller exposing create, rename, delete, and paged search over tag
@@ -85,7 +86,9 @@ export class AddressTagsAdminController {
                 res.status(400).json({ error: 'Body must be { tags: [{ address, tag }] }' });
                 return;
             }
-            res.status(201).json({ tags: await this.service.createTags(tags as unknown as IAddressTagPair[]) });
+            res.status(201).json({
+                tags: await this.service.createTags(tags as unknown as IAddressTagPair[], actorFromAdminRequest(req).id)
+            });
         } catch (error) {
             this.fail(res, error, 'Failed to create address tags');
         }
@@ -101,7 +104,9 @@ export class AddressTagsAdminController {
                 res.status(400).json({ error: 'Body must be { renames: [{ address, oldTag, newTag }] }' });
                 return;
             }
-            res.json({ tags: await this.service.updateTags(renames as unknown as IAddressTagRename[]) });
+            res.json({
+                tags: await this.service.updateTags(renames as unknown as IAddressTagRename[], actorFromAdminRequest(req).id)
+            });
         } catch (error) {
             this.fail(res, error, 'Failed to rename address tags');
         }
@@ -118,7 +123,9 @@ export class AddressTagsAdminController {
                 res.status(400).json({ error: 'Body must be { tags: [{ address, tag }] }' });
                 return;
             }
-            res.json({ deleted: await this.service.deleteTags(tags as unknown as IAddressTagPair[]) });
+            res.json({
+                deleted: await this.service.deleteTags(tags as unknown as IAddressTagPair[], actorFromAdminRequest(req).id)
+            });
         } catch (error) {
             this.fail(res, error, 'Failed to delete address tags');
         }
