@@ -20,9 +20,12 @@
  * network blip, or a connection pool that is busy for a moment. Retrying a data
  * insert is safe even when an earlier attempt did commit, because every data
  * table is a `ReplacingMergeTree` keyed on the row's natural identity, so a
- * repeated row collapses into one when parts merge. A call that fails every
- * attempt is logged at `fatal`, since at that point something is missing from
- * ClickHouse and an operator needs to know.
+ * repeated row collapses into one when parts merge. A failed attempt that will
+ * be retried is only a warning. A final loss is logged at `fatal`, exactly
+ * once per loss, because nothing fetches a lost block again: a call that fails
+ * every attempt, a block the full queue refused, a block whose rows could not
+ * be built, a batch written before the tables existed, and a batch the writer
+ * failed on unexpectedly.
  *
  * Gaps are the part worth understanding. Chain data is only as useful as the
  * certainty that it is complete, and a block that failed to write looks exactly
@@ -411,7 +414,10 @@ export class ChainDataWriter implements IChainDataSink {
                     // because a rejected loop would be an unhandled rejection and
                     // would leave `inFlight` counting blocks that are gone.
                     const message = error instanceof Error ? error.message : String(error);
-                    logger.error({ error, ...describeBlocks(batch.map(rows => rows.blockNumber)) }, 'Chain data batch failed unexpectedly');
+                    logger.fatal(
+                        { error, ...describeBlocks(batch.map(rows => rows.blockNumber)) },
+                        'Chain data batch failed unexpectedly: these blocks are missing from ClickHouse and are recorded as gaps'
+                    );
                     await this.recordGaps(batch.map(rows => rows.blockNumber), `unexpected writer error: ${message}`);
                 } finally {
                     this.inFlight = 0;
@@ -426,12 +432,19 @@ export class ChainDataWriter implements IChainDataSink {
      *
      * Takes the whole list at once, so blocks refused while this insert runs
      * wait for the next pass of the loop rather than starting inserts of their
-     * own. Never throws, because {@link recordGaps} does not.
+     * own. A refused block is never written, so the loss is logged at `fatal`,
+     * once per flush rather than once per block. Never throws, because
+     * {@link recordGaps} does not.
      */
     private async flushRefusedGaps(): Promise<void> {
         const blockNumbers = this.refusedGaps.splice(0);
         if (blockNumbers.length > 0) {
-            await this.recordGaps(blockNumbers, `writer queue full (${this.maxQueued} blocks waiting)`);
+            const reason = `writer queue full (${this.maxQueued} blocks waiting)`;
+            logger.fatal(
+                { ...describeBlocks(blockNumbers), reason },
+                'Chain data blocks refused by the full writer queue: these blocks are missing from ClickHouse and are recorded as gaps'
+            );
+            await this.recordGaps(blockNumbers, reason);
         }
     }
 
@@ -511,11 +524,22 @@ export class ChainDataWriter implements IChainDataSink {
     private async writeBatch(batch: IChainDataRows[]): Promise<void> {
         const ready = await this.ensureSchema();
         if (!ready) {
-            await this.recordGaps(batch.map(rows => rows.blockNumber), 'chain data tables did not exist yet');
+            const blockNumbers = batch.map(rows => rows.blockNumber);
+            const reason = 'chain data tables did not exist yet';
+            logger.fatal(
+                { ...describeBlocks(blockNumbers), reason },
+                'Chain data tables do not exist: these blocks are missing from ClickHouse and are recorded as gaps'
+            );
+            await this.recordGaps(blockNumbers, reason);
         } else {
             const unbuilt = batch.filter(rows => rows.failure !== undefined);
             for (const rows of unbuilt) {
-                await this.recordGaps([rows.blockNumber], `rows could not be built: ${rows.failure}`);
+                const reason = `rows could not be built: ${rows.failure}`;
+                logger.fatal(
+                    { blockNumber: rows.blockNumber, reason },
+                    'Chain data rows could not be built: this block is missing from ClickHouse and is recorded as a gap'
+                );
+                await this.recordGaps([rows.blockNumber], reason);
             }
 
             const built = batch.filter(rows => rows.failure === undefined);

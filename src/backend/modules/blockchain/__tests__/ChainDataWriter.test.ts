@@ -291,6 +291,12 @@ describe('ChainDataWriter', () => {
             block_number: 100,
             reason: 'rows could not be built: unexpected shape'
         }));
+        // The block is lost for good, so an operator must hear about it once.
+        expect(loggerMock.fatal).toHaveBeenCalledTimes(1);
+        expect(loggerMock.fatal).toHaveBeenCalledWith(
+            expect.objectContaining({ blockNumber: 100 }),
+            expect.stringContaining('missing from ClickHouse')
+        );
     });
 
     it('writes nothing until the tables exist, and tries again after the retry delay', async () => {
@@ -368,6 +374,12 @@ describe('ChainDataWriter', () => {
             block_number: 101,
             reason: 'writer queue full (1 blocks waiting)'
         }));
+        // A refused block is never written, so the loss is logged at fatal.
+        expect(loggerMock.fatal).toHaveBeenCalledTimes(1);
+        expect(loggerMock.fatal).toHaveBeenCalledWith(
+            expect.objectContaining({ firstBlock: 101, blockCount: 1 }),
+            expect.stringContaining('full writer queue')
+        );
     });
 
     it('records every block refused during a stall in one gap insert, after the batch in flight', async () => {
@@ -394,6 +406,8 @@ describe('ChainDataWriter', () => {
         const gaps = insertsInto(fake, 'tron._ingest_gap');
         expect(gaps).toHaveLength(1);
         expect(gaps[0].rows.map(row => row.block_number)).toEqual([101, 102, 103]);
+        // One fatal for the whole stall, not one per refused block.
+        expect(loggerMock.fatal).toHaveBeenCalledTimes(1);
     });
 
     it('writes blocks that waited as one batch, one insert per table', async () => {
