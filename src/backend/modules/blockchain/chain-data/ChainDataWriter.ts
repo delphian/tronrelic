@@ -465,16 +465,24 @@ export class ChainDataWriter implements IChainDataSink {
      * spent waiting between attempts.
      *
      * @param consequence - What it means when this call fails every attempt,
-     *                      written into the fatal log line for an operator.
+     *                      written into the final log line for an operator.
      * @param context - Fields that identify the call in the log, such as the
      *                  table and the blocks involved.
      * @param call - The ClickHouse call to make. Called once per attempt.
+     * @param triedAgainLater - True when the writer runs this call again on a
+     *                          later pass, as schema creation does once its
+     *                          retry delay has passed. Nothing is finally lost
+     *                          at that point, and the caller logs the one
+     *                          `fatal` naming the blocks it had to give up on,
+     *                          so this call's own failure is a warning instead
+     *                          of a second `fatal` for the same loss.
      * @returns Whether some attempt succeeded, with the last error when none did.
      */
     private async withRetry(
         consequence: string,
         context: Record<string, unknown>,
-        call: () => Promise<void>
+        call: () => Promise<void>,
+        triedAgainLater = false
     ): Promise<IWriteOutcome> {
         let outcome: IWriteOutcome;
         let attempts = 1;
@@ -497,10 +505,13 @@ export class ChainDataWriter implements IChainDataSink {
             });
             outcome = { succeeded: true };
         } catch (error) {
-            logger.fatal(
-                { error, attempts, ...context },
-                `ClickHouse chain data call failed on every attempt: ${consequence}`
-            );
+            const details = { error, attempts, ...context };
+            const message = `ClickHouse chain data call failed on every attempt: ${consequence}`;
+            if (triedAgainLater) {
+                logger.warn(details, message);
+            } else {
+                logger.fatal(details, message);
+            }
             outcome = { succeeded: false, error };
         }
         return outcome;
@@ -692,7 +703,11 @@ export class ChainDataWriter implements IChainDataSink {
                     for (const statement of buildChainDataSchema(this.retentionDays)) {
                         await this.clickhouse.exec(statement);
                     }
-                }
+                },
+                // Creation is attempted again after the delay, and the batch
+                // this attempt cost is reported by its own fatal, so this
+                // failure is a warning rather than a second fatal for it.
+                true
             );
             if (outcome.succeeded) {
                 this.schemaReady = true;

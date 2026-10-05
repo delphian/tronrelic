@@ -309,9 +309,16 @@ describe('ChainDataWriter', () => {
         writer.submit(buildRows(100));
         await writer.drain();
         expect(fake.inserts).toHaveLength(0);
-        expect(loggerMock.fatal).toHaveBeenCalledWith(
+        // Creation is tried again after the delay, so its own failure is a
+        // warning. The single fatal is the one naming the blocks it cost.
+        expect(loggerMock.warn).toHaveBeenCalledWith(
             expect.objectContaining({ database: 'tron' }),
             expect.stringContaining('could not be created')
+        );
+        expect(loggerMock.fatal).toHaveBeenCalledTimes(1);
+        expect(loggerMock.fatal).toHaveBeenCalledWith(
+            expect.objectContaining({ firstBlock: 100, blockCount: 1 }),
+            expect.stringContaining('Chain data tables do not exist')
         );
 
         fake.setFailExec(false);
