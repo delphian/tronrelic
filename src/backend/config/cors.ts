@@ -6,6 +6,7 @@
  * prevents the two transports from drifting apart.
  */
 import { env } from './env.js';
+import { CorsOriginRejectedError } from './CorsOriginRejectedError.js';
 
 /**
  * Build the list of allowed CORS origins from the environment.
@@ -55,7 +56,9 @@ const allowedOrigins = getAllowedOrigins();
  * Socket.IO's `cors.origin` option.
  *
  * Allows requests with no Origin header (curl, Postman, server-to-server)
- * and rejects browser requests from origins not in the allowed list.
+ * and rejects browser requests from origins not in the allowed list with a
+ * `CorsOriginRejectedError`, which the Express error handler answers as a 403
+ * and logs as a warning naming the refused origin.
  *
  * @param origin - The Origin header value (undefined when absent)
  * @param callback - Node-style callback: (error, allow)
@@ -73,6 +76,6 @@ export function corsOriginCallback(
     if (allowedOrigins.includes(origin)) {
         callback(null, true);
     } else {
-        callback(new Error('CORS policy: Origin not allowed'));
+        callback(new CorsOriginRejectedError(origin));
     }
 }

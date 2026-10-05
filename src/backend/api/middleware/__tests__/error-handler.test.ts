@@ -16,6 +16,8 @@ vi.mock('../../../lib/logger.js', () => ({
 
 const { errorHandler } = await import('../error-handler.js');
 const { TronRelicError } = await import('../../../lib/errors.js');
+const { CorsOriginRejectedError } = await import('../../../config/CorsOriginRejectedError.js');
+const { logger } = await import('../../../lib/logger.js');
 
 /**
  * Run the handler on one error and capture the response.
@@ -76,5 +78,19 @@ describe('errorHandler', () => {
 
         expect(result.status).toBe(500);
         expect(result.body.error).toBe('Internal server error');
+    });
+
+    it('answers a CORS rejection with 403 and logs a warning carrying the origin', () => {
+        vi.mocked(logger.error).mockClear();
+        vi.mocked(logger.warn).mockClear();
+
+        const result = run(new CorsOriginRejectedError('https://not-allowed.example'));
+
+        expect(result).toMatchObject({ status: 403, body: { error: 'CORS policy: Origin not allowed' } });
+        expect(logger.error).not.toHaveBeenCalled();
+        expect(logger.warn).toHaveBeenCalledWith(
+            expect.objectContaining({ error: expect.objectContaining({ origin: 'https://not-allowed.example' }) }),
+            'Handled error'
+        );
     });
 });

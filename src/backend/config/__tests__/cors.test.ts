@@ -8,7 +8,8 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { getAllowedOrigins } from '../cors.js';
+import { getAllowedOrigins, corsOriginCallback } from '../cors.js';
+import { CorsOriginRejectedError } from '../CorsOriginRejectedError.js';
 
 describe('getAllowedOrigins', () => {
     it('allows localhost ports outside production', () => {
@@ -25,5 +26,28 @@ describe('getAllowedOrigins', () => {
         const origins = getAllowedOrigins({ SITE_URL: 'https://tronrelic.com', ...flags });
 
         expect(origins).toEqual(['https://tronrelic.com', 'https://www.tronrelic.com']);
+    });
+});
+
+describe('corsOriginCallback', () => {
+    it('allows a request with no Origin header', () => {
+        let result: { err: Error | null; allow?: boolean } | undefined;
+
+        corsOriginCallback(undefined, (err, allow) => {
+            result = { err, allow };
+        });
+
+        expect(result).toEqual({ err: null, allow: true });
+    });
+
+    it('rejects a foreign origin with a 403 error that records the origin', () => {
+        let rejection: Error | null = null;
+
+        corsOriginCallback('https://not-allowed.example', (err) => {
+            rejection = err;
+        });
+
+        expect(rejection).toBeInstanceOf(CorsOriginRejectedError);
+        expect(rejection).toMatchObject({ status: 403, origin: 'https://not-allowed.example' });
     });
 });
