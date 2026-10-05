@@ -243,9 +243,14 @@ export interface IAddressTagService {
      * rather than erroring so batch creates are idempotent.
      *
      * @param tags - The pairs to create; each is validated and normalized.
+     * @param actor - Who is making the change, recorded on the mutation's log
+     *                line so an operator can tell which admin edited a tag: a
+     *                Better Auth user id, or a `system:<name>` stand-in such as
+     *                `system:service-token`. Optional so a caller with no one
+     *                behind it still works; the log then records `unattributed`.
      * @returns The stored records for every pair now present (created or pre-existing).
      */
-    createTags(tags: IAddressTagPair[]): Promise<IAddressTag[]>;
+    createTags(tags: IAddressTagPair[], actor?: string): Promise<IAddressTag[]>;
 
     /**
      * Look up all tags attached to any of the given addresses.
@@ -337,9 +342,11 @@ export interface IAddressTagService {
      * into it (the old record is removed).
      *
      * @param renames - The rename instructions to apply.
+     * @param actor - Who is making the change, recorded on the log line; see
+     *                {@link IAddressTagService.createTags} for the id forms.
      * @returns The stored records now present under each instruction's new tag.
      */
-    updateTags(renames: IAddressTagRename[]): Promise<IAddressTag[]>;
+    updateTags(renames: IAddressTagRename[], actor?: string): Promise<IAddressTag[]>;
 
     /**
      * Delete tag assignments. A document that also carries machine sources is
@@ -348,10 +355,12 @@ export interface IAddressTagService {
      * revoke an external source's assertion.
      *
      * @param tags - The exact `(address, tag)` pairs to remove; missing pairs are ignored.
+     * @param actor - Who is making the change, recorded on the log line; see
+     *                {@link IAddressTagService.createTags} for the id forms.
      * @returns The number of assignments the call took effect on (documents
      *          deleted plus documents whose `manual` flag was cleared).
      */
-    deleteTags(tags: IAddressTagPair[]): Promise<number>;
+    deleteTags(tags: IAddressTagPair[], actor?: string): Promise<number>;
 
     /**
      * Reconcile one machine source's assertions against stored provenance.

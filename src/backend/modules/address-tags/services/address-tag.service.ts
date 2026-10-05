@@ -53,6 +53,13 @@ const TRON_ADDRESS_PATTERN = /^T[1-9A-HJ-NP-Za-km-z]{33}$/;
 /** Longest tag text accepted; keeps the vocabulary index-friendly and displayable. */
 const MAX_TAG_LENGTH = 64;
 
+/**
+ * Recorded as the actor on a mutation log line when the caller named no one,
+ * so a missing attribution reads as missing rather than as a blank field. The
+ * MCP module records the same word for the same case.
+ */
+const UNATTRIBUTED_ACTOR = 'unattributed';
+
 /** Hard ceiling on batch sizes so one request cannot stall the collection. */
 const MAX_BATCH = 1000;
 
@@ -78,6 +85,91 @@ interface IAddressTagDocument {
     /** Denormalized liveness: `manual`, or any source element not withdrawn. */
     active?: boolean;
     /** Machine sources that have asserted this pair, withdrawn or live. */
+    sources?: IAddressTagSource[];
+}
+
+/**
+ * One pair's outcome in a `createTags` batch, recorded on the
+ * `Address tags created` log line so an operator reading `/system/logs` can
+ * see exactly which assignments a create added, rather than only how many
+ * pairs the request carried.
+ */
+interface IAddressTagCreateLogEntry {
+    address: string;
+    tag: string;
+    /**
+     * `created` — a new document was stored; `claimed` — a document only a
+     * machine source asserted gained the human claim; `unchanged` — a human
+     * already claimed the pair.
+     */
+    outcome: 'created' | 'claimed' | 'unchanged';
+    /** Claim flags on the document before this write, or null when it did not exist. */
+    previous: { manual: boolean; active: boolean } | null;
+    /** Human-claim flag written by the create; always true, recorded so the line states what was set. */
+    manual: boolean;
+    /** Liveness written by the create; always true because a human claim makes a tag live. */
+    active: boolean;
+    /** When the pair was first stored, which is now for a `created` pair. */
+    createdAt: Date;
+    /** Machine source elements already on the document, which a create leaves untouched. */
+    sources: IAddressTagSource[];
+}
+
+/**
+ * One instruction's outcome in an `updateTags` batch, recorded on the
+ * `Address tags renamed` log line. A rename can move a document in place,
+ * move only the human claim, or do nothing, and the log has to say which,
+ * because the old tag text survives the rename when a machine source still
+ * cites it.
+ */
+interface IAddressTagRenameLogEntry {
+    address: string;
+    oldTag: string;
+    newTag: string;
+    /**
+     * `renamed` — the document moved to the new tag in place;
+     * `claim-moved` — the human claim moved to the new-tag document, because
+     * that document already existed or the old document carries machine
+     * sources; `skipped-missing` — no document held the old tag;
+     * `skipped-same` — the old and new tag text were identical.
+     */
+    outcome: 'renamed' | 'claim-moved' | 'skipped-missing' | 'skipped-same';
+    /** When the document now carrying the new tag was first stored; set when a write happened. */
+    createdAt?: Date;
+    /** Whether the new-tag document existed before the rename; set for `claim-moved`. */
+    destinationExisted?: boolean;
+    /** Machine source elements on the new-tag document; set for `claim-moved`. */
+    destinationSources?: IAddressTagSource[];
+    /** What happened to the old-tag document; set for `claim-moved`. */
+    oldDocument?: 'deleted' | 'kept';
+    /** Liveness of the old-tag document after its human claim was cleared; set for `claim-moved`. */
+    oldDocumentActive?: boolean;
+    /** Machine source elements that stay with the old tag text; set for `claim-moved`. */
+    oldDocumentSources?: IAddressTagSource[];
+}
+
+/**
+ * One pair's outcome in a `deleteTags` batch, recorded on the
+ * `Address tags deleted` log line. A delete removes the document only when a
+ * human claim is all it holds, so the log records whether the pair is gone or
+ * still stored for a machine source's audit trail.
+ */
+interface IAddressTagDeleteLogEntry {
+    address: string;
+    tag: string;
+    /**
+     * `deleted` — the document held only the human claim and was removed;
+     * `claim-cleared` — the human claim was removed and the document stays for
+     * its machine sources; `no-human-claim` — only machine sources assert the
+     * pair, so nothing a reader can see changed; `not-found` — no document held
+     * the pair.
+     */
+    outcome: 'deleted' | 'claim-cleared' | 'no-human-claim' | 'not-found';
+    /** When the pair was first stored; absent when it was not found. */
+    createdAt?: Date;
+    /** Liveness after the write; false for a deleted document, absent when not found. */
+    active?: boolean;
+    /** Machine source elements the document carried; absent when not found. */
     sources?: IAddressTagSource[];
 }
 
@@ -181,33 +273,42 @@ export class AddressTagService implements IAddressTagService {
     }
 
     /** @inheritdoc */
-    public async createTags(tags: IAddressTagPair[]): Promise<IAddressTag[]> {
+    public async createTags(tags: IAddressTagPair[], actor?: string): Promise<IAddressTag[]> {
         const pairs = this.normalizePairs(tags);
-        if (pairs.length === 0) {
-            return [];
+        let stored: IAddressTag[] = [];
+        if (pairs.length > 0) {
+            const now = new Date();
+            const collection = this.database.getCollection<IAddressTagDocument>(ADDRESS_TAGS_COLLECTION);
+            // The prior state is read before the upserts so the log line can
+            // say which pairs were new, which gained a human claim on a
+            // document only a machine source asserted, and which machine
+            // sources were already on each document.
+            const prior = await this.findPairDocuments(pairs);
+            const priorByKey = new Map(prior.map((doc) => [this.pairKey(doc.address, doc.tag), doc]));
+            const changes: IAddressTagCreateLogEntry[] = [];
+            // Upsert per pair. Timestamps and the empty sources array ride
+            // $setOnInsert so existing assignments stay untouched and batch
+            // creates remain idempotent. The claim flags ride $set because a
+            // human is asserting the pair either way: if a machine source
+            // created the document first, the operator's claim must still be
+            // recorded, or a later source withdrawal would hide a tag a human
+            // explicitly typed. `manual: true` forces `active: true` by the
+            // derivation rule, so the two are always written together.
+            for (const pair of pairs) {
+                await collection.updateOne(
+                    { address: pair.address, tag: pair.tag },
+                    {
+                        $set: { manual: true, active: true },
+                        $setOnInsert: { ...pair, createdAt: now, updatedAt: now, sources: [] }
+                    },
+                    { upsert: true }
+                );
+                changes.push(this.describeCreate(pair, priorByKey.get(this.pairKey(pair.address, pair.tag)), now));
+            }
+            this.logger.info({ actor: actor ?? UNATTRIBUTED_ACTOR, requested: pairs.length, changes }, 'Address tags created');
+            stored = await this.findPairs(pairs);
         }
-        const now = new Date();
-        const collection = this.database.getCollection<IAddressTagDocument>(ADDRESS_TAGS_COLLECTION);
-        // Upsert per pair. Timestamps and the empty sources array ride
-        // $setOnInsert so existing assignments stay untouched and batch
-        // creates remain idempotent. The claim flags ride $set because a human
-        // is asserting the pair either way: if a machine source created the
-        // document first, the operator's claim must still be recorded, or a
-        // later source withdrawal would hide a tag a human explicitly typed.
-        // `manual: true` forces `active: true` by the derivation rule, so the
-        // two are always written together.
-        for (const pair of pairs) {
-            await collection.updateOne(
-                { address: pair.address, tag: pair.tag },
-                {
-                    $set: { manual: true, active: true },
-                    $setOnInsert: { ...pair, createdAt: now, updatedAt: now, sources: [] }
-                },
-                { upsert: true }
-            );
-        }
-        this.logger.info({ count: pairs.length }, 'Address tags created');
-        return this.findPairs(pairs);
+        return stored;
     }
 
     /** @inheritdoc */
@@ -372,7 +473,7 @@ export class AddressTagService implements IAddressTagService {
     }
 
     /** @inheritdoc */
-    public async updateTags(renames: IAddressTagRename[]): Promise<IAddressTag[]> {
+    public async updateTags(renames: IAddressTagRename[], actor?: string): Promise<IAddressTag[]> {
         if (renames.length > MAX_BATCH) {
             throw new Error(`Batch exceeds ${MAX_BATCH} renames`);
         }
@@ -383,13 +484,16 @@ export class AddressTagService implements IAddressTagService {
         }));
         const collection = this.database.getCollection<IAddressTagDocument>(ADDRESS_TAGS_COLLECTION);
         const now = new Date();
+        const changes: IAddressTagRenameLogEntry[] = [];
         for (const rename of cleaned) {
             if (rename.oldTag === rename.newTag) {
+                changes.push({ ...rename, outcome: 'skipped-same' });
                 continue;
             }
             const source = await collection.findOne({ address: rename.address, tag: rename.oldTag });
             if (!source) {
                 // Missing pair — the instruction is skipped by contract.
+                changes.push({ ...rename, outcome: 'skipped-missing' });
                 continue;
             }
             const target = await collection.findOne({ address: rename.address, tag: rename.newTag });
@@ -411,7 +515,17 @@ export class AddressTagService implements IAddressTagService {
                     },
                     { upsert: true }
                 );
-                await this.releaseManualClaim(source, now);
+                const released = await this.releaseManualClaim(source, now);
+                changes.push({
+                    ...rename,
+                    outcome: 'claim-moved',
+                    createdAt: target?.createdAt ?? now,
+                    destinationExisted: Boolean(target),
+                    destinationSources: target?.sources ?? [],
+                    oldDocument: released.deleted ? 'deleted' : 'kept',
+                    oldDocumentActive: released.active,
+                    oldDocumentSources: source.sources ?? []
+                });
                 continue;
             }
             // Plain rename: no collision and nothing but the human claim on
@@ -422,47 +536,64 @@ export class AddressTagService implements IAddressTagService {
                 { address: rename.address, tag: rename.oldTag },
                 { $set: { tag: rename.newTag, manual: true, active: true, updatedAt: now } }
             );
+            changes.push({ ...rename, outcome: 'renamed', createdAt: source.createdAt });
         }
-        this.logger.info({ count: cleaned.length }, 'Address tags renamed');
+        this.logger.info({ actor: actor ?? UNATTRIBUTED_ACTOR, requested: cleaned.length, changes }, 'Address tags renamed');
         return this.findPairs(cleaned.map((rename) => ({ address: rename.address, tag: rename.newTag })));
     }
 
     /** @inheritdoc */
-    public async deleteTags(tags: IAddressTagPair[]): Promise<number> {
+    public async deleteTags(tags: IAddressTagPair[], actor?: string): Promise<number> {
         const pairs = this.normalizePairs(tags);
-        if (pairs.length === 0) {
-            return 0;
-        }
-        const collection = this.database.getCollection<IAddressTagDocument>(ADDRESS_TAGS_COLLECTION);
-        const now = new Date();
         let deleted = 0;
-        for (const pair of pairs) {
-            const doc = await collection.findOne({ address: pair.address, tag: pair.tag });
-            if (!doc) {
-                continue;
+        if (pairs.length > 0) {
+            const collection = this.database.getCollection<IAddressTagDocument>(ADDRESS_TAGS_COLLECTION);
+            const now = new Date();
+            const changes: IAddressTagDeleteLogEntry[] = [];
+            for (const pair of pairs) {
+                const doc = await collection.findOne({ address: pair.address, tag: pair.tag });
+                if (!doc) {
+                    changes.push({ ...pair, outcome: 'not-found' });
+                    continue;
+                }
+                const sources = doc.sources ?? [];
+                if (sources.length === 0) {
+                    // Nothing but the human claim on this document — remove it.
+                    const result = await collection.deleteOne({ address: pair.address, tag: pair.tag });
+                    const removed = result.deletedCount ?? 0;
+                    deleted += removed;
+                    // A zero count means another request removed the pair
+                    // between the read and the delete, so this call changed
+                    // nothing and the log says so.
+                    changes.push(removed > 0
+                        ? { ...pair, outcome: 'deleted', createdAt: doc.createdAt, active: false, sources }
+                        : { ...pair, outcome: 'not-found' });
+                    continue;
+                }
+                // The document also carries machine assertions, and an admin
+                // removing their own tag does not revoke an external source's.
+                // Clear the human claim and recompute liveness; the document
+                // stays for the sources' audit trail. Counted as removed only
+                // when a human claim was actually cleared — deleting a pair
+                // only a machine asserts changes nothing the caller can observe.
+                const active = this.computeActive(false, sources);
+                await collection.updateOne(
+                    { address: pair.address, tag: pair.tag },
+                    { $set: { manual: false, active, updatedAt: now } }
+                );
+                if (doc.manual === true) {
+                    deleted += 1;
+                }
+                changes.push({
+                    ...pair,
+                    outcome: doc.manual === true ? 'claim-cleared' : 'no-human-claim',
+                    createdAt: doc.createdAt,
+                    active,
+                    sources
+                });
             }
-            const sources = doc.sources ?? [];
-            if (sources.length === 0) {
-                // Nothing but the human claim on this document — remove it.
-                const result = await collection.deleteOne({ address: pair.address, tag: pair.tag });
-                deleted += result.deletedCount ?? 0;
-                continue;
-            }
-            // The document also carries machine assertions, and an admin
-            // removing their own tag does not revoke an external source's.
-            // Clear the human claim and recompute liveness; the document
-            // stays for the sources' audit trail. Counted as removed only
-            // when a human claim was actually cleared — deleting a pair only
-            // a machine asserts changes nothing the caller can observe.
-            await collection.updateOne(
-                { address: pair.address, tag: pair.tag },
-                { $set: { manual: false, active: this.computeActive(false, sources), updatedAt: now } }
-            );
-            if (doc.manual === true) {
-                deleted += 1;
-            }
+            this.logger.info({ actor: actor ?? UNATTRIBUTED_ACTOR, requested: pairs.length, deleted, changes }, 'Address tags deleted');
         }
-        this.logger.info({ requested: pairs.length, deleted }, 'Address tags deleted');
         return deleted;
     }
 
@@ -701,18 +832,62 @@ export class AddressTagService implements IAddressTagService {
      *
      * @param doc - The old-tag document as loaded by the rename loop.
      * @param now - The mutation batch's single timestamp.
+     * @returns Whether the old document was deleted and its liveness
+     *          afterwards, so the rename log line can record what became of
+     *          the old tag text.
      */
-    private async releaseManualClaim(doc: IAddressTagDocument, now: Date): Promise<void> {
+    private async releaseManualClaim(doc: IAddressTagDocument, now: Date): Promise<{ deleted: boolean; active: boolean }> {
         const collection = this.database.getCollection<IAddressTagDocument>(ADDRESS_TAGS_COLLECTION);
         const sources = doc.sources ?? [];
-        if (sources.length === 0) {
+        const deleted = sources.length === 0;
+        const active = this.computeActive(false, sources);
+        if (deleted) {
             await collection.deleteOne({ address: doc.address, tag: doc.tag });
-            return;
+        } else {
+            await collection.updateOne(
+                { address: doc.address, tag: doc.tag },
+                { $set: { manual: false, active, updatedAt: now } }
+            );
         }
-        await collection.updateOne(
-            { address: doc.address, tag: doc.tag },
-            { $set: { manual: false, active: this.computeActive(false, sources), updatedAt: now } }
-        );
+        return { deleted, active };
+    }
+
+    /**
+     * Build the log entry for one pair in a create batch from the document
+     * that existed before the upsert. Kept out of the `createTags` loop so the
+     * three outcomes are decided in one readable place.
+     *
+     * A document with no `manual` field predates the provenance migration and
+     * was typed by an admin, so it counts as already claimed, matching how
+     * `toTag` reads it.
+     *
+     * @param pair - The normalized pair the create wrote.
+     * @param existing - The stored document before the upsert, or undefined
+     *                   when the pair was new.
+     * @param now - The batch timestamp, which becomes `createdAt` for a new pair.
+     * @returns The entry describing what the create did to this pair.
+     */
+    private describeCreate(
+        pair: IAddressTagPair,
+        existing: IAddressTagDocument | undefined,
+        now: Date
+    ): IAddressTagCreateLogEntry {
+        let outcome: IAddressTagCreateLogEntry['outcome'] = 'created';
+        let previous: IAddressTagCreateLogEntry['previous'] = null;
+        if (existing) {
+            outcome = existing.manual === false ? 'claimed' : 'unchanged';
+            previous = { manual: existing.manual ?? true, active: existing.active ?? true };
+        }
+        return {
+            address: pair.address,
+            tag: pair.tag,
+            outcome,
+            previous,
+            manual: true,
+            active: true,
+            createdAt: existing?.createdAt ?? now,
+            sources: existing?.sources ?? []
+        };
     }
 
     /**
@@ -856,14 +1031,28 @@ export class AddressTagService implements IAddressTagService {
      * @returns Stored assignments matching the pairs.
      */
     private async findPairs(pairs: IAddressTagPair[]): Promise<IAddressTag[]> {
-        if (pairs.length === 0) {
-            return [];
-        }
-        const collection = this.database.getCollection<IAddressTagDocument>(ADDRESS_TAGS_COLLECTION);
-        const docs = await collection.find({ $or: pairs.map((pair) => ({ address: pair.address, tag: pair.tag })) })
-            .sort({ address: 1, tag: 1 })
-            .toArray();
+        const docs = await this.findPairDocuments(pairs);
         return docs.map((doc) => this.toTag(doc));
+    }
+
+    /**
+     * Load the raw stored documents for a set of pairs in one query. Shared by
+     * `findPairs`, which projects them for callers, and `createTags`, which
+     * needs the provenance fields before its upserts to describe what changed.
+     *
+     * @param pairs - Already-normalized pairs to load.
+     * @returns The stored documents matching the pairs, sorted by address
+     *          then tag; empty when no pairs were given.
+     */
+    private async findPairDocuments(pairs: IAddressTagPair[]): Promise<IAddressTagDocument[]> {
+        let docs: IAddressTagDocument[] = [];
+        if (pairs.length > 0) {
+            const collection = this.database.getCollection<IAddressTagDocument>(ADDRESS_TAGS_COLLECTION);
+            docs = await collection.find({ $or: pairs.map((pair) => ({ address: pair.address, tag: pair.tag })) })
+                .sort({ address: 1, tag: 1 })
+                .toArray();
+        }
+        return docs;
     }
 
     /**

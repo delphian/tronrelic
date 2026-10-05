@@ -318,6 +318,108 @@ describe('AddressTagService provenance', () => {
         });
     });
 
+    describe('mutation log lines', () => {
+        /**
+         * Find the context object of the last info entry written under one
+         * message. The audit detail lives in that object, so the tests assert
+         * on it rather than on the message text alone.
+         *
+         * @param message - The log message the mutation writes.
+         * @returns The context passed with the most recent matching entry.
+         */
+        function lastInfoContext(message: string) {
+            const calls = logger.info.mock.calls.filter((call: unknown[]) => call[1] === message);
+            return calls[calls.length - 1]?.[0];
+        }
+
+        it('createTags records each pair as created, claimed, or unchanged', async () => {
+            await service.createTags([{ address: ADDRESS_A, tag: 'exchange' }]);
+            await service.syncSource('tagpacks', [{ address: ADDRESS_B, tag: 'whale', ref: 'pack-7' }], 'delta');
+
+            await service.createTags([
+                { address: ADDRESS_A, tag: 'exchange' },
+                { address: ADDRESS_B, tag: 'whale' },
+                { address: ADDRESS_B, tag: 'hot-wallet' }
+            ], 'user-123');
+
+            const context = lastInfoContext('Address tags created');
+            expect(context.actor).toBe('user-123');
+            expect(context.requested).toBe(3);
+            expect(context.changes).toEqual(expect.arrayContaining([
+                expect.objectContaining({
+                    address: ADDRESS_A, tag: 'exchange', outcome: 'unchanged',
+                    previous: { manual: true, active: true }
+                }),
+                expect.objectContaining({
+                    address: ADDRESS_B, tag: 'whale', outcome: 'claimed',
+                    previous: { manual: false, active: true }, manual: true, active: true,
+                    sources: [expect.objectContaining({ id: 'tagpacks', ref: 'pack-7' })]
+                }),
+                expect.objectContaining({
+                    address: ADDRESS_B, tag: 'hot-wallet', outcome: 'created',
+                    previous: null, sources: []
+                })
+            ]));
+        });
+
+        it('updateTags records in-place renames, moved claims, and skips', async () => {
+            await service.createTags([
+                { address: ADDRESS_A, tag: 'exchange' },
+                { address: ADDRESS_B, tag: 'whale' }
+            ]);
+            await service.syncSource('tagpacks', [{ address: ADDRESS_B, tag: 'whale' }], 'delta');
+
+            await service.updateTags([
+                { address: ADDRESS_A, oldTag: 'exchange', newTag: 'cex' },
+                { address: ADDRESS_B, oldTag: 'whale', newTag: 'big-holder' },
+                { address: ADDRESS_A, oldTag: 'missing', newTag: 'other' },
+                { address: ADDRESS_A, oldTag: 'cex', newTag: 'cex' }
+            ]);
+
+            // No actor passed — the line must say so rather than leave it blank.
+            const context = lastInfoContext('Address tags renamed');
+            expect(context.actor).toBe('unattributed');
+            expect(context.requested).toBe(4);
+            expect(context.changes).toEqual([
+                expect.objectContaining({ address: ADDRESS_A, oldTag: 'exchange', newTag: 'cex', outcome: 'renamed' }),
+                expect.objectContaining({
+                    address: ADDRESS_B, oldTag: 'whale', newTag: 'big-holder', outcome: 'claim-moved',
+                    destinationExisted: false, oldDocument: 'kept', oldDocumentActive: true,
+                    oldDocumentSources: [expect.objectContaining({ id: 'tagpacks' })]
+                }),
+                expect.objectContaining({ oldTag: 'missing', newTag: 'other', outcome: 'skipped-missing' }),
+                expect.objectContaining({ oldTag: 'cex', newTag: 'cex', outcome: 'skipped-same' })
+            ]);
+        });
+
+        it('deleteTags records removed documents, cleared claims, and misses', async () => {
+            await service.createTags([
+                { address: ADDRESS_A, tag: 'exchange' },
+                { address: ADDRESS_B, tag: 'whale' }
+            ]);
+            await service.syncSource('tagpacks', [{ address: ADDRESS_B, tag: 'whale' }], 'delta');
+
+            await service.deleteTags([
+                { address: ADDRESS_A, tag: 'exchange' },
+                { address: ADDRESS_B, tag: 'whale' },
+                { address: ADDRESS_A, tag: 'missing' }
+            ], 'system:service-token');
+
+            const context = lastInfoContext('Address tags deleted');
+            expect(context.actor).toBe('system:service-token');
+            expect(context.requested).toBe(3);
+            expect(context.deleted).toBe(2);
+            expect(context.changes).toEqual([
+                expect.objectContaining({ address: ADDRESS_A, tag: 'exchange', outcome: 'deleted', active: false }),
+                expect.objectContaining({
+                    address: ADDRESS_B, tag: 'whale', outcome: 'claim-cleared', active: true,
+                    sources: [expect.objectContaining({ id: 'tagpacks' })]
+                }),
+                { address: ADDRESS_A, tag: 'missing', outcome: 'not-found' }
+            ]);
+        });
+    });
+
     describe('the liveness filter (phase 1b)', () => {
         /**
          * Seed one live manual tag and one machine tag that has been fully

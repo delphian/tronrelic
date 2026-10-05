@@ -49,6 +49,16 @@ All methods take and return arrays; single-item calls are one-element arrays. Th
 
 Storage document: `{ address, tag, createdAt, updatedAt, manual, active, sources[] }`, where `manual` records a human claim, `sources[]` holds per-source `{ id, ref?, url?, observedAt, withdrawnAt? }` elements (withdrawal is soft — elements stay for audit), and `active` is denormalized liveness recomputed on every write (`manual`, or any source element not withdrawn). Indexes: `{address:1, tag:1}` unique, `{tag:1, active:1, address:1}`, `{'sources.id':1, address:1}` (multikey).
 
+**Mutation log lines.** Each human write logs one info entry per call under `tronrelic:address-tags`, so `/system/logs` and the Logs tab show what changed and who changed it without a database diff. The context carries `actor`, `requested`, and a `changes` array with one entry per instruction, each naming its `outcome`:
+
+| Message | Outcomes | Detail per entry |
+|---|---|---|
+| `Address tags created` | `created`, `claimed` (a machine-only document gained the human claim), `unchanged` | `address`, `tag`, `previous` claim flags (null when new), the `manual`/`active` written, `createdAt`, existing `sources` |
+| `Address tags renamed` | `renamed` (in place), `claim-moved`, `skipped-missing`, `skipped-same` | `address`, `oldTag`, `newTag`, `createdAt`; for `claim-moved` also `destinationExisted`, `destinationSources`, `oldDocument` (`deleted`/`kept`), `oldDocumentActive`, `oldDocumentSources` |
+| `Address tags deleted` | `deleted`, `claim-cleared`, `no-human-claim`, `not-found` | `address`, `tag`, `createdAt`, `active` after the write, `sources`; the context also carries the `deleted` count the call returns |
+
+`actor` comes from the optional last argument of `createTags`, `updateTags`, and `deleteTags`. The admin controller passes `actorFromAdminRequest(req).id`, which is the signed-in admin's Better Auth user id, or `system:service-token` when the request used `ADMIN_API_TOKEN`. A caller that passes nothing is logged as `unattributed`. `syncSource` logs its own counts as `Source reconcile applied`.
+
 **Liveness filter.** Every read path (`getTagsByAddresses`, `getAddressesByTags`, `listTags`, `searchTags`, `searchAddresses`, and `/suggest` through the last of those) filters on `active: true`, so a withdrawn machine tag stays stored for audit but never surfaces. Documents written before the provenance fields existed fail that equality, which is why the `module:address-tags:001_add_provenance_fields` migration (run from `/system/database`) must be executed **immediately after deploying this code** — until it runs, pre-existing tags are invisible on every surface, and module `init()` logs an error naming the migration so that state is diagnosable rather than looking like an empty collection.
 
 ## REST Endpoints
