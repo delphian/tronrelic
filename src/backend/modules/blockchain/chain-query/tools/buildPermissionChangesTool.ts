@@ -413,8 +413,10 @@ LIMIT {limit:UInt32}`,
  *   the 48-hour maximum.
  * - Without `FINAL`, a block written twice and not yet merged appears twice.
  *   The page asks for twice the rows it needs and keeps the first of each
- *   transaction id, which is enough because a duplicate sorts next to its
- *   original.
+ *   transaction id, which works because a duplicate sorts next to its
+ *   original. The writer retries a lost insert up to four times, so a row can
+ *   briefly hold more than two copies; a raw read that filled its limit
+ *   therefore marks the page truncated rather than trusting the unique count.
  * - The account and, when asked for, the signatures are read only for the
  *   page's own rows, through {@link readTransactionDetails}.
  *
@@ -452,6 +454,7 @@ PREWHERE ${SIGNED_PREWHERE}
 WHERE ${conditions.join('\n  AND ')}`,
         params
     );
+    const fetchRows = (options.limit + 1) * 2;
     const fetched = await session.query<ISignedRow>(
         `SELECT block_number, block_timestamp, tx_id, contract_type, permission_id, signature.size0 AS signatures, contract_ret
 FROM ${CHAIN_DATA_DATABASE}.transaction
@@ -459,7 +462,7 @@ PREWHERE ${SIGNED_PREWHERE}
 WHERE ${[...conditions, ...(after ? [after.condition] : [])].join('\n  AND ')}
 ORDER BY block_timestamp DESC, tx_id DESC
 LIMIT {fetch:UInt32}`,
-        { ...params, ...(after ? after.params : {}), fetch: (options.limit + 1) * 2 }
+        { ...params, ...(after ? after.params : {}), fetch: fetchRows }
     );
     const seen = new Set<string>();
     const unique: ISignedRow[] = [];
@@ -469,7 +472,10 @@ LIMIT {fetch:UInt32}`,
             unique.push(row);
         }
     }
-    const truncated = unique.length > options.limit;
+    // A raw read that filled its limit may have left matches behind it however
+    // few rows survived the dedupe, so the page continues. The cursor comes from
+    // the last row kept and is a strict comparison, so dropped rows are read again.
+    const truncated = unique.length > options.limit || fetched.length >= fetchRows;
     const rows = unique.slice(0, options.limit);
     const last = rows[rows.length - 1];
     const details = await readTransactionDetails(
