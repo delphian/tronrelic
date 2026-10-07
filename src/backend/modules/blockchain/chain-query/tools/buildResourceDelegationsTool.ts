@@ -21,6 +21,25 @@
  * the keys recovered from them, which do. It is opt-in because it adds a read
  * and up to about 0.3 seconds of CPU for a full page.
  *
+ * The delegation tables are sorted by `owner_address` and read with `FINAL`,
+ * which merges every stored part in range before a filter on any other column
+ * applies, and which ClickHouse 24.3 runs without skip indexes. On production
+ * that merge exceeded the `ai-agent` account's 1 GB memory limit from a
+ * 72-hour chain-wide window, and on any 168-hour lookup by receiver or by
+ * either role, while a lookup by delegator stayed cheap. Three things keep the
+ * reads inside the limits:
+ *
+ * - Every delegation read carries {@link DELEGATION_READ_SETTINGS}, so `FINAL`
+ *   merges one daily partition at a time and the receiver bloom filter applies.
+ * - An address is filtered as one read per role rather than one `OR`, because
+ *   an `OR` across the sort key and another column lets neither index skip
+ *   anything (see {@link partyConditions}).
+ * - A read with no address, which no index can narrow, is capped at
+ *   {@link CHAIN_WIDE_WINDOW_RULES}. Measured on production, 48 hours of every
+ *   delegation read 8.2 million rows and about 1.6 GB in under 4 seconds, so
+ *   168 hours would pass the account's 5 GB read limit however little memory
+ *   the merge used.
+ *
  * @module backend/modules/blockchain/chain-query/tools/buildResourceDelegationsTool
  */
 
@@ -60,8 +79,39 @@ import {
     windowProperties
 } from './chainQueryToolShared.js';
 
-/** The window this tool accepts. Delegation tables are small, so the whole retention is allowed. */
+/**
+ * The window for a read narrowed by an address, and for the staking view.
+ * A delegator is the leading sort column and a receiver has a skip index, so
+ * one wallet's delegations stay cheap over the whole retention, and the
+ * staking tables are small (168 hours chain-wide read about 215,000 rows).
+ */
 const WINDOW_RULES: IWindowRules = { defaultHours: 24, maxHours: 168 };
+
+/**
+ * The window for a delegation read that no address narrows: the events view
+ * without an address, and both top views. Such a read covers every delegation
+ * in the window, about 4 million a day, and no index can skip any of it.
+ */
+const CHAIN_WIDE_WINDOW_RULES: IWindowRules = { defaultHours: 24, maxHours: 48 };
+
+/**
+ * Query settings every read of the delegation tables carries, appended to the
+ * outermost query, where they apply to its subqueries as well.
+ *
+ * `do_not_merge_across_partitions_select_final` lets `FINAL` merge each daily
+ * partition on its own instead of every part in the window at once. That is
+ * exact here: a block written twice is written with the same block time, so a
+ * duplicate is always in the same partition as its original.
+ *
+ * `use_skip_indexes_if_final` lets the `receiver_address` bloom filter skip
+ * granules, which ClickHouse 24.3 otherwise does not do under `FINAL`. That is
+ * exact here too: the only rows `FINAL` collapses are identical copies of one
+ * contract, so a granule skipped because its receivers do not match cannot
+ * hold the surviving copy of a row that does.
+ *
+ * The `ai-agent` profile is `readonly = 2`, which permits setting both per query.
+ */
+const DELEGATION_READ_SETTINGS = 'SETTINGS do_not_merge_across_partitions_select_final = 1, use_skip_indexes_if_final = 1';
 
 /** Rows returned when the caller does not say. */
 const DEFAULT_LIMIT = 50;
@@ -138,20 +188,105 @@ interface IDelegationFilters {
  * `false` and 0 for them. Each transaction holds one contract, so the block
  * time and transaction id identify a row across both tables.
  *
- * @param conditions - Conditions applied to both tables, with placeholders.
+ * Each table is read once per party condition, joined with `UNION ALL`, so
+ * each read can be narrowed by its own index. A query using this must end
+ * with {@link DELEGATION_READ_SETTINGS}.
+ *
+ * @param conditions - Conditions applied to every read, with placeholders.
  * @param action - Which tables to read.
+ * @param parties - One address condition per read, from {@link partyConditions}; empty for a read of the whole chain.
  * @returns A subquery text usable in a FROM clause.
  */
-function delegationRows(conditions: string[], action: 'delegate' | 'undelegate' | 'both'): string {
-    const where = conditions.join('\n      AND ');
-    const delegate = `SELECT 'delegate' AS action, block_number, block_timestamp, tx_id, owner_address, receiver_address, resource, balance, lock, lock_period, permission_id, contract_ret
-    FROM ${CHAIN_DATA_DATABASE}.delegate_resource_contract FINAL
-    WHERE ${where}`;
-    const undelegate = `SELECT 'undelegate' AS action, block_number, block_timestamp, tx_id, owner_address, receiver_address, resource, balance, false AS lock, toInt64(0) AS lock_period, permission_id, contract_ret
-    FROM ${CHAIN_DATA_DATABASE}.un_delegate_resource_contract FINAL
-    WHERE ${where}`;
-    const parts = action === 'delegate' ? [delegate] : action === 'undelegate' ? [undelegate] : [delegate, undelegate];
-    return `(\n    ${parts.join('\n    UNION ALL\n    ')}\n)`;
+function delegationRows(conditions: string[], action: 'delegate' | 'undelegate' | 'both', parties: readonly string[] = []): string {
+    const tables = [
+        ...(action === 'undelegate' ? [] : [{
+            table: 'delegate_resource_contract',
+            columns: '\'delegate\' AS action, block_number, block_timestamp, tx_id, owner_address, receiver_address, resource, balance, lock, lock_period, permission_id, contract_ret'
+        }]),
+        ...(action === 'delegate' ? [] : [{
+            table: 'un_delegate_resource_contract',
+            columns: '\'undelegate\' AS action, block_number, block_timestamp, tx_id, owner_address, receiver_address, resource, balance, false AS lock, toInt64(0) AS lock_period, permission_id, contract_ret'
+        }])
+    ];
+    const reads = tables.flatMap(({ table, columns }) => (parties.length > 0 ? parties : [null]).map(party => `SELECT ${columns}
+    FROM ${CHAIN_DATA_DATABASE}.${table} FINAL
+    WHERE ${[...conditions, ...(party ? [party] : [])].join('\n      AND ')}`));
+    return `(\n    ${reads.join('\n    UNION ALL\n    ')}\n)`;
+}
+
+/**
+ * The address condition for each read of one wallet's delegations, one per role.
+ *
+ * A wallet in either role is filtered as two reads rather than as
+ * `owner_address = X OR receiver_address = X`. The delegator is the leading
+ * sort column and the receiver has a bloom filter, but an `OR` across the two
+ * lets neither index skip anything, which made a 168-hour lookup of a quiet
+ * wallet merge every delegation in the week and run out of memory. The two
+ * reads never return the same row, because java-tron refuses a delegation or
+ * reclaim whose receiver is its owner.
+ *
+ * @param role - Which side of the delegation the wallet is on, as the caller asked.
+ * @returns The conditions, each using the `{address:String}` placeholder.
+ */
+function partyConditions(role: 'delegator' | 'receiver' | 'both'): string[] {
+    return [
+        ...(role === 'receiver' ? [] : ['owner_address = {address:String}']),
+        ...(role === 'delegator' ? [] : ['receiver_address = {address:String}'])
+    ];
+}
+
+/**
+ * Read the window, explaining the shorter limit when no address narrows the read.
+ *
+ * The generic window error only states a number of hours, and a model that
+ * asked for 168 hours of the chain's delegations cannot tell from it that an
+ * address would have allowed the full week. The added sentence says so, which
+ * is the correction the model can act on.
+ *
+ * @param input - The tool's raw arguments, holding hours or since/until.
+ * @param rules - The window rules that apply to this read.
+ * @param chainWide - Whether no address narrows the read, which is what the shorter limit is for.
+ * @param toolkit - The shared dependencies, for the clock and the retention.
+ * @returns The window to answer for.
+ * @throws ChainQueryError when the window is not usable, with the reason for the chain-wide limit added where it applies.
+ */
+function parseChainWideWindow(
+    input: Record<string, unknown>,
+    rules: IWindowRules,
+    chainWide: boolean,
+    toolkit: IChainQueryToolkit
+): IChainWindow {
+    let window: IChainWindow;
+    try {
+        window = parseWindow(input, rules, toolkit.now(), toolkit.retentionDays);
+    } catch (error) {
+        throw chainWide && error instanceof ChainQueryError && fitsAddressWindow(input, toolkit)
+            ? new ChainQueryError(
+                `${error.message} A read no address narrows (the events view without an address, and the top views) covers at most ${CHAIN_WIDE_WINDOW_RULES.maxHours} hours, because it reads every delegation on the chain in the window; the events view with an address allows up to ${WINDOW_RULES.maxHours}.`,
+                'input'
+            )
+            : error;
+    }
+    return window;
+}
+
+/**
+ * Whether the window would have been accepted with an address, which tells a
+ * window refused only for being chain-wide apart from one malformed or wider
+ * than the retention, so the explanation is added only where it is the cause.
+ *
+ * @param input - The tool's raw arguments.
+ * @param toolkit - The shared dependencies, for the clock and the retention.
+ * @returns True when the window passes the address-narrowed rules.
+ */
+function fitsAddressWindow(input: Record<string, unknown>, toolkit: IChainQueryToolkit): boolean {
+    let fits = true;
+    try {
+        parseWindow(input, WINDOW_RULES, toolkit.now(), toolkit.retentionDays);
+    } catch {
+        fits = false;
+    }
+    return fits;
 }
 
 /**
@@ -173,7 +308,7 @@ export function buildResourceDelegationsTool(toolkit: IChainQueryToolkit): IAiTo
             '"staking" gives stake (FreezeBalanceV2), unstake (UnfreezeBalanceV2), and withdrawal counts and totals per hour or day, for one wallet or the whole chain. ' +
             'Use for energy-market questions such as who rents energy to an address, which providers are most active, or whether staking rose today. Delegations move no TRX, so the transfer tools do not show them. ' +
             'Amounts are the staked TRX behind each delegation, not energy units; the energy a stake yields changes with network-wide staking, so it is not converted. ' +
-            'Parameters: view; address (base58 or hex); role "delegator", "receiver", or "both" (default) for events with an address; resource "ENERGY" or "BANDWIDTH" (omit for both); action "delegate", "undelegate", or "both" (default) for events; minTrx (whole TRX, events only); recoverSigners (events only, default false; adds a read); includeFailed (default false); bucket "hour" (default) or "day" for staking; hours or since/until (default 24 hours, at most 168); limit (default 50, at most 200); cursor (events only; pass nextCursor back). ' +
+            'Parameters: view; address (base58 or hex); role "delegator", "receiver", or "both" (default) for events with an address; resource "ENERGY" or "BANDWIDTH" (omit for both); action "delegate", "undelegate", or "both" (default) for events; minTrx (whole TRX, events only); recoverSigners (events only, default false; adds a read); includeFailed (default false); bucket "hour" (default) or "day" for staking; hours or since/until (default 24 hours; at most 168 with an address and for staking, at most 48 for the events view without an address and for the top views, which read every delegation on the chain); limit (default 50, at most 200); cursor (events only; pass nextCursor back). ' +
             SHARED_DESCRIPTION,
         capability: CHAIN_QUERY_CAPABILITY,
         inputSchema: {
@@ -198,7 +333,7 @@ export function buildResourceDelegationsTool(toolkit: IChainQueryToolkit): IAiTo
         inputExamples: [
             { address: 'TXFBqBbqJommqZf7BV8NNYzePh97UmJodJ', role: 'receiver', resource: 'ENERGY' },
             { address: 'TXFBqBbqJommqZf7BV8NNYzePh97UmJodJ', role: 'delegator', recoverSigners: true, limit: 20 },
-            { view: 'top-delegators', resource: 'ENERGY', hours: 24, limit: 20 },
+            { view: 'top-delegators', resource: 'ENERGY', hours: 48, limit: 20 },
             { view: 'counterparties', address: 'TXFBqBbqJommqZf7BV8NNYzePh97UmJodJ', hours: 168 },
             { view: 'staking', bucket: 'day', hours: 168 }
         ],
@@ -215,7 +350,9 @@ export function buildResourceDelegationsTool(toolkit: IChainQueryToolkit): IAiTo
             const bucket = parseChoice(input.bucket, 'bucket', ['hour', 'day'] as const, 'hour');
             const limit = parseInteger(input.limit, 'limit', DEFAULT_LIMIT, 1, MAX_LIMIT);
             const cursor = view === 'events' ? decodeCursor(input.cursor, TIME_TX_CURSOR_KEYS) : undefined;
-            const window = pinWindowToCursor(cursor, parseWindow(input, WINDOW_RULES, toolkit.now(), toolkit.retentionDays), WINDOW_RULES);
+            const chainWide = view === 'top-delegators' || view === 'top-receivers' || (view === 'events' && !address);
+            const rules = chainWide ? CHAIN_WIDE_WINDOW_RULES : WINDOW_RULES;
+            const window = pinWindowToCursor(cursor, parseChainWideWindow(input, rules, chainWide, toolkit), rules);
 
             if (view === 'counterparties' && !address) {
                 throw new ChainQueryError('The counterparties view needs an address.', 'input');
@@ -301,14 +438,8 @@ async function readEvents(
 ): Promise<{ payload: Record<string, unknown>; addresses: string[]; notes: string[] }> {
     const conditions = [...filters.conditions];
     const params: Record<string, unknown> = { ...filters.params, limit: options.limit + 1 };
+    const parties = options.address ? partyConditions(options.role) : [];
     if (options.address) {
-        conditions.push(
-            options.role === 'delegator'
-                ? 'owner_address = {address:String}'
-                : options.role === 'receiver'
-                    ? 'receiver_address = {address:String}'
-                    : '(owner_address = {address:String} OR receiver_address = {address:String})'
-        );
         params.address = options.address;
     }
     if (options.minTrx !== undefined && options.minTrx !== null && options.minTrx !== '') {
@@ -326,10 +457,11 @@ async function readEvents(
 
     const fetched = await session.query<IDelegationRow>(
         `SELECT action, block_number, block_timestamp, tx_id, owner_address, receiver_address, resource, toString(balance) AS balance_text, lock, lock_period, permission_id, contract_ret
-FROM ${delegationRows(conditions, options.action)}
+FROM ${delegationRows(conditions, options.action, parties)}
 ${after ? `WHERE ${after.condition}` : ''}
 ORDER BY block_timestamp DESC, tx_id DESC
-LIMIT {limit:UInt32}`,
+LIMIT {limit:UInt32}
+${DELEGATION_READ_SETTINGS}`,
         params
     );
     const truncated = fetched.length > options.limit;
@@ -402,7 +534,6 @@ async function readCounterparties(
     address: string,
     trx: IChainTokenInfo | undefined
 ): Promise<{ payload: Record<string, unknown>; addresses: string[]; notes: string[] }> {
-    const conditions = [...filters.conditions, '(owner_address = {address:String} OR receiver_address = {address:String})'];
     const rows = await session.query<ICounterpartyRow>(
         `SELECT
     if(owner_address = {address:String}, receiver_address, owner_address) AS counterparty,
@@ -415,10 +546,11 @@ async function readCounterparties(
     sumIf(balance, action = 'delegate') + sumIf(balance, action = 'undelegate') AS activity,
     max(block_timestamp) AS last_at,
     count() OVER () AS total_groups
-FROM ${delegationRows(conditions, 'both')}
+FROM ${delegationRows(filters.conditions, 'both', partyConditions('both'))}
 GROUP BY counterparty, relation, resource
 ORDER BY activity DESC, counterparty
-LIMIT {limit:UInt32}`,
+LIMIT {limit:UInt32}
+${DELEGATION_READ_SETTINGS}`,
         { ...filters.params, address }
     );
     const total = Number(rows[0]?.total_groups ?? 0);
@@ -473,7 +605,8 @@ async function readTop(
 FROM ${delegationRows(filters.conditions, 'both')}
 GROUP BY party
 ORDER BY delegated_raw DESC, party
-LIMIT {limit:UInt32}`,
+LIMIT {limit:UInt32}
+${DELEGATION_READ_SETTINGS}`,
         filters.params
     );
     const total = Number(rows[0]?.total_parties ?? 0);

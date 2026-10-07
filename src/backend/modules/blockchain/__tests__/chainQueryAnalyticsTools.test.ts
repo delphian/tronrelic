@@ -144,6 +144,48 @@ describe('blockchain-resource-delegations', () => {
         expect(pointRead?.params).toEqual(expect.objectContaining({ blocks: [29000], txIds: [SIGNED_DELEGATION.txId] }));
     });
 
+    it('reads a wallet in either role as one read per role and table, never as an OR, with the FINAL settings', async () => {
+        const { toolkit, reads } = buildToolkit(() => []);
+
+        await buildResourceDelegationsTool(toolkit).handler({ address: WALLET, hours: 168 }, undefined, CONTEXT);
+        await buildResourceDelegationsTool(toolkit).handler({ view: 'counterparties', address: WALLET, hours: 168 }, undefined, CONTEXT);
+
+        const delegationReads = reads.filter(entry => entry.sql.includes('delegate_resource_contract'));
+        expect(delegationReads).toHaveLength(2);
+        for (const read of delegationReads) {
+            expect(read.sql).not.toMatch(/ OR /);
+            expect(read.sql.split('owner_address = {address:String}\n')).toHaveLength(3);
+            expect(read.sql.split('receiver_address = {address:String}\n')).toHaveLength(3);
+            expect(read.sql.trimEnd().endsWith('SETTINGS do_not_merge_across_partitions_select_final = 1, use_skip_indexes_if_final = 1')).toBe(true);
+        }
+    });
+
+    it('caps reads no address narrows at 48 hours and says an address allows the full week', async () => {
+        const { toolkit, reads } = buildToolkit(() => []);
+        const tool = buildResourceDelegationsTool(toolkit);
+
+        const chainWide = await tool.handler({ hours: 72 }, undefined, CONTEXT) as Record<string, unknown>;
+        const top = await tool.handler({ view: 'top-receivers', hours: 72 }, undefined, CONTEXT) as Record<string, unknown>;
+        expect(chainWide).toEqual(expect.objectContaining({ success: false, errorKind: 'input' }));
+        expect(String(chainWide.error)).toContain('with an address allows up to 168');
+        expect(top).toEqual(expect.objectContaining({ success: false, errorKind: 'input' }));
+        expect(reads).toHaveLength(0);
+
+        const narrowed = await tool.handler({ address: WALLET, role: 'receiver', hours: 168 }, undefined, CONTEXT) as Record<string, unknown>;
+        const staking = await tool.handler({ view: 'staking', hours: 168 }, undefined, CONTEXT) as Record<string, unknown>;
+        expect(narrowed.success).toBe(true);
+        expect(staking.success).toBe(true);
+    });
+
+    it('does not blame the chain-wide cap for a window no rule would accept', async () => {
+        const { toolkit } = buildToolkit(() => []);
+
+        const result = await buildResourceDelegationsTool(toolkit).handler({ since: 'not a time' }, undefined, CONTEXT) as Record<string, unknown>;
+
+        expect(result).toEqual(expect.objectContaining({ success: false, errorKind: 'input' }));
+        expect(String(result.error)).not.toContain('allows up to 168');
+    });
+
     it('refuses recoverSigners outside the events view', async () => {
         const { toolkit, reads } = buildToolkit(() => []);
 
