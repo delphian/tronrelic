@@ -113,7 +113,7 @@ describe('blockchain-get-block', () => {
         const transactions = result.transactions as Array<Record<string, unknown>>;
         expect(transactions[0]).toEqual(expect.objectContaining({
             index: 0,
-            signer: WALLET,
+            account: WALLET,
             to: USDT,
             receipt: expect.objectContaining({ result: 'SUCCESS', energyUsed: 29631, internalTransactions: 3 })
         }));

@@ -1,5 +1,6 @@
 /**
- * @fileoverview Tests for SignatureService.verifyMessage against the real TronWeb library.
+ * @fileoverview Tests for SignatureService against the real libraries: verifyMessage
+ * through TronWeb, and recoverTransactionSigners on a real mainnet delegation.
  *
  * Why these exist: every wallet-ownership proof in the platform (wallet
  * linking, forum authorship, tool gates) goes through this one method, and it
@@ -15,6 +16,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import TronWeb from 'tronweb';
+import { SIGNED_DELEGATION } from '../../../lib/__tests__/signedDelegationFixture.js';
 import { SignatureService } from '../signature.service.js';
 
 /** Host TronWeb is configured with; unreachable on purpose, since no test may touch the network. */
@@ -74,5 +76,14 @@ describe('SignatureService.verifyMessage', () => {
 
         await expect(service.verifyMessage(walletA.address.base58, MESSAGE, '0xdeadbeef'))
             .rejects.toThrow('Invalid signature provided');
+    });
+});
+
+describe('SignatureService.recoverTransactionSigners', () => {
+    it('hands plugins the key that signed a delegation for another wallet', () => {
+        const { service } = setup();
+
+        expect(service.recoverTransactionSigners(SIGNED_DELEGATION.txId, [SIGNED_DELEGATION.signature]))
+            .toEqual([SIGNED_DELEGATION.signer]);
     });
 });

@@ -13,7 +13,9 @@
  * owner permission, whether the account can still act on its own key.
  * "permission-transactions" lists transactions signed under a permission other
  * than the owner's, or by more than one key, which is how a changed account is
- * then used.
+ * then used. Its permission id says only which slot on the account was used,
+ * and one slot often holds several platforms' keys, so on request the view
+ * also returns the keys recovered from each transaction's signatures.
  *
  * @module backend/modules/blockchain/chain-query/tools/buildPermissionChangesTool
  */
@@ -22,6 +24,7 @@ import type { IAiTool } from '@/types';
 import { toHexAddress } from '../../../../lib/tron-address.js';
 import { CHAIN_DATA_DATABASE } from '../../chain-data/buildChainDataSchema.js';
 import { TronGridClient } from '../../tron-grid.client.js';
+import { ChainQueryError } from '../ChainQueryError.js';
 import {
     decodeCursor,
     encodeCursor,
@@ -39,11 +42,13 @@ import { buildChainResponse, runChainQueryTool } from '../chainQueryResponse.js'
 import type { ChainQuerySession } from '../ChainQuerySession.js';
 import type { IChainQueryToolkit } from '../ChainQueryToolkit.js';
 import { fromClickHouseTime } from '../clickHouseTime.js';
+import { readTransactionDetails, signerNotes } from '../readTransactionDetails.js';
 import {
     AI_TOOL_NAMES,
     CHAIN_QUERY_CAPABILITY,
     SHARED_DESCRIPTION,
     TIME_TX_CURSOR_KEYS,
+    blockRangeCondition,
     timeTxCursorCondition,
     windowCondition,
     windowParams,
@@ -69,15 +74,26 @@ const MAX_LIMIT = 200;
 /** The views the tool offers. */
 const VIEWS = ['updates', 'permission-transactions'] as const;
 
+/** The id java-tron gives an account's owner permission. */
+const OWNER_PERMISSION_ID = 0;
+
+/** The id java-tron gives a witness account's witness permission. */
+const WITNESS_PERMISSION_ID = 1;
+
+/** The id of the first active permission; the rest follow in list order. */
+const FIRST_ACTIVE_PERMISSION_ID = 2;
+
+/** The condition picking out transactions signed under a non-owner permission or by several keys, on narrow columns only. */
+const SIGNED_PREWHERE = `(permission_id > ${OWNER_PERMISSION_ID} OR signature.size0 > 1)`;
+
 /** One key in a permission, as java-tron's JSON writes it. */
 interface IRawPermissionKey {
     address?: string;
     weight?: number | string;
 }
 
-/** One permission, as java-tron's JSON writes it. */
+/** One permission, as java-tron's JSON writes it. Its `id` is not read; see {@link parsePermission}. */
 interface IRawPermission {
-    id?: number;
     permission_name?: string;
     threshold?: number | string;
     operations?: string;
@@ -111,7 +127,7 @@ interface IUpdateRow {
     contract_ret: string;
 }
 
-/** One row of the permission-transactions view. */
+/** One row of the permission-transactions page query. */
 interface ISignedRow {
     block_number: string | number;
     block_timestamp: string;
@@ -119,9 +135,7 @@ interface ISignedRow {
     contract_type: string;
     permission_id: string | number;
     signatures: string | number;
-    owner_hex: string;
     contract_ret: string;
-    total_matches: string | number;
 }
 
 /** Matches a whole decimal integer, as the exact-integer parser writes one. */
@@ -160,17 +174,24 @@ function toExactInteger(value: number | string | undefined): string {
  * weights are kept as exact decimal text by {@link toExactInteger}, so a value
  * past 2^53 is reported as it is on chain instead of rounded.
  *
+ * The stored `id` is ignored. The contract is stored as the account submitted
+ * it, and java-tron overwrites every id when it applies the update
+ * (`AccountCapsule.updatePermissions`): owner 0, witness 1, and each active
+ * permission 2 plus its position in the list. A submitted id can be missing
+ * or wrong, and a missing one used to read as 0, the owner's id.
+ *
  * @param json - The permission as stored, or an empty string when absent.
+ * @param slot - The id java-tron assigns this permission, from its role and position, so the reported id matches the `permissionId` transactions are signed under.
  * @returns The permission, or null when it is absent or not valid JSON.
  */
-function parsePermission(json: string): IPermissionView | null {
+function parsePermission(json: string, slot: number): IPermissionView | null {
     let view: IPermissionView | null = null;
     if (json) {
         try {
             const raw = JSON.parse(json) as IRawPermission;
             view = {
                 name: raw.permission_name ?? null,
-                id: Number(raw.id ?? 0),
+                id: slot,
                 threshold: toExactInteger(raw.threshold),
                 keys: (raw.keys ?? []).map(key => ({
                     address: key.address ? TronGridClient.toBase58Address(key.address) : null,
@@ -224,10 +245,11 @@ export function buildPermissionChangesTool(toolkit: IChainQueryToolkit): IAiTool
         description:
             'Find changes to which keys control a TRON account, and transactions signed by keys other than the account\'s own. ' +
             '"updates" (default) lists AccountPermissionUpdate transactions newest first, with the new owner and active permissions (keys, weights, thresholds) and ownerControl: "self-controlled", "shared-owner-control" (the account\'s key needs co-signers), or "owner-control-transferred" (the account\'s own key was removed, so another key now controls it). ' +
-            '"permission-transactions" lists transactions signed under a non-owner permission or by more than one key, with the permission id and signature count. ' +
+            '"permission-transactions" lists transactions signed under a non-owner permission or by more than one key, with the permission id and signature count; set recoverSigners to also get signers, the keys recovered from the signatures. ' +
+            'A permission id is a slot on that one account (0 owner, 1 witness, 2 and up an active permission numbered by its position in the account\'s latest permission update, so ids shift when the account updates). It says which keys may sign, not which key did: one slot often holds several platforms\' keys, so only signers says who signed. ' +
             'Use to check whether a wallet was taken over, to find accounts whose control moved to an outside key, or to see how a multisig account is used. ' +
             'A transferred owner permission is the pattern of the common TRON takeover scam, but exchanges and multisig wallets set the same thing up on purpose, so treat it as a lead, not proof. ' +
-            'Parameters: view; address (only this account; base58 or hex); onlyTransferred (updates view only: keep only owner-control-transferred, default false); includeFailed (default false); hours or since/until (default 24 hours; at most 168 for updates, 48 for permission-transactions); limit (default 50, at most 200); cursor (pass nextCursor back). ' +
+            'Parameters: view; address (only this account; base58 or hex); onlyTransferred (updates view only: keep only owner-control-transferred, default false); recoverSigners (permission-transactions only, default false); includeFailed (default false); hours or since/until (default 24 hours; at most 168 for updates, 48 for permission-transactions); limit (default 50, at most 200); cursor (pass nextCursor back). ' +
             SHARED_DESCRIPTION,
         capability: CHAIN_QUERY_CAPABILITY,
         inputSchema: {
@@ -237,6 +259,7 @@ export function buildPermissionChangesTool(toolkit: IChainQueryToolkit): IAiTool
                 view: { type: 'string', enum: [...VIEWS], description: '"updates" (default) or "permission-transactions".' },
                 address: { type: 'string', description: 'Only this account, base58 (T…) or hex (41…). Omit for the whole chain.' },
                 onlyTransferred: { type: 'boolean', description: 'Updates view only: keep only updates where the account\'s own key lost owner control. Default false.' },
+                recoverSigners: { type: 'boolean', description: 'Permission-transactions view only: also return signers, the keys recovered from each transaction\'s signatures. Default false.' },
                 includeFailed: { type: 'boolean', description: 'Include transactions that failed on chain. Default false.' },
                 ...windowProperties(UPDATE_WINDOW_RULES),
                 limit: { type: 'integer', minimum: 1, maximum: MAX_LIMIT, description: `Rows per page. Default ${DEFAULT_LIMIT}, at most ${MAX_LIMIT}.` },
@@ -247,7 +270,7 @@ export function buildPermissionChangesTool(toolkit: IChainQueryToolkit): IAiTool
         inputExamples: [
             { address: 'TXFBqBbqJommqZf7BV8NNYzePh97UmJodJ', hours: 168 },
             { onlyTransferred: true, hours: 24 },
-            { view: 'permission-transactions', address: 'TXFBqBbqJommqZf7BV8NNYzePh97UmJodJ', hours: 48 }
+            { view: 'permission-transactions', address: 'TXFBqBbqJommqZf7BV8NNYzePh97UmJodJ', hours: 48, recoverSigners: true }
         ],
         handler: async (input, _principal, context) => runChainQueryTool(toolkit, context, AI_TOOL_NAMES.permissionChanges, async (session) => {
             const view = parseChoice(input.view, 'view', VIEWS, 'updates');
@@ -255,13 +278,17 @@ export function buildPermissionChangesTool(toolkit: IChainQueryToolkit): IAiTool
             const address = parseOptionalAddress(input.address, 'address');
             const onlyTransferred = parseFlag(input.onlyTransferred, 'onlyTransferred', false);
             const includeFailed = parseFlag(input.includeFailed, 'includeFailed', false);
+            const recoverSigners = parseFlag(input.recoverSigners, 'recoverSigners', false);
+            if (recoverSigners && view !== 'permission-transactions') {
+                throw new ChainQueryError(`recoverSigners applies to the permission-transactions view only. For one update's signers, pass its txId to ${AI_TOOL_NAMES.transactionTrace}.`, 'input');
+            }
             const limit = parseInteger(input.limit, 'limit', DEFAULT_LIMIT, 1, MAX_LIMIT);
             const cursor = decodeCursor(input.cursor, TIME_TX_CURSOR_KEYS);
             const window = pinWindowToCursor(cursor, parseWindow(input, rules, toolkit.now(), toolkit.retentionDays), rules);
 
             const result = view === 'updates'
                 ? await readUpdates(session, window, { address, onlyTransferred, includeFailed, limit, cursor })
-                : await readSignedTransactions(session, window, { address, includeFailed, limit, cursor });
+                : await readSignedTransactions(session, window, { address, includeFailed, limit, cursor, recoverSigners });
 
             const coverage = await toolkit.coverage.read(session, window);
             const tags = await toolkit.tags.lookup(result.addresses);
@@ -324,9 +351,11 @@ LIMIT {limit:UInt32}`,
     const last = rows[rows.length - 1];
 
     const updates = rows.map(row => {
-        const owner = parsePermission(row.owner);
-        const actives = (row.actives ?? []).map(parsePermission).filter((active): active is IPermissionView => active !== null);
-        const witness = parsePermission(row.witness);
+        const owner = parsePermission(row.owner, OWNER_PERMISSION_ID);
+        const actives = (row.actives ?? [])
+            .map((active, position) => parsePermission(active, FIRST_ACTIVE_PERMISSION_ID + position))
+            .filter((active): active is IPermissionView => active !== null);
+        const witness = parsePermission(row.witness, WITNESS_PERMISSION_ID);
         const outsideKeys = [...new Set([owner, ...actives]
             .flatMap(permission => permission?.keys ?? [])
             .map(key => key.address)
@@ -368,69 +397,104 @@ LIMIT {limit:UInt32}`,
  * The permission-transactions view: transactions signed under a non-owner
  * permission or by several keys, newest first.
  *
- * The signing account is read from the contract parameter's `owner_address`,
- * which java-tron stores as hex inside the JSON. Filtering by account compares
- * that hex, after the cheap permission and signature-count test has already
- * cut the rows down.
+ * Rental markets sign every delivery on a seller's wallet this way, so the
+ * view matches well over a million transactions a day, and the read is built
+ * so its memory stays flat however many match:
+ *
+ * - The match test reads only `permission_id` and `signature.size0` (the
+ *   signature count, without the signatures), in PREWHERE, so the wide columns
+ *   of the other nine in ten transactions are never read.
+ *   `blockRangeCondition()` skips the parts of each day outside the window.
+ * - The total is a separate `uniqExact` count, and the page is a plain
+ *   newest-first `ORDER BY … LIMIT`, which ClickHouse answers by keeping only
+ *   the top rows. An earlier version used `FINAL` (which turns PREWHERE off on
+ *   ClickHouse 24.3), `length(signature)` (which reads every signature), and
+ *   `count() OVER ()` (which holds every match in memory), and it timed out at
+ *   the 48-hour maximum.
+ * - Without `FINAL`, a block written twice and not yet merged appears twice.
+ *   The page asks for twice the rows it needs and keeps the first of each
+ *   transaction id, which is enough because a duplicate sorts next to its
+ *   original.
+ * - The account and, when asked for, the signatures are read only for the
+ *   page's own rows, through {@link readTransactionDetails}.
+ *
+ * Filtering by account still reads the contract parameter of every match,
+ * because the account lives only inside that JSON.
  *
  * @param session - The call's session.
  * @param window - The window to cover.
- * @param options - Filters and paging.
+ * @param options - Filters, paging, and whether to recover each page row's signers.
  * @returns The payload, the addresses it names, and notes.
  */
 async function readSignedTransactions(
     session: ChainQuerySession,
     window: IChainWindow,
-    options: IListOptions
+    options: IListOptions & { recoverSigners: boolean }
 ): Promise<{ payload: Record<string, unknown>; addresses: string[]; notes: string[] }> {
     const conditions = [
         windowCondition(),
-        '(permission_id > 0 OR length(signature) > 1)',
+        blockRangeCondition(),
         ...(options.includeFailed ? [] : ['contract_ret = \'SUCCESS\''])
     ];
-    const params: Record<string, unknown> = { ...windowParams(window), limit: options.limit + 1 };
+    const params: Record<string, unknown> = { ...windowParams(window) };
     if (options.address) {
         conditions.push('lower(JSONExtractString(parameter, \'owner_address\')) = {ownerHex:String}');
         params.ownerHex = toHexAddress(options.address).toLowerCase();
     }
     const after = timeTxCursorCondition(options.cursor);
-    if (after) {
-        Object.assign(params, after.params);
-    }
 
-    // `total_matches` is computed before the cursor and LIMIT apply, so it
-    // counts every match in the window, not just this page's.
-    const fetched = await session.query<ISignedRow>(
-        `SELECT *
-FROM (
-    SELECT block_number, block_timestamp, tx_id, contract_type, permission_id, length(signature) AS signatures,
-           JSONExtractString(parameter, 'owner_address') AS owner_hex, contract_ret,
-           count() OVER () AS total_matches
-    FROM ${CHAIN_DATA_DATABASE}.transaction FINAL
-    WHERE ${conditions.join('\n      AND ')}
-)
-${after ? `WHERE ${after.condition}` : ''}
-ORDER BY block_timestamp DESC, tx_id DESC
-LIMIT {limit:UInt32}`,
+    // Counted before the cursor applies, so it covers the whole window and is
+    // the same on every page.
+    const [count] = await session.query<{ total: string | number }>(
+        `SELECT uniqExact(block_number, transaction_index) AS total
+FROM ${CHAIN_DATA_DATABASE}.transaction
+PREWHERE ${SIGNED_PREWHERE}
+WHERE ${conditions.join('\n  AND ')}`,
         params
     );
-    const truncated = fetched.length > options.limit;
-    const rows = fetched.slice(0, options.limit);
+    const fetched = await session.query<ISignedRow>(
+        `SELECT block_number, block_timestamp, tx_id, contract_type, permission_id, signature.size0 AS signatures, contract_ret
+FROM ${CHAIN_DATA_DATABASE}.transaction
+PREWHERE ${SIGNED_PREWHERE}
+WHERE ${[...conditions, ...(after ? [after.condition] : [])].join('\n  AND ')}
+ORDER BY block_timestamp DESC, tx_id DESC
+LIMIT {fetch:UInt32}`,
+        { ...params, ...(after ? after.params : {}), fetch: (options.limit + 1) * 2 }
+    );
+    const seen = new Set<string>();
+    const unique: ISignedRow[] = [];
+    for (const row of fetched) {
+        if (!seen.has(row.tx_id)) {
+            seen.add(row.tx_id);
+            unique.push(row);
+        }
+    }
+    const truncated = unique.length > options.limit;
+    const rows = unique.slice(0, options.limit);
     const last = rows[rows.length - 1];
-    const transactions = rows.map(row => ({
-        time: fromClickHouseTime(row.block_timestamp),
-        block: Number(row.block_number),
-        txId: row.tx_id,
-        account: row.owner_hex ? TronGridClient.toBase58Address(row.owner_hex) : null,
-        contractType: row.contract_type,
-        permissionId: Number(row.permission_id),
-        signatures: Number(row.signatures),
-        status: row.contract_ret
-    }));
+    const details = await readTransactionDetails(
+        session,
+        rows.map(row => ({ block: Number(row.block_number), time: row.block_timestamp, txId: row.tx_id })),
+        { recover: options.recoverSigners, owner: true }
+    );
+    const transactions = rows.map(row => {
+        const detail = details.get(row.tx_id);
+        return {
+            time: fromClickHouseTime(row.block_timestamp),
+            block: Number(row.block_number),
+            txId: row.tx_id,
+            account: detail?.ownerHex ? TronGridClient.toBase58Address(detail.ownerHex) : null,
+            contractType: row.contract_type,
+            permissionId: Number(row.permission_id),
+            signatures: Number(row.signatures),
+            ...(options.recoverSigners ? { signers: detail?.signers ?? null } : {}),
+            status: row.contract_ret
+        };
+    });
 
     return {
         payload: {
-            totalMatches: Number(rows[0]?.total_matches ?? 0),
+            totalMatches: Number(count?.total ?? 0),
             returned: transactions.length,
             truncated,
             ...(truncated && last
@@ -438,9 +502,16 @@ LIMIT {limit:UInt32}`,
                 : {}),
             transactions
         },
-        addresses: transactions.map(row => row.account).filter((account): account is string => account !== null),
+        addresses: [
+            ...transactions.map(row => row.account).filter((account): account is string => account !== null),
+            ...[...details.values()].flatMap(detail => detail.signers ?? [])
+        ],
         notes: [
-            'permissionId 0 is the owner permission and 1 the witness permission; 2 and above are active permissions. A transaction signed under an active permission may have been signed by a key other than the account\'s own.',
+            'permissionId is a slot on the account: 0 owner, 1 witness, 2 and above an active permission numbered by its position in the account\'s latest permission update. It names which keys may sign, not which key did; one slot often holds several platforms\' keys.',
+            options.recoverSigners
+                ? 'signers are the keys recovered from each transaction\'s signatures, and are the reliable answer to who signed.'
+                : 'Set recoverSigners to true to see which keys actually signed each transaction.',
+            ...(options.recoverSigners ? signerNotes(details, rows.length) : []),
             'totalMatches counts every match in the window; it is the same on every page.'
         ]
     };

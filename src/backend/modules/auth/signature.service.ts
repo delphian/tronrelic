@@ -9,6 +9,7 @@
 import type TronWeb from 'tronweb';
 import type { ISignatureService } from '@/types';
 import { ValidationError } from '../../lib/errors.js';
+import { recoverTransactionSigners } from '../../lib/recoverTransactionSigners.js';
 
 /**
  * Stateless signature service wrapping TronWeb's verification and address utilities.
@@ -81,5 +82,22 @@ export class SignatureService implements ISignatureService {
         } catch (error) {
             throw new ValidationError('Invalid TRON address provided', { address, error });
         }
+    }
+
+    /**
+     * Recover the keys that signed a TRON transaction from its signatures.
+     *
+     * Plugins attribute deliveries and payments to a market's key, and the
+     * permission id a transaction names cannot do that, because one slot often
+     * holds several platforms' keys. This hands them core's single recovery
+     * implementation, the same one the chain query tools use, so a plugin
+     * does not need its own copy of the elliptic-curve code.
+     *
+     * @param txId - The 64-character hex transaction id, which is the digest each key signed
+     * @param signatures - The transaction's hex wire signatures, in the order they were sent
+     * @returns The distinct Base58 signers in signature order, leaving out any signature that cannot be recovered
+     */
+    recoverTransactionSigners(txId: string, signatures: readonly string[]): string[] {
+        return recoverTransactionSigners(txId, signatures);
     }
 }

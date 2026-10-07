@@ -101,6 +101,8 @@ Every call charges its reads to the agent run through the handler's `context.que
 
 `contract-events.ts` exports `topicToAddress` and `wordToDecimal` so `chain-query/chainSignatures.ts` decodes event words the same way block sync does.
 
+A transaction's account and its permission id never say which key signed, so the tools report the account as `account` and return `signers`, the keys recovered from the signatures with `lib/recoverTransactionSigners.ts`: always in the trace, and on request (`recoverSigners`) in the delegation events and permission-transactions listings. `chain-query/readTransactionDetails.ts` reads a listed page's signatures through one point read on the sort key and yields to the event loop while it recovers them. See [Who signed](../../../../docs/system/system-chain-query-tools.md#who-signed).
+
 ## A restart loses work, not data
 
 The buffer holds unwritten blocks in memory, so a process that stops loses them — and that costs only the refetch. The write is what advances the cursor, so a block that never committed left no trace and the next forward walk fetches it again.
