@@ -13,6 +13,14 @@
  * so converting a past delegation with today's ratio would describe a network
  * the delegation never happened on. The tool reports TRX and says so.
  *
+ * A rental market usually delegates from a seller's wallet using a permission
+ * the seller granted the market's key, and the same slot often holds several
+ * platforms' keys. The delegator therefore does not say who arranged a
+ * delegation, and neither does the permission id. With `recoverSigners`, the
+ * events view reads the page's signatures from `tron.transaction` and reports
+ * the keys recovered from them, which do. It is opt-in because it adds a read
+ * and up to about 0.3 seconds of CPU for a full page.
+ *
  * @module backend/modules/blockchain/chain-query/tools/buildResourceDelegationsTool
  */
 
@@ -37,6 +45,7 @@ import { buildChainResponse, runChainQueryTool } from '../chainQueryResponse.js'
 import type { ChainQuerySession } from '../ChainQuerySession.js';
 import type { IChainQueryToolkit } from '../ChainQueryToolkit.js';
 import { fromClickHouseTime } from '../clickHouseTime.js';
+import { readTransactionDetails, signerNotes } from '../readTransactionDetails.js';
 import { toChainAmount, tokenKey, type IChainTokenInfo } from '../TokenCatalog.js';
 import { parseUnits } from '../tokenUnits.js';
 import {
@@ -78,6 +87,7 @@ interface IDelegationRow {
     balance_text: string;
     lock: boolean | number;
     lock_period: string | number;
+    permission_id: string | number;
     contract_ret: string;
 }
 
@@ -134,10 +144,10 @@ interface IDelegationFilters {
  */
 function delegationRows(conditions: string[], action: 'delegate' | 'undelegate' | 'both'): string {
     const where = conditions.join('\n      AND ');
-    const delegate = `SELECT 'delegate' AS action, block_number, block_timestamp, tx_id, owner_address, receiver_address, resource, balance, lock, lock_period, contract_ret
+    const delegate = `SELECT 'delegate' AS action, block_number, block_timestamp, tx_id, owner_address, receiver_address, resource, balance, lock, lock_period, permission_id, contract_ret
     FROM ${CHAIN_DATA_DATABASE}.delegate_resource_contract FINAL
     WHERE ${where}`;
-    const undelegate = `SELECT 'undelegate' AS action, block_number, block_timestamp, tx_id, owner_address, receiver_address, resource, balance, false AS lock, toInt64(0) AS lock_period, contract_ret
+    const undelegate = `SELECT 'undelegate' AS action, block_number, block_timestamp, tx_id, owner_address, receiver_address, resource, balance, false AS lock, toInt64(0) AS lock_period, permission_id, contract_ret
     FROM ${CHAIN_DATA_DATABASE}.un_delegate_resource_contract FINAL
     WHERE ${where}`;
     const parts = action === 'delegate' ? [delegate] : action === 'undelegate' ? [undelegate] : [delegate, undelegate];
@@ -155,13 +165,15 @@ export function buildResourceDelegationsTool(toolkit: IChainQueryToolkit): IAiTo
         name: AI_TOOL_NAMES.resourceDelegations,
         description:
             'Energy and bandwidth delegation and staking on TRON, from a fixed menu of views. ' +
-            '"events" (default) lists individual delegations and undelegations newest first: who delegated to whom, the resource, the staked TRX behind it, and any lock period; filter by address, role, resource, action, and minTrx. ' +
+            '"events" (default) lists individual delegations and undelegations newest first: who delegated to whom, the resource, the staked TRX behind it, any lock period, and permissionId; filter by address, role, resource, action, and minTrx. ' +
+            'permissionId names a permission slot on the delegator\'s wallet (0 owner, 2 and up an active permission numbered by its position in the wallet\'s latest permission update), so it says which keys may sign, not which key did; rental markets sign on sellers\' wallets through shared slots, and the same number means different things on different wallets. ' +
+            'Set recoverSigners to true (events only) to get signers, the keys recovered from each transaction\'s signatures, which is the only reliable way to tell which market or key made a delegation. ' +
             '"counterparties" (needs address) groups one wallet\'s delegations by the other party: who it delegates to and who delegates to it, with totals. ' +
             '"top-delegators" and "top-receivers" rank wallets across the whole chain by staked TRX newly delegated in the window; use them to find energy rental providers and their largest customers. ' +
             '"staking" gives stake (FreezeBalanceV2), unstake (UnfreezeBalanceV2), and withdrawal counts and totals per hour or day, for one wallet or the whole chain. ' +
             'Use for energy-market questions such as who rents energy to an address, which providers are most active, or whether staking rose today. Delegations move no TRX, so the transfer tools do not show them. ' +
             'Amounts are the staked TRX behind each delegation, not energy units; the energy a stake yields changes with network-wide staking, so it is not converted. ' +
-            'Parameters: view; address (base58 or hex); role "delegator", "receiver", or "both" (default) for events with an address; resource "ENERGY" or "BANDWIDTH" (omit for both); action "delegate", "undelegate", or "both" (default) for events; minTrx (whole TRX, events only); includeFailed (default false); bucket "hour" (default) or "day" for staking; hours or since/until (default 24 hours, at most 168); limit (default 50, at most 200); cursor (events only; pass nextCursor back). ' +
+            'Parameters: view; address (base58 or hex); role "delegator", "receiver", or "both" (default) for events with an address; resource "ENERGY" or "BANDWIDTH" (omit for both); action "delegate", "undelegate", or "both" (default) for events; minTrx (whole TRX, events only); recoverSigners (events only, default false; adds a read); includeFailed (default false); bucket "hour" (default) or "day" for staking; hours or since/until (default 24 hours, at most 168); limit (default 50, at most 200); cursor (events only; pass nextCursor back). ' +
             SHARED_DESCRIPTION,
         capability: CHAIN_QUERY_CAPABILITY,
         inputSchema: {
@@ -174,6 +186,7 @@ export function buildResourceDelegationsTool(toolkit: IChainQueryToolkit): IAiTo
                 resource: { type: 'string', enum: [...RESOURCES], description: '"ENERGY" or "BANDWIDTH". Omit for both.' },
                 action: { type: 'string', enum: ['delegate', 'undelegate', 'both'], description: 'Events view only: delegations, undelegations (reclaims), or both (default).' },
                 minTrx: { type: ['string', 'number'], description: 'Events view only: smallest staked amount to include, in whole TRX such as "10000".' },
+                recoverSigners: { type: 'boolean', description: 'Events view only: also return signers, the keys recovered from each transaction\'s signatures. Default false.' },
                 includeFailed: { type: 'boolean', description: 'Include transactions that failed on chain. Default false; a failed delegation delegated nothing.' },
                 bucket: { type: 'string', enum: ['hour', 'day'], description: 'Staking view only: group by hour (default) or day.' },
                 ...windowProperties(WINDOW_RULES),
@@ -184,6 +197,7 @@ export function buildResourceDelegationsTool(toolkit: IChainQueryToolkit): IAiTo
         },
         inputExamples: [
             { address: 'TXFBqBbqJommqZf7BV8NNYzePh97UmJodJ', role: 'receiver', resource: 'ENERGY' },
+            { address: 'TXFBqBbqJommqZf7BV8NNYzePh97UmJodJ', role: 'delegator', recoverSigners: true, limit: 20 },
             { view: 'top-delegators', resource: 'ENERGY', hours: 24, limit: 20 },
             { view: 'counterparties', address: 'TXFBqBbqJommqZf7BV8NNYzePh97UmJodJ', hours: 168 },
             { view: 'staking', bucket: 'day', hours: 168 }
@@ -197,6 +211,7 @@ export function buildResourceDelegationsTool(toolkit: IChainQueryToolkit): IAiTo
                 : parseChoice(input.resource, 'resource', RESOURCES, 'ENERGY');
             const action = parseChoice(input.action, 'action', ['delegate', 'undelegate', 'both'] as const, 'both');
             const includeFailed = parseFlag(input.includeFailed, 'includeFailed', false);
+            const recoverSigners = parseFlag(input.recoverSigners, 'recoverSigners', false);
             const bucket = parseChoice(input.bucket, 'bucket', ['hour', 'day'] as const, 'hour');
             const limit = parseInteger(input.limit, 'limit', DEFAULT_LIMIT, 1, MAX_LIMIT);
             const cursor = view === 'events' ? decodeCursor(input.cursor, TIME_TX_CURSOR_KEYS) : undefined;
@@ -210,6 +225,9 @@ export function buildResourceDelegationsTool(toolkit: IChainQueryToolkit): IAiTo
             }
             if (input.minTrx !== undefined && input.minTrx !== null && input.minTrx !== '' && view !== 'events') {
                 throw new ChainQueryError('minTrx applies to the events view only.', 'input');
+            }
+            if (recoverSigners && view !== 'events') {
+                throw new ChainQueryError('recoverSigners applies to the events view only.', 'input');
             }
 
             const tokens = await toolkit.tokens.describe(session, [TRX_TOKEN]);
@@ -225,7 +243,7 @@ export function buildResourceDelegationsTool(toolkit: IChainQueryToolkit): IAiTo
 
             let result: { payload: Record<string, unknown>; addresses: string[]; notes: string[] };
             if (view === 'events') {
-                result = await readEvents(session, filters, { address, role, action, minTrx: input.minTrx, cursor, window, limit }, trx);
+                result = await readEvents(session, filters, { address, role, action, minTrx: input.minTrx, recoverSigners, cursor, window, limit }, trx);
             } else if (view === 'counterparties') {
                 result = await readCounterparties(session, filters, address as string, trx);
             } else if (view === 'staking') {
@@ -260,6 +278,7 @@ interface IEventOptions {
     role: 'delegator' | 'receiver' | 'both';
     action: 'delegate' | 'undelegate' | 'both';
     minTrx: unknown;
+    recoverSigners: boolean;
     cursor: Record<string, string | number> | undefined;
     window: IChainWindow;
     limit: number;
@@ -306,7 +325,7 @@ async function readEvents(
     }
 
     const fetched = await session.query<IDelegationRow>(
-        `SELECT action, block_number, block_timestamp, tx_id, owner_address, receiver_address, resource, toString(balance) AS balance_text, lock, lock_period, contract_ret
+        `SELECT action, block_number, block_timestamp, tx_id, owner_address, receiver_address, resource, toString(balance) AS balance_text, lock, lock_period, permission_id, contract_ret
 FROM ${delegationRows(conditions, options.action)}
 ${after ? `WHERE ${after.condition}` : ''}
 ORDER BY block_timestamp DESC, tx_id DESC
@@ -317,6 +336,13 @@ LIMIT {limit:UInt32}`,
     const rows = fetched.slice(0, options.limit);
     const last = rows[rows.length - 1];
     const blockSeconds = blockchainConfig.network.blockIntervalSeconds;
+    const details = options.recoverSigners
+        ? await readTransactionDetails(
+            session,
+            rows.map(row => ({ block: Number(row.block_number), time: row.block_timestamp, txId: row.tx_id })),
+            { recover: true, owner: false }
+        )
+        : null;
 
     return {
         payload: {
@@ -344,12 +370,20 @@ LIMIT {limit:UInt32}`,
                                 : null
                         }
                         : {}),
+                    permissionId: Number(row.permission_id),
+                    ...(details ? { signers: details.get(row.tx_id)?.signers ?? null } : {}),
                     status: row.contract_ret
                 };
             })
         },
-        addresses: rows.flatMap(row => [row.owner_address, row.receiver_address]),
-        notes: ['A lock period is in blocks; approxHours assumes the chain\'s regular block time. An unlocked delegation can be reclaimed at any time.']
+        addresses: [
+            ...rows.flatMap(row => [row.owner_address, row.receiver_address]),
+            ...(details ? [...details.values()].flatMap(detail => detail.signers ?? []) : [])
+        ],
+        notes: [
+            'A lock period is in blocks; approxHours assumes the chain\'s regular block time. An unlocked delegation can be reclaimed at any time.',
+            ...(details ? signerNotes(details, rows.length) : [])
+        ]
     };
 }
 

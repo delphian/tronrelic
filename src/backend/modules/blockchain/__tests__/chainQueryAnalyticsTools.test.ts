@@ -9,6 +9,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import TronWeb from 'tronweb';
+import { SIGNED_DELEGATION } from '../../../lib/__tests__/signedDelegationFixture.js';
 import { toHexAddress } from '../../../lib/tron-address.js';
 import { summarizeCoverage } from '../chain-query/ChainCoverageReader.js';
 import type { IChainWindow } from '../chain-query/chainQueryInput.js';
@@ -82,6 +83,7 @@ describe('blockchain-resource-delegations', () => {
             balance_text: '2500000000',
             lock: true,
             lock_period: '28800',
+            permission_id: '3',
             contract_ret: 'SUCCESS'
         }]);
 
@@ -96,9 +98,59 @@ describe('blockchain-resource-delegations', () => {
             receiver: WALLET,
             stakedTrx: { raw: '2500000000', value: '2500' },
             locked: true,
-            lockPeriod: { blocks: 28800, approxHours: 24 }
+            lockPeriod: { blocks: 28800, approxHours: 24 },
+            permissionId: 3
         })]);
+        expect((result.events as Array<Record<string, unknown>>)[0]).not.toHaveProperty('signers');
+        expect(reads.some(entry => entry.sql.includes('FROM tron.transaction\n'))).toBe(false);
         expect(result.addressTags).toEqual({ [PEER]: ['ofac:sdn'] });
+    });
+
+    it('recovers each delegation\'s signer through one point read on the sort key when asked', async () => {
+        const { toolkit, reads } = buildToolkit((sql) => {
+            let rows: unknown[] = [];
+            if (sql.includes('FROM tron.transaction\n')) {
+                rows = [{ tx_id: SIGNED_DELEGATION.txId, signature_count: '1', signature: [SIGNED_DELEGATION.signature] }];
+            } else if (sql.includes('delegate_resource_contract')) {
+                rows = [{
+                    action: 'delegate',
+                    block_number: '29000',
+                    block_timestamp: '2026-09-24 11:00:00.000',
+                    tx_id: SIGNED_DELEGATION.txId,
+                    owner_address: SIGNED_DELEGATION.account,
+                    receiver_address: WALLET,
+                    resource: 'ENERGY',
+                    balance_text: '2500000000',
+                    lock: false,
+                    lock_period: '0',
+                    permission_id: String(SIGNED_DELEGATION.permissionId),
+                    contract_ret: 'SUCCESS'
+                }];
+            }
+            return rows;
+        });
+
+        const result = await buildResourceDelegationsTool(toolkit).handler({ address: WALLET, recoverSigners: true }, undefined, CONTEXT) as Record<string, unknown>;
+
+        expect(result.events).toEqual([expect.objectContaining({
+            delegator: SIGNED_DELEGATION.account,
+            permissionId: SIGNED_DELEGATION.permissionId,
+            signers: [SIGNED_DELEGATION.signer]
+        })]);
+        const pointRead = reads.find(entry => entry.sql.includes('FROM tron.transaction\n'));
+        expect(pointRead?.sql).toContain('block_number IN {blocks:Array(UInt64)}');
+        expect(pointRead?.sql).toContain('PREWHERE tx_id IN {txIds:Array(String)}');
+        expect(pointRead?.sql).not.toContain('FINAL');
+        expect(pointRead?.params).toEqual(expect.objectContaining({ blocks: [29000], txIds: [SIGNED_DELEGATION.txId] }));
+    });
+
+    it('refuses recoverSigners outside the events view', async () => {
+        const { toolkit, reads } = buildToolkit(() => []);
+
+        const result = await buildResourceDelegationsTool(toolkit).handler({ view: 'top-delegators', recoverSigners: true }, undefined, CONTEXT) as Record<string, unknown>;
+
+        expect(result).toEqual(expect.objectContaining({ success: false, errorKind: 'input' }));
+        expect(reads).toHaveLength(0);
     });
 
     it('refuses the counterparties view without an address and the top views with one', async () => {
@@ -165,6 +217,81 @@ describe('blockchain-permission-changes', () => {
             ownerControl: 'shared-owner-control',
             owner: expect.objectContaining({ threshold: '9007199254740993' })
         })]);
+    });
+
+    it('numbers active permissions by their position, as java-tron does, not by the id the contract carried', async () => {
+        const owner = JSON.stringify({ permission_name: 'owner', threshold: 1, keys: [{ address: toHexAddress(WALLET).toLowerCase(), weight: 1 }] });
+        const active = (name: string) => JSON.stringify({ permission_name: name, threshold: 1, keys: [{ address: toHexAddress(PEER).toLowerCase(), weight: 1 }] });
+        const { toolkit } = buildToolkit(() => [{
+            block_number: '29000',
+            block_timestamp: '2026-09-24 11:00:00.000',
+            tx_id: 'ee'.repeat(32),
+            owner_address: WALLET,
+            owner,
+            witness: '',
+            actives: [active('first'), active('second')],
+            contract_ret: 'SUCCESS'
+        }]);
+
+        const result = await buildPermissionChangesTool(toolkit).handler({}, undefined, CONTEXT) as Record<string, unknown>;
+
+        const [update] = result.updates as Array<{ owner: { id: number }; actives: Array<{ name: string; id: number }> }>;
+        expect(update.owner.id).toBe(0);
+        expect(update.actives.map(entry => [entry.name, entry.id])).toEqual([['first', 2], ['second', 3]]);
+    });
+
+    it('lists permission-signed transactions without FINAL, full signatures, or a window-wide buffer, and dedupes a twice-written row', async () => {
+        const row = {
+            block_number: '29000',
+            block_timestamp: '2026-09-24 11:00:00.000',
+            tx_id: SIGNED_DELEGATION.txId,
+            contract_type: 'DelegateResourceContract',
+            permission_id: String(SIGNED_DELEGATION.permissionId),
+            signatures: '1',
+            contract_ret: 'SUCCESS'
+        };
+        const { toolkit, reads } = buildToolkit((sql) => {
+            let rows: unknown[] = [];
+            if (sql.includes('uniqExact(block_number, transaction_index)')) {
+                rows = [{ total: '1' }];
+            } else if (sql.includes('PREWHERE tx_id IN')) {
+                rows = [{
+                    tx_id: SIGNED_DELEGATION.txId,
+                    signature_count: '1',
+                    signature: [SIGNED_DELEGATION.signature],
+                    owner_hex: toHexAddress(SIGNED_DELEGATION.account)
+                }];
+            } else if (sql.includes('ORDER BY block_timestamp DESC')) {
+                rows = [row, { ...row }];
+            }
+            return rows;
+        });
+
+        const result = await buildPermissionChangesTool(toolkit).handler({ view: 'permission-transactions', recoverSigners: true }, undefined, CONTEXT) as Record<string, unknown>;
+
+        expect(result).toEqual(expect.objectContaining({ totalMatches: 1, returned: 1, truncated: false }));
+        expect(result.transactions).toEqual([expect.objectContaining({
+            account: SIGNED_DELEGATION.account,
+            permissionId: SIGNED_DELEGATION.permissionId,
+            signers: [SIGNED_DELEGATION.signer]
+        })]);
+        const scans = reads.filter(entry => entry.sql.includes('PREWHERE (permission_id > 0 OR signature.size0 > 1)'));
+        expect(scans).toHaveLength(2);
+        for (const scan of reads.filter(entry => entry.sql.includes('FROM tron.transaction\n'))) {
+            expect(scan.sql).not.toContain('FINAL');
+            expect(scan.sql).not.toContain('length(signature)');
+            expect(scan.sql).not.toContain('OVER ()');
+        }
+        expect(scans[0].sql).toContain('block_number BETWEEN (SELECT min(block_number)');
+    });
+
+    it('refuses recoverSigners on the updates view', async () => {
+        const { toolkit, reads } = buildToolkit(() => []);
+
+        const result = await buildPermissionChangesTool(toolkit).handler({ recoverSigners: true }, undefined, CONTEXT) as Record<string, unknown>;
+
+        expect(result).toEqual(expect.objectContaining({ success: false, errorKind: 'input' }));
+        expect(reads).toHaveLength(0);
     });
 
     it('caps the permission-signed transaction window at 48 hours', async () => {

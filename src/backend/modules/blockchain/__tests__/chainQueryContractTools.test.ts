@@ -9,6 +9,7 @@
  * and deployments join each direct deployment to its receipt's address.
  */
 import { describe, it, expect } from 'vitest';
+import { SIGNED_DELEGATION } from '../../../lib/__tests__/signedDelegationFixture.js';
 import { toHexAddress } from '../../../lib/tron-address.js';
 import { buildContractCallGraphTool } from '../chain-query/tools/buildContractCallGraphTool.js';
 import { buildContractDeploymentsTool } from '../chain-query/tools/buildContractDeploymentsTool.js';
@@ -33,7 +34,7 @@ function transferCallRow(): Record<string, unknown> {
         contract_ret: 'SUCCESS',
         fee_limit: '100000000',
         permission_id: '0',
-        signatures: '1',
+        signature: [],
         memo_hex: '',
         parameter: JSON.stringify({
             owner_address: toHexAddress(WALLET),
@@ -86,7 +87,7 @@ describe('blockchain-transaction-trace', () => {
 
         expect(result).toEqual(expect.objectContaining({ success: true, found: true, status: 'SUCCESS', type: 'TriggerSmartContract' }));
         expect(result.call).toEqual(expect.objectContaining({
-            signer: WALLET,
+            account: WALLET,
             contract: USDT,
             method: { selector: 'a9059cbb', signature: 'transfer(address,uint256)' }
         }));
@@ -107,6 +108,42 @@ describe('blockchain-transaction-trace', () => {
         for (const read of ownReads) {
             expect(read.sql).not.toContain('FINAL');
         }
+    });
+
+    it('reports the recovered signer beside the account when another key signed for it', async () => {
+        const { toolkit } = buildToolkit((sql) => sql.includes('FROM tron.transaction\n')
+            ? [{
+                block_number: '29000',
+                transaction_index: '7',
+                block_timestamp: '2026-09-24 11:00:00.000',
+                contract_type: 'DelegateResourceContract',
+                contract_ret: 'SUCCESS',
+                fee_limit: '0',
+                permission_id: String(SIGNED_DELEGATION.permissionId),
+                signature: [SIGNED_DELEGATION.signature],
+                memo_hex: '',
+                parameter: JSON.stringify({ owner_address: toHexAddress(SIGNED_DELEGATION.account), receiver_address: toHexAddress(PEER), resource: 'ENERGY', balance: 1 })
+            }]
+            : []);
+
+        const result = await buildTransactionTraceTool(toolkit).handler({ txId: SIGNED_DELEGATION.txId }, undefined, CONTEXT) as Record<string, unknown>;
+
+        expect(result).toEqual(expect.objectContaining({
+            found: true,
+            signatures: 1,
+            signers: [SIGNED_DELEGATION.signer],
+            permissionId: SIGNED_DELEGATION.permissionId
+        }));
+        expect(result.call).toEqual(expect.objectContaining({ account: SIGNED_DELEGATION.account }));
+    });
+
+    it('reports signers as unknown, not empty, when no signatures are stored', async () => {
+        const { toolkit } = buildToolkit((sql) => sql.includes('FROM tron.transaction\n') ? [transferCallRow()] : []);
+
+        const result = await buildTransactionTraceTool(toolkit).handler({ txId: TX }, undefined, CONTEXT) as Record<string, unknown>;
+
+        expect(result).toEqual(expect.objectContaining({ signatures: 0, signers: null }));
+        expect((result.notes as string[]).some(note => note.includes('signers is null'))).toBe(true);
     });
 
     it('refuses a txId that is not 64 hex characters', async () => {

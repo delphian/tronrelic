@@ -130,7 +130,7 @@ export function buildGetBlockTool(toolkit: IChainQueryToolkit): IAiTool {
             'Describe one stored TRON block by its number. Returns its header (blockId, parentHash, txTrieRoot, time, producer address and witness id, version), ' +
             'transactionCount as the block reports it beside the number of transactions actually stored, whether its receipts were fetched and how many are stored, ' +
             'totals (internal transactions and how many were rejected, energy used, bandwidth used, TRX burned for fees), transaction counts by contract type and status, ' +
-            'any ingest gap records for the height (written when TronRelic failed to store the block; on a found block, one means the block may be stored only in part), and a page of its transactions in chain order with index, txId, type, status, signer, recipient or contract, ' +
+            `any ingest gap records for the height (written when TronRelic failed to store the block; on a found block, one means the block may be stored only in part), and a page of its transactions in chain order with index, txId, type, status, account (the account the transaction acts for, which is not necessarily the key that signed; ${AI_TOOL_NAMES.transactionTrace} recovers the signers), recipient or contract, ` +
             'and, when receipts exist, each transaction\'s receipt result, energy, fee, and internal transaction count. ' +
             `Use to inspect a block another answer named, to check whether a height was stored completely, or to see who produced it. For everything one transaction did, use ${AI_TOOL_NAMES.transactionTrace}; ` +
             `for activity across many blocks, use ${AI_TOOL_NAMES.networkStats}. Event logs are not counted here, because reading them for one block scans its whole day; ${AI_TOOL_NAMES.transactionTrace} with includeEvents reads one transaction's. ` +
@@ -366,7 +366,7 @@ LIMIT {limit:UInt32}`,
     const coverage = await toolkit.coverage.read(session, window);
     const tags = await toolkit.tags.lookup([
         block.witness_address,
-        ...transactions.flatMap(row => [row.signer, row.to])
+        ...transactions.flatMap(row => [row.account, row.to])
     ].filter((address): address is string => Boolean(address)));
 
     const notes = [
@@ -468,7 +468,7 @@ function describeTransaction(
     internalsByIndex: Map<number, IInternalCountRow>,
     receiptsFetched: boolean,
     trx: IChainTokenInfo | undefined
-): { index: number; txId: string; type: string; status: string; signer: string | null; to: string | null; receipt: Record<string, unknown> | null } {
+): { index: number; txId: string; type: string; status: string; account: string | null; to: string | null; receipt: Record<string, unknown> | null } {
     const index = Number(row.transaction_index);
     const receipt = receiptByIndex.get(index);
     const internals = internalsByIndex.get(index);
@@ -478,7 +478,7 @@ function describeTransaction(
         txId: row.tx_id,
         type: row.contract_type,
         status: row.contract_ret,
-        signer: toAddress(row.owner_hex),
+        account: toAddress(row.owner_hex),
         to: toAddress(target),
         receipt: receiptsFetched && receipt
             ? {
