@@ -9,10 +9,22 @@ interface ClientTimeProps {
 }
 
 /**
+ * Forces 24-hour time in every format that shows a clock time.
+ *
+ * TronRelic shows times in 24-hour form everywhere, because operators compare
+ * them against cron schedules and log entries that use it. The browser's
+ * locale would otherwise pick AM/PM for US visitors. `hourCycle: 'h23'` is used
+ * rather than `hour12: false`, because with `hour12: false` some locales show
+ * midnight as 24:00.
+ */
+const HOUR_CYCLE_24: Intl.DateTimeFormatOptions = { hourCycle: 'h23' };
+
+/**
  * Renders a formatted time/date on the client only to avoid SSR hydration mismatches.
  *
  * During SSR, renders a placeholder to prevent timezone-related hydration errors.
- * Once mounted on the client, displays the actual formatted time in the user's timezone.
+ * Once mounted on the client, displays the actual formatted time in the user's
+ * timezone, always in 24-hour form.
  *
  * @param date - The date to format (Date object, ISO string, null, or undefined)
  * @param format - Format type: 'time' (default), 'datetime', 'date', 'relative', or 'short'
@@ -45,7 +57,7 @@ export function ClientTime({ date, format = 'time', fallback = '—' }: ClientTi
     }
 
     if (format === 'time') {
-        return <span>{dateObj.toLocaleTimeString()}</span>;
+        return <span>{dateObj.toLocaleTimeString(undefined, HOUR_CYCLE_24)}</span>;
     }
 
     if (format === 'date') {
@@ -61,11 +73,17 @@ export function ClientTime({ date, format = 'time', fallback = '—' }: ClientTi
     }
 
     // datetime
-    return <span>{dateObj.toLocaleString()}</span>;
+    return <span>{dateObj.toLocaleString(undefined, HOUR_CYCLE_24)}</span>;
 }
 
 /**
  * Formats a date as relative time (e.g., "5m ago", "2h ago", "3d ago").
+ *
+ * Suits a column of closely spaced events, where the age matters more than
+ * the clock time. Anything older than a week falls back to a plain date.
+ *
+ * @param date - The already-validated date to describe.
+ * @returns The relative age, or a date for anything older than a week.
  */
 function formatRelative(date: Date): string {
     const now = new Date();
@@ -86,7 +104,13 @@ function formatRelative(date: Date): string {
 }
 
 /**
- * Formats a date in short format (e.g., "Jan 15, 2024, 2:30 PM").
+ * Formats a date in short format (e.g., "Jan 15, 2024, 14:30").
+ *
+ * Gives a compact absolute time for places where the full `datetime` form is
+ * too wide, such as a table column.
+ *
+ * @param date - The already-validated date to format.
+ * @returns The short date and 24-hour time.
  */
 function formatShort(date: Date): string {
     return date.toLocaleDateString('en-US', {
@@ -94,6 +118,7 @@ function formatShort(date: Date): string {
         day: 'numeric',
         year: 'numeric',
         hour: '2-digit',
-        minute: '2-digit'
+        minute: '2-digit',
+        ...HOUR_CYCLE_24
     });
 }
