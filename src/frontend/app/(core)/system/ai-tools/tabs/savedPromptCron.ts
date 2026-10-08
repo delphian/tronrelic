@@ -101,7 +101,8 @@ export function getNextCronDate(expression: string, now: number): Date | null {
 
 /**
  * Format a Date using the viewer's locale and timezone with a short zone label,
- * so the admin never has to mentally convert UTC to their own clock.
+ * so the admin never has to mentally convert UTC to their own clock. The hour
+ * is always 24-hour, matching how TronRelic shows times everywhere else.
  *
  * @param date - The date to format.
  * @returns A short localized wall-clock string with a zone label.
@@ -111,6 +112,7 @@ export function formatLocalWallClock(date: Date): string {
         weekday: 'short',
         hour: '2-digit',
         minute: '2-digit',
+        hourCycle: 'h23',
         timeZoneName: 'short'
     });
 }

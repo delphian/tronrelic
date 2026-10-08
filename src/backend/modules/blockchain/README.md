@@ -101,7 +101,7 @@ Every call charges its reads to the agent run through the handler's `context.que
 
 `contract-events.ts` exports `topicToAddress` and `wordToDecimal` so `chain-query/chainSignatures.ts` decodes event words the same way block sync does.
 
-A transaction's account and its permission id never say which key signed, so the tools report the account as `account` and return `signers`, the keys recovered from the signatures with `lib/recoverTransactionSigners.ts`: always in the trace, and on request (`recoverSigners`) in the delegation events and permission-transactions listings. `chain-query/readTransactionDetails.ts` reads a listed page's signatures through one point read on the sort key and yields to the event loop while it recovers them. See [Who signed](../../../../docs/system/system-chain-query-tools.md#who-signed).
+A transaction's account and its permission id never say which key signed, so the tools report the account as `account` and return `signers`, the keys recovered from the signatures with `lib/recoverTransactionSigners.ts`: always in the trace (which also returns the signatures themselves as `signatures`, beside their `signatureCount`), and on request (`recoverSigners`) in the delegation events and permission-transactions listings. `chain-query/readTransactionDetails.ts` reads a listed page's signatures through one point read on the sort key and yields to the event loop while it recovers them. See [Who signed](../../../../docs/system/system-chain-query-tools.md#who-signed).
 
 ## A restart loses work, not data
 

@@ -6,6 +6,7 @@ import { Page, Stack } from '../../../../components/layout';
 import { Badge } from '../../../../components/ui/Badge';
 import { Button } from '../../../../components/ui/Button';
 import { Switch } from '../../../../components/ui/Switch';
+import { ClientTime } from '../../../../components/ui/ClientTime';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../components/ui/Table';
 import type { IPluginInfo } from '@/types';
 import styles from './PluginsManagementPage.module.scss';
@@ -154,7 +155,7 @@ function PluginRow({ pluginInfo, onInstall, onUninstall, onToggleEnabled, isLoad
                                         <span>Error</span>
                                         {metadata.lastErrorAt && (
                                             <span className={styles.error_time}>
-                                                {new Date(metadata.lastErrorAt).toLocaleString()}
+                                                <ClientTime date={metadata.lastErrorAt} format="datetime" />
                                             </span>
                                         )}
                                     </div>
