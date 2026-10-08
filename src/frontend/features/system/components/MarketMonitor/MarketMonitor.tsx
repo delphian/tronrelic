@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Badge, type BadgeTone } from '../../../../components/ui/Badge';
 import { Button } from '../../../../components/ui/Button';
 import { StatTile, StatGrid } from '../../../../components/ui/StatTile';
+import { ClientTime } from '../../../../components/ui/ClientTime';
 import styles from './MarketMonitor.module.scss';
 
 interface MarketPlatform {
@@ -233,7 +234,7 @@ export function MarketMonitor() {
                                     <h3 className={styles.platform_header__title}>{platform.name}</h3>
                                     {platform.lastFetchedAt && (
                                         <p className={styles.platform_header__timestamp}>
-                                            Last fetched: {new Date(platform.lastFetchedAt).toLocaleString()}
+                                            Last fetched: <ClientTime date={platform.lastFetchedAt} format="datetime" />
                                         </p>
                                     )}
                                 </div>

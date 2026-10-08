@@ -6,6 +6,7 @@ import { useAppDispatch, useAppSelector } from '../../../../store/hooks';
 import { setTransactions, type LiveTransaction, type RealtimeTransactionEvent } from '../../slice';
 import { Card } from '../../../../components/ui/Card';
 import { Badge } from '../../../../components/ui/Badge';
+import { ClientTime } from '../../../../components/ui/ClientTime';
 import { cn } from '../../../../lib/cn';
 import { useRealtimeStatus } from '../../../realtime/hooks/useRealtimeStatus';
 import { useSocketSubscription } from '../../../realtime/hooks/useSocketSubscription';
@@ -153,7 +154,7 @@ export function TransactionFeed({ initialTransactions }: ITransactionFeedProps) 
                         >
                             <div className={styles.transaction__header}>
                                 <strong className={styles.transaction__amount}>{(transaction.amountTRX ?? 0).toLocaleString()} TRX</strong>
-                                <span className={`text-subtle ${styles.transaction__timestamp}`}>{new Date(transaction.timestamp).toLocaleString()}</span>
+                                <span className={`text-subtle ${styles.transaction__timestamp}`}><ClientTime date={transaction.timestamp} format="datetime" /></span>
                             </div>
                             {meta && (
                                 <div className={styles.transaction__badge}>

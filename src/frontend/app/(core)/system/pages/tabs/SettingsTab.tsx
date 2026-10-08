@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Card } from '../../../../../components/ui/Card';
 import { Button } from '../../../../../components/ui/Button';
 import { Textarea } from '../../../../../components/ui/Textarea';
+import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { Save } from 'lucide-react';
 import type { IPageSettings } from '@/types';
 import styles from './SettingsTab.module.scss';
@@ -152,7 +153,7 @@ export function SettingsTab() {
                         <div className={styles.setting_row}>
                             <span className={styles.setting_label}>Last Updated:</span>
                             <span className={styles.setting_value}>
-                                {new Date(settings.updatedAt).toLocaleString()}
+                                <ClientTime date={settings.updatedAt} format="datetime" />
                             </span>
                         </div>
                     </div>

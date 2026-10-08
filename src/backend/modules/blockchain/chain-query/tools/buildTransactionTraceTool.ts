@@ -22,7 +22,9 @@
  * markets sign deliveries on sellers' wallets that way, so the trace reports
  * the parameter's `owner_address` as `account` and the keys recovered from the
  * signatures as `signers`. Recovering one transaction's signers costs about a
- * millisecond per signature and needs only the id and the signatures.
+ * millisecond per signature and needs only the id and the signatures. The
+ * signatures themselves are also returned as `signatures`, so a caller can
+ * verify a signature or recover a key independently instead of trusting ours.
  *
  * @module backend/modules/blockchain/chain-query/tools/buildTransactionTraceTool
  */
@@ -137,8 +139,9 @@ export function buildTransactionTraceTool(toolkit: IChainQueryToolkit): IAiTool 
     return {
         name: AI_TOOL_NAMES.transactionTrace,
         description:
-            'Explain everything one TRON transaction did. Returns the call it made (type, account, recipient or contract, amount, and for a contract call the function selector with well-known names such as transfer(address,uint256)), its status, memo, and signature count; ' +
-            'signers, the keys recovered from its signatures, which are the keys that actually signed and can differ from account when the account granted another key one of its permissions; ' +
+            'Explain everything one TRON transaction did. Returns the call it made (type, account, recipient or contract, amount, and for a contract call the function selector with well-known names such as transfer(address,uint256)), its status, memo, and signatureCount; ' +
+            'signatures, every signature exactly as stored, each normally 130 hex characters (r, s, and the recovery byte), for checking a signature or recovering a key yourself; their order carries no meaning on TRON, since signatures sit outside the signed data and are checked as an unordered set; ' +
+            'signers, the keys recovered from its signatures, which are the keys that actually signed and can differ from account when the account granted another key one of its permissions; they follow signature order, which carries no meaning on TRON, since signatures sit outside the signed data and are checked as an unordered set; ' +
             'permissionId, which names a permission slot on that account (0 owner, 1 witness, 2 and up an active permission numbered by its position in the account\'s latest permission update), so it says which keys may sign, not which key did, and the same number means different things on different accounts; ' +
             'the internal transactions the contract ran, in order (caller, callee, note such as call or create, TRX and TRC-10 values, whether each was rejected, and movesValue, true only for a call or create that was not rejected and carried a positive value); ' +
             'every value movement it caused (TRX, TRC-10, and TRC-20, with amounts converted and USD values); the receipt\'s energy and fees; and, with includeEvents, its event logs with well-known events decoded. ' +
@@ -348,7 +351,8 @@ LIMIT {limit:UInt32}`,
             type: transaction.contract_type,
             call: call.summary,
             memo: decodeText(transaction.memo_hex),
-            signatures: signatures.length,
+            signatureCount: signatures.length,
+            signatures,
             signers,
             permissionId: Number(transaction.permission_id),
             feeLimit: toChainAmount(String(transaction.fee_limit), trx),

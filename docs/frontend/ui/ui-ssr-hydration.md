@@ -30,7 +30,9 @@ import { ClientTime } from '../../components/ui/ClientTime';
 
 `ClientTime` renders a placeholder (`—`) during SSR, then shows the formatted time after mounting on the client. Server and client HTML match perfectly.
 
-**Available formats:** `"time"` (2:30:15 PM, default), `"datetime"` (1/15/2025, 2:30:15 PM), `"date"` (1/15/2025), `"relative"` ("5m ago", "2h ago"), `"short"` (compact display).
+**Available formats:** `"time"` (14:30:15, default), `"datetime"` (1/15/2025, 14:30:15), `"date"` (1/15/2025), `"relative"` ("5m ago", "2h ago"), `"short"` (Jan 15, 2025, 14:30).
+
+TronRelic always shows clock times in 24-hour form, never AM/PM. `ClientTime` forces this with `hourCycle: 'h23'` whatever the visitor's locale, so use it rather than calling `toLocaleString()` yourself. Where a component has to format a time directly, such as a chart axis, pass `hourCycle: 'h23'` too. Prefer it to `hour12: false`, which shows midnight as 24:00 in some locales.
 
 ## Other Common Hydration Causes
 
@@ -74,7 +76,7 @@ For charts and live dashboards where `ClientTime` is insufficient (e.g., chart a
 
 **Phase 1 (SSR + first client render):** Show relative time labels ("Now", "2h ago") — identical on server and client.
 
-**Phase 2 (after WebSocket connects):** Switch to absolute timestamps ("10:31 PM") — only renders client-side after hydration is complete.
+**Phase 2 (after WebSocket connects):** Switch to absolute timestamps ("22:31") — only renders client-side after hydration is complete.
 
 ### Implementation
 
@@ -101,7 +103,7 @@ xAxisFormatter={(date) => {
         if (diffHours < 24) return `${diffHours}h ago`;
         return `${Math.floor(diffHours / 24)}d ago`;
     }
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 }}
 ```
 

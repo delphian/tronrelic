@@ -130,7 +130,8 @@ describe('blockchain-transaction-trace', () => {
 
         expect(result).toEqual(expect.objectContaining({
             found: true,
-            signatures: 1,
+            signatureCount: 1,
+            signatures: [SIGNED_DELEGATION.signature],
             signers: [SIGNED_DELEGATION.signer],
             permissionId: SIGNED_DELEGATION.permissionId
         }));
@@ -142,7 +143,7 @@ describe('blockchain-transaction-trace', () => {
 
         const result = await buildTransactionTraceTool(toolkit).handler({ txId: TX }, undefined, CONTEXT) as Record<string, unknown>;
 
-        expect(result).toEqual(expect.objectContaining({ signatures: 0, signers: null }));
+        expect(result).toEqual(expect.objectContaining({ signatureCount: 0, signatures: [], signers: null }));
         expect((result.notes as string[]).some(note => note.includes('signers is null'))).toBe(true);
     });
 

@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import type { TronTransactionDocument } from '@/shared';
 import { Card } from '../../../../components/ui/Card';
 import { Badge } from '../../../../components/ui/Badge';
+import { ClientTime } from '../../../../components/ui/ClientTime';
 import { cn } from '../../../../lib/cn';
 import styles from './TransactionDetails.module.scss';
 
@@ -59,7 +60,7 @@ export function TransactionDetails({ transaction }: TransactionDetailsProps) {
                     <div className={styles.header__info}>
                         <h2 className={styles.header__title}>Transaction details</h2>
                         <p className={styles.header__timestamp}>
-                            {new Date(transaction.timestamp).toLocaleString()}
+                            <ClientTime date={transaction.timestamp} format="datetime" />
                         </p>
                     </div>
                     <Badge tone="neutral">{formattedType}</Badge>
