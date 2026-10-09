@@ -109,18 +109,25 @@ async function fetchResourceMarketFacts(): Promise<IResourceMarketFacts> {
         // a frontend container cannot reliably resolve (TLS failures / 502) —
         // see docs/frontend/frontend-architecture-runtime-config.md.
         const apiUrl = getServerSideApiUrlWithPath();
-        const response = await fetch(`${apiUrl}/plugins/resource-markets/db-markets`, {
+        const response = await fetch(`${apiUrl}/plugins/resource-markets/rental-markets`, {
             next: { revalidate: RESOURCE_MARKET_FACTS_TTL_SECONDS },
             signal: AbortSignal.timeout(6000)
         });
         if (response.ok) {
             const body = await response.json();
-            const markets: Array<{ displayName?: string }> = Array.isArray(body?.markets)
-                ? body.markets
-                : [];
+            // Each entry is the plugin's `IRentalMarket`; only the profile's
+            // name and sort key are read, so the shape is declared inline
+            // rather than importing the plugin's types into core.
+            const markets: Array<{ profile?: { displayName?: string; priority?: number } }> =
+                Array.isArray(body?.markets) ? body.markets : [];
+            // Named in the operator's card order, so the providers the prose
+            // spells out are the ones the page shows first.
             const names = markets
-                .map((market) => market.displayName)
-                .filter((name): name is string => typeof name === 'string' && name.length > 0);
+                .map((market) => market.profile)
+                .filter((profile): profile is { displayName: string; priority?: number } =>
+                    typeof profile?.displayName === 'string' && profile.displayName.length > 0)
+                .sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0))
+                .map((profile) => profile.displayName);
             facts = { count: markets.length, names };
         } else {
             console.error('Failed to fetch resource market catalog:', response.status);
