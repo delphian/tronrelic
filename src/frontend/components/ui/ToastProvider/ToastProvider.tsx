@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type PointerEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '../../../lib/cn';
 import styles from './ToastProvider.module.scss';
@@ -42,7 +42,12 @@ export interface ToastOptions {
      * place the value appears.
      */
     description?: ReactNode;
-    /** Auto-dismiss duration in milliseconds (0 = no auto-dismiss) */
+    /**
+     * Auto-dismiss duration in milliseconds (0 = no auto-dismiss). The
+     * countdown pauses while a mouse pointer is over the toast and resumes
+     * with the time it had left, so a reader using a control inside the toast
+     * does not lose it partway through.
+     */
     duration?: number;
     /** Optional action button label */
     actionLabel?: string;
@@ -71,8 +76,29 @@ interface ToastContextValue {
     push: (toast: ToastOptions) => string;
     /** Dismisses a specific toast by ID */
     dismiss: (id: string) => void;
+    /** Stops a toast's auto-dismiss countdown while the pointer is over it */
+    pauseDismissal: (id: string) => void;
+    /** Restarts a paused countdown with the time that was left when it paused */
+    resumeDismissal: (id: string) => void;
     /** Array of currently displayed toast payloads */
     toasts: ToastPayload[];
+}
+
+/**
+ * Auto-dismiss countdown for one toast.
+ *
+ * A plain timeout id is not enough once a countdown can be paused, because
+ * resuming needs to know how much of the duration was still left. `remaining`
+ * holds that figure and `startedAt` records when the current run began, so a
+ * pause can subtract the time already spent. `timeoutId` is null while paused.
+ */
+interface IDismissTimer {
+    /** Pending browser timeout, or null while the countdown is paused */
+    timeoutId: number | null;
+    /** Milliseconds left on the countdown at the start of the current run */
+    remaining: number;
+    /** `Date.now()` when the current run started, used to measure elapsed time on pause */
+    startedAt: number;
 }
 
 const ToastContext = createContext<ToastContextValue | null>(null);
@@ -86,7 +112,8 @@ const ToastContext = createContext<ToastContextValue | null>(null);
  *
  * Toast notifications support multiple tones (info, success, warning, danger), custom
  * durations, and action buttons for user interaction. Auto-dismissal timers are managed
- * internally and cleared on unmount to prevent memory leaks.
+ * internally and cleared on unmount to prevent memory leaks. Each toast's timer pauses
+ * while the pointer is over that toast and resumes with its remaining time afterwards.
  *
  * This component supplies the context only. The toasts themselves are drawn by
  * `<ToastViewport />`, which `providers.tsx` mounts as a descendant of every
@@ -109,16 +136,39 @@ const ToastContext = createContext<ToastContextValue | null>(null);
 export function ToastProvider({ children }: { children: ReactNode }) {
     const [toasts, setToasts] = useState<ToastPayload[]>([]);
     const defaultId = useId();
-    const timers = useRef<Record<string, number>>({});
+    const timers = useRef<Record<string, IDismissTimer>>({});
+    // Ids of toasts the pointer is over right now. Kept apart from `timers`
+    // because the pointer can reach a toast before its countdown exists:
+    // `push` schedules the countdown one animation frame after the toast is
+    // added, and a toast that slides in under a resting cursor is hovered
+    // from its first frame.
+    const paused = useRef<Set<string>>(new Set());
 
     useEffect(() => {
         return () => {
             const { current } = timers;
             Object.values(current).forEach(timer => {
-                window.clearTimeout(timer);
+                if (timer.timeoutId !== null) {
+                    window.clearTimeout(timer.timeoutId);
+                }
             });
             timers.current = {};
+            paused.current.clear();
         };
+    }, []);
+
+    /**
+     * Cancels and forgets a toast's countdown, so a dismissed or replaced
+     * toast cannot be closed later by a timeout left over from before.
+     *
+     * @param id - Toast whose countdown should be removed
+     */
+    const clearTimer = useCallback((id: string) => {
+        const timer = timers.current[id];
+        if (timer && timer.timeoutId !== null) {
+            window.clearTimeout(timer.timeoutId);
+        }
+        delete timers.current[id];
     }, []);
 
     /**
@@ -131,29 +181,82 @@ export function ToastProvider({ children }: { children: ReactNode }) {
      */
     const dismiss = useCallback((id: string) => {
         setToasts(current => current.filter(toast => toast.id !== id));
-        if (timers.current[id]) {
-            window.clearTimeout(timers.current[id]);
-            delete timers.current[id];
-        }
-    }, []);
+        clearTimer(id);
+        paused.current.delete(id);
+    }, [clearTimer]);
+
+    /**
+     * Starts a countdown run that dismisses the toast when it reaches zero.
+     * Shared by the first schedule and by every resume, so both record the
+     * start time the same way and a later pause measures elapsed time correctly.
+     *
+     * @param id - Toast the countdown belongs to
+     * @param ms - Milliseconds until the toast is dismissed
+     */
+    const startTimer = useCallback((id: string, ms: number) => {
+        timers.current[id] = {
+            timeoutId: window.setTimeout(() => dismiss(id), ms),
+            remaining: ms,
+            startedAt: Date.now()
+        };
+    }, [dismiss]);
 
     /**
      * Schedules automatic dismissal for a toast based on its duration.
      *
-     * Creates a timeout that dismisses the toast after the specified duration.
-     * Duration of 0 or negative values disables auto-dismissal.
+     * Any countdown already held under the same id is cleared first. Without
+     * that, pushing a replacement toast with a reused id left the old timeout
+     * running, and it closed the replacement early. When the pointer is
+     * already over the toast, the countdown is stored paused with its full
+     * duration, and it starts when the pointer leaves. Duration of 0 or
+     * negative values disables auto-dismissal.
      *
      * @param toast - Toast payload with duration property
      */
     const scheduleDismissal = useCallback((toast: ToastPayload) => {
         const duration = toast.duration ?? 6000;
-        if (duration <= 0) {
-            return;
+        clearTimer(toast.id);
+        if (duration > 0) {
+            if (paused.current.has(toast.id)) {
+                timers.current[toast.id] = { timeoutId: null, remaining: duration, startedAt: 0 };
+            } else {
+                startTimer(toast.id, duration);
+            }
         }
-        timers.current[toast.id] = window.setTimeout(() => {
-            dismiss(toast.id);
-        }, duration);
-    }, [dismiss]);
+    }, [clearTimer, startTimer]);
+
+    /**
+     * Pauses a toast's countdown so it is not dismissed while the reader is
+     * still looking at it or using a control inside it. The time already
+     * spent is subtracted, so resuming continues the countdown rather than
+     * restarting it. The id is recorded even when no countdown exists yet, so
+     * a countdown scheduled afterwards starts out paused.
+     *
+     * @param id - Toast the pointer has moved onto
+     */
+    const pauseDismissal = useCallback((id: string) => {
+        paused.current.add(id);
+        const timer = timers.current[id];
+        if (timer && timer.timeoutId !== null) {
+            window.clearTimeout(timer.timeoutId);
+            timer.remaining = Math.max(0, timer.remaining - (Date.now() - timer.startedAt));
+            timer.timeoutId = null;
+        }
+    }, []);
+
+    /**
+     * Resumes a paused countdown with the time it had left, once the pointer
+     * has moved off the toast.
+     *
+     * @param id - Toast the pointer has left
+     */
+    const resumeDismissal = useCallback((id: string) => {
+        paused.current.delete(id);
+        const timer = timers.current[id];
+        if (timer && timer.timeoutId === null) {
+            startTimer(id, timer.remaining);
+        }
+    }, [startTimer]);
 
     /**
      * Displays a new toast notification with auto-dismissal scheduling.
@@ -183,8 +286,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     const value = useMemo<ToastContextValue>(() => ({
         push,
         dismiss,
+        pauseDismissal,
+        resumeDismissal,
         toasts
-    }), [dismiss, push, toasts]);
+    }), [dismiss, pauseDismissal, push, resumeDismissal, toasts]);
 
     return (
         <ToastContext.Provider value={value}>
@@ -212,7 +317,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
  * @returns The portal holding the current toasts, or null before mount
  */
 export function ToastViewport() {
-    const { toasts, dismiss } = useToastContext();
+    const { toasts, dismiss, pauseDismissal, resumeDismissal } = useToastContext();
     const [mounted, setMounted] = useState(false);
 
     useEffect(() => {
@@ -223,7 +328,13 @@ export function ToastViewport() {
         ? createPortal(
             <aside className={styles.viewport} role="status" aria-live="polite">
                 {toasts.map(toast => (
-                    <ToastItem key={toast.id} toast={toast} onDismiss={() => dismiss(toast.id)} />
+                    <ToastItem
+                        key={toast.id}
+                        toast={toast}
+                        onDismiss={() => dismiss(toast.id)}
+                        onHoverStart={() => pauseDismissal(toast.id)}
+                        onHoverEnd={() => resumeDismissal(toast.id)}
+                    />
                 ))}
             </aside>,
             document.body
@@ -309,14 +420,55 @@ function toneClassName(tone: ToastTone) {
  * Internal component responsible for rendering a single toast notification with
  * title, description, optional action button, and dismiss button.
  *
+ * Reports when a mouse or pen pointer enters and leaves the card, so the
+ * provider can hold the auto-dismiss countdown while the reader is over it.
+ * Touch input is ignored, because a tap fires an enter event with no matching
+ * leave until the user taps somewhere else, which would leave the toast paused
+ * indefinitely.
+ *
  * @param props.toast - Toast payload to render
  * @param props.onDismiss - Callback to invoke when toast is dismissed
+ * @param props.onHoverStart - Called when the pointer moves onto the card, to pause its countdown
+ * @param props.onHoverEnd - Called when the pointer leaves the card, to resume its countdown
  * @returns Rendered toast notification card
  */
-function ToastItem({ toast, onDismiss }: { toast: ToastPayload; onDismiss: () => void }) {
+function ToastItem({ toast, onDismiss, onHoverStart, onHoverEnd }: {
+    toast: ToastPayload;
+    onDismiss: () => void;
+    onHoverStart: () => void;
+    onHoverEnd: () => void;
+}) {
     const { tone = 'info', title, titleHref, description, actionLabel, onAction } = toast;
+
+    /**
+     * Pauses the countdown when a hovering pointer enters, skipping touch for
+     * the reason given on the component.
+     *
+     * @param event - Pointer event whose `pointerType` separates hover from a tap
+     */
+    function handlePointerEnter(event: PointerEvent<HTMLDivElement>) {
+        if (event.pointerType !== 'touch') {
+            onHoverStart();
+        }
+    }
+
+    /**
+     * Resumes the countdown when a hovering pointer leaves the card.
+     *
+     * @param event - Pointer event whose `pointerType` separates hover from a tap
+     */
+    function handlePointerLeave(event: PointerEvent<HTMLDivElement>) {
+        if (event.pointerType !== 'touch') {
+            onHoverEnd();
+        }
+    }
+
     return (
-        <div className={cn(toneClassName(tone))}>
+        <div
+            className={cn(toneClassName(tone))}
+            onPointerEnter={handlePointerEnter}
+            onPointerLeave={handlePointerLeave}
+        >
             <div className={styles.item__meta}>
                 {/* The anchor wraps the existing <strong> rather than replacing
                   * it, so a linked title keeps the same weight and size as an

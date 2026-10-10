@@ -91,20 +91,27 @@
     --z-index-fixed: 1000;
     --z-index-modal-backdrop: 1100;
     --z-index-modal: 1110;
+    --z-index-toast: 1200;
     /* Popover a control opens for itself — a typeahead dropdown, an anchored
        menu — rendered in a <body> portal so no ancestor's overflow or stacking
        context can clip it. Above the modal layer because such a control is
        routinely placed inside a modal form, and a dropdown painting behind the
-       dialog that owns it is unusable. Below toasts, which must stay readable
-       over everything. Distinct from --z-index-dropdown, which is for an
-       in-flow dropdown that stays inside its parent's stacking context. */
-    --z-index-popover: 1150;
-    /* Tooltips, also body-portaled. Above popovers because a tooltip explains
+       dialog that owns it is unusable. Above toasts for the same reason: a
+       toast can carry an address chip, and the chip's tools menu opened behind
+       the toast it came from. A popover only exists after the user opens it,
+       so covering a toast while it is open hides nothing they did not ask to
+       cover. Distinct from --z-index-dropdown, which is for an in-flow dropdown
+       that stays inside its parent's stacking context. */
+    --z-index-popover: 1250;
+    /* Tooltips, also body-portaled. Top of the scale because a tooltip explains
        whatever is under the pointer — including a control inside an open
-       dropdown or dialog — so it is the last thing that may be covered. Still
-       below toasts. */
-    --z-index-tooltip: 1160;
-    --z-index-toast: 1200;
+       dropdown, a dialog, or a toast — so it is the last thing that may be
+       covered. It used to sit below toasts, and a tooltip opened from an
+       address chip inside a toast was painted over by that same toast, which
+       looked like the toast's border cutting it off. Covering a toast is
+       harmless: the tooltip is pointer-events: none and only exists while the
+       pointer rests on its trigger. */
+    --z-index-tooltip: 1300;
 
     /* Transitions */
     --transition-base: 160ms ease;

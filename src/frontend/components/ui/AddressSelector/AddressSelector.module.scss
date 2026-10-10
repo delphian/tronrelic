@@ -42,7 +42,7 @@
  *
  * `--z-index-popover` (not `--z-index-dropdown`) because a body-level list must
  * clear every one of those surfaces — including a modal, since this control is
- * routinely dropped into a modal form — while staying under toasts.
+ * routinely dropped into a modal form — and toasts.
  *
  * `overflow: hidden auto` clips the row hover fills at the rounded corners on
  * the horizontal axis and scrolls on the vertical, so a long result set stays
