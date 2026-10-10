@@ -13,7 +13,7 @@
  *
  * `--z-index-tooltip` (not `--z-index-fixed`) because a body-level overlay has
  * to clear every surface it may be summoned over — sticky headers, dialogs,
- * open dropdowns — while staying under toasts.
+ * open dropdowns, and toasts, which can hold address chips of their own.
  *
  * `--tooltip-arrow-x` is the arrow's offset from the overlay's own left edge,
  * also set by Tooltip.tsx. It tracks the trigger rather than the overlay's

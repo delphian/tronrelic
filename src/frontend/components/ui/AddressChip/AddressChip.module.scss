@@ -129,13 +129,15 @@
  * hosts the chip — most often the shared Table wrapper, whose `overflow-x: auto`
  * also clips vertically and used to cut the menu off at the table's edge. Its
  * top/left come from the component, which measures the trigger and flips the
- * menu above it when the viewport has no room below. `--z-index-fixed` (not
- * `--z-index-dropdown`) because a body-level popover must clear sticky table
- * headers and the nav shell while staying under modals and toasts.
+ * menu above it when the viewport has no room below. `--z-index-popover` (not
+ * `--z-index-dropdown` or `--z-index-fixed`) because the chip is placed inside
+ * modals and toasts as well as tables, and the menu has to paint above the
+ * surface that holds the chip. It used `--z-index-fixed` until a menu opened
+ * from an address in a toast appeared behind that toast.
  */
 .menu {
     position: fixed;
-    z-index: var(--z-index-fixed);
+    z-index: var(--z-index-popover);
     display: flex;
     flex-direction: column;
     padding: var(--padding-2xs);

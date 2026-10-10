@@ -195,7 +195,7 @@ const { open, close, closeAll } = context.useModal();
 const { push, dismiss } = context.useToast();
 ```
 
-`push(toast)` returns the toast id; pass to `dismiss(id)` to remove early. Fields: `id?` (auto-generated if omitted), `tone?: 'info'|'success'|'warning'|'danger'`, `title` (required), `description?`, `duration?` (ms), `actionLabel?`, `onAction?`.
+`push(toast)` returns the toast id; pass to `dismiss(id)` to remove early. Fields: `id?` (auto-generated if omitted), `tone?: 'info'|'success'|'warning'|'danger'`, `title` (required), `description?`, `duration?` (ms, default 6000, `0` disables auto-dismiss), `actionLabel?`, `onAction?`. The countdown pauses while a mouse pointer is over the toast and resumes with the time it had left when the pointer leaves.
 
 ## Example — Page With Layout, UI, and Gating
 
