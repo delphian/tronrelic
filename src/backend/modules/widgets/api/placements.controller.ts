@@ -178,7 +178,7 @@ export class PlacementsController {
         // setting the form offers as an icon or image picker would accept any
         // string sent straight to the API.
         this.ajv.addFormat(WIDGET_ICON_FORMAT.name, new RegExp(WIDGET_ICON_FORMAT.pattern));
-        this.ajv.addFormat(WIDGET_IMAGE_FORMAT.name, new RegExp(WIDGET_IMAGE_FORMAT.pattern));
+        this.ajv.addFormat(WIDGET_IMAGE_FORMAT.name, WIDGET_IMAGE_FORMAT.isValid);
         this.validatorCache = new WeakMap();
     }
 

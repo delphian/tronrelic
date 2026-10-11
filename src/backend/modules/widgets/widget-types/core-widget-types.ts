@@ -1027,11 +1027,10 @@ export const SITE_LOGO_CONFIG_SCHEMA: JSONSchema7 = {
  * @returns The trimmed URL, or null so the logo falls back to text alone.
  */
 function normalizeSiteLogoImageUrl(raw: unknown): string | null {
-    const imagePattern = new RegExp(WIDGET_IMAGE_FORMAT.pattern);
     const trimmed = typeof raw === 'string' ? raw.trim() : '';
     const usable = trimmed !== ''
         && trimmed.length <= SITE_LOGO_IMAGE_URL_MAX_LENGTH
-        && imagePattern.test(trimmed);
+        && WIDGET_IMAGE_FORMAT.isValid(trimmed);
 
     return usable ? trimmed : null;
 }

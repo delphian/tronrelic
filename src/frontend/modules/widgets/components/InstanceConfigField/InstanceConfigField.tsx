@@ -288,6 +288,20 @@ function InstanceConfigImageField({ field, value, idPrefix, disabled, compact = 
         }
     };
 
+    // Field has no single element to decorate here, because its children are
+    // the row wrapper plus the fallback note. It therefore clones nothing and
+    // injects neither `aria-describedby` nor `aria-required`, and its contract
+    // for that shape is to wire both onto the focusable control by hand. The
+    // hint element Field renders takes its id from the `htmlFor` value passed
+    // below, and the no-provider note is referenced alongside the hint so a
+    // screen-reader user also hears why the control is a plain URL box.
+    const noticeId = `${fieldId}-notice`;
+    const describedIds = [
+        hint ? `${fieldId}-hint` : undefined,
+        pickerAvailable ? undefined : noticeId
+    ].filter((id): id is string => id !== undefined);
+    const describedBy = describedIds.length > 0 ? describedIds.join(' ') : undefined;
+
     // `htmlFor` points the label at the Choose button or URL input inside the
     // row, rather than at the row wrapper Field would otherwise label.
     return (
@@ -312,6 +326,8 @@ function InstanceConfigImageField({ field, value, idPrefix, disabled, compact = 
                             onClick={() => void choose()}
                             disabled={disabled}
                             icon={<ImageIcon size={18} />}
+                            aria-describedby={describedBy}
+                            aria-required={field.required || undefined}
                         >
                             {current ? 'Choose another' : 'Choose image'}
                         </Button>
@@ -325,6 +341,8 @@ function InstanceConfigImageField({ field, value, idPrefix, disabled, compact = 
                             onChange={(e) => onChange(e.target.value)}
                             disabled={disabled}
                             placeholder="/uploads/... or https://..."
+                            aria-describedby={describedBy}
+                            aria-required={field.required || undefined}
                         />
                     )}
                 <Button
@@ -339,7 +357,7 @@ function InstanceConfigImageField({ field, value, idPrefix, disabled, compact = 
                 </Button>
             </div>
             {!pickerAvailable && (
-                <span className={styles.hint}>
+                <span id={noticeId} className={styles.hint}>
                     No files provider is enabled, so paste the image URL instead. Enable the Files plugin under
                     System, then Plugins, to upload or choose an image.
                 </span>

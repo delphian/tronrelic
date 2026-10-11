@@ -544,7 +544,9 @@ describe('PlacementsController image-url format validation', () => {
         ['a backslash path browsers read as protocol-relative', '/\\evil.example/logo.png'],
         ['a javascript: URL', 'javascript:alert(1)'],
         ['a data: URL', 'data:image/png;base64,AAAA'],
-        ['a URL containing whitespace', '/uploads/a b.png']
+        ['a URL containing whitespace', '/uploads/a b.png'],
+        ['an absolute URL with no host', 'https://?logo'],
+        ['an absolute URL with an invalid host', 'https://[x]']
     ])('rejects %s with 400 and never reaches the service', async (_label, imageUrl) => {
         const widgets = await createLogoWithImage(imageUrl);
 
