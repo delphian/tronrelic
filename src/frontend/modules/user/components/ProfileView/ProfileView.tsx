@@ -7,13 +7,12 @@
  * and notification preferences into one stacked surface. It is the client half
  * of the SSR-first `/profile` page: the server resolves identity and wallets
  * and hands them in as props, so the hub paints real content immediately and
- * only the optional notification preferences load after mount. Sign-out lives
- * here (not in a header dropdown) because the header account button now routes
- * straight to this page.
+ * only the optional notification preferences load after mount. Sign-out is
+ * offered here and as the last entry of the header account tray; both use the
+ * shared `useSignOut` hook.
  */
 
 import { useCallback, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { LogOut, ShieldCheck } from 'lucide-react';
 import type { MenuNodeSerialized } from '@/shared';
 import { Panel } from '../../../../components/ui/Panel';
@@ -21,9 +20,8 @@ import { Button } from '../../../../components/ui/Button';
 import { Badge } from '../../../../components/ui/Badge';
 import { Stack, Section } from '../../../../components/layout';
 import { MenuNavClient } from '../../../../components/layout/MenuNav/MenuNavClient';
-import { useToast } from '../../../../components/ui/ToastProvider';
 import { PreferencesPanel } from '../../../notifications';
-import { signOut } from '../../lib/auth-client';
+import { useSignOut } from '../../hooks';
 import { WalletManager } from '../WalletManager';
 import { ConnectedAppsPanel } from '../ConnectedAppsPanel';
 import type { IAccountIngestionProgress, IConnectedApp, ILinkedWallet, IPortfolioSummary } from '@/types';
@@ -161,9 +159,7 @@ export function ProfileView({
     submenuGeneratedAt,
     initialTab
 }: IProfileViewProps) {
-    const router = useRouter();
-    const { push } = useToast();
-    const [signingOut, setSigningOut] = useState(false);
+    const { signOut: handleSignOut, signingOut } = useSignOut();
     const connectedAppsAvailable = initialConnectedApps !== null;
     const [activeTab, setActiveTab] = useState<ProfileTabId>(resolveTab(initialTab, connectedAppsAvailable));
 
@@ -184,27 +180,6 @@ export function ProfileView({
         setActiveTab(tab);
         window.history.replaceState(null, '', `/profile?tab=${tab}`);
     }, [connectedAppsAvailable]);
-
-    /**
-     * Sign the user out, then refresh so the route's auth gate re-evaluates and
-     * shows the signed-out state without a manual reload.
-     */
-    const handleSignOut = useCallback(async (): Promise<void> => {
-        setSigningOut(true);
-        try {
-            await signOut();
-            push({ tone: 'success', title: 'Signed out' });
-            router.refresh();
-        } catch (error) {
-            push({
-                tone: 'danger',
-                title: 'Sign out failed',
-                description: error instanceof Error ? error.message : String(error)
-            });
-        } finally {
-            setSigningOut(false);
-        }
-    }, [push, router]);
 
     return (
         <Stack gap="md">

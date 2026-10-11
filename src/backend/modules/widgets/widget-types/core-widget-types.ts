@@ -775,7 +775,11 @@ export interface IAuthButtonWidgetData {
      * null to keep the default "Sign in" button and identity pill.
      */
     imageUrl: string | null;
-    /** Links shown in the slide-out tray; empty keeps the button's default click. */
+    /**
+     * Operator links shown in the slide-out tray, between the built-in
+     * Profile and Sign out entries a signed-in visitor always gets. Empty
+     * keeps a signed-out visitor's default click.
+     */
     links: IAuthButtonLink[];
     /** Which way the tray slides out of the button. */
     direction: 'right' | 'down';
@@ -841,7 +845,7 @@ export const AUTH_BUTTON_CONFIG_SCHEMA: JSONSchema7 = {
             type: 'array',
             title: 'Links',
             description:
-                'Links that slide out when the button is clicked. With none, the button signs visitors in or opens their profile as usual. A signed-out visitor who can see a link gets a Sign in entry at the start of the tray.',
+                'Links that slide out when the button is clicked. Signed-in visitors always get the tray, with Profile added at the top and Sign out at the bottom, so do not add those here. A signed-out visitor who can see a link gets a Sign in entry at the start of the tray; with none, their button signs them in as usual.',
             maxItems: AUTH_BUTTON_MAX_LINKS,
             items: {
                 type: 'object',
@@ -869,7 +873,7 @@ export const AUTH_BUTTON_CONFIG_SCHEMA: JSONSchema7 = {
                     url: {
                         type: 'string',
                         title: 'URL',
-                        description: 'A path on this site such as /profile, or a full https:// address.',
+                        description: 'A path on this site such as /markets, or a full https:// address.',
                         pattern: AUTH_BUTTON_LINK_URL_PATTERN,
                         maxLength: 2048
                     },

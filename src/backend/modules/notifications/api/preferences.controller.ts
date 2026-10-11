@@ -5,14 +5,17 @@
  * notifications reach them. Reads are gated on login only (not admin): an
  * ordinary user owns their own preferences. The userId is taken from the
  * resolved Better Auth session, never from the request body, so a user can only
- * read or write their own row.
+ * read or write their own row. The catalog is narrowed to the categories whose
+ * audience includes the caller, so an ordinary user is not offered opt-outs
+ * for admin-only notifications that can never reach them.
  */
 
 import type { Request, Response } from 'express';
 import { isLoggedIn } from '@/types';
-import type { IHasAuthSession, ISystemLogService, INotificationPreferenceUpdate } from '@/types';
+import type { IHasAuthSession, ISystemLogService, INotificationCategory, INotificationPreferenceUpdate } from '@/types';
 import type { NotificationService } from '../services/notification.service.js';
 import type { PreferenceService } from '../services/preference.service.js';
+import type { RecipientResolver } from '../services/recipient-resolver.js';
 
 /**
  * Serves and updates the current user's notification preferences.
@@ -21,13 +24,36 @@ export class PreferencesController {
     /**
      * @param notifications - Published service, for the category/channel catalog.
      * @param preferences - Per-user preference store.
+     * @param recipients - Audience resolver, the same one dispatch uses, so the
+     *        categories a user is shown match the categories that can reach them.
      * @param logger - Scoped logger.
      */
     constructor(
         private readonly notifications: NotificationService,
         private readonly preferences: PreferenceService,
+        private readonly recipients: RecipientResolver,
         private readonly logger: ISystemLogService
     ) {}
+
+    /**
+     * List the user-configurable categories whose default audience includes
+     * this user.
+     *
+     * Both the read and the write path call this, so the keys a user can write
+     * are exactly the keys they are shown. The check uses the category's
+     * `defaultAudience`, because that is who receives it unless a `notify()`
+     * call overrides the audience for one blast.
+     *
+     * @param userId - Better Auth id of the caller.
+     * @returns The categories this user may opt in or out of.
+     */
+    private async visibleCategories(userId: string): Promise<INotificationCategory[]> {
+        const configurable = this.notifications.listCategories().filter((c) => c.userConfigurable !== false);
+        const inAudience = await Promise.all(
+            configurable.map((category) => this.recipients.includes(category.defaultAudience, userId))
+        );
+        return configurable.filter((_, index) => inAudience[index]);
+    }
 
     /**
      * Resolve the caller's Better Auth user id, or null when not logged in.
@@ -44,7 +70,8 @@ export class PreferencesController {
 
     /**
      * GET `/` — the caller's preferences plus the catalog the UI renders the
-     * opt-out matrix from (user-configurable categories and the channel list).
+     * opt-out matrix from (the user-configurable categories that can reach the
+     * caller, and the channel list).
      */
     getPreferences = async (req: Request, res: Response): Promise<void> => {
         const userId = this.userId(req);
@@ -55,7 +82,7 @@ export class PreferencesController {
 
         try {
             const preferences = await this.preferences.get(userId);
-            const categories = this.notifications.listCategories().filter((c) => c.userConfigurable !== false);
+            const categories = await this.visibleCategories(userId);
             const channels = this.notifications.listChannels();
             res.json({ success: true, preferences, categories, channels });
         } catch (error) {
@@ -87,16 +114,17 @@ export class PreferencesController {
             patch.mutedAll = body.mutedAll;
         }
 
-        if (body.overrides !== undefined) {
-            const overrides = this.validateOverrides(body.overrides);
-            if (!overrides) {
-                res.status(400).json({ success: false, error: 'overrides must be a map of categoryId → { channelId: boolean }' });
-                return;
-            }
-            patch.overrides = overrides;
-        }
-
         try {
+            if (body.overrides !== undefined) {
+                const validCategoryIds = new Set((await this.visibleCategories(userId)).map((c) => c.id));
+                const overrides = this.validateOverrides(body.overrides, validCategoryIds);
+                if (!overrides) {
+                    res.status(400).json({ success: false, error: 'overrides must be a map of categoryId → { channelId: boolean }' });
+                    return;
+                }
+                patch.overrides = overrides;
+            }
+
             const preferences = await this.preferences.update(userId, patch);
             res.json({ success: true, preferences });
         } catch (error) {
@@ -110,21 +138,21 @@ export class PreferencesController {
      * map. Rejects (returns null) on any non-boolean leaf or non-object level so
      * model-free client input cannot smuggle unexpected types into storage, and
      * rejects any `categoryId`/`channelId` that is not a registered,
-     * user-configurable pairing — otherwise an authenticated user could bloat
-     * their single preferences document with arbitrary keys toward MongoDB's
-     * document-size limit (a storage-exhaustion DoS). The allow-list mirrors the
-     * catalog `getPreferences` returns, so writable keys equal readable keys.
+     * user-configurable pairing the caller is shown — otherwise an
+     * authenticated user could bloat their single preferences document with
+     * arbitrary keys toward MongoDB's document-size limit (a storage-exhaustion
+     * DoS). The allow-list is the catalog `getPreferences` returns to the same
+     * user, so writable keys equal readable keys.
      *
      * @param raw - The untrusted `overrides` value from the request body.
+     * @param validCategories - Ids of the categories visible to the caller,
+     *        from {@link visibleCategories}.
      * @returns A clean overrides map, or null when the shape or a key is invalid.
      */
-    private validateOverrides(raw: unknown): Record<string, Record<string, boolean>> | null {
+    private validateOverrides(raw: unknown, validCategories: Set<string>): Record<string, Record<string, boolean>> | null {
         if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
             return null;
         }
-        const validCategories = new Set(
-            this.notifications.listCategories().filter((c) => c.userConfigurable !== false).map((c) => c.id)
-        );
         const validChannels = new Set(this.notifications.listChannels().map((c) => c.id));
         const result: Record<string, Record<string, boolean>> = {};
         for (const [categoryId, channelMap] of Object.entries(raw as Record<string, unknown>)) {
