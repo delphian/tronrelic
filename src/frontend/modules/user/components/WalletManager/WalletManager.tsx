@@ -16,7 +16,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Wallet } from 'lucide-react';
 import type { IAccountIngestionProgress, ILinkedWallet, IPortfolioSummary } from '@/types';
-import { Card } from '../../../../components/ui/Card';
+import { Panel } from '../../../../components/ui/Panel';
 import { Button } from '../../../../components/ui/Button';
 import { Stack } from '../../../../components/layout';
 import { useToast } from '../../../../components/ui/ToastProvider';
@@ -279,32 +279,34 @@ export function WalletManager({ initialWallets, initialProgress, initialPortfoli
     // rather than an empty switcher and a zeroed hero.
     if (wallets.length === 0) {
         return (
-            <Card>
-                <Stack gap="md">
-                    <p className="text-muted">
-                        Link a TRON wallet by signing a one-time challenge in TronLink. Linking proves you
-                        control the address — no transaction or fee — and unlocks your portfolio, activity,
-                        and full transaction history here.
-                    </p>
+            <Panel
+                title="Wallets"
+                actions={
                     <Button
                         variant="primary"
-                        size="sm"
-                        icon={<Wallet size={18} aria-hidden />}
+                        size="xs"
+                        icon={<Wallet size={14} aria-hidden />}
                         onClick={handleLink}
                         loading={busyKey === 'link'}
                         disabled={busyKey !== null}
                     >
                         Link a wallet
                     </Button>
-                </Stack>
-            </Card>
+                }
+            >
+                <p className="text-muted">
+                    Link a TRON wallet by signing a one-time challenge in TronLink. Linking proves you
+                    control the address — no transaction or fee — and unlocks your portfolio, activity,
+                    and full transaction history here.
+                </p>
+            </Panel>
         );
     }
 
     const activeProgress = activeScope !== null ? progressByAddress.get(activeScope) : undefined;
 
     return (
-        <Stack gap="lg">
+        <Stack gap="sm">
             <WalletSwitcher
                 wallets={wallets}
                 progressByAddress={progressByAddress}

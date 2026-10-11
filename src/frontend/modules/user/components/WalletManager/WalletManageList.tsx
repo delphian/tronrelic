@@ -5,21 +5,22 @@
  *
  * Linking, promoting, and unlinking a wallet are rare, deliberate, and (for
  * unlink) destructive — so they no longer sit at full weight beside the
- * portfolio. This collapsible section keeps them one click away without letting
- * a danger button compete with the day-to-day act of viewing balances. The
- * mutation logic stays in the parent orchestrator; this component only renders
- * the controls and reports intent back through the handler props.
+ * portfolio. This section collapses to a single header row (title, count,
+ * Manage, Link) and opens into a compact table of the linked wallets, so the
+ * controls stay one click away without competing with the day-to-day act of
+ * viewing balances. The mutation logic stays in the parent orchestrator; this
+ * component only renders the controls and reports intent back through the
+ * handler props.
  */
 
-import { useState } from 'react';
-import { Wallet, Star, Unlink, ChevronDown, ChevronUp, Settings2 } from 'lucide-react';
+import { useId, useState } from 'react';
+import { Wallet, Star, Unlink, ChevronDown, ChevronUp } from 'lucide-react';
 import type { IAccountIngestionProgress, ILinkedWallet } from '@/types';
-import { Card } from '../../../../components/ui/Card';
+import { Panel } from '../../../../components/ui/Panel';
 import { Button } from '../../../../components/ui/Button';
-import { Badge } from '../../../../components/ui/Badge';
 import { CopyButton } from '../../../../components/ui/CopyButton';
 import { Tooltip } from '../../../../components/ui/Tooltip';
-import { Stack } from '../../../../components/layout';
+import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../components/ui/Table';
 import { ClientTime } from '../../../../components/ui/ClientTime';
 import { truncateAddress } from '../../lib/walletFormat';
 import { describeHistoryStatus } from '../../lib/walletHistoryStatus';
@@ -52,7 +53,7 @@ export interface IWalletManageListProps {
  * Render the collapsible wallet-management panel.
  *
  * @param props - {@link IWalletManageListProps}.
- * @returns The manage-wallets card.
+ * @returns The linked-wallets panel: a header row, plus the wallet table when expanded.
  */
 export function WalletManageList({
     wallets,
@@ -65,101 +66,107 @@ export function WalletManageList({
     // Collapsed by default so management stays out of the portfolio's way; the
     // user opens it only when they actually intend to link/promote/unlink.
     const [expanded, setExpanded] = useState(false);
+    // Ties the Manage toggle to the table it reveals, for assistive tech.
+    const tableId = useId();
     const busy = busyKey !== null;
 
     return (
-        <Card tone="muted">
-            <div className={styles.manage_header}>
-                <Button
-                    variant="ghost"
-                    size="sm"
-                    icon={<Settings2 size={16} aria-hidden />}
-                    onClick={() => setExpanded((value) => !value)}
-                    aria-expanded={expanded}
-                >
-                    Manage wallets
-                    {expanded ? <ChevronUp size={14} aria-hidden /> : <ChevronDown size={14} aria-hidden />}
-                </Button>
-                <Button
-                    variant="primary"
-                    size="sm"
-                    icon={<Wallet size={18} aria-hidden />}
-                    onClick={onLink}
-                    loading={busyKey === 'link'}
-                    disabled={busy}
-                >
-                    Link a wallet
-                </Button>
-            </div>
-
+        <Panel
+            title="Linked wallets"
+            meta={`${wallets.length} linked`}
+            actions={
+                <>
+                    <Button
+                        variant="ghost"
+                        size="xs"
+                        onClick={() => setExpanded((value) => !value)}
+                        aria-expanded={expanded}
+                        aria-controls={tableId}
+                    >
+                        {expanded ? 'Hide' : 'Manage'}
+                        {expanded ? <ChevronUp size={14} aria-hidden /> : <ChevronDown size={14} aria-hidden />}
+                    </Button>
+                    <Button
+                        variant="primary"
+                        size="xs"
+                        icon={<Wallet size={14} aria-hidden />}
+                        onClick={onLink}
+                        loading={busyKey === 'link'}
+                        disabled={busy}
+                        title="Sign a one-time challenge in TronLink. No transaction or fee."
+                    >
+                        Link a wallet
+                    </Button>
+                </>
+            }
+        >
             {expanded && (
-                <Stack gap="sm">
-                    <p className="text-muted">
-                        Link a TRON wallet by signing a one-time challenge in TronLink. Linking proves you
-                        control the address — no transaction or fee.
-                    </p>
-                    {wallets.length === 0 ? (
-                        <p className="text-muted">No wallets linked yet.</p>
-                    ) : (
-                        <ul className={`list--plain ${styles.list}`}>
-                            {wallets.map((wallet) => {
-                                const progress = progressByAddress.get(wallet.address);
-                                const status = progress ? describeHistoryStatus(progress) : null;
-                                return (
-                                    <li key={wallet.address} className={styles.entry}>
-                                        <div className={styles.row}>
-                                            <div className={styles.identity}>
-                                                <span className={styles.address_row}>
-                                                    <Tooltip content={wallet.address}>
-                                                        <span className={styles.address}>{truncateAddress(wallet.address)}</span>
-                                                    </Tooltip>
-                                                    <CopyButton
-                                                        value={wallet.address}
-                                                        size="xs"
-                                                        aria-label="Copy wallet address"
-                                                    />
-                                                </span>
-                                                <span className={styles.meta}>
-                                                    Linked <ClientTime date={wallet.linkedAt} format="date" />
-                                                    {status && ` · ${status.label}`}
-                                                </span>
-                                            </div>
-                                            <div className={styles.actions}>
-                                                {wallet.isPrimary ? (
-                                                    <Badge tone="success">
-                                                        <Star size={14} aria-hidden /> Primary
-                                                    </Badge>
-                                                ) : (
-                                                    <Button
-                                                        variant="secondary"
-                                                        size="xs"
-                                                        icon={<Star size={14} aria-hidden />}
-                                                        onClick={() => onSetPrimary(wallet.address)}
-                                                        loading={busyKey === `primary:${wallet.address}`}
-                                                        disabled={busy}
-                                                    >
-                                                        Make primary
-                                                    </Button>
-                                                )}
+                <Table id={tableId} variant="compact" flush>
+                    <Thead>
+                        <Tr>
+                            <Th width="expand">Address</Th>
+                            <Th>Linked</Th>
+                            <Th>History</Th>
+                            <Th width="shrink" aria-label="Actions" />
+                        </Tr>
+                    </Thead>
+                    <Tbody>
+                        {wallets.map((wallet) => {
+                            const progress = progressByAddress.get(wallet.address);
+                            const status = progress ? describeHistoryStatus(progress) : null;
+                            return (
+                                <Tr key={wallet.address}>
+                                    <Td>
+                                        <span className={styles.address_row}>
+                                            {wallet.isPrimary && (
+                                                <Star size={12} aria-label="Primary wallet" style={{ color: 'var(--color-warning)' }} />
+                                            )}
+                                            <Tooltip content={wallet.address}>
+                                                <span className={styles.address}>{truncateAddress(wallet.address)}</span>
+                                            </Tooltip>
+                                            <CopyButton
+                                                value={wallet.address}
+                                                size="xs"
+                                                aria-label="Copy wallet address"
+                                            />
+                                        </span>
+                                    </Td>
+                                    <Td muted className={styles.nowrap}>
+                                        <ClientTime date={wallet.linkedAt} format="date" />
+                                    </Td>
+                                    <Td muted className={styles.nowrap}>{status ? status.label : '—'}</Td>
+                                    <Td>
+                                        <span className={styles.actions}>
+                                            {!wallet.isPrimary && (
                                                 <Button
                                                     variant="ghost"
                                                     size="xs"
-                                                    icon={<Unlink size={14} aria-hidden />}
-                                                    onClick={() => onUnlink(wallet.address)}
-                                                    loading={busyKey === `unlink:${wallet.address}`}
+                                                    icon={<Star size={14} aria-hidden />}
+                                                    onClick={() => onSetPrimary(wallet.address)}
+                                                    loading={busyKey === `primary:${wallet.address}`}
                                                     disabled={busy}
                                                 >
-                                                    Unlink
+                                                    Make primary
                                                 </Button>
-                                            </div>
-                                        </div>
-                                    </li>
-                                );
-                            })}
-                        </ul>
-                    )}
-                </Stack>
+                                            )}
+                                            <Button
+                                                variant="ghost"
+                                                size="xs"
+                                                icon={<Unlink size={14} aria-hidden />}
+                                                onClick={() => onUnlink(wallet.address)}
+                                                loading={busyKey === `unlink:${wallet.address}`}
+                                                disabled={busy}
+                                            >
+                                                Unlink
+                                            </Button>
+                                        </span>
+                                    </Td>
+                                </Tr>
+                            );
+                        })}
+                    </Tbody>
+                </Table>
             )}
-        </Card>
+        </Panel>
     );
 }

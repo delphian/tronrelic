@@ -1,8 +1,11 @@
 /**
- * Shared styling for the wallet-detail panels. Custom rules are limited to the
- * section header, the directional value colours, the monospace address, and the
- * feed footer; surfaces, tables, stat tiles, and charts come from the shared
- * components and global utilities, so this file stays thin and token-only.
+ * Shared styling for the wallet-detail panels.
+ *
+ * Every section is a core Panel and every list of figures is a core table,
+ * figure list, or stat tile, so this file only covers what those components do
+ * not: the directional value colours, the monospace address, a few cell
+ * wrapping rules, the one-line notices, and the flow chart's filter controls.
+ * Tokens only.
  */
 
 @use '../../../../../app/breakpoints' as *;
@@ -12,164 +15,81 @@
     container-name: wallet-detail;
 }
 
-/* Portfolio hero: donut beside the holdings table, stacking on narrow containers. */
-.portfolio_split {
-    display: grid;
-    grid-template-columns: auto 1fr;
-    gap: var(--gap-md);
-    align-items: start;
-}
-
-.portfolio_donut {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.portfolio_holdings {
-    min-width: 0;
-    overflow-x: auto;
-}
-
-/* Balance-over-time chart + its caption/warning banner, grouped without a
-   nested Card — the outer WalletDetailSection already provides the one
-   bordered boundary for this panel. */
-.portfolio_chart {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-sm);
-}
-
-@container wallet-detail (max-width: #{$breakpoint-mobile-md}) {
-    .portfolio_split {
-        grid-template-columns: 1fr;
-    }
-}
-
-/* Sub-tab row (Overview / Activity / Transactions). Sits on the global
-   .segmented-control; this only handles overflow on very narrow containers. */
+/* Sub-tab row (Overview / Activity / Transactions) on the core SegmentedControl;
+   this only handles overflow on very narrow containers. */
 .detail_tabs {
     max-width: 100%;
     overflow-x: auto;
 }
 
-/* Portfolio hero: the money-first header. Muted inner surface so the headline
-   figure reads as the focal point, and sticky so net worth stays in view while
-   the user scrolls the detail. */
-.hero {
-    position: sticky;
-    top: var(--gap-sm);
-    z-index: 2;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-end;
-    justify-content: space-between;
-    gap: var(--gap-md);
-    padding: var(--card-padding-sm);
-    background: var(--color-surface-muted);
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
-}
-
-.hero_primary {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-2xs);
-    min-width: 0;
-}
-
-.hero_label {
-    font-size: var(--font-size-caption);
-    color: var(--color-text-muted);
-    text-transform: uppercase;
-    letter-spacing: var(--letter-spacing-wide);
-}
-
-.hero_value {
-    font-size: var(--font-size-heading-xl);
-    font-weight: var(--font-weight-bold);
-    color: var(--color-text);
-    line-height: var(--line-height-tight);
-}
-
-.hero_pnl {
+/* A profit-or-loss figure: direction arrow, then the signed amount. The colour
+   comes from the enclosing stat tile's tone. */
+.signed {
     display: inline-flex;
     align-items: center;
     gap: var(--gap-2xs);
-    font-size: var(--font-size-body);
-    font-weight: var(--font-weight-semibold);
+    font-variant-numeric: tabular-nums;
 }
 
-.hero_pnl_caption {
-    color: var(--color-text-muted);
-    font-weight: var(--font-weight-normal);
-    font-size: var(--font-size-caption);
-}
-
-.hero_secondary {
+/* One-line status notice inside a panel (snapshot pending, history still
+   downloading). Leading icon, then the sentence. */
+.notice {
     display: flex;
-    flex-wrap: wrap;
-    gap: var(--gap-lg);
-}
-
-.hero_metric {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-2xs);
-    font-weight: var(--font-weight-semibold);
-}
-
-.hero_metric_label {
-    font-size: var(--font-size-caption);
+    align-items: baseline;
+    gap: var(--gap-xs);
+    margin: 0;
+    font-size: var(--font-size-body-sm);
     color: var(--color-text-muted);
-    text-transform: uppercase;
-    letter-spacing: var(--letter-spacing-wide);
-    font-weight: var(--font-weight-normal);
+    line-height: var(--line-height-normal);
+
+    svg {
+        flex-shrink: 0;
+        align-self: center;
+    }
 }
 
-/* Day separator inside the transaction feed — a quiet, sticky-free label row. */
+/* Small qualifying note under a block of figures. */
+.footnote {
+    margin: 0;
+    font-size: var(--font-size-caption);
+    color: var(--color-text-subtle);
+    line-height: var(--line-height-normal);
+}
+
+/* Asset symbol in the holdings table. */
+.asset {
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+}
+
+/* Day separator inside the transaction feed. */
 .day_header {
     display: inline-block;
     font-size: var(--font-size-caption);
     font-weight: var(--font-weight-semibold);
     color: var(--color-text-muted);
-    text-transform: uppercase;
-    letter-spacing: var(--letter-spacing-wide);
-}
-
-.section_header {
-    display: flex;
-    align-items: center;
-    gap: var(--gap-sm);
-    margin-bottom: var(--gap-sm);
-}
-
-.section_title {
-    margin: 0;
-    font-size: var(--font-size-heading-sm);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text);
 }
 
 /* Counterparties table's numeric columns pair Th's width="shrink" (column
    sizing) with this on the Td (Td has no width prop). On non-mobile container
    widths keep the "12,345 TRX" values on one line; narrow containers keep
-   wrapping so the shared Table wrapper (overflow: hidden, no horizontal scroll
-   path) can't clip the rightmost amounts. Mirrors .feed_cell in this file. */
+   wrapping so the shared Table wrapper can't clip the rightmost amounts.
+   Mirrors .feed_cell in this file. */
 @container wallet-detail (min-width: #{$breakpoint-mobile-lg}) {
     .counterparty_nowrap {
         white-space: nowrap;
     }
 }
 
-/* Directional value colours, shared by the flow legend and the feed amounts. */
+/* Directional value colours, shared by the holdings table and the feed amounts.
+   The -text steps are calibrated for coloured text on a dark surface. */
 .value_in {
-    color: var(--color-success);
+    color: var(--color-success-text);
     font-weight: var(--font-weight-semibold);
 }
 
 .value_out {
-    color: var(--color-danger);
+    color: var(--color-danger-text);
     font-weight: var(--font-weight-semibold);
 }
 
@@ -195,31 +115,13 @@
     }
 }
 
-.feed_footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--gap-sm);
-    margin-top: var(--gap-sm);
-}
-
-.feed_status {
-    color: var(--color-text-muted);
-    font-size: var(--font-size-body-sm);
-}
-
-.flow_toggle {
-    display: inline-flex;
-    gap: var(--gap-2xs);
-}
-
-/* Chart header controls — the precision selector and the denomination toggle sit
-   on one row and wrap together when the header is narrow. */
+/* Chart header controls — the precision and denomination selectors and the
+   filters sit on one row and wrap together when the header is narrow. */
 .flow_actions {
     display: inline-flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: var(--gap-sm);
+    gap: var(--gap-xs);
 }
 
 /* Flow filters — the counterparty scope dropdown and the y-axis min/max fields,
@@ -229,7 +131,7 @@
 .filters_inline {
     display: inline-flex;
     align-items: center;
-    gap: var(--gap-sm);
+    gap: var(--gap-xs);
 }
 
 .filters_button {
@@ -293,57 +195,4 @@
     .filters_button {
         display: inline-flex;
     }
-}
-
-/* Stat tile body — composes the global .stat-card__* utilities with a small
-   icon row; kept here only for the icon alignment the utilities don't cover. */
-.tile_label {
-    display: flex;
-    align-items: center;
-    gap: var(--gap-2xs);
-}
-
-/* Compact stat strip for the merged Activity + resources section. Narrower auto-fit
-   floor packs the ten metrics into small tiles instead of a few large ones; overriding
-   the custom property the global .stat-grid rule already reads keeps the shrink local
-   without restyling the shared utility. */
-.stat_grid_compact {
-    --stat-grid-min: 140px;
-}
-
-/* Reduced-density tile label/value, used only in the compact strip. They replicate the
-   global .stat-card__* look at a smaller scale so the tiles read the same, just denser —
-   the local classes avoid targeting the global utility with :global. */
-.tile_label_compact {
-    display: flex;
-    align-items: center;
-    gap: var(--gap-2xs);
-    color: var(--color-text-muted);
-    font-size: var(--font-size-caption);
-    letter-spacing: var(--letter-spacing-wide);
-    text-transform: uppercase;
-}
-
-.tile_value_compact {
-    font-size: var(--font-size-body-lg);
-    font-weight: var(--font-weight-bold);
-}
-
-/* Snapshot-pending notice — shown in place of the zeroed hero until the first
-   balance snapshot is captured for the scope. */
-.portfolio_pending {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: var(--gap-xs);
-    padding: var(--padding-md) 0;
-    text-align: center;
-}
-
-.portfolio_pending_title {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--gap-xs);
-    color: var(--color-text);
-    font-weight: var(--font-weight-semibold);
 }

@@ -14,9 +14,11 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Hourglass, LayoutDashboard, Activity as ActivityIcon, ListOrdered } from 'lucide-react';
+import { Hourglass } from 'lucide-react';
 import type { IAccountIngestionProgress, IWalletActivitySummary } from '@/types';
 import { Stack } from '../../../../../components/layout';
+import { Panel } from '../../../../../components/ui/Panel';
+import { SegmentedControl, type ISegmentedControlOption } from '../../../../../components/ui/SegmentedControl';
 import { Skeleton } from '../../../../../components/ui/Skeleton';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { fetchWalletSummary, type IAddressLabelMap } from '../../../api/account-history-user.api';
@@ -27,18 +29,17 @@ import { WalletActivityCalendar } from './WalletActivityCalendar';
 import { WalletFlowChart } from './WalletFlowChart';
 import { WalletCounterparties } from './WalletCounterparties';
 import { WalletTransactionFeed } from './WalletTransactionFeed';
-import { WalletDetailSection } from './WalletDetailPrimitives';
 import { PortfolioPanel } from './PortfolioPanel';
 import styles from './WalletDetail.module.scss';
 
 /** The detail sub-tabs, in display order. */
 type DetailTab = 'overview' | 'activity' | 'transactions';
 
-/** Tab row definition — id, label, and leading icon. */
-const DETAIL_TABS: ReadonlyArray<{ id: DetailTab; label: string; icon: typeof LayoutDashboard }> = [
-    { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-    { id: 'activity', label: 'Activity', icon: ActivityIcon },
-    { id: 'transactions', label: 'Transactions', icon: ListOrdered }
+/** Tab row definition, in display order. */
+const DETAIL_TABS: ReadonlyArray<ISegmentedControlOption<DetailTab>> = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'activity', label: 'Activity' },
+    { id: 'transactions', label: 'Transactions' }
 ];
 
 /**
@@ -66,9 +67,9 @@ interface IWalletDetailPanelProps {
 function ActivitySkeleton() {
     return (
         <Stack gap="md">
-            <Skeleton style={{ width: '100%', height: '7rem' }} />
-            <Skeleton style={{ width: '100%', height: '10rem' }} />
-            <Skeleton style={{ width: '100%', height: '16rem' }} />
+            <Skeleton style={{ width: '100%', height: '6rem' }} />
+            <Skeleton style={{ width: '100%', height: '8rem' }} />
+            <Skeleton style={{ width: '100%', height: '12rem' }} />
         </Stack>
     );
 }
@@ -84,27 +85,24 @@ function ActivitySkeleton() {
 function WalletSyncNotice({ progress }: { progress?: IAccountIngestionProgress }) {
     const status = progress ? describeHistoryStatus(progress) : null;
     return (
-        <WalletDetailSection
-            icon={<Hourglass size={16} aria-hidden style={{ color: 'var(--color-primary)' }} />}
+        <Panel
             title="Downloading history"
+            tone="muted"
+            meta={progress ? (
+                <>
+                    {formatCount(progress.rowsIngested)} records saved
+                    {progress.oldestTimestampReached && (
+                        <>, back to <ClientTime date={progress.oldestTimestampReached} format="date" /></>
+                    )}
+                </>
+            ) : undefined}
         >
-            <Stack gap="sm">
-                <p className="text-muted">
-                    {status ? status.tooltip : 'This wallet’s transaction history is still downloading.'}
-                </p>
-                {progress && (
-                    <p className="text-muted">
-                        {formatCount(progress.rowsIngested)} records saved
-                        {progress.oldestTimestampReached && (
-                            <>
-                                {' '}· back to <ClientTime date={progress.oldestTimestampReached} format="date" />
-                            </>
-                        )}
-                        . Your portfolio, activity, and full transaction feed unlock here once the download completes.
-                    </p>
-                )}
-            </Stack>
-        </WalletDetailSection>
+            <p className={styles.notice}>
+                <Hourglass size={14} aria-hidden style={{ color: 'var(--color-primary)' }} />
+                {status ? status.tooltip : 'This wallet’s transaction history is still downloading.'}
+                {' '}Portfolio, activity, and the full transaction feed unlock here once it completes.
+            </p>
+        </Panel>
     );
 }
 
@@ -180,21 +178,15 @@ export function WalletDetailPanel({ address, progress }: IWalletDetailPanelProps
 
     return (
         <div className={styles.detail}>
-            <Stack gap="md">
-                <div className={`segmented-control ${styles.detail_tabs}`} role="tablist" aria-label="Wallet detail sections">
-                    {DETAIL_TABS.map(({ id, label, icon: Icon }) => (
-                        <button
-                            key={id}
-                            type="button"
-                            role="tab"
-                            aria-selected={tab === id}
-                            className={tab === id ? 'is-active' : undefined}
-                            onClick={() => setTab(id)}
-                        >
-                            <Icon size={14} aria-hidden /> {label}
-                        </button>
-                    ))}
-                </div>
+            <Stack gap="sm">
+                <SegmentedControl
+                    variant="tablist"
+                    label="Wallet detail sections"
+                    value={tab}
+                    options={DETAIL_TABS}
+                    onChange={setTab}
+                    className={styles.detail_tabs}
+                />
 
                 {tab === 'overview' && <PortfolioPanel address={address} />}
 

@@ -3,8 +3,7 @@
 /* Empty state inside the card. */
 .empty {
     margin: 0;
-    padding: var(--padding-lg);
-    text-align: center;
+    padding: var(--padding-sm) 0;
     color: var(--color-text-muted);
     font-size: var(--font-size-body-sm);
 }

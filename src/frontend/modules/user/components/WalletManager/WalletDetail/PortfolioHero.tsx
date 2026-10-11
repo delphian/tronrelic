@@ -1,41 +1,53 @@
 'use client';
 
 /**
- * @fileoverview Presentational portfolio hero — the money-first surface of the
- * Wallets tab.
+ * @fileoverview Presentational portfolio view — the money-first surface of the
+ * Wallets tab, laid out like an account statement.
  *
- * Net worth is the single number a portfolio user wants, so it leads at hero
- * size with PnL beside it; the number carries a directional arrow AND a signed
- * value so gain/loss never relies on colour alone (≈8% of men are red/green
- * colour-blind). Realized and unrealized PnL are labelled separately because
- * they mean different things (realized is taxable, unrealized is not). The
- * balance chart carries a 1M/3M/1Y/All range selector that filters the returned
- * series client-side — an honest zoom over data actually present, not a
- * fabricated live range. The series itself is unbounded, reaching as far back
- * as the wallet's ledger backfill has reconstructed, so "All" shows the full
- * available history. A warning banner appears under the chart when
- * `summary.historyBackfillComplete` is false, since an in-progress ledger
- * backfill can shift the reconstructed curve, not just shorten it. Pure
- * presentation: it receives a fully-computed {@link IPortfolioSummary} and
+ * Three panels, each with one job. The summary panel gives net worth as the one
+ * large figure on the page, with all-time, realized, and unrealized profit and
+ * loss beside it at body size. Realized and unrealized are labelled separately
+ * because they mean different things (realized is taxable, unrealized is not).
+ * Every gain or loss carries a directional arrow and a signed value as well as
+ * its colour, so the reading never relies on colour alone.
+ *
+ * The holdings panel is a positions table with right-aligned tabular figures,
+ * including each asset's share of net worth. That column replaces the donut
+ * chart this view used to draw: the same allocation, stated exactly, in a
+ * fraction of the space.
+ *
+ * The chart panel plots net worth over time with a 1M/3M/1Y/All range selector
+ * that filters the returned series client-side — an honest zoom over data
+ * actually present, not a fabricated live range. The series is unbounded,
+ * reaching as far back as the wallet's ledger backfill has reconstructed. A
+ * warning appears above the chart while `summary.historyBackfillComplete` is
+ * false, since an in-progress backfill can shift the reconstructed curve, not
+ * just shorten it.
+ *
+ * Pure presentation: it receives a fully-computed {@link IPortfolioSummary} and
  * renders it identically at either scope.
  */
 
 import { useMemo, useState } from 'react';
 import type { IPortfolioSummary, IPortfolioBalancePoint } from '@/types';
-import { Wallet, TrendingUp, TrendingDown, Hourglass, Coins } from 'lucide-react';
-import { LineChart, DonutChart, type DonutSlice } from '../../../../../features/charts';
-import { Button } from '../../../../../components/ui/Button';
+import { TrendingUp, TrendingDown, Hourglass } from 'lucide-react';
+import { LineChart } from '../../../../../features/charts';
+import { Panel } from '../../../../../components/ui/Panel';
+import { StatGrid, StatTile, type StatTileTone } from '../../../../../components/ui/StatTile';
+import { SegmentedControl } from '../../../../../components/ui/SegmentedControl';
+import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
 import { Stack } from '../../../../../components/layout';
-import { WalletDetailSection } from './WalletDetailPrimitives';
-import { truncateAddress } from '../../../lib/walletFormat';
 import styles from './WalletDetail.module.scss';
+
+/** The ids of the selectable chart ranges. */
+type BalanceRangeId = '1m' | '3m' | '1y' | 'all';
 
 /** A selectable window over the balance series. `days === null` means the full series. */
 interface IBalanceRange {
     /** Stable id used for the active-state comparison. */
-    id: string;
-    /** Short button label. */
+    id: BalanceRangeId;
+    /** Short segment label. */
     label: string;
     /** Trailing window in days, or null for the whole returned series. */
     days: number | null;
@@ -56,6 +68,9 @@ const BALANCE_RANGES: ReadonlyArray<IBalanceRange> = [
 
 /** Locale-independent month abbreviations, for hydration-safe date labels (UTC). */
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** Height of the net-worth chart. Enough to read the trend without the chart dominating the tab. */
+const CHART_HEIGHT = 180;
 
 /**
  * Shift a `YYYY-MM-DD` day by a number of days, using UTC so the result is
@@ -83,11 +98,12 @@ function shiftDay(day: string, deltaDays: number): string {
  * @returns The points within the window.
  */
 function filterByRange(points: IPortfolioBalancePoint[], days: number | null): IPortfolioBalancePoint[] {
-    if (days === null || points.length === 0) {
-        return points;
+    let filtered = points;
+    if (days !== null && points.length > 0) {
+        const cutoff = shiftDay(points[points.length - 1].day, -days);
+        filtered = points.filter((point) => point.day >= cutoff);
     }
-    const cutoff = shiftDay(points[points.length - 1].day, -days);
-    return points.filter((point) => point.day >= cutoff);
+    return filtered;
 }
 
 /**
@@ -113,33 +129,13 @@ function formatTooltipDay(date: Date): string {
 }
 
 /**
- * Resolve a human-friendly display name for an asset id (a TRC20 contract
- * address): prefer the symbol the holdings table already carries for the same
- * asset, falling back to the truncated contract address so an unknown token
- * still reads as an address rather than an opaque blob.
- *
- * @param summary - The portfolio summary whose holdings carry symbols.
- * @param asset - The asset id (contract address) to name.
- * @returns The holding's symbol, or the truncated address.
- */
-function assetDisplayName(summary: IPortfolioSummary, asset: string): string {
-    const symbol = summary.holdings.find((holding) => holding.asset === asset)?.symbol;
-    return symbol ?? truncateAddress(asset);
-}
-
-/**
- * Props for {@link PortfolioHero}.
- */
-interface IPortfolioHeroProps {
-    /** The computed portfolio summary to render. */
-    summary: IPortfolioSummary;
-}
-
-/**
- * Format a USD amount for display, compacting large magnitudes.
+ * Format a USD amount for display. Amounts of $1,000 or more drop the cents,
+ * because at that size the cents only add width to a column without changing
+ * how the figure is read.
  *
  * @param value - USD amount.
- * @param signed - When true, prefixes a `+` for non-negative values (for PnL).
+ * @param signed - When true, prefixes a `+` for non-negative values, so a
+ *        profit-and-loss figure always states its direction.
  * @returns A formatted USD string.
  */
 function formatUsd(value: number, signed = false): string {
@@ -147,8 +143,24 @@ function formatUsd(value: number, signed = false): string {
     const abs = Math.abs(value);
     const body = abs >= 1000
         ? abs.toLocaleString('en-US', { maximumFractionDigits: 0 })
-        : abs.toLocaleString('en-US', { maximumFractionDigits: 2 });
+        : abs.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     return `${sign}$${body}`;
+}
+
+/**
+ * Format a unit price. A token can be priced at a small fraction of a cent, so
+ * a fixed two-place format would show `$0.00` for a real price; four
+ * significant digits keep sub-cent prices readable while larger prices still
+ * read as ordinary dollars and cents.
+ *
+ * @param value - USD price per unit.
+ * @returns A formatted price string.
+ */
+function formatPrice(value: number): string {
+    const body = value >= 1
+        ? value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        : value.toLocaleString('en-US', { maximumSignificantDigits: 4 });
+    return `$${body}`;
 }
 
 /**
@@ -167,26 +179,82 @@ function formatUsd(value: number, signed = false): string {
  * @returns A formatted quantity string.
  */
 function formatQty(value: number): string {
-    if (value > 0 && value < 0.005) {
-        return '<0.01';
-    }
-    return value.toLocaleString('en-US', { maximumFractionDigits: 2 });
+    return value > 0 && value < 0.005
+        ? '<0.01'
+        : value.toLocaleString('en-US', { maximumFractionDigits: 2 });
 }
 
 /**
- * Render the full portfolio hero for one scope.
+ * Format an allocation fraction as a percentage with one decimal, the
+ * precision a reader needs to compare positions without the column turning
+ * into noise.
+ *
+ * @param fraction - Share of net worth, from 0 to 1.
+ * @returns A formatted percentage such as `42.3%`.
+ */
+function formatPercent(fraction: number): string {
+    return `${(fraction * 100).toFixed(1)}%`;
+}
+
+/**
+ * Map a profit-and-loss amount to the stat tile tone that colours it, so the
+ * summary tiles and the holdings table agree on what counts as a gain.
+ *
+ * @param value - USD profit or loss.
+ * @returns `success` for zero or a gain, `danger` for a loss.
+ */
+function pnlTone(value: number): StatTileTone {
+    return value >= 0 ? 'success' : 'danger';
+}
+
+/**
+ * Props for {@link SignedUsd}.
+ */
+interface ISignedUsdProps {
+    /** USD profit or loss to render with its direction. */
+    value: number;
+}
+
+/**
+ * Render a profit-or-loss amount with a direction arrow and an explicit sign.
+ * The arrow and sign carry the direction for readers who cannot tell the
+ * success and danger colours apart, so colour is never the only cue.
+ *
+ * @param props - {@link ISignedUsdProps}.
+ * @returns The arrow and the signed amount, inline.
+ */
+function SignedUsd({ value }: ISignedUsdProps) {
+    return (
+        <span className={styles.signed}>
+            {value >= 0 ? <TrendingUp size={14} aria-hidden /> : <TrendingDown size={14} aria-hidden />}
+            {formatUsd(value, true)}
+        </span>
+    );
+}
+
+/**
+ * Props for {@link PortfolioHero}.
+ */
+interface IPortfolioHeroProps {
+    /** The computed portfolio summary to render. */
+    summary: IPortfolioSummary;
+}
+
+/**
+ * Render the portfolio summary, holdings, and net-worth chart for one scope.
  *
  * @param props - {@link IPortfolioHeroProps}.
- * @returns The hero section.
+ * @returns The three portfolio panels, or a single notice while the first
+ *          balance snapshot is still pending.
  */
 export function PortfolioHero({ summary }: IPortfolioHeroProps) {
     // Hooks run before the snapshot-pending early return so their call order stays
     // stable across renders (React's rules-of-hooks).
-    const [rangeId, setRangeId] = useState<string>('3m');
+    const [rangeId, setRangeId] = useState<BalanceRangeId>('3m');
 
     // The balance series clipped to the active range. Only TRX is sourced today —
-    // the backend reconstructs the TRX balance alone — so the caption stays honest
-    // about scope; the range only zooms the window.
+    // the backend reconstructs the TRX balance alone — so the panel meta stays
+    // honest about scope; the range only zooms the window.
     const balanceSeries = useMemo(
         () => {
             const range = BALANCE_RANGES.find((option) => option.id === rangeId) ?? BALANCE_RANGES[0];
@@ -204,173 +272,146 @@ export function PortfolioHero({ summary }: IPortfolioHeroProps) {
         [summary, rangeId]
     );
 
+    // Each holding's share of net worth, looked up by asset id for the table's
+    // allocation column. The backend computes the fractions over priced value.
+    const allocationByAsset = useMemo(
+        () => new Map(summary.allocation.map((slice) => [slice.asset, slice.fraction])),
+        [summary]
+    );
+
     // No snapshot has been captured yet for this scope. Holdings and net worth are
     // derived solely from the balance snapshot, so without one every figure would
     // read $0 / "No holdings" — indistinguishable from a wallet that genuinely
     // holds nothing. `capturedAt === null` is the unambiguous "snapshot pending"
-    // signal (it arrives as JSON null, never a Date), so we show a friendly
-    // preparing state instead of misleading zeros.
+    // signal (it arrives as JSON null, never a Date), so we show a short
+    // preparing notice instead of misleading zeros.
     if (summary.capturedAt === null) {
         return (
-            <WalletDetailSection
-                icon={<Wallet size={16} aria-hidden style={{ color: 'var(--color-primary)' }} />}
-                title="Portfolio"
-            >
-                <div className={styles.portfolio_pending}>
-                    <span className={styles.portfolio_pending_title}>
-                        <Hourglass size={16} aria-hidden style={{ color: 'var(--color-primary)' }} />
-                        Preparing your portfolio
-                    </span>
-                    <p className="text-muted">
-                        We&rsquo;re capturing your current balances. Net worth and holdings appear
-                        here once the first snapshot completes &mdash; usually within a few hours.
-                    </p>
-                </div>
-            </WalletDetailSection>
+            <Panel title="Portfolio" tone="muted">
+                <p className={styles.notice}>
+                    <Hourglass size={14} aria-hidden />
+                    Capturing your current balances. Net worth and holdings appear here once the
+                    first snapshot completes, usually within a few hours.
+                </p>
+            </Panel>
         );
     }
 
-    const pnlPositive = summary.totalPnlUsd >= 0;
-    const pnlColor = pnlPositive ? 'var(--color-success)' : 'var(--color-danger)';
-    const slices: DonutSlice[] = summary.allocation.map((entry) => ({ label: entry.symbol, value: entry.valueUsd }));
-
-    // Range selector in the chart header (mirrors the flow chart's toggle slot).
-    const rangeToggle = (
-        <span className={styles.flow_toggle}>
-            {BALANCE_RANGES.map((option) => (
-                <Button
-                    key={option.id}
-                    variant={rangeId === option.id ? 'secondary' : 'ghost'}
-                    size="xs"
-                    aria-pressed={rangeId === option.id}
-                    onClick={() => setRangeId(option.id)}
-                >
-                    {option.label}
-                </Button>
-            ))}
-        </span>
-    );
+    const unpricedCount = summary.unpricedAssets.length;
+    const holdingsMeta = `${summary.holdings.length} ${summary.holdings.length === 1 ? 'asset' : 'assets'}`
+        + (unpricedCount > 0 ? `, ${unpricedCount} without a price and left out of totals` : '');
 
     return (
-        <WalletDetailSection
-            icon={<Wallet size={16} aria-hidden style={{ color: 'var(--color-primary)' }} />}
-            title="Portfolio"
-        >
-            <Stack gap="md">
-                {/* Net-worth-dominant header: the headline figure, PnL with an
-                    arrow + signed value (non-colour cues), then realized/unrealized. */}
-                <div className={styles.hero}>
-                    <div className={styles.hero_primary}>
-                        <span className={styles.hero_label}>Net worth</span>
-                        <span className={styles.hero_value}>{formatUsd(summary.netWorthUsd)}</span>
-                        <span className={styles.hero_pnl} style={{ color: pnlColor }}>
-                            {pnlPositive ? <TrendingUp size={16} aria-hidden /> : <TrendingDown size={16} aria-hidden />}
-                            {formatUsd(summary.totalPnlUsd, true)}
-                            <span className={styles.hero_pnl_caption}>
-                                {summary.basisApproximate ? 'all-time PnL (approximate)' : 'all-time PnL'}
-                            </span>
-                        </span>
-                    </div>
-                    <div className={styles.hero_secondary}>
-                        <div className={styles.hero_metric}>
-                            <span className={styles.hero_metric_label}>Realized</span>
-                            <span style={{ color: summary.realizedPnlUsd >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
-                                {formatUsd(summary.realizedPnlUsd, true)}
-                            </span>
-                        </div>
-                        <div className={styles.hero_metric}>
-                            <span className={styles.hero_metric_label}>Unrealized</span>
-                            <span style={{ color: summary.unrealizedPnlUsd >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
-                                {formatUsd(summary.unrealizedPnlUsd, true)}
-                            </span>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="divider" />
-
-                <div className={styles.portfolio_split}>
-                    <div className={styles.portfolio_donut}>
-                        <DonutChart
-                            slices={slices}
-                            centerLabel={formatUsd(summary.netWorthUsd)}
-                            centerCaption="Net worth"
-                            emptyLabel="No priced holdings"
-                        />
-                    </div>
-                    <div className={styles.portfolio_holdings}>
-                        <Table variant="compact">
-                            <Thead>
-                                <Tr>
-                                    <Th>Asset</Th>
-                                    <Th align="right">Quantity</Th>
-                                    <Th align="right">Value</Th>
-                                    <Th align="right">Unrealized</Th>
-                                </Tr>
-                            </Thead>
-                            <Tbody>
-                                {summary.holdings.length === 0 ? (
-                                    <Tr>
-                                        <Td colSpan={4}><span className="text-muted">No holdings yet.</span></Td>
-                                    </Tr>
-                                ) : (
-                                    summary.holdings.map((holding) => (
-                                        <Tr key={holding.asset}>
-                                            <Td>{holding.symbol}</Td>
-                                            <Td align="right">{formatQty(holding.quantity)}</Td>
-                                            <Td align="right">{holding.priceUsd === null ? '—' : formatUsd(holding.valueUsd)}</Td>
-                                            <Td align="right">
-                                                {holding.priceUsd === null ? (
-                                                    <span className="text-muted">unpriced</span>
-                                                ) : (
-                                                    <span style={{ color: holding.unrealizedPnlUsd >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
-                                                        {formatUsd(holding.unrealizedPnlUsd, true)}
-                                                    </span>
-                                                )}
-                                            </Td>
-                                        </Tr>
-                                    ))
-                                )}
-                            </Tbody>
-                        </Table>
-                    </div>
-                </div>
-
-                <div className="divider" />
-
-                <div className={styles.portfolio_chart}>
-                    <LineChart
-                        series={balanceSeries}
-                        title="Net worth over time"
-                        actions={rangeToggle}
-                        height={220}
-                        yAxisFormatter={(value) => formatUsd(value)}
-                        xAxisFormatter={formatAxisDay}
-                        tooltipDateFormatter={formatTooltipDay}
-                        emptyLabel="Building balance history…"
+        <Stack gap="sm">
+            <Panel
+                title="Portfolio"
+                meta={<>Valued <ClientTime date={summary.capturedAt} format="relative" /></>}
+            >
+                <StatGrid size="sm">
+                    <StatTile size="md" surface={false} label="Net worth" value={formatUsd(summary.netWorthUsd)} />
+                    <StatTile
+                        size="sm"
+                        surface={false}
+                        label="All-time P&L"
+                        tone={pnlTone(summary.totalPnlUsd)}
+                        value={<SignedUsd value={summary.totalPnlUsd} />}
+                        note={summary.basisApproximate ? 'Approximate cost basis' : undefined}
                     />
-                    <p className="text-muted">
-                        <Coins size={14} aria-hidden /> Balance over time currently reflects TRX holdings only — token balances are not yet included.
-                    </p>
-                    {!summary.historyBackfillComplete && (
-                        <div className="alert alert--warning" role="alert">
-                            <Hourglass size={14} aria-hidden /> Historical data collection for this wallet is still in progress — the chart may be incomplete until it finishes.
-                        </div>
-                    )}
-                    {summary.historyBackfillComplete && summary.basisApproximate && (
-                        <p className="text-muted">
-                            Some early history is beyond what data sources can reach, so PnL and cost basis are approximate. Net worth is exact — it comes from live balances.
-                        </p>
-                    )}
-                </div>
-
-                {summary.unpricedAssets.length > 0 && (
-                    <p className="text-muted">
-                        {summary.unpricedAssets.length} held asset{summary.unpricedAssets.length === 1 ? '' : 's'} with no local price, excluded from USD totals
-                        {summary.unpricedAssets.length <= 3 ? ` (${summary.unpricedAssets.map((asset) => assetDisplayName(summary, asset)).join(', ')})` : ''}.
+                    <StatTile
+                        size="sm"
+                        surface={false}
+                        label="Realized"
+                        tone={pnlTone(summary.realizedPnlUsd)}
+                        value={<SignedUsd value={summary.realizedPnlUsd} />}
+                    />
+                    <StatTile
+                        size="sm"
+                        surface={false}
+                        label="Unrealized"
+                        tone={pnlTone(summary.unrealizedPnlUsd)}
+                        value={<SignedUsd value={summary.unrealizedPnlUsd} />}
+                    />
+                </StatGrid>
+                {summary.historyBackfillComplete && summary.basisApproximate && (
+                    <p className={styles.footnote}>
+                        Some early history is beyond what data sources can reach, so profit and cost basis
+                        are approximate. Net worth is exact, because it comes from live balances.
                     </p>
                 )}
-            </Stack>
-        </WalletDetailSection>
+            </Panel>
+
+            <Panel title="Holdings" meta={holdingsMeta}>
+                <Table variant="compact" flush>
+                    <Thead>
+                        <Tr>
+                            <Th width="expand">Asset</Th>
+                            <Th numeric>Quantity</Th>
+                            <Th numeric>Price</Th>
+                            <Th numeric>Value</Th>
+                            <Th numeric>Weight</Th>
+                            <Th numeric>Unrealized</Th>
+                        </Tr>
+                    </Thead>
+                    <Tbody>
+                        {summary.holdings.length === 0 ? (
+                            <Tr>
+                                <Td colSpan={6} muted>No holdings yet.</Td>
+                            </Tr>
+                        ) : (
+                            summary.holdings.map((holding) => {
+                                const priced = holding.priceUsd !== null;
+                                const fraction = allocationByAsset.get(holding.asset);
+                                return (
+                                    <Tr key={holding.asset}>
+                                        <Td className={styles.asset}>{holding.symbol}</Td>
+                                        <Td numeric>{formatQty(holding.quantity)}</Td>
+                                        <Td numeric muted>{holding.priceUsd !== null ? formatPrice(holding.priceUsd) : '—'}</Td>
+                                        <Td numeric>{priced ? formatUsd(holding.valueUsd) : '—'}</Td>
+                                        <Td numeric muted>{priced && fraction !== undefined ? formatPercent(fraction) : '—'}</Td>
+                                        <Td numeric>
+                                            {priced ? (
+                                                <span className={holding.unrealizedPnlUsd >= 0 ? styles.value_in : styles.value_out}>
+                                                    {formatUsd(holding.unrealizedPnlUsd, true)}
+                                                </span>
+                                            ) : (
+                                                <span className="text-muted">unpriced</span>
+                                            )}
+                                        </Td>
+                                    </Tr>
+                                );
+                            })
+                        )}
+                    </Tbody>
+                </Table>
+            </Panel>
+
+            <Panel
+                title="Net worth over time"
+                meta="TRX holdings only"
+                actions={
+                    <SegmentedControl
+                        label="Chart range"
+                        value={rangeId}
+                        options={BALANCE_RANGES}
+                        onChange={setRangeId}
+                    />
+                }
+            >
+                {!summary.historyBackfillComplete && (
+                    <p className={styles.notice} role="status">
+                        <Hourglass size={14} aria-hidden style={{ color: 'var(--color-warning)' }} />
+                        History for this wallet is still downloading, so the chart may be incomplete until it finishes.
+                    </p>
+                )}
+                <LineChart
+                    series={balanceSeries}
+                    height={CHART_HEIGHT}
+                    yAxisFormatter={(value) => formatUsd(value)}
+                    xAxisFormatter={formatAxisDay}
+                    tooltipDateFormatter={formatTooltipDay}
+                    emptyLabel="Building balance history…"
+                />
+            </Panel>
+        </Stack>
     );
 }
