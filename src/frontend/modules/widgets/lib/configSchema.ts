@@ -15,7 +15,7 @@
  */
 
 import type { JSONSchema7, JSONSchema7Definition } from 'json-schema';
-import { WIDGET_ICON_FORMAT } from '@/types';
+import { WIDGET_ICON_FORMAT, WIDGET_IMAGE_FORMAT } from '@/types';
 import { enumOptionLabel, humanizeKey } from './layoutPresets';
 
 /**
@@ -36,7 +36,7 @@ export interface IConfigFieldDescriptor {
 }
 
 /** The control a field renders as. */
-export type ConfigControlType = 'boolean' | 'enum' | 'number' | 'text' | 'array' | 'icon';
+export type ConfigControlType = 'boolean' | 'enum' | 'number' | 'text' | 'array' | 'icon' | 'image';
 
 /**
  * Resolve a schema property's primary scalar type, ignoring a nullable
@@ -56,7 +56,9 @@ export function primaryType(schema: JSONSchema7): string | undefined {
  * select rather than free text; arrays render as a repeatable row editor
  * whatever their item shape. A string declaring the shared icon-name format
  * renders as the icon picker, because an operator cannot be expected to
- * type lucide export names from memory.
+ * type lucide export names from memory. A string declaring the shared
+ * image-URL format renders as the file picker with a preview, for the same
+ * reason with upload URLs.
  *
  * @param schema - Property schema.
  * @returns The control kind to render.
@@ -74,6 +76,8 @@ export function fieldControlType(schema: JSONSchema7): ConfigControlType {
         control = 'number';
     } else if (type === 'string' && schema.format === WIDGET_ICON_FORMAT.name) {
         control = 'icon';
+    } else if (type === 'string' && schema.format === WIDGET_IMAGE_FORMAT.name) {
+        control = 'image';
     }
     return control;
 }
@@ -366,14 +370,15 @@ export function buildStructuredConfig(
 /**
  * Whether a field takes the full width of the settings grid. Short
  * controls (a dropdown, segments, a number) sit two to a row; free text, a
- * switch with a sentence of help, or a list of rows needs the whole width.
+ * switch with a sentence of help, a list of rows, or an image preview with
+ * its buttons needs the whole width.
  *
  * @param field - The field descriptor.
  * @returns True when the field spans both grid columns.
  */
 export function fieldSpansRow(field: IConfigFieldDescriptor): boolean {
     const control = fieldControlType(field.schema);
-    return control === 'text' || control === 'array' || control === 'boolean';
+    return control === 'text' || control === 'array' || control === 'boolean' || control === 'image';
 }
 
 /**

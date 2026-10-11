@@ -18,3 +18,4 @@ export type {
 } from './IWidgetsService.js';
 export type { IAuthButtonLink } from './IAuthButtonLink.js';
 export { WIDGET_ICON_FORMAT } from './WIDGET_ICON_FORMAT.js';
+export { WIDGET_IMAGE_FORMAT } from './WIDGET_IMAGE_FORMAT.js';

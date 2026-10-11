@@ -34,7 +34,7 @@ export type {
     WidgetsRegistrationDisposer,
     IAuthButtonLink
 } from './widget/index.js';
-export { WIDGET_ICON_FORMAT } from './widget/index.js';
+export { WIDGET_ICON_FORMAT, WIDGET_IMAGE_FORMAT } from './widget/index.js';
 export type { ISystemConfig, ISystemConfigService } from './system-config/index.js';
 export type { ISystemLogService, ISystemLogQuery, ISystemLogPaginatedResponse, ISaveLogData, LogLevel } from './system-log/index.js';
 export type { ISystemLogCursor, ISystemLogCursorQuery, ISystemLogCursorPage } from './system-log/index.js';

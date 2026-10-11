@@ -1,15 +1,28 @@
 /**
  * SiteLogoWidget styles
  *
- * The wordmark as the old site header drew it. `white-space: nowrap` and
- * `flex-shrink: 0` keep it on one line and at full size when it shares a row
- * with the main menu, which is the item meant to give way.
+ * The wordmark as the old site header drew it, with an optional image before
+ * it. `white-space: nowrap` and `flex-shrink: 0` keep the logo on one line
+ * and at full size when it shares a row with the main menu, which is the
+ * item meant to give way.
  */
 
 .logo {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-sm);
     font-weight: var(--font-weight-bold);
     font-size: var(--font-size-heading-sm);
     letter-spacing: var(--letter-spacing-tight);
     white-space: nowrap;
+    flex-shrink: 0;
+}
+
+/* Fixed height, natural width, so a square icon and a wide logo both sit at
+   the height of the header row without being stretched or cropped. */
+.image {
+    display: block;
+    height: var(--site-logo-image-height);
+    width: auto;
     flex-shrink: 0;
 }

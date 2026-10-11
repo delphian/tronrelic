@@ -2,10 +2,12 @@
  * BlockTicker Component Styles
  *
  * Compact horizontal ticker displaying real-time blockchain metrics.
- * Positioned below the navigation bar with minimal vertical space usage.
+ *
+ * The ticker sets no outer spacing of its own: no margin, no padding, and no
+ * width cap. The widget zone it is placed in owns that, through the zone's
+ * gap and custom CSS on /system/widgets, so an operator can run the ticker
+ * edge to edge or line it up with the page content without a code change.
  */
-
-@use '../../../app/breakpoints' as *;
 
 /*
  * No explicit width: the bar's cross-axis size follows its zone's flex
@@ -13,14 +15,12 @@
  * stretch operating as expected — while center / flex-start / flex-end leave a
  * non-stretched flex item intrinsically sized, so --zone-justify-content /
  * --zone-align-items can still position it (an `auto` width yields to alignment;
- * a hardcoded width or `fit-content` would not, defeating stretch). `.container`
- * below owns the real width ceiling, capping and centering itself at
- * $breakpoint-desktop-lg; `max-width: 100%` here is only a safety cap so the
- * bar can never grow the page wider than its parent, while `.container` scrolls
- * its nowrap metrics internally on viewports too narrow to show them all.
+ * a hardcoded width or `fit-content` would not, defeating stretch).
+ * `max-width: 100%` is only a safety cap so the bar can never grow the page
+ * wider than its parent, while `.container` scrolls its nowrap metrics
+ * internally when the zone is too narrow to show them all.
  */
 .ticker {
-    margin-top: var(--gap-sm);
     max-width: 100%;
 }
 
@@ -28,10 +28,7 @@
     display: flex;
     align-items: center;
     gap: var(--gap-md);
-    padding: var(--padding-xs) var(--container-padding-desktop);
-    max-width: $breakpoint-desktop-lg;
     width: 100%;
-    margin: 0 auto;
     font-size: var(--font-size-caption);
     line-height: var(--line-height-tight);
     overflow-x: auto;
@@ -91,20 +88,4 @@
     width: var(--border-width-thin);
     height: 1em;
     background: var(--color-primary-alpha-18);
-}
-
-/* Responsive adjustments */
-@media (max-width: $breakpoint-tablet) {
-    .container {
-        padding: var(--padding-xs) var(--container-padding-tablet);
-        gap: var(--gap-sm);
-    }
-}
-
-/* Note: 640px is component-specific, not a standard breakpoint */
-@media (max-width: 640px) {
-    .container {
-        padding: var(--padding-xs) var(--container-padding-mobile);
-        gap: var(--gap-xs);
-    }
 }
