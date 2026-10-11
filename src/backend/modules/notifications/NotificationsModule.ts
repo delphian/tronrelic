@@ -189,7 +189,12 @@ export class NotificationsModule implements IModule<INotificationsModuleDependen
         // is a no-op, so dispatch still runs and audits cleanly.
         this.toastChannel = new ToastChannel(WebSocketService.getInstance());
 
-        this.preferencesController = new PreferencesController(this.notificationService, this.preferenceService, this.logger);
+        this.preferencesController = new PreferencesController(
+            this.notificationService,
+            this.preferenceService,
+            recipientResolver,
+            this.logger
+        );
         this.adminController = new AdminController(this.notificationService, this.policyService, this.auditService, this.logger);
 
         this.logger.info('Notifications module initialized');

@@ -6,12 +6,21 @@
  * An operator configures, per placement of the `core:auth-button` widget, a
  * short list of links (icon, text, URL, and who sees each), the direction
  * the tray opens, and how transparent it is. This component decides whether
- * the visitor has any links to see and, when they do, takes over the
- * button's click so it opens the tray instead of signing in or navigating to
- * the profile. With no visible links the button behaves exactly as before.
+ * the visitor has anything to see in the tray and, when they do, takes over
+ * the button's click so it opens the tray instead of signing in or navigating
+ * to the profile.
  *
- * A signed-out visitor who can see a link would otherwise lose the only way
- * to sign in, so the tray then starts with a built-in "Sign in" entry.
+ * A signed-in visitor always gets the tray. It starts with a built-in
+ * "Profile" entry and ends with a built-in "Sign out" entry, with the
+ * operator's links between them, so the account actions are always in the
+ * same place whatever the operator configures. Sign-out has to be built in
+ * because Better Auth ends a session with a POST request, which a configured
+ * URL link cannot send.
+ *
+ * A signed-out visitor gets the tray only when they can see at least one
+ * configured link, and it then starts with a built-in "Sign in" entry, since
+ * the click would otherwise lose its only way to sign in. With no visible
+ * links a signed-out visitor's button behaves exactly as before.
  *
  * The tray renders in a `<body>` portal at fixed coordinates measured from
  * the button. Every widget zone establishes a size container, which also
@@ -37,12 +46,12 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
-import { LogIn } from 'lucide-react';
+import { LogIn, LogOut, User as UserIcon } from 'lucide-react';
 import type { IAuthButtonLink } from '@/types';
 import { MenuNodeIcon } from '../../../../components/layout/MenuNav/MenuNodeIcon';
 import { cn } from '../../../../lib/cn';
 import { useAuthSession } from '../SessionProvider';
-import { useSignInDialog } from '../../hooks';
+import { useSignInDialog, useSignOut } from '../../hooks';
 import { WalletButton } from '../WalletButton';
 import styles from './AccountTray.module.scss';
 
@@ -144,6 +153,7 @@ function computeTrayPosition(side: TraySide, anchor: DOMRect, tray: DOMRect): IT
 export function AccountTray({ imageUrl = null, links, direction, opacity }: IAccountTrayProps) {
     const { isLoggedIn, isPending } = useAuthSession();
     const openSignInDialog = useSignInDialog();
+    const { signOut, signingOut } = useSignOut();
     const trayId = useId();
     const anchorRef = useRef<HTMLSpanElement>(null);
     const trayRef = useRef<HTMLElement>(null);
@@ -155,9 +165,11 @@ export function AccountTray({ imageUrl = null, links, direction, opacity }: IAcc
         () => links.filter(link => isVisibleTo(link, isLoggedIn)),
         [links, isLoggedIn]
     );
-    // Signing in or out while the tray is open can leave the visitor with no
-    // links, so openness is derived rather than trusted from state.
-    const trayActive = !isPending && visibleLinks.length > 0;
+    // A signed-in visitor always has the built-in Profile and Sign out
+    // entries; a signed-out visitor needs a configured link to see. Signing
+    // out while the tray is open can leave the visitor with nothing to see,
+    // so openness is derived rather than trusted from state.
+    const trayActive = !isPending && (isLoggedIn || visibleLinks.length > 0);
     const isOpen = open && trayActive;
     const offerSignIn = !isLoggedIn;
 
@@ -212,6 +224,18 @@ export function AccountTray({ imageUrl = null, links, direction, opacity }: IAcc
         closeTray();
         openSignInDialog();
     }, [closeTray, openSignInDialog]);
+
+    /**
+     * Sign out from the tray's built-in entry. The tray closes first and
+     * keyboard focus returns to the button, which is still on the page
+     * afterwards as the "Sign in" button, rather than being lost with the
+     * portaled tray.
+     */
+    const signOutFromTray = useCallback(() => {
+        closeTray();
+        focusTrigger();
+        void signOut();
+    }, [closeTray, focusTrigger, signOut]);
 
     /**
      * Place the open tray before it paints, so it never flashes at the
@@ -383,6 +407,14 @@ export function AccountTray({ imageUrl = null, links, direction, opacity }: IAcc
                         </button>
                     </li>
                 )}
+                {isLoggedIn && (
+                    <li className={styles.list_item}>
+                        <Link href="/profile" className={styles.entry} onClick={closeTray}>
+                            <UserIcon size={16} aria-hidden className={styles.entry_icon} />
+                            <span className={styles.entry_label}>Profile</span>
+                        </Link>
+                    </li>
+                )}
                 {visibleLinks.map((link, index) => {
                     const content = (
                         <>
@@ -402,6 +434,19 @@ export function AccountTray({ imageUrl = null, links, direction, opacity }: IAcc
                         </li>
                     );
                 })}
+                {isLoggedIn && (
+                    <li className={styles.list_item}>
+                        <button
+                            type="button"
+                            className={styles.entry}
+                            onClick={signOutFromTray}
+                            disabled={signingOut}
+                        >
+                            <LogOut size={16} aria-hidden className={styles.entry_icon} />
+                            <span className={styles.entry_label}>Sign out</span>
+                        </button>
+                    </li>
+                )}
             </ul>
         </nav>,
         document.body

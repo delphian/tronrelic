@@ -9,7 +9,7 @@ Category-based notification dispatch: any source declares a category and fires; 
 | Module id | `notifications` |
 | Module class | `src/backend/modules/notifications/NotificationsModule.ts` |
 | Admin page | `/system/notifications` (menu item `Notifications`, order 37, registered in `run()`) |
-| User page | `/profile` (per-user opt-outs surface as a section; any logged-in user) |
+| User page | `/profile` (per-user opt-outs surface as a section; any logged-in user, shown only the categories whose `defaultAudience` includes them) |
 | Service registry name | `'notifications'` → `INotificationService` |
 | Content-router sinks | Each channel registers `notifications:<channelId>` on `'content-router'` in `run()` (`accepts: []` floor, `reach` per channel; toast `{ user, user }`). Dispatch matches candidates through the router (`DispatchService.candidateChannelIds`); delivery + recipient resolution stay in dispatch |
 | Consumes from registry | `'user-groups'` (`IUserGroupService.getMembers`) for audience resolution; `'user-settings'` (`IUserSettingsService`) to persist per-user opt-outs under the `notifications` namespace; `'content-types'` (`IContentRegistry`) to resolve a request's content type into a descriptor; `'content-router'` to advertise channels as sinks |
@@ -38,7 +38,7 @@ It is a **module** (not a plugin) because it is essential cross-cutting infrastr
 | `services/preference.service.ts` | Per-user opt-outs, persisted via the central `'user-settings'` store (namespace `notifications`, key `preferences`) |
 | `services/policy.service.ts` | `module_notifications_policy` — admin channel/category kill switches |
 | `services/audit.service.ts` | `module_notifications_audit` — one row per blast, TTL-indexed |
-| `services/recipient-resolver.ts` | Audience → Better Auth user ids via `'user-groups'` |
+| `services/recipient-resolver.ts` | Audience → Better Auth user ids via `'user-groups'`; `includes(audience, userId)` answers the same question for one user, for the preferences catalog |
 | `channels/toast-channel.ts` | The built-in toast channel — emits `notification` to `user:${id}` rooms |
 | `api/preferences.{controller,routes}.ts` | `/api/notifications/preferences` (login-gated) |
 | `api/admin.{controller,routes}.ts` | `/api/admin/system/notifications/*` (`requireAdmin`) |
@@ -112,8 +112,8 @@ The policy and audit indexes are created in `init()`. Categories and channels ar
 
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
-| GET | `/api/notifications/preferences` | login | The caller's preferences + the opt-out catalog |
-| PUT | `/api/notifications/preferences` | login | Merge a preference patch (`mutedAll`, `overrides`) |
+| GET | `/api/notifications/preferences` | login | The caller's preferences + the opt-out catalog, limited to categories whose audience includes the caller |
+| PUT | `/api/notifications/preferences` | login | Merge a preference patch (`mutedAll`, `overrides`); an override for a category the caller is not shown is rejected with 400 |
 | GET | `/api/admin/system/notifications/categories` | `requireAdmin` | Categories + admin enable state |
 | PATCH | `/api/admin/system/notifications/categories/:id` | `requireAdmin` | Enable/disable a category |
 | GET | `/api/admin/system/notifications/channels` | `requireAdmin` | Channels + admin enable state |
@@ -122,7 +122,9 @@ The policy and audit indexes are created in `init()`. Categories and channels ar
 
 ## Admin and User Surfaces
 
-`/system/notifications` has three admin tabs: **Categories** (enable/disable each, see its source and per-channel defaults), **Channels** (globally enable/disable a transport), and **History** (the audit feed, filterable by category, source, time). A fourth tab, **My Preferences**, and the `/profile` preferences panel are the same `PreferencesPanel` component — every user-configurable category with a per-channel toggle plus a global mute, writing identity's `module_user_settings` store; the pipeline reads it at dispatch.
+`/system/notifications` has three admin tabs: **Categories** (enable/disable each, see its source and per-channel defaults), **Channels** (globally enable/disable a transport), and **History** (the audit feed, filterable by category, source, time). A fourth tab, **My Preferences**, and the `/profile` preferences panel are the same `PreferencesPanel` component — every user-configurable category that can reach the user, with a per-channel toggle plus a global mute, writing identity's `module_user_settings` store; the pipeline reads it at dispatch.
+
+A category appears only when its `defaultAudience` includes the user, either by explicit user id or by membership in one of its groups, checked through `RecipientResolver.includes` — the same resolver dispatch uses. An ordinary user therefore does not see the admin-only `ai-tools.scheduled-prompt-run` and `curation.held` categories, since a toggle for a notification that can never reach them would do nothing. A `notify()` call that passes `audienceOverride` can still reach someone outside the default audience for that one blast; that user has no toggle for it, so register a category whose `defaultAudience` covers everyone a source intends to reach.
 
 `severity` (`info` | `success` | `warning` | `danger`) drives the toast's visual tone client-side (`NotificationHandler.tsx`) — it carries no other behavior in the pipeline.
 

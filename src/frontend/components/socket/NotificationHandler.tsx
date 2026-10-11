@@ -50,10 +50,11 @@ export function NotificationHandler(): null {
 
         /**
          * Forward an incoming notification to the toast provider, mapping
-         * severity to tone. These toasts never auto-dismiss (`duration: 0`):
-         * they are identity-targeted, deliberately dispatched, and must persist
-         * until the recipient manually closes them so a notification is never
-         * missed by timing out while unattended.
+         * severity to tone. These toasts use the provider's default
+         * auto-dismiss duration rather than persisting: a toast that waits for
+         * a manual close piles up while the admin is away, and the event is
+         * not lost when it times out, because scheduled-prompt runs stay in
+         * query history and held items stay in the `/system/curation` queue.
          *
          * @param payload - Display fields from the backend.
          */
@@ -64,8 +65,7 @@ export function NotificationHandler(): null {
             push({
                 tone: SEVERITY_TONE[payload.severity] ?? 'info',
                 title: payload.title,
-                description: payload.body,
-                duration: 0
+                description: payload.body
             });
         };
 

@@ -69,4 +69,41 @@ export class RecipientResolver {
 
         return Array.from(ids);
     }
+
+    /**
+     * Test whether one user belongs to an audience.
+     *
+     * The preferences surface needs this so a user is only offered opt-outs
+     * for categories that can actually reach them. Showing an admin-only
+     * category to an ordinary user offers a switch that does nothing. This
+     * answers the same question as {@link resolve} for a single user, but asks
+     * for that user's groups once instead of enumerating every member of every
+     * audience group. When the `'user-groups'` service is unavailable or the
+     * lookup fails, group membership counts as false, matching how `resolve`
+     * treats an unresolvable group as contributing nobody.
+     *
+     * @param audience - Groups and/or explicit user ids the category targets.
+     * @param userId - Better Auth id of the user being checked.
+     * @returns True when the user is listed explicitly or is in one of the groups.
+     */
+    async includes(audience: INotificationAudience, userId: string): Promise<boolean> {
+        let included = (audience.userIds ?? []).includes(userId);
+
+        const groups = audience.groups ?? [];
+        if (!included && groups.length > 0) {
+            const service = this.getUserGroups();
+            if (!service) {
+                this.logger.warn({ groups }, 'Cannot check notification group audience: user-groups service unavailable');
+            } else {
+                try {
+                    const memberOf = new Set(await service.getUserGroups(userId));
+                    included = groups.some((groupId) => memberOf.has(groupId));
+                } catch (error) {
+                    this.logger.warn({ error, userId }, 'Failed to read user groups for notification audience check');
+                }
+            }
+        }
+
+        return included;
+    }
 }
