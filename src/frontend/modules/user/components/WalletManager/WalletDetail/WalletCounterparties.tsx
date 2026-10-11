@@ -7,10 +7,10 @@
  * and stays legible on busy and quiet wallets alike.
  */
 
-import { Users } from 'lucide-react';
 import type { IWalletCounterparty } from '@/types';
+import { Panel } from '../../../../../components/ui/Panel';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
-import { AddressDisplay, SectionHeader } from './WalletDetailPrimitives';
+import { AddressDisplay } from './WalletDetailPrimitives';
 import { formatCount, formatTrxFromSun } from '../../../lib/walletFormat';
 import styles from './WalletDetail.module.scss';
 
@@ -32,18 +32,17 @@ interface IWalletCounterpartiesProps {
  */
 export function WalletCounterparties({ counterparties, labels }: IWalletCounterpartiesProps) {
     return (
-        <div>
-            <SectionHeader icon={<Users size={16} aria-hidden />} title="Top counterparties" />
+        <Panel title="Top counterparties" meta="By number of transactions">
             {counterparties.length === 0 ? (
                 <p className="text-muted">No counterparties recorded yet.</p>
             ) : (
-                <Table variant="compact">
+                <Table variant="compact" flush>
                     <Thead>
                         <Tr>
                             <Th width="expand">Address</Th>
-                            <Th width="shrink">Txns</Th>
-                            <Th width="shrink">TRX sent</Th>
-                            <Th width="shrink">TRX received</Th>
+                            <Th width="shrink" numeric>Txns</Th>
+                            <Th width="shrink" numeric>TRX sent</Th>
+                            <Th width="shrink" numeric>TRX received</Th>
                         </Tr>
                     </Thead>
                     <Tbody>
@@ -55,14 +54,14 @@ export function WalletCounterparties({ counterparties, labels }: IWalletCounterp
                                         label={labels?.[counterparty.address]}
                                     />
                                 </Td>
-                                <Td className={styles.counterparty_nowrap}>{formatCount(counterparty.txCount)}</Td>
-                                <Td className={styles.counterparty_nowrap} muted>{formatTrxFromSun(counterparty.trxSentSun)}</Td>
-                                <Td className={styles.counterparty_nowrap} muted>{formatTrxFromSun(counterparty.trxReceivedSun)}</Td>
+                                <Td numeric className={styles.counterparty_nowrap}>{formatCount(counterparty.txCount)}</Td>
+                                <Td numeric className={styles.counterparty_nowrap} muted>{formatTrxFromSun(counterparty.trxSentSun)}</Td>
+                                <Td numeric className={styles.counterparty_nowrap} muted>{formatTrxFromSun(counterparty.trxReceivedSun)}</Td>
                             </Tr>
                         ))}
                     </Tbody>
                 </Table>
             )}
-        </div>
+        </Panel>
     );
 }

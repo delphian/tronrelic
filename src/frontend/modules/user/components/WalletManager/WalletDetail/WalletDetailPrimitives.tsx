@@ -2,75 +2,17 @@
 
 /**
  * @fileoverview Small presentational primitives shared by the wallet-detail
- * panels: a titled section wrapper and a labelled stat tile.
+ * panels.
  *
- * Several panels (activity stats, resource totals) render the same "labelled
- * value in a card, grouped in a responsive grid" shape, and every panel wants
- * the same icon-plus-title header. Extracting both keeps the panels declarative
- * and guarantees one consistent visual rhythm across the detail view rather than
- * each panel re-deriving headers and tiles.
+ * Section framing used to live here too (a titled card and a local stat tile),
+ * but every panel now uses the core `Panel`, `FigureList`, and `StatTile`
+ * components instead, so only the address renderer the counterparty table and
+ * the transaction feed share remains.
  */
 
-import type { ReactNode } from 'react';
-import { Card } from '../../../../../components/ui/Card';
 import { Tooltip } from '../../../../../components/ui/Tooltip';
 import { truncateAddress } from '../../../lib/walletFormat';
 import styles from './WalletDetail.module.scss';
-
-/**
- * Props for {@link SectionHeader}.
- */
-interface ISectionHeaderProps {
-    /** Leading icon for the header. */
-    icon: ReactNode;
-    /** Header title. */
-    title: string;
-}
-
-/**
- * The icon-plus-title row shared by every detail panel header, whether the
- * panel sits inside a {@link WalletDetailSection} card or renders its own
- * boxed content (e.g. a Table, which already draws its own border/background)
- * directly under a flat header.
- *
- * @param props - {@link ISectionHeaderProps}.
- * @returns The icon/title header row.
- */
-export function SectionHeader({ icon, title }: ISectionHeaderProps) {
-    return (
-        <div className={styles.section_header}>
-            {icon}
-            <h3 className={styles.section_title}>{title}</h3>
-        </div>
-    );
-}
-
-/**
- * Props for {@link WalletDetailSection}.
- */
-interface IWalletDetailSectionProps {
-    /** Leading icon for the section header. */
-    icon: ReactNode;
-    /** Section title. */
-    title: string;
-    /** Section body. */
-    children: ReactNode;
-}
-
-/**
- * A titled card section — the consistent container every detail panel sits in.
- *
- * @param props - {@link IWalletDetailSectionProps}.
- * @returns A card with an icon/title header and the panel body.
- */
-export function WalletDetailSection({ icon, title, children }: IWalletDetailSectionProps) {
-    return (
-        <Card padding="md">
-            <SectionHeader icon={icon} title={title} />
-            {children}
-        </Card>
-    );
-}
 
 /**
  * Props for {@link AddressDisplay}.
@@ -98,52 +40,5 @@ export function AddressDisplay({ address, label }: IAddressDisplayProps) {
                 ? <span className={styles.address_label}>{label}</span>
                 : <span className={styles.address}>{truncateAddress(address)}</span>}
         </Tooltip>
-    );
-}
-
-/**
- * Props for {@link StatTile}.
- */
-interface IStatTileProps {
-    /** Short uppercase label describing the metric. */
-    label: string;
-    /** The metric value, already formatted. */
-    value: ReactNode;
-    /** Optional leading icon shown beside the label. */
-    icon?: ReactNode;
-    /**
-     * Render at reduced density — smaller label and value type — so a grid packed
-     * with many metrics (the merged Activity + resources strip) stays compact instead
-     * of each tile carrying the full-size stat treatment. Off by default so existing
-     * callers are unchanged.
-     */
-    compact?: boolean;
-}
-
-/**
- * One labelled metric tile inside a muted card so a grid of these reads as a stat
- * strip. Always nested inside a {@link WalletDetailSection} card, so it renders flat
- * (no border/shadow) — the section already owns the boxed boundary; the tile only
- * needs the muted tone to read as a distinct metric within the grid.
- *
- * The default treatment composes the global `stat-card__*` utilities. `compact` swaps
- * those for the local reduced-size classes rather than reaching into the global
- * utility with `:global` (a pattern this codebase avoids), keeping the shrink scoped
- * to the wallet detail.
- *
- * @param props - {@link IStatTileProps}.
- * @returns A flat, muted-tone stat tile.
- */
-export function StatTile({ label, value, icon, compact }: IStatTileProps) {
-    const labelClass = compact ? styles.tile_label_compact : `stat-card__label ${styles.tile_label}`;
-    const valueClass = compact ? styles.tile_value_compact : 'stat-card__value';
-    return (
-        <Card padding="xs" tone="muted" bordered={false}>
-            <span className={labelClass}>
-                {icon}
-                {label}
-            </span>
-            <div className={valueClass}>{value}</div>
-        </Card>
     );
 }

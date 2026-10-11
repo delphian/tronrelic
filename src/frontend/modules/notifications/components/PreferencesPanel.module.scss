@@ -1,86 +1,79 @@
 /**
- * Styles for the per-user notification preferences matrix. Structure only —
- * surfaces and controls inherit design tokens. Adapts to its container so it
- * renders correctly as both an admin tab and a standalone account page.
+ * Styles for the per-user notification preferences matrix.
+ *
+ * The preferences used to render one bordered card per category, which spent
+ * most of the panel on frames and padding around two or three checkboxes. They
+ * now read as a single matrix: categories down the side, channels across the
+ * top, one checkbox per cell. The mute control is one line above it. Structure
+ * only — the table, switch, and colours come from shared components and tokens.
  */
 
 .panel {
     display: flex;
     flex-direction: column;
-    gap: var(--gap-md);
-    container-type: inline-size;
-    container-name: notification-prefs;
+    gap: var(--gap-sm);
+    min-width: 0;
 }
 
+/* Mute switch, its label, and the one-line explanation on a single row that
+   wraps only when the container is too narrow. */
 .mute_row {
     display: flex;
-    align-items: flex-start;
-    gap: var(--gap-sm);
-    padding: var(--padding-md);
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
-    background: var(--color-surface);
-    cursor: pointer;
-}
-
-.mute_row > span {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-2xs);
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: var(--gap-sm);
+    row-gap: var(--gap-2xs);
 }
 
 .mute_title {
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text);
-}
-
-.category {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-sm);
-    padding: var(--padding-md);
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
-    background: var(--color-surface);
-    margin: 0;
-}
-
-.category_legend {
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text);
-    padding: 0;
-}
-
-.channels {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--gap-md);
-}
-
-.channel_row {
-    display: flex;
-    align-items: center;
-    gap: var(--gap-xs);
     font-size: var(--font-size-body-sm);
+    font-weight: var(--font-weight-semibold);
     color: var(--color-text);
-    cursor: pointer;
+}
+
+/* Dims the matrix while everything is muted, so it is clear the per-channel
+   choices are kept but not currently applied. */
+.matrix_muted {
+    opacity: var(--opacity-55);
+}
+
+.category_label {
+    font-size: var(--font-size-body-sm);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text);
+}
+
+.category_desc {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+    line-height: var(--line-height-normal);
+}
+
+/* Channel columns hold one checkbox each, centred under the channel name and
+   sized to their content so the category column takes the remaining width.
+   Scoped under .matrix so it outranks the shared table's left-aligned .th
+   regardless of which stylesheet the bundler emits first. */
+.matrix .cell_check {
+    width: 1%;
+    text-align: center;
+    white-space: nowrap;
 }
 
 .help {
-    font-size: var(--font-size-body-sm);
+    font-size: var(--font-size-caption);
     color: var(--color-text-muted);
     margin: 0;
 }
 
 .error {
     font-size: var(--font-size-body-sm);
-    color: var(--color-danger);
+    color: var(--color-danger-text);
     margin: 0;
 }
 
 .placeholder {
-    padding: var(--padding-lg);
-    text-align: center;
+    margin: 0;
+    padding: var(--padding-sm) 0;
     color: var(--color-text-muted);
     font-size: var(--font-size-body-sm);
 }

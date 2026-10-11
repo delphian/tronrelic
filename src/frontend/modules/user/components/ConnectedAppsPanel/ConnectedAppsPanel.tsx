@@ -10,8 +10,7 @@
 
 import { useCallback, useState } from 'react';
 import type { IConnectedApp } from '@/types';
-import { Card } from '../../../../components/ui/Card';
-import { Stack } from '../../../../components/layout';
+import { Panel } from '../../../../components/ui/Panel';
 import { useModal } from '../../../../components/ui/ModalProvider';
 import { ConfirmDialog } from '../../../../components/ui/ConfirmDialog';
 import { useToast } from '../../../../components/ui/ToastProvider';
@@ -82,20 +81,16 @@ export function ConnectedAppsPanel({ initialApps }: IConnectedAppsPanelProps) {
     }, [open, close, push]);
 
     return (
-        <Stack gap="sm">
-            <h2>Connected apps</h2>
-            <p className="text-muted">
-                Apps you have allowed to use TronRelic as you, such as an AI assistant connected over MCP.
-                Revoke any you no longer use or do not recognise.
-            </p>
-            <Card padding="xs">
-                <ConnectedAppsTable
-                    apps={apps}
-                    onRevoke={handleRevoke}
-                    revokingKey={revokingKey}
-                    emptyMessage="You have not connected any apps."
-                />
-            </Card>
-        </Stack>
+        <Panel
+            title="Connected apps"
+            meta="AI clients and other apps allowed to act as you. Revoke any you do not recognise."
+        >
+            <ConnectedAppsTable
+                apps={apps}
+                onRevoke={handleRevoke}
+                revokingKey={revokingKey}
+                emptyMessage="You have not connected any apps."
+            />
+        </Panel>
     );
 }

@@ -14,14 +14,14 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { ListOrdered } from 'lucide-react';
 import type { IBlockTransaction } from '@/types';
+import { Panel } from '../../../../../components/ui/Panel';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
 import { Badge } from '../../../../../components/ui/Badge';
 import { Skeleton } from '../../../../../components/ui/Skeleton';
 import { Pagination } from '../../../../../components/ui/Pagination';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
-import { AddressDisplay, SectionHeader } from './WalletDetailPrimitives';
+import { AddressDisplay } from './WalletDetailPrimitives';
 import { fetchWalletTransactions, type IWalletTransactionPage } from '../../../api/account-history-user.api';
 import { decodeTronTransaction } from '../../../lib/decodeTronTransaction';
 import styles from './WalletDetail.module.scss';
@@ -138,9 +138,21 @@ export function WalletTransactionFeed({ address }: IWalletTransactionFeedProps) 
     // changes across the page (rows arrive newest-first, already time-ordered).
     let lastDayKey: string | null = null;
 
+    const hasRows = !error && page !== null && transactions.length > 0;
+
     return (
-        <div>
-            <SectionHeader icon={<ListOrdered size={16} aria-hidden />} title="Transactions" />
+        <Panel
+            title="Transactions"
+            meta={hasRows ? `${rangeStart.toLocaleString()}–${rangeEnd.toLocaleString()} of ${total.toLocaleString()}` : undefined}
+            actions={hasRows && total > PAGE_SIZE ? (
+                <Pagination
+                    total={total}
+                    pageSize={PAGE_SIZE}
+                    currentPage={currentPage}
+                    onPageChange={goToPage}
+                />
+            ) : undefined}
+        >
             {error ? (
                 <div className="alert">{error}</div>
             ) : !page && loading ? (
@@ -148,59 +160,46 @@ export function WalletTransactionFeed({ address }: IWalletTransactionFeedProps) 
             ) : transactions.length === 0 ? (
                 <p className="text-muted">No transactions recorded for this wallet.</p>
             ) : (
-                <>
-                    <Table variant="compact">
-                        <Thead>
-                            <Tr>
-                                <Th width="expand">Action</Th>
-                                <Th>Amount</Th>
-                                <Th>Counterparty</Th>
-                                <Th>When</Th>
-                                <Th>Status</Th>
-                            </Tr>
-                        </Thead>
-                        <Tbody>
-                            {transactions.map((tx) => {
-                                const decoded = decodeTronTransaction(tx, address);
-                                const counterparty = counterpartyOf(tx, address, decoded.direction);
-                                const amountClass = decoded.direction === 'in'
-                                    ? styles.value_in
-                                    : decoded.direction === 'out'
-                                        ? styles.value_out
-                                        : undefined;
-                                const day = dayOf(tx.timestamp);
-                                const showDayHeader = day.key !== lastDayKey;
-                                lastDayKey = day.key;
-                                return (
-                                    <TransactionRows
-                                        key={`${tx.txId}-${tx.type}-${tx.to.address}`}
-                                        dayHeader={showDayHeader ? day.label : null}
-                                        label={decoded.label}
-                                        amount={decoded.amount || '—'}
-                                        amountClass={amountClass}
-                                        counterparty={counterparty}
-                                        counterpartyLabel={counterparty ? labels[counterparty] : undefined}
-                                        timestamp={tx.timestamp}
-                                        status={tx.status}
-                                    />
-                                );
-                            })}
-                        </Tbody>
-                    </Table>
-                    <div className={styles.feed_footer}>
-                        <span className={styles.feed_status}>
-                            {rangeStart.toLocaleString()}–{rangeEnd.toLocaleString()} of {total.toLocaleString()}
-                        </span>
-                        <Pagination
-                            total={total}
-                            pageSize={PAGE_SIZE}
-                            currentPage={currentPage}
-                            onPageChange={goToPage}
-                        />
-                    </div>
-                </>
+                <Table variant="compact" flush>
+                    <Thead>
+                        <Tr>
+                            <Th width="expand">Action</Th>
+                            <Th numeric>Amount</Th>
+                            <Th>Counterparty</Th>
+                            <Th>When</Th>
+                            <Th>Status</Th>
+                        </Tr>
+                    </Thead>
+                    <Tbody>
+                        {transactions.map((tx) => {
+                            const decoded = decodeTronTransaction(tx, address);
+                            const counterparty = counterpartyOf(tx, address, decoded.direction);
+                            const amountClass = decoded.direction === 'in'
+                                ? styles.value_in
+                                : decoded.direction === 'out'
+                                    ? styles.value_out
+                                    : undefined;
+                            const day = dayOf(tx.timestamp);
+                            const showDayHeader = day.key !== lastDayKey;
+                            lastDayKey = day.key;
+                            return (
+                                <TransactionRows
+                                    key={`${tx.txId}-${tx.type}-${tx.to.address}`}
+                                    dayHeader={showDayHeader ? day.label : null}
+                                    label={decoded.label}
+                                    amount={decoded.amount || '—'}
+                                    amountClass={amountClass}
+                                    counterparty={counterparty}
+                                    counterpartyLabel={counterparty ? labels[counterparty] : undefined}
+                                    timestamp={tx.timestamp}
+                                    status={tx.status}
+                                />
+                            );
+                        })}
+                    </Tbody>
+                </Table>
             )}
-        </div>
+        </Panel>
     );
 }
 
@@ -246,7 +245,7 @@ function TransactionRows({ dayHeader, label, amount, amountClass, counterparty, 
             )}
             <Tr>
                 <Td>{label}</Td>
-                <Td className={amountClass ? `${amountClass} ${styles.feed_cell}` : styles.feed_cell}>{amount}</Td>
+                <Td numeric className={amountClass ? `${amountClass} ${styles.feed_cell}` : styles.feed_cell}>{amount}</Td>
                 <Td className={styles.feed_cell}>
                     {counterparty ? (
                         <AddressDisplay address={counterparty} label={counterpartyLabel} />
@@ -254,7 +253,7 @@ function TransactionRows({ dayHeader, label, amount, amountClass, counterparty, 
                 </Td>
                 <Td muted className={styles.feed_cell}><ClientTime date={timestamp} format="datetime" /></Td>
                 <Td className={styles.feed_cell}>
-                    <Badge tone={status === 'SUCCESS' ? 'success' : 'danger'}>{status}</Badge>
+                    <Badge tone={status === 'SUCCESS' ? 'success' : 'danger'} size="xs">{status}</Badge>
                 </Td>
             </Tr>
         </>

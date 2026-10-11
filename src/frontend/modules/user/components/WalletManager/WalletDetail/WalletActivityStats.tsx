@@ -1,22 +1,24 @@
 'use client';
 
 /**
- * @fileoverview The "wallet story" stat strip — the engaging summary revealed when a
- * wallet finishes syncing. It folds two once-separate concerns into one section: the
- * timestamp-only activity rollups (transactions, active days, longest streak, first/last
- * activity) and the TRON-native resource totals (energy and bandwidth consumed, fees and
- * resource TRX burned). They share the same "labelled value in a small tile" shape and
- * belong to the same glance, so one section reads better than two — the resource tiles
- * keep their own icons so their meaning survives the merge. Tiles render compact so the
- * combined ten-metric grid stays dense rather than sprawling.
+ * @fileoverview The wallet's all-time figures, shown when a wallet finishes
+ * syncing. It folds two once-separate concerns into one section: the
+ * timestamp-only activity rollups (transactions, active days, longest streak,
+ * first and last activity) and the TRON-native resource totals (energy and
+ * bandwidth consumed, fees and resource TRX burned).
+ *
+ * Ten figures are too many for tiles: a grid of ten boxes leaves orphans,
+ * spends more area on borders than on numbers, and fills a screen. They are
+ * drawn as a statement-style figure list instead, labels on the left and
+ * right-aligned values on the right, flowing into as many columns as the panel
+ * has room for.
  */
 
-import { Activity, CalendarClock, CalendarRange, Flame, Zap, Gauge } from 'lucide-react';
-import type { IWalletActivityStats, IWalletResourceTotals } from '@/types';
+import type { IFigureListRow, IWalletActivityStats, IWalletResourceTotals } from '@/types';
+import { Panel } from '../../../../../components/ui/Panel';
+import { FigureList } from '../../../../../components/ui/FigureList';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
-import { WalletDetailSection, StatTile } from './WalletDetailPrimitives';
 import { formatCount, formatTrxFromSun } from '../../../lib/walletFormat';
-import styles from './WalletDetail.module.scss';
 
 /**
  * Props for {@link WalletActivityStats}.
@@ -29,37 +31,37 @@ interface IWalletActivityStatsProps {
 }
 
 /**
- * Render the wallet's all-time activity rollups and TRON resource totals as one
- * compact stat strip.
+ * Render the wallet's all-time activity rollups and TRON resource totals as
+ * one figure list.
  *
  * @param props - {@link IWalletActivityStatsProps}.
- * @returns The merged activity + resources section.
+ * @returns The merged activity and resources panel.
  */
 export function WalletActivityStats({ stats, resources }: IWalletActivityStatsProps) {
+    const rows: IFigureListRow[] = [
+        { key: 'transactions', label: 'Transactions', value: formatCount(stats.totalTransactions) },
+        { key: 'active-days', label: 'Active days', value: formatCount(stats.activeDays) },
+        { key: 'streak', label: 'Longest streak', value: formatCount(stats.longestStreakDays), unit: 'days' },
+        {
+            key: 'first',
+            label: 'First activity',
+            value: stats.firstActivityAt ? <ClientTime date={stats.firstActivityAt} format="date" /> : '—'
+        },
+        {
+            key: 'last',
+            label: 'Last activity',
+            value: stats.lastActivityAt ? <ClientTime date={stats.lastActivityAt} format="date" /> : '—'
+        },
+        { key: 'energy', label: 'Energy used', value: formatCount(resources.energyConsumed) },
+        { key: 'bandwidth', label: 'Bandwidth used', value: formatCount(resources.bandwidthConsumed) },
+        { key: 'fees', label: 'Total fees', value: formatTrxFromSun(resources.feeSun) },
+        { key: 'energy-burned', label: 'Energy burned', value: formatTrxFromSun(resources.energyFeeSun) },
+        { key: 'bandwidth-burned', label: 'Bandwidth burned', value: formatTrxFromSun(resources.bandwidthFeeSun) }
+    ];
+
     return (
-        <WalletDetailSection icon={<Activity size={16} aria-hidden />} title="Activity">
-            <div className={`stat-grid ${styles.stat_grid_compact}`}>
-                <StatTile compact label="Transactions" value={formatCount(stats.totalTransactions)} />
-                <StatTile compact label="Active days" value={formatCount(stats.activeDays)} />
-                <StatTile compact label="Longest streak" value={`${formatCount(stats.longestStreakDays)} d`} icon={<Flame size={14} aria-hidden style={{ color: 'var(--color-warning)' }} />} />
-                <StatTile
-                    compact
-                    label="First activity"
-                    icon={<CalendarRange size={14} aria-hidden />}
-                    value={stats.firstActivityAt ? <ClientTime date={stats.firstActivityAt} format="date" /> : '—'}
-                />
-                <StatTile
-                    compact
-                    label="Last activity"
-                    icon={<CalendarClock size={14} aria-hidden />}
-                    value={stats.lastActivityAt ? <ClientTime date={stats.lastActivityAt} format="date" /> : '—'}
-                />
-                <StatTile compact label="Energy used" value={formatCount(resources.energyConsumed)} icon={<Zap size={14} aria-hidden />} />
-                <StatTile compact label="Bandwidth used" value={formatCount(resources.bandwidthConsumed)} icon={<Gauge size={14} aria-hidden />} />
-                <StatTile compact label="Total fees" value={formatTrxFromSun(resources.feeSun)} icon={<Flame size={14} aria-hidden />} />
-                <StatTile compact label="Energy burned" value={formatTrxFromSun(resources.energyFeeSun)} />
-                <StatTile compact label="Bandwidth burned" value={formatTrxFromSun(resources.bandwidthFeeSun)} />
-            </div>
-        </WalletDetailSection>
+        <Panel title="Activity" meta="All time">
+            <FigureList rows={rows} />
+        </Panel>
     );
 }

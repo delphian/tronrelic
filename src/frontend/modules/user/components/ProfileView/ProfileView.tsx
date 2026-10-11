@@ -16,7 +16,7 @@ import { useCallback, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { LogOut, ShieldCheck } from 'lucide-react';
 import type { MenuNodeSerialized } from '@/shared';
-import { Card } from '../../../../components/ui/Card';
+import { Panel } from '../../../../components/ui/Panel';
 import { Button } from '../../../../components/ui/Button';
 import { Badge } from '../../../../components/ui/Badge';
 import { Stack, Section } from '../../../../components/layout';
@@ -207,7 +207,7 @@ export function ProfileView({
     }, [push, router]);
 
     return (
-        <Stack gap="lg">
+        <Stack gap="md">
             <div className={styles.submenu}>
                 <MenuNavClient
                     namespace={SUBMENU_NAMESPACE}
@@ -220,34 +220,34 @@ export function ProfileView({
             </div>
 
             <Section gap="sm" style={{ display: activeTab === 'profile' ? undefined : 'none' }}>
-                <h2>Account</h2>
-                <Card>
-                    <div className={styles.account}>
-                        <div className={styles.identity}>
-                            <span className="text-muted">Signed in as</span>
-                            <strong className={styles.identity_value}>{identityLabel(identity)}</strong>
-                            {identity.emailVerified && (
-                                <Badge tone="success">
-                                    <ShieldCheck size={14} aria-hidden /> Email verified
-                                </Badge>
-                            )}
-                        </div>
+                <Panel
+                    title="Account"
+                    actions={
                         <Button
-                            variant="danger"
-                            size="sm"
-                            icon={<LogOut size={18} aria-hidden />}
+                            variant="ghost"
+                            size="xs"
+                            icon={<LogOut size={14} aria-hidden />}
                             onClick={handleSignOut}
                             loading={signingOut}
                         >
                             Sign out
                         </Button>
-                    </div>
-                </Card>
-            </Section>
+                    }
+                >
+                    <p className={styles.identity}>
+                        <span className={styles.identity_label}>Signed in as</span>
+                        <strong className={styles.identity_value}>{identityLabel(identity)}</strong>
+                        {identity.emailVerified && (
+                            <Badge tone="success" size="xs">
+                                <ShieldCheck size={12} aria-hidden /> Verified
+                            </Badge>
+                        )}
+                    </p>
+                </Panel>
 
-            <Section gap="sm" style={{ display: activeTab === 'profile' ? undefined : 'none' }}>
-                <h2>Notifications</h2>
-                <PreferencesPanel />
+                <Panel title="Notifications" meta="Where each kind of notification reaches you">
+                    <PreferencesPanel />
+                </Panel>
             </Section>
 
             <Section gap="sm" style={{ display: activeTab === 'wallets' ? undefined : 'none' }}>

@@ -80,7 +80,7 @@ export function PortfolioPanel({ address, initialSummary }: IPortfolioPanelProps
         return <div className="alert">{error}</div>;
     }
     if (!summary) {
-        return <Skeleton style={{ width: '100%', height: '12rem' }} />;
+        return <Skeleton style={{ width: '100%', height: '8rem' }} />;
     }
     return <PortfolioHero summary={summary} />;
 }

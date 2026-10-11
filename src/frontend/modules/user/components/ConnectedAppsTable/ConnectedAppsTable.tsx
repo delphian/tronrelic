@@ -111,8 +111,8 @@ export function ConnectedAppsTable({ apps, showUser = false, onRevoke, revokingK
                             <Td data-label="Actions">
                                 <Button
                                     variant="danger"
-                                    size="sm"
-                                    icon={<Unplug size={16} aria-hidden />}
+                                    size="xs"
+                                    icon={<Unplug size={14} aria-hidden />}
                                     loading={revokingKey === key}
                                     onClick={() => onRevoke(app)}
                                     aria-label={`Revoke ${app.clientName}`}

@@ -1,13 +1,12 @@
 /**
  * WalletManager panel styles.
  *
- * The switcher chips and the demoted manage list are container-query driven so
- * they reflow from horizontal rows to stacked layouts when the panel sits in a
- * narrow context (mobile viewport, constrained slideout). Tokens only — spacing,
- * colour, and type all flow through semantic/curated variables.
+ * The scope switcher scrolls sideways rather than wrapping when there are more
+ * wallet chips than fit. The linked-wallets section is a core Panel holding a
+ * compact table, so the rules below only cover what sits inside its cells: the
+ * monospace address with its copy button, and the row's action buttons.
+ * Tokens only.
  */
-
-@use '../../../../app/breakpoints' as *;
 
 /* Wraps the global .segmented-control switcher; allows horizontal scroll when a
    user has more wallet chips than fit, rather than breaking the segmented row. */
@@ -37,53 +36,7 @@
     flex-shrink: 0;
 }
 
-/* Manage-wallets header: the collapse toggle on the left, the primary Link
-   action on the right; stacks on a narrow container. */
-.manage_header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--gap-md);
-    container-type: inline-size;
-    container-name: wallet-manage-header;
-}
-
-.list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-sm);
-    container-type: inline-size;
-    container-name: wallet-manager-list;
-}
-
-/* One wallet entry in the manage list. */
-.entry {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-sm);
-    padding: var(--padding-sm) 0;
-    border-top: var(--border-width-thin) solid var(--color-border);
-}
-
-.entry:first-child {
-    border-top: none;
-}
-
-.row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--gap-md);
-}
-
-.identity {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-2xs);
-    min-width: 0;
-}
-
-/* Address plus its copy button, kept on one line inside the identity column. */
+/* Primary star, address, and copy button kept on one line in the address cell. */
 .address_row {
     display: inline-flex;
     align-items: center;
@@ -94,31 +47,17 @@
     font-family: var(--font-mono);
     font-size: var(--font-size-body-sm);
     color: var(--color-text);
-    overflow-wrap: anywhere;
 }
 
-.meta {
-    font-size: var(--font-size-caption);
-    color: var(--color-text-muted);
+/* Date and status cells stay on one line so each wallet is one row tall. */
+.nowrap {
+    white-space: nowrap;
 }
 
 .actions {
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    gap: var(--gap-sm);
-    flex-shrink: 0;
-}
-
-@container wallet-manage-header (max-width: #{$breakpoint-mobile-md}) {
-    .manage_header {
-        flex-direction: column;
-        align-items: stretch;
-    }
-}
-
-@container wallet-manager-list (max-width: #{$breakpoint-mobile-md}) {
-    .row {
-        flex-direction: column;
-        align-items: flex-start;
-    }
+    justify-content: flex-end;
+    gap: var(--gap-2xs);
+    white-space: nowrap;
 }

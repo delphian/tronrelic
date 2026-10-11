@@ -15,11 +15,12 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeftRight, SlidersHorizontal } from 'lucide-react';
+import { SlidersHorizontal } from 'lucide-react';
 import type { FlowGranularity, IWalletCounterparty, IWalletFlowBucket } from '@/types';
 import { BarChart, type BarChartSeries } from '../../../../../features/charts';
-import { Card } from '../../../../../components/ui/Card';
+import { Panel } from '../../../../../components/ui/Panel';
 import { Button } from '../../../../../components/ui/Button';
+import { SegmentedControl, type ISegmentedControlOption } from '../../../../../components/ui/SegmentedControl';
 import { Select } from '../../../../../components/ui/Select';
 import { Input } from '../../../../../components/ui/Input';
 import { useModal } from '../../../../../components/ui/ModalProvider';
@@ -36,10 +37,19 @@ type FlowDenomination = 'trx' | 'usdt';
  * smallest unit and grows rightward. Order is presentational only; the default
  * resolution is set independently in `useState`.
  */
-const GRANULARITIES: ReadonlyArray<{ value: FlowGranularity; label: string }> = [
-    { value: 'day', label: '1day' },
-    { value: 'week', label: '1week' },
-    { value: 'month', label: '1mo' }
+const GRANULARITIES: ReadonlyArray<ISegmentedControlOption<FlowGranularity>> = [
+    { id: 'day', label: '1D', title: 'One bar per day' },
+    { id: 'week', label: '1W', title: 'One bar per week' },
+    { id: 'month', label: '1M', title: 'One bar per month' }
+];
+
+/**
+ * The denomination options. TRX and USDT are plotted separately because the
+ * ledger carries no USD valuation to put them on one axis.
+ */
+const DENOMINATIONS: ReadonlyArray<ISegmentedControlOption<FlowDenomination>> = [
+    { id: 'trx', label: 'TRX' },
+    { id: 'usdt', label: 'USDT' }
 ];
 
 /** Locale-independent month abbreviations, for hydration-safe axis labels. */
@@ -513,27 +523,19 @@ export function WalletFlowChart({ address, flow, counterparties, labels }: IWall
 
     const actions = (
         <span className={styles.flow_actions}>
-            <span className={styles.flow_toggle}>
-                {GRANULARITIES.map((option) => (
-                    <Button
-                        key={option.value}
-                        variant={granularity === option.value ? 'secondary' : 'ghost'}
-                        size="xs"
-                        disabled={loading}
-                        onClick={() => setGranularity(option.value)}
-                    >
-                        {option.label}
-                    </Button>
-                ))}
-            </span>
-            <span className={styles.flow_toggle}>
-                <Button variant={denomination === 'trx' ? 'secondary' : 'ghost'} size="xs" onClick={() => changeDenomination('trx')}>
-                    TRX
-                </Button>
-                <Button variant={denomination === 'usdt' ? 'secondary' : 'ghost'} size="xs" onClick={() => changeDenomination('usdt')}>
-                    USDT
-                </Button>
-            </span>
+            <SegmentedControl
+                label="Bucket size"
+                value={granularity}
+                options={GRANULARITIES}
+                onChange={setGranularity}
+                disabled={loading}
+            />
+            <SegmentedControl
+                label="Denomination"
+                value={denomination}
+                options={DENOMINATIONS}
+                onChange={changeDenomination}
+            />
             <span className={styles.filters_inline}>
                 <CounterpartyFilter
                     counterparties={counterparties}
@@ -559,13 +561,16 @@ export function WalletFlowChart({ address, flow, counterparties, labels }: IWall
     );
 
     return (
-        <Card padding="md">
+        <Panel
+            title="Inflow and outflow"
+            meta={`${unit} received above zero, sent below`}
+            actions={actions}
+        >
+            {error && <p className="alert">{error}</p>}
             <BarChart
                 series={series}
-                title="Inflow / outflow"
-                actions={actions}
                 layout="stacked"
-                height={260}
+                height={200}
                 xAxisFormatter={formatPeriod}
                 tooltipDateFormatter={formatTooltipPeriod}
                 yAxisMin={appliedYMin}
@@ -573,14 +578,6 @@ export function WalletFlowChart({ address, flow, counterparties, labels }: IWall
                 yAxisFormatter={(value) => `${Math.abs(value).toLocaleString(undefined, { maximumFractionDigits: 0 })} ${unit}`}
                 emptyLabel={`No ${unit} inflow or outflow recorded.`}
             />
-            {error ? (
-                <p className="alert">{error}</p>
-            ) : (
-                <p className="text-muted">
-                    <ArrowLeftRight size={14} aria-hidden /> Inflow rises green above the zero line, outflow drops red below it.
-                    Values are shown per token — not converted to a common currency.
-                </p>
-            )}
-        </Card>
+        </Panel>
     );
 }

@@ -1,7 +1,19 @@
 'use client';
 
+/**
+ * @fileoverview Per-user notification preferences, drawn as one matrix.
+ *
+ * Categories run down the side and channels across the top, with one checkbox
+ * per (category, channel) pair, because that pair is the unit the dispatch
+ * pipeline opts a user out of. A new channel therefore arrives as a new column
+ * rather than a new block of controls. A single switch above the matrix mutes
+ * everything without discarding the per-pair choices.
+ */
+
 import { useCallback, useEffect, useState } from 'react';
 import type { INotificationCategory, INotificationChannelInfo, INotificationPreferences } from '@/types';
+import { Switch } from '../../../components/ui/Switch';
+import { Table, Thead, Tbody, Tr, Th, Td } from '../../../components/ui/Table';
 import { getMyPreferences, updateMyPreferences } from '../api/notifications.api';
 import styles from './PreferencesPanel.module.scss';
 
@@ -121,41 +133,53 @@ export function PreferencesPanel(): React.ReactElement {
 
     return (
         <div className={styles.panel}>
-            <label className={styles.mute_row}>
-                <input
-                    type="checkbox"
-                    checked={muted}
+            <div className={styles.mute_row}>
+                <Switch
+                    size="sm"
+                    on={muted}
                     disabled={saving}
-                    onChange={(e) => void onToggleMute(e.target.checked)}
+                    onChange={(next) => void onToggleMute(next)}
+                    aria-label="Mute all notifications"
                 />
-                <span>
-                    <span className={styles.mute_title}>Mute all notifications</span>
-                    <span className={styles.help}>Temporarily silence every notification across all channels.</span>
-                </span>
-            </label>
+                <span className={styles.mute_title}>Mute all</span>
+                <span className={styles.help}>Silences every channel. Your choices below are kept.</span>
+            </div>
 
             {error && <p className={styles.error} role="alert">{error}</p>}
 
-            {categories.map((category) => (
-                <fieldset key={category.id} className={styles.category} disabled={muted}>
-                    <legend className={styles.category_legend}>{category.label}</legend>
-                    <p className={styles.help}>{category.description}</p>
-                    <div className={styles.channels}>
-                        {channels
-                            .map((ch) => (
-                                <label key={ch.id} className={styles.channel_row}>
+            <Table variant="compact" className={muted ? `${styles.matrix} ${styles.matrix_muted}` : styles.matrix}>
+                <Thead>
+                    <Tr>
+                        <Th width="expand">Category</Th>
+                        {channels.map((ch) => (
+                            <Th key={ch.id} className={styles.cell_check}>{ch.label}</Th>
+                        ))}
+                    </Tr>
+                </Thead>
+                <Tbody>
+                    {categories.map((category) => (
+                        <Tr key={category.id}>
+                            <Td>
+                                <div className={styles.category_label}>{category.label}</div>
+                                {category.description && (
+                                    <div className={styles.category_desc}>{category.description}</div>
+                                )}
+                            </Td>
+                            {channels.map((ch) => (
+                                <Td key={ch.id} className={styles.cell_check}>
                                     <input
                                         type="checkbox"
                                         checked={isEnabled(category, ch.id)}
                                         disabled={saving || muted}
                                         onChange={(e) => void onTogglePairing(category.id, ch.id, e.target.checked)}
+                                        aria-label={`${category.label} by ${ch.label}`}
                                     />
-                                    <span>{ch.label}</span>
-                                </label>
+                                </Td>
                             ))}
-                    </div>
-                </fieldset>
-            ))}
+                        </Tr>
+                    ))}
+                </Tbody>
+            </Table>
         </div>
     );
 }

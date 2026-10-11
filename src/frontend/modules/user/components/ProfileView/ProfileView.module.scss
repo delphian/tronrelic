@@ -1,41 +1,34 @@
 /**
  * ProfileView hub styles.
  *
- * Only the account row needs custom layout — identity on the left, sign-out on
- * the right, collapsing to a stack in narrow containers. Everything else is
- * carried by layout primitives and the Card component. Tokens only.
+ * Each section is a core Panel, so the only custom layout left is the tab row's
+ * rule and the one-line identity statement inside the Account panel. The
+ * identity reads as a single line ("Signed in as … Verified") rather than a
+ * stacked block, and wraps only when the panel is too narrow to hold it.
+ * Tokens only.
  */
-
-@use '../../../../app/breakpoints' as *;
 
 .submenu {
     border-bottom: var(--border-width-thin) solid var(--color-border);
 }
 
-.account {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--gap-md);
-    container-type: inline-size;
-    container-name: profile-account;
-}
-
 .identity {
     display: flex;
-    flex-direction: column;
-    gap: var(--gap-2xs);
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: var(--gap-sm);
+    row-gap: var(--gap-2xs);
+    margin: 0;
     min-width: 0;
+    font-size: var(--font-size-body-sm);
+}
+
+.identity_label {
+    color: var(--color-text-muted);
 }
 
 .identity_value {
     color: var(--color-text);
+    font-weight: var(--font-weight-semibold);
     overflow-wrap: anywhere;
-}
-
-@container profile-account (max-width: #{$breakpoint-mobile-md}) {
-    .account {
-        flex-direction: column;
-        align-items: stretch;
-    }
 }
