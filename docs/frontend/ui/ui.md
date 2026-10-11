@@ -45,7 +45,7 @@ Within Layer 2, prefer a token named for the use case when one fits, such as `--
 | Gaps | `--gap-2xs/xs/sm/md/lg/xl` for general use, plus the component-scoped `--stack-gap-sm/md/lg`, `--section-gap-sm/md/lg`, `--grid-gap-sm/md/lg`, `--button-gap`, `--badge-gap`, `--chip-gap` |
 | Padding | `--padding-2xs/xs/sm/md/lg/xl` for general use, plus the component-scoped `--card-padding-xs/sm/md/lg`, `--button-padding-xs/sm/md/lg`, `--input-padding-xs/sm/md/lg`, `--alert-padding` |
 | Typography | `--font-size-caption`, `--font-size-body-sm/body/body-lg`, `--font-size-heading-sm/md/lg/xl`; `--font-weight-normal/medium/semibold/bold`; `--line-height-tight/normal/relaxed` |
-| Borders | `--border-width-thin/medium/thick`; `--radius-xs` (4px), `--radius-sm` (10px), `--radius-md` (16px), `--radius-lg` (24px), `--radius-xl` (32px), `--radius-full` (999px, not scaled) |
+| Borders | `--border-width-thin/medium/thick`; `--radius-zero` (0, square, not scaled), `--radius-xs` (4px), `--radius-sm` (10px), `--radius-md` (16px), `--radius-lg` (24px), `--radius-xl` (32px), `--radius-full` (999px, not scaled) |
 | Shadows | `--shadow-sm/md/lg` |
 | Avatars | `--avatar-size-sm/md/lg` |
 | Max widths | `--max-width-prose` (64ch), `--max-width-xs/sm/md/lg/xl` (320–1080px) |
