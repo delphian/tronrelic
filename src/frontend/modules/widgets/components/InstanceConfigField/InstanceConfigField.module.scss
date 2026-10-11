@@ -69,6 +69,45 @@
     white-space: nowrap;
 }
 
+/* The image control: a preview, then the Choose button (or the URL input
+   when no files provider is enabled), then Remove, in one wrapping row. */
+.image_choice {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-sm);
+}
+
+/* A fixed square frame so an empty setting and a chosen image take the
+   same space. The image is contained rather than cropped, because a logo
+   is often wider than it is tall and cropping would cut part of it off. */
+.image_preview {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: var(--avatar-size-lg);
+    height: var(--avatar-size-lg);
+    overflow: hidden;
+    background: var(--color-surface-muted);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-muted);
+}
+
+.image_preview_img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+/* The fallback URL input takes whatever room is left in the row. */
+.image_url_input {
+    flex: 1;
+    min-width: 0;
+}
+
 /* Long-form content keeps the body face because it is content, not code. */
 .textarea_content {
     resize: vertical;

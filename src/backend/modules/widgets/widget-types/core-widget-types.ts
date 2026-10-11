@@ -58,7 +58,7 @@ import type {
     WidgetDataFetcher,
     IAuthButtonLink
 } from '@/types';
-import { WIDGET_ICON_FORMAT } from '@/types';
+import { WIDGET_ICON_FORMAT, WIDGET_IMAGE_FORMAT } from '@/types';
 
 /**
  * Widget-type id for the raw text/HTML block. Namespaced under `core:`
@@ -969,6 +969,9 @@ export const SITE_LOGO_TYPE_ID = 'core:site-logo';
 /** Text the logo shows when the placement sets none. */
 const SITE_LOGO_DEFAULT_TEXT = 'TronRelic';
 
+/** Longest image URL accepted. Long enough for any real storage URL, short enough to refuse junk. */
+const SITE_LOGO_IMAGE_URL_MAX_LENGTH = 2048;
+
 /**
  * SSR payload the site-logo data fetcher returns and the frontend
  * `SiteLogoWidget` consumes.
@@ -976,12 +979,17 @@ const SITE_LOGO_DEFAULT_TEXT = 'TronRelic';
 export interface ISiteLogoWidgetData {
     /** The wordmark shown in the logo link to the home page. */
     text: string;
+    /** Image drawn before the wordmark, or null for the wordmark alone. */
+    imageUrl: string | null;
 }
 
 /**
  * JSON Schema (Draft 7) for the site-logo placement's `instanceConfig`.
- * The one setting is the wordmark text, bounded so it stays a logo rather
- * than a paragraph.
+ *
+ * The wordmark text is bounded so it stays a logo rather than a paragraph.
+ * The image declares the {@link WIDGET_IMAGE_FORMAT} format, which makes
+ * the placement form offer the file picker instead of a text box and makes
+ * the API reject a URL that could load from another host or run script.
  */
 export const SITE_LOGO_CONFIG_SCHEMA: JSONSchema7 = {
     type: 'object',
@@ -994,20 +1002,52 @@ export const SITE_LOGO_CONFIG_SCHEMA: JSONSchema7 = {
             minLength: 1,
             maxLength: 60,
             default: SITE_LOGO_DEFAULT_TEXT
+        },
+        imageUrl: {
+            type: 'string',
+            format: WIDGET_IMAGE_FORMAT.name,
+            maxLength: SITE_LOGO_IMAGE_URL_MAX_LENGTH,
+            title: 'Logo image',
+            description:
+                'Image shown before the logo text, such as the site icon. It is drawn at the height of the header row, so a square image or a short wide one works best. Leave empty to show the text alone.'
         }
     }
 };
 
 /**
+ * Read the placement's logo image URL, or null when it has none.
+ *
+ * The placement API already checked the value against
+ * {@link SITE_LOGO_CONFIG_SCHEMA}, but a row edited in the database by hand
+ * may not match it. The value is rendered as an `<img src>` on every page,
+ * so it is checked again here and dropped when it does not match the image
+ * format, rather than trusted because it was stored.
+ *
+ * @param raw - The `imageUrl` value from the placement's instance config.
+ * @returns The trimmed URL, or null so the logo falls back to text alone.
+ */
+function normalizeSiteLogoImageUrl(raw: unknown): string | null {
+    const imagePattern = new RegExp(WIDGET_IMAGE_FORMAT.pattern);
+    const trimmed = typeof raw === 'string' ? raw.trim() : '';
+    const usable = trimmed !== ''
+        && trimmed.length <= SITE_LOGO_IMAGE_URL_MAX_LENGTH
+        && imagePattern.test(trimmed);
+
+    return usable ? trimmed : null;
+}
+
+/**
  * Resolve the site-logo SSR payload from the placement's instance config.
  *
  * Falls back to the default wordmark when the placement carries no text,
- * or only whitespace, so a freshly placed logo is never an empty link.
+ * or only whitespace, so a freshly placed logo is never an empty link. The
+ * wordmark is kept even when an image is set, because it gives the link its
+ * accessible name.
  *
  * @param _route - Unused; the logo is the same on every page.
  * @param _params - Unused; the logo is the same on every page.
  * @param placement - Placement context carrying the operator config.
- * @returns The wordmark for the frontend component.
+ * @returns The wordmark and optional image for the frontend component.
  */
 async function fetchSiteLogoData(
     _route: string,
@@ -1016,8 +1056,9 @@ async function fetchSiteLogoData(
 ): Promise<ISiteLogoWidgetData> {
     const configured = placement?.instanceConfig?.text;
     const text = typeof configured === 'string' && configured.trim() !== '' ? configured.trim() : SITE_LOGO_DEFAULT_TEXT;
+    const imageUrl = normalizeSiteLogoImageUrl(placement?.instanceConfig?.imageUrl);
 
-    return { text };
+    return { text, imageUrl };
 }
 
 /**
@@ -1154,7 +1195,7 @@ export function buildCoreWidgetTypeDescriptors(
         {
             id: SITE_LOGO_TYPE_ID,
             label: 'Site logo',
-            description: 'The site wordmark, linking to the home page.',
+            description: 'The site wordmark, with an optional image such as the site icon, linking to the home page.',
             category: 'Navigation',
             defaultDataFetcher: fetchSiteLogoData,
             configSchema: SITE_LOGO_CONFIG_SCHEMA

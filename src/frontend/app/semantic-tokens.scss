@@ -197,6 +197,13 @@
     --avatar-size-md: 48px;
     --avatar-size-lg: 64px;
 
+    /* Site Logo Image — the height of the image the site-logo widget draws
+       before its wordmark. It matches the sign-in button's image (the medium
+       avatar size) so the two ends of the header row line up. The width
+       follows the image's own proportions, so a wide logo stays wide. Named
+       for the use case so a theme can resize the logo on its own. */
+    --site-logo-image-height: var(--avatar-size-md);
+
     /* ========================================================================
      * BUTTON COMPONENT TOKENS
      * ======================================================================== */

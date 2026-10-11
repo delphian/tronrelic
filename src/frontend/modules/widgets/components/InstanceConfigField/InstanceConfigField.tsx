@@ -7,8 +7,9 @@
  * turns one property into the control its type implies: a toggle row for
  * booleans, segments or a dropdown for enums, a numeric input for numbers
  * with min, max, and step, a textarea for long-form strings, the icon
- * picker for a string declaring the shared icon-name format, a text input
- * otherwise, and a repeatable row editor for arrays. The label carries the
+ * picker for a string declaring the shared icon-name format, the file
+ * picker with a preview for a string declaring the shared image-URL format,
+ * a text input otherwise, and a repeatable row editor for arrays. The label carries the
  * schema title and a required marker; the description becomes help text,
  * or a tooltip and placeholder inside a list row where repeated paragraphs
  * would bury the controls.
@@ -17,7 +18,7 @@
  */
 
 import type { ReactElement } from 'react';
-import { Plus, Shapes, Trash2 } from 'lucide-react';
+import { ImageIcon, Plus, Shapes, Trash2 } from 'lucide-react';
 import { MenuNodeIcon } from '../../../../components/layout/MenuNav/MenuNodeIcon';
 import { Button } from '../../../../components/ui/Button';
 import { Field } from '../../../../components/ui/Field';
@@ -29,7 +30,9 @@ import { SegmentedControl } from '../../../../components/ui/SegmentedControl';
 import { Select } from '../../../../components/ui/Select';
 import { Switch } from '../../../../components/ui/Switch';
 import { Textarea } from '../../../../components/ui/Textarea';
+import { useToast } from '../../../../components/ui/ToastProvider/ToastProvider';
 import { cn } from '../../../../lib/cn';
+import { useFilePicker } from '../../../../lib/filePickerRegistry';
 import {
     coerceInitialConfig,
     describeArrayItems,
@@ -246,6 +249,106 @@ function InstanceConfigIconField({ field, value, idPrefix, disabled, compact = f
 }
 
 /**
+ * Renders an image-URL setting as a preview with Choose and Remove buttons,
+ * so an operator uploads or picks an image through the platform file picker
+ * instead of copying an upload URL by hand. The picker belongs to whichever
+ * files-provider plugin is enabled. When none is, the control says so and
+ * falls back to a text input, so the setting can still be filled in by
+ * pasting a URL. The placements API checks the value against the image-URL
+ * format either way.
+ *
+ * @param props - See {@link IInstanceConfigFieldProps}.
+ * @returns The labelled image control.
+ */
+function InstanceConfigImageField({ field, value, idPrefix, disabled, compact = false, className, onChange }: IInstanceConfigFieldProps) {
+    const { pick, isAvailable: pickerAvailable } = useFilePicker();
+    const { push: pushToast } = useToast();
+    const fieldId = `${idPrefix}-${field.key}`;
+    const current = typeof value === 'string' ? value : '';
+    const hint = compact ? undefined : field.description;
+
+    /**
+     * Open the file picker and write the chosen image's URL to the form.
+     *
+     * The picker's `accept` list is only a hint to the provider, so the
+     * returned MIME type is checked here as well, and a file that is not an
+     * image is refused with a message rather than written to the setting.
+     */
+    const choose = async () => {
+        const selection = await pick({ accept: ['image/*'], title: `Choose ${field.label.toLowerCase()}` });
+
+        if (selection && selection.mimeType.startsWith('image/')) {
+            onChange(selection.url);
+        } else if (selection) {
+            pushToast({
+                tone: 'danger',
+                title: 'That file is not an image',
+                description: `${selection.name} is ${selection.mimeType}. Choose a PNG, JPEG, WebP, or SVG file.`
+            });
+        }
+    };
+
+    // `htmlFor` points the label at the Choose button or URL input inside the
+    // row, rather than at the row wrapper Field would otherwise label.
+    return (
+        <Field label={field.label} required={field.required} hint={hint} className={className} htmlFor={fieldId}>
+            <div className={styles.image_choice}>
+                <div className={styles.image_preview}>
+                    {current
+                        ? (
+                            // Plain <img> is the project's convention for uploaded images.
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={current} alt={`Preview of the ${field.label.toLowerCase()}`} className={styles.image_preview_img} />
+                        )
+                        : <ImageIcon size={18} aria-hidden />}
+                </div>
+                {pickerAvailable
+                    ? (
+                        <Button
+                            id={fieldId}
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => void choose()}
+                            disabled={disabled}
+                            icon={<ImageIcon size={18} />}
+                        >
+                            {current ? 'Choose another' : 'Choose image'}
+                        </Button>
+                    )
+                    : (
+                        <Input
+                            id={fieldId}
+                            size="sm"
+                            className={styles.image_url_input}
+                            value={current}
+                            onChange={(e) => onChange(e.target.value)}
+                            disabled={disabled}
+                            placeholder="/uploads/... or https://..."
+                        />
+                    )}
+                <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => onChange('')}
+                    disabled={disabled || !current}
+                    icon={<Trash2 size={18} />}
+                >
+                    Remove
+                </Button>
+            </div>
+            {!pickerAvailable && (
+                <span className={styles.hint}>
+                    No files provider is enabled, so paste the image URL instead. Enable the Files plugin under
+                    System, then Plugins, to upload or choose an image.
+                </span>
+            )}
+        </Field>
+    );
+}
+
+/**
  * One setting, rendered with the control its schema implies.
  *
  * @param props - See {@link IInstanceConfigFieldProps}.
@@ -264,6 +367,8 @@ export function InstanceConfigField(props: IInstanceConfigFieldProps) {
         rendered = <InstanceConfigArrayField {...props} />;
     } else if (control === 'icon') {
         rendered = <InstanceConfigIconField {...props} />;
+    } else if (control === 'image') {
+        rendered = <InstanceConfigImageField {...props} />;
     } else if (control === 'boolean') {
         rendered = (
             <div className={cn(styles.toggle_row, className)}>

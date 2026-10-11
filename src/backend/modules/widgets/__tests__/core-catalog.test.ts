@@ -317,9 +317,25 @@ describe('Core widget-type catalog (site-logo, main-menu)', () => {
     }
 
     it('shows the default wordmark until an operator sets one', async () => {
-        await expect(resolveCoreWidget(SITE_LOGO_TYPE_ID)).resolves.toEqual({ text: 'TronRelic' });
-        await expect(resolveCoreWidget(SITE_LOGO_TYPE_ID, { text: '   ' })).resolves.toEqual({ text: 'TronRelic' });
-        await expect(resolveCoreWidget(SITE_LOGO_TYPE_ID, { text: ' Relic ' })).resolves.toEqual({ text: 'Relic' });
+        await expect(resolveCoreWidget(SITE_LOGO_TYPE_ID)).resolves.toEqual({ text: 'TronRelic', imageUrl: null });
+        await expect(resolveCoreWidget(SITE_LOGO_TYPE_ID, { text: '   ' })).resolves.toEqual({ text: 'TronRelic', imageUrl: null });
+        await expect(resolveCoreWidget(SITE_LOGO_TYPE_ID, { text: ' Relic ' })).resolves.toEqual({ text: 'Relic', imageUrl: null });
+    });
+
+    it('carries the logo image when the placement sets an on-site or http(s) URL', async () => {
+        await expect(resolveCoreWidget(SITE_LOGO_TYPE_ID, { imageUrl: ' /uploads/logo.png ' }))
+            .resolves.toEqual({ text: 'TronRelic', imageUrl: '/uploads/logo.png' });
+        await expect(resolveCoreWidget(SITE_LOGO_TYPE_ID, { imageUrl: 'https://cdn.example.com/logo.svg' }))
+            .resolves.toEqual({ text: 'TronRelic', imageUrl: 'https://cdn.example.com/logo.svg' });
+    });
+
+    it('drops a stored logo image that could load from another host or run script', async () => {
+        // The API refuses these on write; the fetcher refuses them again
+        // because a row edited by hand never went through the API.
+        for (const imageUrl of ['//evil.example/logo.png', '/\\evil.example/logo.png', 'javascript:alert(1)', 'data:image/png;base64,AAAA', '/uploads/a b.png', '']) {
+            await expect(resolveCoreWidget(SITE_LOGO_TYPE_ID, { imageUrl }))
+                .resolves.toEqual({ text: 'TronRelic', imageUrl: null });
+        }
     });
 
     it('carries only the menu alignment, never the per-visitor menu items', async () => {

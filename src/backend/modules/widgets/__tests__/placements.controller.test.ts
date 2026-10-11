@@ -16,6 +16,7 @@ import type { Request, Response } from 'express';
 import type { JSONSchema7 } from 'json-schema';
 import type { ISystemLogService, IWidgetsService, IWidgetPlacement } from '@/types';
 import { PlacementsController } from '../api/placements.controller.js';
+import { SITE_LOGO_CONFIG_SCHEMA } from '../widget-types/core-widget-types.js';
 
 /**
  * Build a minimal `IWidgetsService` stub. Each test overrides the
@@ -490,5 +491,67 @@ describe('PlacementsController layoutWeight validation', () => {
             'p1',
             expect.objectContaining({ layoutWeight: null })
         );
+    });
+});
+
+describe('PlacementsController image-url format validation', () => {
+    let logger: ISystemLogService;
+    let res: ReturnType<typeof buildResponseStub>;
+
+    beforeEach(() => {
+        logger = buildLoggerStub();
+        res = buildResponseStub();
+    });
+
+    /**
+     * Submit a site-logo placement carrying one image URL, so each case
+     * exercises the registered `image-url` format through the real schema.
+     *
+     * @param imageUrl - The image URL an operator or API caller sent.
+     * @returns The widgets stub, so a test can check whether the write went through.
+     */
+    async function createLogoWithImage(imageUrl: string): Promise<IWidgetsService> {
+        const widgets = buildWidgetsServiceStub({
+            getTypeConfigSchema: vi.fn(() => SITE_LOGO_CONFIG_SCHEMA),
+            createPlacement: vi.fn(async () => ({ id: 'new-id' } as IWidgetPlacement))
+        });
+        const controller = new PlacementsController(widgets, logger);
+        const req = {
+            body: { ...validCreateBody, typeId: 'core:site-logo', instanceConfig: { imageUrl } }
+        } as Request;
+
+        await controller.createPlacement(req, res);
+
+        return widgets;
+    }
+
+    it('accepts a root-relative upload path', async () => {
+        const widgets = await createLogoWithImage('/uploads/logo.png');
+
+        expect(res.status).toHaveBeenCalledWith(201);
+        expect(widgets.createPlacement).toHaveBeenCalledTimes(1);
+    });
+
+    it('accepts an absolute https URL', async () => {
+        const widgets = await createLogoWithImage('https://cdn.example.com/logo.svg');
+
+        expect(res.status).toHaveBeenCalledWith(201);
+        expect(widgets.createPlacement).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+        ['a protocol-relative URL', '//evil.example/logo.png'],
+        ['a backslash path browsers read as protocol-relative', '/\\evil.example/logo.png'],
+        ['a javascript: URL', 'javascript:alert(1)'],
+        ['a data: URL', 'data:image/png;base64,AAAA'],
+        ['a URL containing whitespace', '/uploads/a b.png']
+    ])('rejects %s with 400 and never reaches the service', async (_label, imageUrl) => {
+        const widgets = await createLogoWithImage(imageUrl);
+
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(res.json.mock.calls[0][0].errors[0]).toEqual(
+            expect.objectContaining({ path: expect.stringContaining('imageUrl') })
+        );
+        expect(widgets.createPlacement).not.toHaveBeenCalled();
     });
 });
