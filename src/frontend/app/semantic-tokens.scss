@@ -42,7 +42,14 @@
     --font-weight-semibold: 600;
     --font-weight-bold: 700;
 
-    /* Typography - Line Heights */
+    /* Typography - Line Heights
+     *
+     * --line-height-dense sits below the browser's `normal` (about 1.2 for the
+     * system font stack), which is what text gets when nothing sets a line
+     * height. Use it for a value stacked over a short note inside a dense
+     * table cell, where the gap repeats on every row. Never use it for prose
+     * or for text that may wrap, because wrapped lines start to touch. */
+    --line-height-dense: 1.1;
     --line-height-tight: 1.25;
     --line-height-normal: 1.4;
     --line-height-relaxed: 1.5;
