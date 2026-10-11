@@ -44,7 +44,7 @@ Within Layer 2, prefer a token named for the use case when one fits, such as `--
 | Transfer direction | `--color-value-transfer` — the arrow drawn between a sender and a recipient. Use it for that glyph instead of `--color-text-muted`, which is the colour of the copy and explorer controls the address chips already carry, so an arrow drawn in it reads as one more button |
 | Gaps | `--gap-2xs/xs/sm/md/lg/xl` for general use, plus the component-scoped `--stack-gap-sm/md/lg`, `--section-gap-sm/md/lg`, `--grid-gap-sm/md/lg`, `--button-gap`, `--badge-gap`, `--chip-gap` |
 | Padding | `--padding-2xs/xs/sm/md/lg/xl` for general use, plus the component-scoped `--card-padding-xs/sm/md/lg`, `--button-padding-xs/sm/md/lg`, `--input-padding-xs/sm/md/lg`, `--alert-padding` |
-| Typography | `--font-size-caption`, `--font-size-body-sm/body/body-lg`, `--font-size-heading-sm/md/lg/xl`; `--font-weight-normal/medium/semibold/bold`; `--line-height-tight/normal/relaxed` |
+| Typography | `--font-size-caption`, `--font-size-body-sm/body/body-lg`, `--font-size-heading-sm/md/lg/xl`; `--font-weight-normal/medium/semibold/bold`; `--line-height-dense/tight/normal/relaxed` (`dense` only for non-wrapping stacked figures in dense table cells) |
 | Borders | `--border-width-thin/medium/thick`; `--radius-zero` (0, square, not scaled), `--radius-xs` (4px), `--radius-sm` (10px), `--radius-md` (16px), `--radius-lg` (24px), `--radius-xl` (32px), `--radius-full` (999px, not scaled) |
 | Shadows | `--shadow-sm/md/lg` |
 | Avatars | `--avatar-size-sm/md/lg` |

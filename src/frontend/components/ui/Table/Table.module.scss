@@ -47,9 +47,14 @@
     font-size: var(--table-font-size, var(--font-size-body));
 }
 
+/*
+ * Compact rows keep 4px above and below the text. Tables in this variant are
+ * long ranked or tabular lists, where the number of rows that fit on one
+ * screen matters more than the space around each one.
+ */
 .table_compact .th,
 .table_compact .td {
-    padding: var(--spacing-3) var(--spacing-4);
+    padding: var(--padding-xs) var(--padding-sm);
 }
 
 /*
@@ -84,6 +89,18 @@
     background: transparent;
     border: none;
     border-radius: 0 0 var(--table-flush-border-radius) var(--table-flush-border-radius);
+}
+
+/*
+ * A flush table that is the first thing in its card has no heading above it,
+ * so the card's top padding would otherwise show as an empty band above the
+ * header row. Cancel that gutter too, and round the top corners to match the
+ * bottom pair. The wrapper's own overflow clips the header row's background to
+ * those corners, so no wedge of a different colour shows at the card's curve.
+ */
+.table_wrapper_flush:first-child {
+    margin-top: calc(-1 * var(--card-padding-applied, 0px));
+    border-radius: var(--table-flush-border-radius);
 }
 
 .table_wrapper_flush .tbody {

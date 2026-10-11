@@ -70,7 +70,7 @@ All primitives consume semantic tokens from [semantic-tokens.scss](../../../src/
 
 When a `<Table>` fills the width of the `<Card>` holding it and is the last thing in that card, pass `flush`. Without it the table sits inside the card's padding and draws a border of its own, which puts two boundaries a few pixels apart and reads as a seam. The doubled gutter also costs width the columns need, and that shows up first on a narrow screen, where it decides whether a column fits or scrolls.
 
-`flush` cancels the card's padding on the left, right, and bottom, drops the table's own border and background, squares the top corners, and rounds the bottom pair to the card's corner. A heading above the table keeps its normal inset, so the card still reads as a titled panel with a full-width table under it.
+`flush` cancels the card's padding on the left, right, and bottom, drops the table's own border and background, squares the top corners, and rounds the bottom pair to the card's corner. A heading above the table keeps its normal inset, so the card still reads as a titled panel with a full-width table under it. When the table is also the first thing in the card, with its heading outside the card, `flush` cancels the top padding as well and rounds all four corners, so the header row sits on the card's top edge instead of below an empty band.
 
 ```tsx
 <Card padding="sm">
