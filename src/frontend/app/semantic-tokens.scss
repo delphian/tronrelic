@@ -1129,10 +1129,14 @@
      * chrome, md is a contained surface, lg is a card or modal, xl is a sheet
      * edge — so pick by what you are rounding, not by interpolating the numbers.
      *
-     * --radius-full is the one step that does not scale: 999px is a sentinel
-     * meaning "fully round", not a measurement, and multiplying it changes
-     * nothing while implying it might.
+     * --radius-full and --radius-zero are the two steps that do not scale.
+     * 999px is a sentinel meaning "fully round" and 0 means "square", so
+     * neither is a measurement, and multiplying them changes nothing while
+     * implying it might. --radius-zero exists so a surface that wants square
+     * corners can say so through a token instead of writing a literal 0 that
+     * reads as a missed value in a token audit.
      * ------------------------------------------------------------------ */
+    --radius-zero: 0;                                        /* square, unscaled */
     --radius-xs:   calc(var(--radius-1) * var(--density));   /* base 4px  */
     --radius-sm:   calc(var(--radius-2) * var(--density));   /* base 10px */
     --radius-md:   calc(var(--radius-3) * var(--density));   /* base 16px */
