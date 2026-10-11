@@ -272,6 +272,17 @@ describe('GscService', () => {
             beyond.totals.findRows = totalsRows;
             expect((await beyond.service.getKeywordsForPeriod(168, 10)).firstIncompleteDate).toBeNull();
         });
+
+        it('raises a saved day before the window start to the window start', async () => {
+            // A 24-hour view of the newest day while earlier days are also
+            // non-final must not name a date outside its own window.
+            const { service, totals } = setup({ 'gsc:firstIncompleteDate': '2026-09-27' });
+            totals.findRows = [
+                { date: new Date('2026-09-29T00:00:00.000Z'), clicks: 2, impressions: 39, fetchedAt: new Date() }
+            ];
+
+            expect((await service.getKeywordsForPeriod(24, 10)).firstIncompleteDate).toBe('2026-09-29');
+        });
     });
 
     describe('getPagesForPeriod()', () => {

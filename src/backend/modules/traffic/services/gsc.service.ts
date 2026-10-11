@@ -890,7 +890,7 @@ export class GscService {
                 { $sort: { '_id.date': 1, clicks: -1 } }
             ]).toArray(),
             this.totalsCollection.find({ date: { $gte: since, $lte: end } }).toArray(),
-            this.readFirstIncompleteDate(end)
+            this.readFirstIncompleteDate(since, end)
         ]);
 
         const dayMap = new Map<string, {
@@ -951,23 +951,36 @@ export class GscService {
     }
 
     /**
-     * Read the first non-final day from the latest fetch, limited to a window.
+     * Read the first non-final day from the latest fetch, clamped to a window.
      *
-     * Every read needs to tell the caller which of its days may still change.
-     * The saved value is a `YYYY-MM-DD` string, and stored days use the same
-     * calendar date at midnight UTC, so a plain string comparison against the
-     * window's last day decides whether the window reaches it.
+     * Every read needs to tell the caller which of its days may still change,
+     * and each read promises a day inside its own window. Google often leaves
+     * several recent days non-final while still delivering them, so the saved
+     * day can fall before a short window's first day, as in a 24-hour view of
+     * the newest delivered day. In that case every day in the window can still
+     * change, so the window's first day is returned instead of a date outside
+     * it. A saved day after the window's last day means every day in the
+     * window is final. The saved value is a `YYYY-MM-DD` string, and stored
+     * days use the same calendar date at midnight UTC, so plain string
+     * comparison decides both bounds.
      *
+     * @param windowStart - Any instant on the window's first day; only its UTC
+     *   calendar date is used, as the earliest day the answer may name.
      * @param windowEnd - Any instant on the window's last day; only its UTC
-     *   calendar date is used.
-     * @returns The first non-final day when it falls on or before the
-     *   window's last day, otherwise null, meaning every day in the window
-     *   is final.
+     *   calendar date is used, to decide whether the window reaches the
+     *   saved day at all.
+     * @returns The first non-final day inside the window, or null when every
+     *   day in the window is final.
      */
-    private async readFirstIncompleteDate(windowEnd: Date): Promise<string | null> {
+    private async readFirstIncompleteDate(windowStart: Date, windowEnd: Date): Promise<string | null> {
         const stored = await this.database.get<string>(KV_FIRST_INCOMPLETE_DATE);
+        const firstDayKey = windowStart.toISOString().split('T')[0];
         const lastDayKey = windowEnd.toISOString().split('T')[0];
-        return stored && stored <= lastDayKey ? stored : null;
+        let firstIncompleteDate: string | null = null;
+        if (stored && stored <= lastDayKey) {
+            firstIncompleteDate = stored < firstDayKey ? firstDayKey : stored;
+        }
+        return firstIncompleteDate;
     }
 
     /**
@@ -1000,7 +1013,7 @@ export class GscService {
         const days = Math.max(1, Math.ceil(periodHours / 24));
         const since = new Date(lastDay.getTime() - (days - 1) * DAY_MS);
         const end = new Date(lastDay.getTime() + DAY_MS - 1);
-        const firstIncompleteDate = await this.readFirstIncompleteDate(end);
+        const firstIncompleteDate = await this.readFirstIncompleteDate(since, end);
         return { since, end, firstIncompleteDate };
     }
 
