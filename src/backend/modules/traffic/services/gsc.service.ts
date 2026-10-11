@@ -20,11 +20,15 @@
  * - **Database credential storage** via IDatabaseService key-value API
  * - **Service account auth** for simplicity (no OAuth2 flow)
  * - **TTL-based cleanup** prevents unbounded data growth (120 days)
- * - **3-day offset** avoids incomplete recent GSC data
+ * - **3-day offset** keeps the window on days Google has mostly collected
+ * - **Fresh data requested** (`dataState: 'all'`) so a day appears as soon
+ *   as Google has it, rather than only once Google marks it final
+ * - **Stale rows pruned** after each refetch, because fresh numbers change
+ *   until the day is final and a row can disappear between fetches
  */
 
 import { google } from 'googleapis';
-import type { Collection } from 'mongodb';
+import type { Collection, Filter } from 'mongodb';
 import type { IDatabaseService, ICacheService, ISystemLogService } from '@/types';
 
 /**
@@ -113,6 +117,12 @@ export interface IGscKeywordsPeriodResult {
     windowStart: string;
     /** Inclusive window end (ISO-8601 UTC) — the end of the newest day Google has delivered. */
     windowEnd: string;
+    /**
+     * First day in the window (YYYY-MM-DD) that Google has not finalized, or
+     * null when every day in the window is final. Figures from that day on
+     * can still change.
+     */
+    firstIncompleteDate: string | null;
     /** Aggregated keywords sorted by clicks descending. */
     keywords: IGscKeyword[];
 }
@@ -170,6 +180,8 @@ export interface IGscPagesPeriodResult {
     windowStart: string;
     /** Inclusive window end (ISO-8601 UTC) — the end of the newest day Google has delivered. */
     windowEnd: string;
+    /** First non-final day in the window (YYYY-MM-DD), or null when all are final. */
+    firstIncompleteDate: string | null;
     /** Aggregated pages sorted by clicks descending. */
     pages: IGscPage[];
 }
@@ -212,6 +224,8 @@ export interface IGscKeywordPagesPeriodResult {
     windowStart: string;
     /** Inclusive window end (ISO-8601 UTC) — the end of the newest day Google has delivered. */
     windowEnd: string;
+    /** First non-final day in the window (YYYY-MM-DD), or null when all are final. */
+    firstIncompleteDate: string | null;
     /** Aggregated pairs sorted by clicks descending. */
     pairs: IGscKeywordPage[];
 }
@@ -220,6 +234,13 @@ export interface IGscKeywordPagesPeriodResult {
 const KV_CREDENTIALS = 'gsc:credentials';
 const KV_SITE_URL = 'gsc:siteUrl';
 const KV_LAST_FETCH = 'gsc:lastFetch';
+
+/**
+ * First day (YYYY-MM-DD) Google reported as not yet final on the latest
+ * fetch, or null when the fetched window was entirely final. Every read
+ * uses it to mark the days whose figures can still change.
+ */
+const KV_FIRST_INCOMPLETE_DATE = 'gsc:firstIncompleteDate';
 
 /** Collection name following module_{module-id}_{collection} convention. */
 const COLLECTION_NAME = 'module_user_gsc_queries';
@@ -243,6 +264,17 @@ const GSC_ROW_LIMIT = 5000;
 
 /** Days to offset from today to avoid incomplete GSC data. */
 const GSC_DATA_DELAY_DAYS = 3;
+
+/**
+ * Which GSC data the API returns. The API default, `final`, omits every day
+ * Google has not yet marked final, and Google sometimes takes four or more
+ * days to do that. A daily fetch with the default then returns the same
+ * newest day run after run, and the SEO tab stays on it. `all` also returns
+ * fresh (not yet final) days, which is what the Search Console website shows
+ * by default. Fresh numbers can still change, so every fetch re-reads the
+ * whole lookback window and prunes rows the new response no longer contains.
+ */
+const GSC_DATA_STATE = 'all';
 
 /** Default lookback period in days for GSC fetches. */
 const GSC_DEFAULT_LOOKBACK_DAYS = 30;
@@ -445,6 +477,7 @@ export class GscService {
         await this.database.set(KV_CREDENTIALS, null);
         await this.database.set(KV_SITE_URL, null);
         await this.database.set(KV_LAST_FETCH, null);
+        await this.database.set(KV_FIRST_INCOMPLETE_DATE, null);
         this.logger.info('GSC credentials removed');
     }
 
@@ -454,7 +487,9 @@ export class GscService {
      * Requests data with dimensions [query, page, country, device, date]
      * for the specified date range. Defaults to fetching the last 30 days
      * (offset by 3 days to avoid incomplete data). Upserts rows using
-     * the compound unique index for deduplication.
+     * the compound unique index for deduplication, then removes rows in the
+     * window that this fetch did not return, so revised fresh data does not
+     * leave old rows behind.
      *
      * @param startDate - ISO date string (YYYY-MM-DD), defaults to 33 days ago
      * @param endDate - ISO date string (YYYY-MM-DD), defaults to 3 days ago
@@ -491,10 +526,12 @@ export class GscService {
         let startRow = 0;
         let hasMore = true;
         let pageCount = 0;
+        let truncated = false;
 
         while (hasMore) {
             if (pageCount >= GSC_MAX_PAGES) {
                 this.logger.warn({ totalRows, maxPages: GSC_MAX_PAGES }, 'GSC fetch hit pagination safety limit');
+                truncated = true;
                 break;
             }
             pageCount++;
@@ -504,6 +541,7 @@ export class GscService {
                     startDate: start,
                     endDate: end,
                     dimensions: ['query', 'page', 'country', 'device', 'date'],
+                    dataState: GSC_DATA_STATE,
                     rowLimit: GSC_ROW_LIMIT,
                     startRow
                 }
@@ -568,6 +606,10 @@ export class GscService {
             }
         }
 
+        if (!truncated) {
+            await this.pruneStaleRows(this.collection, totalRows, start, end, now);
+        }
+
         await this.fetchAndStoreDailyTotals(searchConsole, siteUrl, start, end, now);
         await this.fetchAndStorePageTotals(searchConsole, siteUrl, start, end, now);
 
@@ -588,6 +630,12 @@ export class GscService {
      * so these totals match what GSC's own dashboard reports. One row per
      * day means a single un-paginated request covers any sane window.
      *
+     * This is the one request grouped by date alone, which is the only shape
+     * for which Google reports `metadata.firstIncompleteDate` — the first day
+     * still being collected. The value is saved so the reads can mark those
+     * days as not final. An empty response leaves the saved value alone, for
+     * the same reason it skips the prune.
+     *
      * @param searchConsole - Authenticated Search Console client.
      * @param siteUrl - GSC property URL.
      * @param start - ISO date string (YYYY-MM-DD), inclusive.
@@ -607,6 +655,7 @@ export class GscService {
                 startDate: start,
                 endDate: end,
                 dimensions: ['date'],
+                dataState: GSC_DATA_STATE,
                 rowLimit: GSC_ROW_LIMIT
             }
         });
@@ -634,7 +683,12 @@ export class GscService {
         if (bulkOps.length > 0) {
             await this.totalsCollection.bulkWrite(bulkOps);
         }
-        this.logger.info({ days: bulkOps.length, siteUrl }, 'GSC daily totals stored');
+        await this.pruneStaleRows(this.totalsCollection, rows.length, start, end, fetchedAt);
+        const firstIncompleteDate = response.data.metadata?.firstIncompleteDate ?? null;
+        if (rows.length > 0) {
+            await this.database.set(KV_FIRST_INCOMPLETE_DATE, firstIncompleteDate);
+        }
+        this.logger.info({ days: bulkOps.length, firstIncompleteDate, siteUrl }, 'GSC daily totals stored');
     }
 
     /**
@@ -669,10 +723,12 @@ export class GscService {
         let startRow = 0;
         let hasMore = true;
         let pageCount = 0;
+        let truncated = false;
 
         while (hasMore) {
             if (pageCount >= GSC_MAX_PAGES) {
                 this.logger.warn({ totalRows, maxPages: GSC_MAX_PAGES }, 'GSC page-totals fetch hit pagination safety limit');
+                truncated = true;
                 break;
             }
             pageCount++;
@@ -682,6 +738,7 @@ export class GscService {
                     startDate: start,
                     endDate: end,
                     dimensions: ['page', 'date'],
+                    dataState: GSC_DATA_STATE,
                     rowLimit: GSC_ROW_LIMIT,
                     startRow
                 }
@@ -726,7 +783,50 @@ export class GscService {
             }
         }
 
+        if (!truncated) {
+            await this.pruneStaleRows(this.pageTotalsCollection, totalRows, start, end, fetchedAt);
+        }
         this.logger.info({ rowsFetched: totalRows, siteUrl }, 'GSC page totals stored');
+    }
+
+    /**
+     * Delete rows in a refetched window that the latest fetch did not return.
+     *
+     * Fresh GSC data changes until Google marks the day final, and a keyword
+     * or page row present in an early fetch can be missing from a later one.
+     * Upserts alone would leave that early row in place and overstate the
+     * day. Every row the latest fetch returned was stamped with its
+     * `fetchedAt`, so any row in the window with an older stamp is one Google
+     * no longer reports and is removed.
+     *
+     * Callers skip this when pagination stopped at the safety limit, because
+     * rows past the limit were not refetched. It also does nothing when the
+     * fetch returned no rows, so an empty response cannot wipe a window that
+     * held data.
+     *
+     * @param collection - The GSC collection the fetch just wrote to.
+     * @param rowsReturned - How many rows Google returned for the window; zero skips the prune.
+     * @param start - First day of the refetched window (YYYY-MM-DD), inclusive.
+     * @param end - Last day of the refetched window (YYYY-MM-DD), inclusive.
+     * @param fetchedAt - The timestamp this run stamped on every row it wrote.
+     */
+    private async pruneStaleRows<T extends { date: Date; fetchedAt: Date }>(
+        collection: Collection<T>,
+        rowsReturned: number,
+        start: string,
+        end: string,
+        fetchedAt: Date
+    ): Promise<void> {
+        if (rowsReturned > 0) {
+            const filter = {
+                date: { $gte: new Date(start), $lte: new Date(end) },
+                fetchedAt: { $lt: fetchedAt }
+            } as Filter<T>;
+            const result = await collection.deleteMany(filter);
+            if (result.deletedCount > 0) {
+                this.logger.info({ deleted: result.deletedCount, collection: collection.collectionName, start, end }, 'GSC stale rows pruned');
+            }
+        }
     }
 
     /**
@@ -744,16 +844,23 @@ export class GscService {
      * day renders as an explicit flat line instead of silently vanishing
      * from the chart.
      *
+     * Each bucket carries `preliminary: true` when Google had not finalized
+     * that day at the last fetch, so the chart can say its figures may
+     * still change.
+     *
      * @param days - Number of daily buckets to return (default: 14)
      * @param topN - Maximum keywords per bucket (default: 15)
-     * @returns Daily keyword buckets ordered chronologically (oldest first)
+     * @returns Daily keyword buckets ordered chronologically (oldest first),
+     *   plus the first non-final day in the window (null when all are final)
      */
     async getKeywordsByDay(days: number = 14, topN: number = 15): Promise<{
         days: number;
+        firstIncompleteDate: string | null;
         buckets: Array<{
             date: string;
             totalClicks: number;
             totalImpressions: number;
+            preliminary: boolean;
             keywords: Array<{ keyword: string; clicks: number; impressions: number; ctr: number; position: number }>;
         }>;
     }> {
@@ -761,7 +868,7 @@ export class GscService {
         const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - GSC_DATA_DELAY_DAYS, 23, 59, 59, 999));
         const since = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - GSC_DATA_DELAY_DAYS - days + 1, 0, 0, 0, 0));
 
-        const [results, totals] = await Promise.all([
+        const [results, totals, firstIncompleteDate] = await Promise.all([
             this.collection.aggregate<{
                 _id: { date: string; query: string };
                 clicks: number;
@@ -782,7 +889,8 @@ export class GscService {
                 },
                 { $sort: { '_id.date': 1, clicks: -1 } }
             ]).toArray(),
-            this.totalsCollection.find({ date: { $gte: since, $lte: end } }).toArray()
+            this.totalsCollection.find({ date: { $gte: since, $lte: end } }).toArray(),
+            this.readFirstIncompleteDate(end)
         ]);
 
         const dayMap = new Map<string, {
@@ -835,10 +943,31 @@ export class GscService {
                 date,
                 totalClicks: bucket.totalClicks,
                 totalImpressions: bucket.totalImpressions,
+                preliminary: firstIncompleteDate !== null && date >= firstIncompleteDate,
                 keywords: bucket.keywords
             }));
 
-        return { days: buckets.length, buckets };
+        return { days: buckets.length, firstIncompleteDate, buckets };
+    }
+
+    /**
+     * Read the first non-final day from the latest fetch, limited to a window.
+     *
+     * Every read needs to tell the caller which of its days may still change.
+     * The saved value is a `YYYY-MM-DD` string, and stored days use the same
+     * calendar date at midnight UTC, so a plain string comparison against the
+     * window's last day decides whether the window reaches it.
+     *
+     * @param windowEnd - Any instant on the window's last day; only its UTC
+     *   calendar date is used.
+     * @returns The first non-final day when it falls on or before the
+     *   window's last day, otherwise null, meaning every day in the window
+     *   is final.
+     */
+    private async readFirstIncompleteDate(windowEnd: Date): Promise<string | null> {
+        const stored = await this.database.get<string>(KV_FIRST_INCOMPLETE_DATE);
+        const lastDayKey = windowEnd.toISOString().split('T')[0];
+        return stored && stored <= lastDayKey ? stored : null;
     }
 
     /**
@@ -859,10 +988,11 @@ export class GscService {
      *
      * @param periodHours - Lookback period the caller asked for; rounded up
      *   to whole days because GSC data is daily.
-     * @returns Inclusive window bounds: `since` is midnight UTC on the first
-     *   day, `end` is the last millisecond of the newest delivered day.
+     * @returns Inclusive window bounds — `since` is midnight UTC on the first
+     *   day, `end` is the last millisecond of the newest delivered day — plus
+     *   the first non-final day in the window, or null when all are final.
      */
-    private async resolvePeriodWindow(periodHours: number): Promise<{ since: Date; end: Date }> {
+    private async resolvePeriodWindow(periodHours: number): Promise<{ since: Date; end: Date; firstIncompleteDate: string | null }> {
         const latest = await this.totalsCollection.findOne({}, { sort: { date: -1 }, projection: { date: 1 } });
         const now = new Date();
         const lastDay = latest?.date
@@ -870,7 +1000,8 @@ export class GscService {
         const days = Math.max(1, Math.ceil(periodHours / 24));
         const since = new Date(lastDay.getTime() - (days - 1) * DAY_MS);
         const end = new Date(lastDay.getTime() + DAY_MS - 1);
-        return { since, end };
+        const firstIncompleteDate = await this.readFirstIncompleteDate(end);
+        return { since, end, firstIncompleteDate };
     }
 
     /**
@@ -890,7 +1021,7 @@ export class GscService {
      * @returns The covered window and its aggregated keywords
      */
     async getKeywordsForPeriod(periodHours: number, limit: number = 10): Promise<IGscKeywordsPeriodResult> {
-        const { since, end } = await this.resolvePeriodWindow(periodHours);
+        const { since, end, firstIncompleteDate } = await this.resolvePeriodWindow(periodHours);
 
         const results = await this.collection.aggregate<{
             _id: string;
@@ -926,6 +1057,7 @@ export class GscService {
         return {
             windowStart: since.toISOString(),
             windowEnd: end.toISOString(),
+            firstIncompleteDate,
             keywords
         };
     }
@@ -949,7 +1081,7 @@ export class GscService {
      * @returns The covered window and its aggregated pages.
      */
     async getPagesForPeriod(periodHours: number, limit: number = 10): Promise<IGscPagesPeriodResult> {
-        const { since, end } = await this.resolvePeriodWindow(periodHours);
+        const { since, end, firstIncompleteDate } = await this.resolvePeriodWindow(periodHours);
 
         const results = await this.pageTotalsCollection.aggregate<{
             _id: string;
@@ -985,6 +1117,7 @@ export class GscService {
         return {
             windowStart: since.toISOString(),
             windowEnd: end.toISOString(),
+            firstIncompleteDate,
             pages
         };
     }
@@ -1015,7 +1148,7 @@ export class GscService {
      * @returns The covered window and its aggregated keyword→page pairs.
      */
     async getKeywordPagePairsForPeriod(periodHours: number, limit?: number): Promise<IGscKeywordPagesPeriodResult> {
-        const { since, end } = await this.resolvePeriodWindow(periodHours);
+        const { since, end, firstIncompleteDate } = await this.resolvePeriodWindow(periodHours);
 
         const results = await this.collection.aggregate<{
             _id: { query: string; page: string };
@@ -1054,6 +1187,7 @@ export class GscService {
         return {
             windowStart: since.toISOString(),
             windowEnd: end.toISOString(),
+            firstIncompleteDate,
             pairs
         };
     }
