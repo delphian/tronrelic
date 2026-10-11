@@ -38,7 +38,7 @@ It is a **module** (not a plugin) because it is essential cross-cutting infrastr
 | `services/preference.service.ts` | Per-user opt-outs, persisted via the central `'user-settings'` store (namespace `notifications`, key `preferences`) |
 | `services/policy.service.ts` | `module_notifications_policy` — admin channel/category kill switches |
 | `services/audit.service.ts` | `module_notifications_audit` — one row per blast, TTL-indexed |
-| `services/recipient-resolver.ts` | Audience → Better Auth user ids via `'user-groups'`; `includes(audience, userId)` answers the same question for one user, for the preferences catalog |
+| `services/recipient-resolver.ts` | Audience → Better Auth user ids via `'user-groups'`; `includes(audience, userId)` answers the same question for one user, and `audienceTest(userId)` returns a reusable test for the preferences catalog so one request reads that user's groups once |
 | `channels/toast-channel.ts` | The built-in toast channel — emits `notification` to `user:${id}` rooms |
 | `api/preferences.{controller,routes}.ts` | `/api/notifications/preferences` (login-gated) |
 | `api/admin.{controller,routes}.ts` | `/api/admin/system/notifications/*` (`requireAdmin`) |
@@ -124,7 +124,7 @@ The policy and audit indexes are created in `init()`. Categories and channels ar
 
 `/system/notifications` has three admin tabs: **Categories** (enable/disable each, see its source and per-channel defaults), **Channels** (globally enable/disable a transport), and **History** (the audit feed, filterable by category, source, time). A fourth tab, **My Preferences**, and the `/profile` preferences panel are the same `PreferencesPanel` component — every user-configurable category that can reach the user, with a per-channel toggle plus a global mute, writing identity's `module_user_settings` store; the pipeline reads it at dispatch.
 
-A category appears only when its `defaultAudience` includes the user, either by explicit user id or by membership in one of its groups, checked through `RecipientResolver.includes` — the same resolver dispatch uses. An ordinary user therefore does not see the admin-only `ai-tools.scheduled-prompt-run` and `curation.held` categories, since a toggle for a notification that can never reach them would do nothing. A `notify()` call that passes `audienceOverride` can still reach someone outside the default audience for that one blast; that user has no toggle for it, so register a category whose `defaultAudience` covers everyone a source intends to reach.
+A category appears only when its `defaultAudience` includes the user, either by explicit user id or by membership in one of its groups, checked through `RecipientResolver.audienceTest`, which reads the user's groups once per request — the same resolver dispatch uses. An ordinary user therefore does not see the admin-only `ai-tools.scheduled-prompt-run` and `curation.held` categories, since a toggle for a notification that can never reach them would do nothing. A `notify()` call that passes `audienceOverride` can still reach someone outside the default audience for that one blast; that user has no toggle for it, so register a category whose `defaultAudience` covers everyone a source intends to reach.
 
 `severity` (`info` | `success` | `warning` | `danger`) drives the toast's visual tone client-side (`NotificationHandler.tsx`) — it carries no other behavior in the pipeline.
 

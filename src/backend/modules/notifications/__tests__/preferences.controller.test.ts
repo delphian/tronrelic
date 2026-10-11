@@ -47,6 +47,17 @@ function fakeUserGroups(): IUserGroupService {
 }
 
 /**
+ * Wrap a spy as a `'user-groups'` service, so a test can count how many times
+ * the resolver actually reads a user's memberships.
+ *
+ * @param getUserGroups - The spy standing in for the real membership read.
+ * @returns The subset of `IUserGroupService` the resolver calls.
+ */
+function countingUserGroups(getUserGroups: (userId: string) => Promise<string[]>): IUserGroupService {
+    return { getUserGroups } as unknown as IUserGroupService;
+}
+
+/**
  * Build a category for the catalog under test.
  *
  * @param id - Category id, used to tell categories apart in assertions.
@@ -131,6 +142,37 @@ describe('RecipientResolver.includes', () => {
         const resolver = new RecipientResolver(() => undefined, silentLogger());
         expect(await resolver.includes({ groups: [ADMIN_GROUP_ID] }, 'admin1')).toBe(false);
     });
+
+    it('skips the group lookup for a user listed explicitly', async () => {
+        const getUserGroups = vi.fn(async () => [ADMIN_GROUP_ID]);
+        const resolver = new RecipientResolver(() => countingUserGroups(getUserGroups), silentLogger());
+
+        expect(await resolver.includes({ userIds: ['admin1'] }, 'admin1')).toBe(true);
+        expect(getUserGroups).not.toHaveBeenCalled();
+    });
+});
+
+describe('RecipientResolver.audienceTest', () => {
+    it('reuses one group lookup across every audience it tests', async () => {
+        const getUserGroups = vi.fn(async () => [ADMIN_GROUP_ID]);
+        const resolver = new RecipientResolver(() => countingUserGroups(getUserGroups), silentLogger());
+
+        const matches = await resolver.audienceTest('admin1');
+
+        expect(matches({ groups: [ADMIN_GROUP_ID] })).toBe(true);
+        expect(matches({ groups: ['other-group'] })).toBe(false);
+        expect(matches({ userIds: ['admin1'] })).toBe(true);
+        expect(matches({ userIds: ['user1'] })).toBe(false);
+        expect(getUserGroups).toHaveBeenCalledTimes(1);
+    });
+
+    it('treats every audience as excluding the user when user-groups is unavailable', async () => {
+        const resolver = new RecipientResolver(() => undefined, silentLogger());
+
+        const matches = await resolver.audienceTest('admin1');
+
+        expect(matches({ groups: [ADMIN_GROUP_ID] })).toBe(false);
+    });
 });
 
 describe('PreferencesController audience filtering', () => {
@@ -180,5 +222,18 @@ describe('PreferencesController audience filtering', () => {
 
         expect(status).not.toHaveBeenCalled();
         expect(json.mock.calls[0][0].preferences.overrides['named.user']).toEqual({ toast: false });
+    });
+
+    it('reads the caller group membership once per request, not once per category', async () => {
+        const logger = silentLogger();
+        const getUserGroups = vi.fn(async (userId: string) => (userId === 'admin1' ? [ADMIN_GROUP_ID] : []));
+        const preferences = new PreferenceService(() => UserSettingsService.getInstance(), logger);
+        const resolver = new RecipientResolver(() => countingUserGroups(getUserGroups), logger);
+        const counted = new PreferencesController(fakeNotifications(), preferences, resolver, logger);
+        const { res } = recordingResponse();
+
+        await counted.getPreferences(requestAs('user1'), res);
+
+        expect(getUserGroups).toHaveBeenCalledTimes(1);
     });
 });

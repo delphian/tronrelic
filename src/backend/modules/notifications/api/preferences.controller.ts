@@ -44,15 +44,18 @@ export class PreferencesController {
      * `defaultAudience`, because that is who receives it unless a `notify()`
      * call overrides the audience for one blast.
      *
+     * The resolver is asked for one reusable audience test rather than being
+     * called per category, so the caller's group membership is read once per
+     * request no matter how many categories modules and plugins have
+     * registered.
+     *
      * @param userId - Better Auth id of the caller.
      * @returns The categories this user may opt in or out of.
      */
     private async visibleCategories(userId: string): Promise<INotificationCategory[]> {
         const configurable = this.notifications.listCategories().filter((c) => c.userConfigurable !== false);
-        const inAudience = await Promise.all(
-            configurable.map((category) => this.recipients.includes(category.defaultAudience, userId))
-        );
-        return configurable.filter((_, index) => inAudience[index]);
+        const includesCaller = await this.recipients.audienceTest(userId);
+        return configurable.filter((category) => includesCaller(category.defaultAudience));
     }
 
     /**
