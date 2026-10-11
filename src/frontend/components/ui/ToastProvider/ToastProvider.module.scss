@@ -188,7 +188,7 @@
 
 .item__actions {
     display: flex;
-    gap: var(--spacing-4);
+    gap: var(--toast-actions-gap);
     align-items: flex-start;
 }
 
@@ -196,7 +196,7 @@
 .item__dismiss {
     border: none;
     background: var(--toast-action-background);
-    border-radius: var(--radius-sm);
+    border-radius: var(--toast-action-border-radius);
     color: inherit;
     padding: var(--toast-action-padding);
     font-size: var(--toast-action-font-size);
@@ -210,7 +210,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: var(--font-size-lg);
+    font-size: var(--toast-dismiss-font-size);
 }
 
 .item__action:hover,

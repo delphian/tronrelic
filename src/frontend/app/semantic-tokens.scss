@@ -600,26 +600,27 @@
      * ======================================================================== */
 
     /* Toast - Viewport */
-    --toast-viewport-position-bottom: var(--spacing-10);   /* 1.5rem */
-    --toast-viewport-position-right: var(--spacing-10);    /* 1.5rem */
-    --toast-viewport-gap: var(--spacing-5);                /* 0.75rem */
+    --toast-viewport-position-bottom: var(--spacing-7);    /* 1rem */
+    --toast-viewport-position-right: var(--spacing-7);     /* 1rem */
+    --toast-viewport-gap: var(--spacing-3);                /* 0.5rem */
     --toast-viewport-z-index: var(--z-index-toast);
     /* 504px is 20% wider than the original 420px, giving a toast that carries
        two address chips room to keep them on one line. The min() still caps it
-       at the screen width less the viewport's two side offsets, so a narrow
-       phone gets a toast that fits rather than one that runs off the edge. */
-    --toast-viewport-max-width: min(504px, calc(100vw - 3rem));
+       at the screen width less the viewport's two side offsets (2 x 1rem), so a
+       narrow phone gets a toast that fits rather than one that runs off the
+       edge. Keep the subtracted amount in step with the position tokens above. */
+    --toast-viewport-max-width: min(504px, calc(100vw - 2rem));
     /* Scroll cap applied when the deck fans open on hover/focus, so a burst of
        persistent toasts becomes a scrollable column instead of hiding its
        oldest cards. Mirrors the modal dialog's bounded-height pattern. */
     --toast-viewport-max-height: min(80vh, 640px);
 
     /* Toast - Item */
-    --toast-item-gap: var(--spacing-7);                    /* 1rem */
-    --toast-item-padding: var(--spacing-7) var(--spacing-8);/* 1rem 1.1rem */
+    --toast-item-gap: var(--spacing-5);                    /* 0.75rem */
+    --toast-item-padding: var(--spacing-5) var(--spacing-6);/* 0.75rem 0.75rem */
     --toast-item-background: rgba(10, 15, 26, 0.96);
     --toast-item-border-width: var(--border-width-thin);
-    --toast-item-shadow: var(--shadow-lg);
+    --toast-item-shadow: var(--shadow-md);
     --toast-item-backdrop-filter: blur(18px);
 
     /* Toast - Type
@@ -627,8 +628,8 @@
        heading of the card. Before these tokens existed the title used the raw
        15px step while the description set no size and inherited the browser's
        16px, which left the body text larger than the title above it. */
-    --toast-title-font-size: var(--font-size-body-lg);       /* 1rem */
-    --toast-description-font-size: var(--font-size-body);    /* 0.9375rem */
+    --toast-title-font-size: var(--font-size-body);          /* 0.9375rem */
+    --toast-description-font-size: var(--font-size-body-sm); /* 0.85rem */
 
     /* Toast - Tone Variants */
     --toast-success-border: rgba(87, 212, 140, 0.4);
@@ -639,9 +640,14 @@
     /* Toast - Actions */
     --toast-action-background: rgba(255, 255, 255, 0.08);
     --toast-action-background-hover: rgba(255, 255, 255, 0.16);
-    --toast-action-padding: var(--spacing-2) 0.6rem;      /* 0.35rem 0.6rem */
-    --toast-action-font-size: var(--font-size-sm);        /* 0.85rem */
-    --toast-dismiss-size: 28px;
+    --toast-actions-gap: var(--spacing-1);                /* 0.25rem */
+    --toast-action-padding: var(--spacing-1) var(--spacing-3); /* 0.25rem 0.5rem */
+    --toast-action-font-size: var(--font-size-body-xs);   /* 0.72rem */
+    --toast-action-border-radius: var(--radius-xs);
+    /* 24px is the WCAG 2.2 SC 2.5.8 minimum target size, so this is as small
+       as the dismiss button may go. */
+    --toast-dismiss-size: 24px;
+    --toast-dismiss-font-size: var(--font-size-body-lg);  /* 1rem */
 
     /* Toast - Collated stack (deck)
        When more than one toast is visible they pile up as an overlapping deck
@@ -649,7 +655,7 @@
        a tall vertical column, conserving screen space. Hover or keyboard focus
        fans the deck out so older cards' titles and dismiss controls stay
        reachable. These steps drive ToastProvider.module.scss. */
-    --toast-stack-offset-collapsed: var(--spacing-6);  /* 13.6px peek per card */
+    --toast-stack-offset-collapsed: var(--spacing-4);  /* 8px peek per card */
     --toast-stack-offset-expanded: var(--spacing-15);  /* 48px fan gap on hover/focus */
     --toast-stack-scale-step: 0.05;                    /* each deeper card shrinks 5% */
     --toast-stack-opacity-step: 0.16;                  /* each deeper card dims 16% */
@@ -1152,7 +1158,7 @@
     --icon-button-bare-border-radius: var(--radius-sm);
     --segmented-control-border-radius: var(--radius-sm);
     --icon-button-border-radius: var(--radius-md);
-    --toast-item-border-radius: var(--radius-md);
+    --toast-item-border-radius: var(--radius-sm);
     --table-border-radius: var(--radius-md);
     /* The corner a <Table flush> rounds where it meets the bottom of the card
        holding it. One border width inside the card's own corner, so the two
