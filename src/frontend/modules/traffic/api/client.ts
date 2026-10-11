@@ -938,6 +938,8 @@ export interface IGscDailyKeywords {
     date: string;
     totalClicks: number;
     totalImpressions: number;
+    /** True when Google had not finalized this day at the last fetch, so its figures can still change. */
+    preliminary: boolean;
     keywords: IGscKeyword[];
 }
 
@@ -951,6 +953,8 @@ export interface IGscKeywordsResult {
     windowStart: string;
     /** Inclusive window end (ISO-8601 UTC). */
     windowEnd: string;
+    /** First day in the window (`YYYY-MM-DD`) Google has not finalized, or null when all are final. */
+    firstIncompleteDate: string | null;
     /** Keywords sorted by clicks descending. */
     keywords: IGscKeyword[];
 }
@@ -969,6 +973,7 @@ export async function adminGetGscKeywords(options?: { periodHours?: number; limi
     return {
         windowStart: data.windowStart ?? '',
         windowEnd: data.windowEnd ?? '',
+        firstIncompleteDate: data.firstIncompleteDate ?? null,
         keywords: data.keywords ?? []
     };
 }
@@ -996,6 +1001,8 @@ export interface IGscPagesResult {
     windowStart: string;
     /** Inclusive window end (ISO-8601 UTC). */
     windowEnd: string;
+    /** First day in the window (`YYYY-MM-DD`) Google has not finalized, or null when all are final. */
+    firstIncompleteDate: string | null;
     /** Pages sorted by clicks descending. */
     pages: IGscPage[];
 }
@@ -1017,6 +1024,7 @@ export async function adminGetGscPages(options?: { periodHours?: number; limit?:
     return {
         windowStart: data.windowStart ?? '',
         windowEnd: data.windowEnd ?? '',
+        firstIncompleteDate: data.firstIncompleteDate ?? null,
         pages: data.pages ?? []
     };
 }
@@ -1050,6 +1058,8 @@ export interface IGscKeywordPagesResult {
     windowStart: string;
     /** Inclusive window end (ISO-8601 UTC). */
     windowEnd: string;
+    /** First day in the window (`YYYY-MM-DD`) Google has not finalized, or null when all are final. */
+    firstIncompleteDate: string | null;
     /** Pairs sorted by clicks descending. */
     pairs: IGscKeywordPage[];
 }
@@ -1073,6 +1083,7 @@ export async function adminGetGscKeywordPages(options?: { periodHours?: number; 
     return {
         windowStart: data.windowStart ?? '',
         windowEnd: data.windowEnd ?? '',
+        firstIncompleteDate: data.firstIncompleteDate ?? null,
         pairs: data.pairs ?? []
     };
 }

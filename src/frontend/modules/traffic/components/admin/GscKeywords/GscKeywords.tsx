@@ -28,7 +28,10 @@
  *
  * Google delivers each day several days late. The backend ends every picker
  * window on the newest day Google has delivered, and this panel formats days
- * in UTC so the labels match the calendar day Google reported.
+ * in UTC so the labels match the calendar day Google reported. The newest
+ * days are often fresh data Google has not finalized, so their figures can
+ * still change. The toolbar and each chart say from which day the figures
+ * are not final, and the chart tooltip marks each such day.
  * Mirrors the TrafficDashboard pattern: client-only, session-cookie auth,
  * fetch-on-mount, per-panel loading/error state.
  */
@@ -39,6 +42,7 @@ import { AlertTriangle } from 'lucide-react';
 import { LineChart } from '../../../../../features/charts/components/LineChart';
 import type { ChartSeries } from '../../../../../features/charts/components/LineChart';
 import { Panel } from '../../../../../components/ui/Panel';
+import { Badge } from '../../../../../components/ui/Badge';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { SegmentedControl } from '../../../../../components/ui/SegmentedControl';
@@ -86,6 +90,29 @@ function formatGscDay(value: Date | string): string {
 }
 
 /**
+ * Mark the day from which Google's figures are not final yet.
+ *
+ * Google returns the newest days before it has finished collecting them, so
+ * their clicks and impressions usually rise over the following days. Without
+ * a marker, a low figure on a recent day reads as a real drop in traffic.
+ *
+ * @param firstIncompleteDate - The first non-final day (`YYYY-MM-DD`) the
+ *   backend reported for the data being labelled.
+ * @returns A small warning badge naming that day.
+ */
+function NotFinalBadge({ firstIncompleteDate }: { firstIncompleteDate: string }) {
+    return (
+        <Badge
+            tone="warning"
+            size="xs"
+            title="Google has not finalized these days yet, so their figures can still change."
+        >
+            Not final from {formatGscDay(firstIncompleteDate)}
+        </Badge>
+    );
+}
+
+/**
  * Resolve a CSS variable to its computed value with an SSR-safe fallback.
  *
  * @param varName - CSS variable name (e.g. '--color-primary')
@@ -114,7 +141,7 @@ export function GscKeywords() {
     const [pagesLoading, setPagesLoading] = useState(true);
 
     const [pairs, setPairs] = useState<IGscKeywordPage[] | null>(null);
-    const [pairsWindow, setPairsWindow] = useState<{ start: string; end: string } | null>(null);
+    const [pairsWindow, setPairsWindow] = useState<{ start: string; end: string; firstIncompleteDate: string | null } | null>(null);
     const [pairsError, setPairsError] = useState<string | null>(null);
     const [pairsLoading, setPairsLoading] = useState(true);
 
@@ -155,7 +182,7 @@ export function GscKeywords() {
                 if (active) {
                     setPairs(data.pairs);
                     setPairsWindow(data.windowStart && data.windowEnd
-                        ? { start: data.windowStart, end: data.windowEnd }
+                        ? { start: data.windowStart, end: data.windowEnd, firstIncompleteDate: data.firstIncompleteDate }
                         : null);
                 }
             })
@@ -216,6 +243,34 @@ export function GscKeywords() {
         data: impressionsSeriesData
     }] : [];
 
+    // Days Google had not finalized at the last fetch, keyed the way the chart
+    // hands dates to its tooltip formatter (midnight UTC, as YYYY-MM-DD).
+    const preliminaryDays = useMemo(
+        () => new Set((daily ?? []).filter(b => b.preliminary).map(b => b.date)),
+        [daily]
+    );
+    const trendFirstIncompleteDate = (daily ?? []).find(b => b.preliminary)?.date ?? null;
+
+    /**
+     * Label a day in the chart tooltip, flagging days whose figures are not
+     * final so a hover on a low recent point does not read as a real drop.
+     *
+     * @param date - The hovered day, as midnight UTC.
+     * @returns The formatted day, with "(not final)" appended when it applies.
+     */
+    const formatTooltipDay = (date: Date): string => {
+        const label = formatGscDay(date);
+        return preliminaryDays.has(date.toISOString().split('T')[0]) ? `${label} (not final)` : label;
+    };
+
+    const trendMeta = (
+        <>
+            {`Last ${TREND_DAYS} days`}
+            {trendFirstIncompleteDate ? ' ' : null}
+            {trendFirstIncompleteDate ? <NotFinalBadge firstIncompleteDate={trendFirstIncompleteDate} /> : null}
+        </>
+    );
+
     const numberFormatter = useMemo(() => new Intl.NumberFormat(), []);
 
     // Fetch health and the window actually covered, stated once in the toolbar.
@@ -252,6 +307,10 @@ export function GscKeywords() {
                         {statusLine}
                         {statusLine && coverage ? ', ' : null}
                         {coverage}
+                        {pairsWindow?.firstIncompleteDate ? ' ' : null}
+                        {pairsWindow?.firstIncompleteDate
+                            ? <NotFinalBadge firstIncompleteDate={pairsWindow.firstIncompleteDate} />
+                            : null}
                     </>
                 )}
                 actions={(
@@ -271,6 +330,11 @@ export function GscKeywords() {
                             so every window ends on the newest day Google has delivered.
                         </p>
                         <p>
+                            The newest days are fresh figures Google has not finalized, and they usually
+                            rise over the following days. A &ldquo;Not final&rdquo; badge marks the first such
+                            day, and the chart tooltip marks each one.
+                        </p>
+                        <p>
                             Keyword rows exclude queries Google anonymizes, so the charts and the top
                             pages table use totals fetched without the query dimension, and the
                             keyword-to-page pairs will not fully reconcile with them. Configure
@@ -281,24 +345,26 @@ export function GscKeywords() {
             />
 
             <div className={styles.band}>
-                <Panel title="Clicks" titleAs="h3" meta={`Last ${TREND_DAYS} days`}>
+                <Panel title="Clicks" titleAs="h3" meta={trendMeta}>
                     <PanelBody loading={dailyLoading} error={dailyError}>
                         <LineChart
                             series={clicksSeries}
                             height={180}
                             xAxisFormatter={formatGscDay}
+                            tooltipDateFormatter={formatTooltipDay}
                             yAxisFormatter={(v) => numberFormatter.format(v)}
                             emptyLabel="No GSC data yet — configure credentials in Settings."
                         />
                     </PanelBody>
                 </Panel>
 
-                <Panel title="Impressions" titleAs="h3" meta={`Last ${TREND_DAYS} days`}>
+                <Panel title="Impressions" titleAs="h3" meta={trendMeta}>
                     <PanelBody loading={dailyLoading} error={dailyError}>
                         <LineChart
                             series={impressionsSeries}
                             height={180}
                             xAxisFormatter={formatGscDay}
+                            tooltipDateFormatter={formatTooltipDay}
                             yAxisFormatter={(v) => numberFormatter.format(v)}
                             emptyLabel="No GSC data yet — configure credentials in Settings."
                         />

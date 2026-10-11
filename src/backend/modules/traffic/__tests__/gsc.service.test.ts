@@ -8,12 +8,34 @@
  * returned bounds),
  * zero-filled daily buckets, the true-daily-totals override that corrects
  * for GSC's anonymized-query undercount, and the totals-collection indexes.
- * The network fetch path (googleapis) is intentionally untested here —
- * these tests exercise the Mongo aggregation/lookup logic only.
+ * The fetch path runs against a stubbed googleapis client, covering the
+ * request options and the pruning of rows a refetch no longer returns.
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { ICacheService, IDatabaseService, ISystemLogService } from '@/types';
+
+const { queryMock } = vi.hoisted(() => ({ queryMock: vi.fn() }));
+
+vi.mock('googleapis', () => ({
+    google: {
+        auth: {
+            /**
+             * Stand-in for the service-account auth client, which the
+             * stubbed Search Console client never calls.
+             */
+            GoogleAuth: class {}
+        },
+        /**
+         * Return a Search Console client whose search analytics query is the
+         * shared mock, so each test controls what Google "returns".
+         *
+         * @returns A client exposing only `searchanalytics.query`.
+         */
+        searchconsole: () => ({ searchanalytics: { query: queryMock } })
+    }
+}));
+
 import { GscService } from '../services/gsc.service.js';
 
 /** Days GSC data lags behind now — mirrors GSC_DATA_DELAY_DAYS in the service. */
@@ -45,11 +67,13 @@ function createMockLogger(): ISystemLogService {
  * from `aggregateRows`, find().toArray() served from `findRows`,
  * findOne() returning the `findRows` entry with the newest `date` (the
  * only findOne the service issues is the newest-day lookup), and
- * bulkWrite (spied).
+ * bulkWrite and deleteMany (spied).
  */
 interface IFakeCollection {
+    collectionName: string;
     createIndex: ReturnType<typeof vi.fn>;
     bulkWrite: ReturnType<typeof vi.fn>;
+    deleteMany: ReturnType<typeof vi.fn>;
     aggregateRows: unknown[];
     findRows: unknown[];
     aggregate(pipeline: unknown): { toArray(): Promise<unknown[]> };
@@ -60,12 +84,15 @@ interface IFakeCollection {
 /**
  * Build one fake collection double.
  *
+ * @param collectionName - Physical name, echoed in the service's prune log.
  * @returns A collection double with staging arrays for reads.
  */
-function createFakeCollection(): IFakeCollection {
+function createFakeCollection(collectionName: string): IFakeCollection {
     const fake: IFakeCollection = {
+        collectionName,
         createIndex: vi.fn(async () => 'ok'),
         bulkWrite: vi.fn(async () => ({})),
+        deleteMany: vi.fn(async () => ({ deletedCount: 0 })),
         aggregateRows: [],
         findRows: [],
         aggregate() {
@@ -109,9 +136,9 @@ function createFakeDatabase(): {
     totals: IFakeCollection;
     pageTotals: IFakeCollection;
 } {
-    const queries = createFakeCollection();
-    const totals = createFakeCollection();
-    const pageTotals = createFakeCollection();
+    const queries = createFakeCollection('module_user_gsc_queries');
+    const totals = createFakeCollection('module_user_gsc_daily_totals');
+    const pageTotals = createFakeCollection('module_user_gsc_page_totals');
     const collections: Record<string, IFakeCollection> = {
         module_user_gsc_queries: queries,
         module_user_gsc_daily_totals: totals,
@@ -150,12 +177,21 @@ describe('GscService', () => {
     /**
      * Wire a fresh singleton against fake collections.
      *
-     * @returns The service instance and its staged collections.
+     * @param kv - Key-value entries the fake database's `get` should return,
+     *   such as the saved first non-final day.
+     * @returns The service instance, the fake database, and its staged collections.
      */
-    function setup(): { service: GscService; queries: IFakeCollection; totals: IFakeCollection; pageTotals: IFakeCollection } {
+    function setup(kv: Record<string, string> = {}): {
+        service: GscService;
+        database: IDatabaseService;
+        queries: IFakeCollection;
+        totals: IFakeCollection;
+        pageTotals: IFakeCollection;
+    } {
         const { database, queries, totals, pageTotals } = createFakeDatabase();
+        (database.get as ReturnType<typeof vi.fn>).mockImplementation(async (key: string) => kv[key] ?? null);
         GscService.setDependencies(database, {} as ICacheService, createMockLogger());
-        return { service: GscService.getInstance(), queries, totals, pageTotals };
+        return { service: GscService.getInstance(), database, queries, totals, pageTotals };
     }
 
     describe('createIndexes()', () => {
@@ -218,6 +254,23 @@ describe('GscService', () => {
             expect(new Date(result.windowStart).getTime()).toBe(anchor - 6 * DAY_MS);
             expect(new Date(result.windowEnd).getTime()).toBe(anchor + DAY_MS - 1);
             expect(result.keywords).toEqual([]);
+        });
+
+        it('reports the first non-final day only when the window reaches it', async () => {
+            // The tab marks figures that can still change. A saved day past the
+            // window's end means every day shown is final.
+            const totalsRows = [
+                { date: new Date('2026-09-29T00:00:00.000Z'), clicks: 2, impressions: 39, fetchedAt: new Date() }
+            ];
+
+            const inside = setup({ 'gsc:firstIncompleteDate': '2026-09-29' });
+            inside.totals.findRows = totalsRows;
+            expect((await inside.service.getKeywordsForPeriod(168, 10)).firstIncompleteDate).toBe('2026-09-29');
+
+            GscService.resetInstance();
+            const beyond = setup({ 'gsc:firstIncompleteDate': '2026-09-30' });
+            beyond.totals.findRows = totalsRows;
+            expect((await beyond.service.getKeywordsForPeriod(168, 10)).firstIncompleteDate).toBeNull();
         });
     });
 
@@ -295,6 +348,133 @@ describe('GscService', () => {
             expect(bucketA?.keywords[0]?.keyword).toBe('tron energy');
             expect(bucketB?.totalClicks).toBe(1);
             expect(bucketB?.totalImpressions).toBe(10);
+        });
+
+        it('flags days from the first non-final day onward as preliminary', async () => {
+            // Google's fresh figures for these days can still change, so the
+            // chart must be able to say so for each day it draws.
+            const days = 3;
+            const [dayA, dayB, dayC] = expectedDayKeys(days);
+            const { service } = setup({ 'gsc:firstIncompleteDate': dayB });
+
+            const out = await service.getKeywordsByDay(days);
+
+            expect(out.firstIncompleteDate).toBe(dayB);
+            expect(out.buckets.map(b => [b.date, b.preliminary])).toEqual([
+                [dayA, false],
+                [dayB, true],
+                [dayC, true]
+            ]);
+        });
+    });
+
+    describe('fetchAndStore()', () => {
+        /**
+         * Wire a singleton whose key-value store holds credentials, so the
+         * fetch path runs against the stubbed Search Console client.
+         *
+         * @returns The service instance, the fake database, and its staged collections.
+         */
+        function setupConfigured(): ReturnType<typeof setup> {
+            return setup({
+                'gsc:credentials': JSON.stringify({ client_email: 'a@b.c', private_key: 'k' }),
+                'gsc:siteUrl': 'sc-domain:tronrelic.com'
+            });
+        }
+
+        /**
+         * Answer each Search Console request with one row shaped for the
+         * dimensions it asked for, as Google does.
+         *
+         * @param request - The query call's argument, carrying the dimensions.
+         * @returns A response holding one row for the requested dimensions.
+         */
+        function oneRowPerRequest(request: { requestBody: { dimensions: string[] } }): { data: { rows: unknown[] } } {
+            const keysByDimension: Record<string, string> = {
+                query: 'tron energy',
+                page: 'https://tronrelic.com/',
+                country: 'usa',
+                device: 'DESKTOP',
+                date: '2026-10-07'
+            };
+            const keys = request.requestBody.dimensions.map(d => keysByDimension[d]);
+            return { data: { rows: [{ keys, clicks: 1, impressions: 5, ctr: 0.2, position: 3 }] } };
+        }
+
+        beforeEach(() => {
+            queryMock.mockReset();
+        });
+
+        it('requests fresh data, not only finalized days', async () => {
+            // With the API default ("final"), a day Google is slow to finalize
+            // is missing from every run, and the SEO tab stays on the last
+            // finalized day for days at a time.
+            const { service } = setupConfigured();
+            queryMock.mockImplementation(async (request) => oneRowPerRequest(request));
+
+            await service.fetchAndStore('2026-09-08', '2026-10-08');
+
+            expect(queryMock).toHaveBeenCalledTimes(3);
+            for (const [request] of queryMock.mock.calls) {
+                expect(request.requestBody.dataState).toBe('all');
+            }
+        });
+
+        it('prunes rows in the window that the refetch did not return', async () => {
+            // Fresh numbers change until a day is final, and a row from an
+            // earlier fetch can be absent from a later one. Rows the run did
+            // not touch keep their older fetchedAt and must be removed.
+            const { service, queries, totals, pageTotals } = setupConfigured();
+            queryMock.mockImplementation(async (request) => oneRowPerRequest(request));
+
+            await service.fetchAndStore('2026-09-08', '2026-10-08');
+
+            const runStamp = queries.bulkWrite.mock.calls[0][0][0].updateOne.update.$set.fetchedAt;
+            const expectedFilter = {
+                date: { $gte: new Date('2026-09-08'), $lte: new Date('2026-10-08') },
+                fetchedAt: { $lt: runStamp }
+            };
+            for (const collection of [queries, totals, pageTotals]) {
+                expect(collection.deleteMany).toHaveBeenCalledWith(expectedFilter);
+            }
+        });
+
+        it('keeps stored rows when Google returns nothing for the window', async () => {
+            // An empty response must not wipe a window that held data.
+            const { service, database, queries, totals, pageTotals } = setupConfigured();
+            queryMock.mockResolvedValue({ data: { rows: [] } });
+
+            await service.fetchAndStore('2026-09-08', '2026-10-08');
+
+            for (const collection of [queries, totals, pageTotals]) {
+                expect(collection.deleteMany).not.toHaveBeenCalled();
+            }
+            expect(database.set).not.toHaveBeenCalledWith('gsc:firstIncompleteDate', expect.anything());
+        });
+
+        it('saves the first non-final day Google reports for the date-only request', async () => {
+            // Only a request grouped by date alone carries this metadata, and
+            // the reads depend on it to mark days whose figures can change.
+            const { service, database } = setupConfigured();
+            queryMock.mockImplementation(async (request) => {
+                const response = oneRowPerRequest(request);
+                return request.requestBody.dimensions.length === 1
+                    ? { data: { ...response.data, metadata: { firstIncompleteDate: '2026-10-07' } } }
+                    : response;
+            });
+
+            await service.fetchAndStore('2026-09-08', '2026-10-08');
+
+            expect(database.set).toHaveBeenCalledWith('gsc:firstIncompleteDate', '2026-10-07');
+        });
+
+        it('clears the saved day once Google reports the whole window as final', async () => {
+            const { service, database } = setupConfigured();
+            queryMock.mockImplementation(async (request) => oneRowPerRequest(request));
+
+            await service.fetchAndStore('2026-09-08', '2026-10-08');
+
+            expect(database.set).toHaveBeenCalledWith('gsc:firstIncompleteDate', null);
         });
     });
 });
