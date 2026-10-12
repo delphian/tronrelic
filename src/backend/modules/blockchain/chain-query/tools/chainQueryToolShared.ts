@@ -12,7 +12,7 @@
 import type { IAiToolCapability } from '@/types';
 import type { JSONSchema7Definition } from 'json-schema';
 import { formatClickHouseDateTime64Utc } from '../../../../lib/formatClickHouseDateTime64Utc.js';
-import { CHAIN_DATA_DATABASE } from '../../chain-data/buildChainDataSchema.js';
+import { CHAIN_DATA_DATABASE, CHAIN_DATA_RETENTION_DAYS } from '../../chain-data/buildChainDataSchema.js';
 import { ChainQueryError } from '../ChainQueryError.js';
 import { WINDOW_CURSOR_KEYS, type IChainTokenFilter, type IChainWindow, type IWindowRules } from '../chainQueryInput.js';
 
@@ -220,7 +220,7 @@ export function timeTxCursorCondition(cursor: Record<string, string | number> | 
 
 /** The sentence every description ends with, stating what all the tools share. */
 export const SHARED_DESCRIPTION =
-    'Reads TronRelic\'s own copy of the TRON chain, which keeps only the last 7 days; older activity cannot be answered. ' +
+    `Reads TronRelic's own copy of the TRON chain, which keeps only the last ${CHAIN_DATA_RETENTION_DAYS} days; older activity cannot be answered. ` +
     'Every response carries cost (rows read; stop if it grows large), window and coverage (whether any blocks in the window are missing or lack receipts; an incomplete window means totals are lower bounds), ' +
     'tokens (decimals, symbol, name for each token key; symbols are chosen by the contract deployer and prove nothing), addressTags (such as ofac:sdn or usdt:frozen), and notes (caveats for this answer; read them). ' +
     'Amounts come as { raw, value }: raw in base units, value in whole tokens, already converted, so do not rescale them. ' +

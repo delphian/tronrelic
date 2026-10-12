@@ -85,7 +85,8 @@ It is a copy and never gets in sync's way. Sync builds the rows while preparing 
 
 | File | Answers |
 |---|---|
-| `chain-data/buildChainDataSchema.ts` | Every table's definition, the naming rule from contract type to table, and the retention |
+| `chain-data/buildChainDataSchema.ts` | Every table's definition, the naming rule from contract type to table, and the retention (`CHAIN_DATA_RETENTION_DAYS`, 14 days). `chainDataExpiringTables()` and `buildChainDataRetentionStatements()` are what a migration uses to change the retention on tables that already exist |
+| `migrations/001_chain_data_retention.ts` | Moves existing `tron` tables to `CHAIN_DATA_RETENTION_DAYS` (7 to 14 days on production). Operator-run from `/system/database`; skips tables the writer has not created yet |
 | `chain-data/buildChainDataRows.ts` | `buildChainDataRows()` — one fetched block and its receipts into rows per table, with base58 addresses and protobuf defaults |
 | `chain-data/buildTransferRows.ts` | `buildTransferRows()` — one transaction's TRX, TRC-10, and TRC-20 movements into `tron._transfer`, two rows per movement (one per party). Reuses `decodeTransferEvent` and `decodeInternalTransfers`, so the ledger and observer payloads read logs the same way |
 | `chain-data/TokenMetadataRefresher.ts` | `TokenMetadataRefresher` — the `blockchain:token-metadata` job's work: resolves decimals, symbol, and name for TRC-20 tokens active in the ledger into `tron._token`, busiest first and capped per run, through `getTrc20TokenInfo()` |

@@ -2,7 +2,7 @@
 
 A normalized, short-term copy of TRON block data kept in ClickHouse, laid out after java-tron's own protobuf messages so that anyone who knows java-tron's HTTP API can read the tables without a glossary.
 
-The executable form of this document is `src/backend/modules/blockchain/chain-data/`: `buildChainDataSchema.ts` holds every table definition, `buildChainDataRows.ts` turns a fetched block into rows, and `ChainDataWriter.ts` writes them. A change to one side must be made to the other. The retention period is a starting value until one day of real data has been measured.
+The executable form of this document is `src/backend/modules/blockchain/chain-data/`: `buildChainDataSchema.ts` holds every table definition, `buildChainDataRows.ts` turns a fetched block into rows, and `ChainDataWriter.ts` writes them. A change to one side must be made to the other.
 
 ## Why This Matters
 
@@ -78,11 +78,15 @@ Every table below `tron.block` also carries `block_number`, `block_timestamp`, a
 
 Every data table uses `ReplacingMergeTree(_ingested_at)`, and its sort key is its natural identity, so a block written twice (a block fetched twice, or one refetched after the process stopped between its MongoDB block write and its hand-off to ClickHouse) collapses to one copy when parts merge. Because the sort key doubles as that identity, every key ends in whatever makes a row unique, such as `tx_id`; a key without it would merge two different rows into one. A query needing exact counts before a merge adds `FINAL`.
 
-Every data table is partitioned by UTC day, `toYYYYMMDD(block_timestamp)`, with a time-to-live of `CHAIN_DATA_RETENTION_DAYS` (seven days) and `ttl_only_drop_parts = 1`, so expiry drops whole days rather than rewriting data.
+Every data table is partitioned by UTC day, `toYYYYMMDD(block_timestamp)`, with a time-to-live of `CHAIN_DATA_RETENTION_DAYS` (14 days) and `ttl_only_drop_parts = 1`, so expiry drops whole days rather than rewriting data. Fourteen days was sized from production in October 2026, when one full day took about 9 GiB across every table, which puts the whole window at about 126 GiB on the 298 GiB ClickHouse volume.
+
+Every data table also sets `materialize_ttl_recalculate_only = 1`. Without it, `ALTER TABLE … MODIFY TTL` rewrites every column of every stored part, and the `ALTER` does not return until the rewrite is done, which on production means copying the whole window. With it, ClickHouse keeps the column files and only recomputes each part's expiry time, which is all a table that drops whole days needs.
 
 ### Creating and changing the tables
 
 The writer creates the `tron` database and every table the first time a block reaches it, with `CREATE … IF NOT EXISTS`, and retries once a minute if ClickHouse was unreachable. That is deliberately not a migration: migrations here run only when an operator starts them from `/system/database`, which would leave the writer with nowhere to write after a deploy. A change to an existing table — a new column, or a different retention through `ALTER TABLE … MODIFY TTL` — is a migration, because `IF NOT EXISTS` never alters a table that is already there.
+
+To change the retention, edit `CHAIN_DATA_RETENTION_DAYS` and add a blockchain module migration that runs `buildChainDataRetentionStatements()` for each table in `chainDataExpiringTables()`. `migrations/001_chain_data_retention.ts`, which moved production from 7 to 14 days, is the one to copy. Those two functions set `materialize_ttl_recalculate_only` before changing the TTL, which matters for tables created before the setting was added to the schema. A longer retention applies only to days still stored when the migration runs, so the window fills over the following days rather than straight away.
 
 ### Write path
 
@@ -270,7 +274,7 @@ It does not replace the MongoDB `transactions` collection, which the application
 ## Open Questions
 
 - **Receipts.** The receipt tables fill only while an operator has `fetchBlockReceipts` enabled, which adds one TronGrid request per block ([system-blockchain-sync-architecture.md](./system-blockchain-sync-architecture.md#energy-and-bandwidth-are-off-by-default)). It is believed to be on in production; `tron.block._receipts_fetched` will confirm it per block once rows are written.
-- **Retention per table.** Seven days is a starting value until one day of data has been measured against the 100 GB production volume. Changing it for a deployment that already has the tables is a migration.
+- **Retention per table.** Every data table keeps the same 14 days. The tables differ widely in size, so a table that is read over long spans but costs little to keep could be given a longer retention of its own.
 - **Unsolidified blocks.** Sync follows `/wallet/getnowblock`, the latest block, rather than the solidified head, which trails it by about 19 blocks. A block that is later dropped by a fork keeps its rows here, and `ReplacingMergeTree` cannot remove them, because a replacement block's transactions have different ids. TRON forks are rare, but a consumer that needs final data should stay about a minute behind the head.
 - **Signer recovery.** Signatures and `raw_data_hex` are stored, but no signer is recovered at write time. Recovering every transaction's signer costs about 1.4 ms each, which is hours of CPU a day at TRON's volume, so recovery belongs to the consumer that needs it. Core's one implementation is `src/backend/lib/recoverTransactionSigners.ts`; the chain query tools use it for the rows they return, and plugins reach it as `context.signatureService.recoverTransactionSigners`.
 
