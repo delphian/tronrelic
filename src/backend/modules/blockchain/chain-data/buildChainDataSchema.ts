@@ -23,12 +23,14 @@ export const CHAIN_DATA_DATABASE = 'tron';
 /**
  * Days of chain data each table keeps before whole days are dropped.
  *
- * A starting value, chosen before any real day was measured against the
- * production ClickHouse volume. It is written into each table's definition when
- * the table is created, so changing it for an existing deployment takes a
- * migration running `ALTER TABLE … MODIFY TTL`, not an edit here alone.
+ * Sized from production in October 2026, when one full day measured about
+ * 9 GiB across every table, so fourteen days is about 126 GiB on the 298 GiB
+ * ClickHouse volume. It is written into each table's definition when the table
+ * is created, so an edit here alone reaches only tables created afterwards.
+ * Changing it for a deployment that already has the tables also takes a
+ * migration that runs {@link buildChainDataRetentionStatements}.
  */
-export const CHAIN_DATA_RETENTION_DAYS = 7;
+export const CHAIN_DATA_RETENTION_DAYS = 14;
 
 /**
  * The derived table recording each value movement between two accounts twice,
@@ -77,6 +79,13 @@ const BOOKKEEPING_COLUMNS = `
  * columns it is read by. Partitioning by UTC day lets the time-to-live drop
  * whole days instead of rewriting data.
  *
+ * `materialize_ttl_recalculate_only` keeps a later retention change cheap. By
+ * default, `ALTER TABLE … MODIFY TTL` rewrites every column of every stored
+ * part, and the `ALTER` does not return until that finishes. With this setting
+ * ClickHouse reuses the existing column files and only recomputes each part's
+ * expiry time. That is all a table needs, because `ttl_only_drop_parts` drops a
+ * whole day at once rather than deleting rows inside it.
+ *
  * @param orderBy - The sort key, which is also the identity duplicates collapse on.
  * @param timeColumn - The column the table is partitioned and expired by.
  * @param retentionDays - How many days of data the table keeps.
@@ -87,8 +96,20 @@ function storageClause(orderBy: string, timeColumn: string, retentionDays: numbe
 ENGINE = ReplacingMergeTree(_ingested_at)
 PARTITION BY toYYYYMMDD(${timeColumn})
 ORDER BY (${orderBy})
-TTL toDateTime(${timeColumn}) + INTERVAL ${retentionDays} DAY DELETE
-SETTINGS ttl_only_drop_parts = 1`;
+${ttlClause(timeColumn, retentionDays)}
+SETTINGS ttl_only_drop_parts = 1, materialize_ttl_recalculate_only = 1`;
+}
+
+/**
+ * The expiry expression a data table carries, written in one place so the
+ * `CREATE TABLE` statements and a later `MODIFY TTL` cannot disagree.
+ *
+ * @param timeColumn - The column the table is expired by.
+ * @param retentionDays - How many days of data the table keeps.
+ * @returns The `TTL … DELETE` clause.
+ */
+function ttlClause(timeColumn: string, retentionDays: number): string {
+    return `TTL toDateTime(${timeColumn}) + INTERVAL ${retentionDays} DAY DELETE`;
 }
 
 /**
@@ -366,4 +387,58 @@ TTL toDateTime(recorded_at) + INTERVAL ${CHAIN_DATA_GAP_RETENTION_DAYS} DAY DELE
     ];
 
     return statements;
+}
+
+/** One data table that expires on {@link CHAIN_DATA_RETENTION_DAYS}, and the column it expires by. */
+export interface IChainDataExpiringTable {
+    /** The table name, without the database. */
+    table: string;
+    /** The column the table is partitioned and expired by. */
+    timeColumn: string;
+}
+
+/**
+ * Every table whose `CREATE TABLE` statement uses {@link storageClause}, so
+ * every table a retention change has to reach.
+ *
+ * `_token`, `_ingest_state`, and `_ingest_gap` are left out on purpose. The
+ * first two never expire, and the gap table keeps its own longer retention.
+ * A test checks this list against the statements, so a data table added to
+ * {@link buildChainDataSchema} without being listed here fails the suite
+ * rather than keeping the old retention after the next change.
+ *
+ * @returns The tables in the order {@link buildChainDataSchema} creates them.
+ */
+export function chainDataExpiringTables(): IChainDataExpiringTable[] {
+    const tables: IChainDataExpiringTable[] = [
+        { table: 'block', timeColumn: 'timestamp' },
+        { table: 'transaction', timeColumn: 'block_timestamp' },
+        ...CONTRACT_TABLE_SPECS.map(spec => ({ table: contractTableName(spec.contractType), timeColumn: 'block_timestamp' })),
+        { table: 'transaction_info', timeColumn: 'block_timestamp' },
+        { table: 'log', timeColumn: 'block_timestamp' },
+        { table: 'internal_transaction', timeColumn: 'block_timestamp' },
+        { table: TRANSFER_TABLE, timeColumn: 'block_timestamp' }
+    ];
+    return tables;
+}
+
+/**
+ * The statements that move one existing data table to a new retention.
+ *
+ * The setting is applied first, in its own `ALTER`, so that the `MODIFY TTL`
+ * which follows only recomputes each part's expiry time instead of rewriting
+ * the table. Tables created before that setting joined {@link storageClause}
+ * do not have it, and on the production volume a full rewrite would copy about
+ * 60 GiB while the `ALTER` waited. Both statements are safe to repeat.
+ *
+ * @param target - The table and the column it expires by.
+ * @param retentionDays - How many days of data the table should keep.
+ * @returns The two `ALTER TABLE` statements, in the order they must run.
+ */
+export function buildChainDataRetentionStatements(target: IChainDataExpiringTable, retentionDays: number): string[] {
+    const table = `${CHAIN_DATA_DATABASE}.${target.table}`;
+    return [
+        `ALTER TABLE ${table} MODIFY SETTING materialize_ttl_recalculate_only = 1`,
+        `ALTER TABLE ${table} MODIFY ${ttlClause(target.timeColumn, retentionDays)}`
+    ];
 }

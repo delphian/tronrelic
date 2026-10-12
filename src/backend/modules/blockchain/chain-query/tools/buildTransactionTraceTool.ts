@@ -14,7 +14,7 @@
  * which lead the sort key of `tron.transaction_info` and
  * `tron.internal_transaction`. None of these reads uses `FINAL`. ClickHouse
  * 24.3 ignores skip indexes in a `FINAL` query unless `use_skip_indexes_if_final`
- * is set, so the `tx_id` lookup would read all seven days. A block written
+ * is set, so the `tx_id` lookup would read every stored day. A block written
  * twice is handled instead by `LIMIT 1 BY` on each row's identity.
  *
  * The account a transaction acts for is not always the key that signed it.
