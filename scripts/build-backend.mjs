@@ -6,10 +6,10 @@
  * dependencies (express, mongoose, etc.) are not bundled to keep the
  * output lean and allow native modules to work correctly.
  *
- * Also compiles migration files individually (not bundled) so they can be
- * dynamically imported at runtime by MigrationScanner. The main bundle uses
- * esbuild's bundle mode which inlines all imports, but migrations must remain
- * as separate files for filesystem discovery.
+ * Also compiles each migration into its own self-contained file so it can be
+ * dynamically imported at runtime by MigrationScanner. Migrations stay out of
+ * the main bundle because the scanner finds them on the filesystem, but each
+ * one is bundled on its own so the module files it imports travel with it.
  */
 
 import * as esbuild from 'esbuild';
@@ -55,8 +55,8 @@ console.log('Backend build complete: dist/backend/index.js');
 // These files are NOT included in the main bundle, so they must be compiled separately
 // and placed at the same relative paths under dist/ for production Docker images.
 //
-// The Dockerfile copies compiled migrations from dist/backend/ into src/backend/ so
-// the scanner finds .js files at the same paths it uses in development.
+// The production image ships dist/backend/ and not src/backend/, and with
+// NODE_ENV=production the scanner reads only dist/backend/.
 
 /**
  * Collect .ts files from a directory, returning paths relative to projectRoot.
@@ -101,16 +101,26 @@ const migrationFiles = [
 if (migrationFiles.length > 0) {
     await esbuild.build({
         entryPoints: migrationFiles.map(f => path.join(projectRoot, f)),
-        bundle: false,
+        // Each migration is bundled into one self-contained file. Only migration
+        // entry points are emitted under dist/, so with bundle:false a relative
+        // runtime import such as '../chain-data/buildChainDataSchema.js' would
+        // survive into the compiled file with nothing to resolve to, and
+        // MigrationScanner would log the failed import and skip the migration.
+        // Bundling inlines those imports, so a migration can share constants with
+        // its module instead of copying them.
+        bundle: true,
         platform: 'node',
         target: 'node20',
         format: 'esm',
         outbase: path.join(projectRoot, 'src'),
         outdir: path.join(projectRoot, 'dist'),
-        // Note: alias requires bundle:true so path aliases (@/types, etc.) are not
-        // resolved here. This is safe because migration @/ imports are type-only
-        // (stripped by esbuild). If a migration ever needs a runtime @/ import, use
-        // an esbuild plugin to rewrite the paths or switch to bundle:true per-file.
+        alias: aliases,
+        // The root tsconfig maps bare package names such as 'mongodb' through
+        // compilerOptions.paths, and esbuild treats a remapped name as a file path,
+        // which overrides packages:'external' and copies the whole driver into the
+        // migration. This override drops baseUrl and paths for this build so
+        // node_modules stay external; the aliases above cover the @/ imports.
+        tsconfigRaw: { compilerOptions: { target: 'ES2022' } },
         packages: 'external',
     });
 
