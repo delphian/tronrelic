@@ -1080,6 +1080,16 @@ describe('TrafficService', () => {
             expect(svc.isIgnored({ userId: null, tid: 'tid-a' })).toBe(true);
         });
 
+        it('matches an uppercase tid against the lowercase set ClickHouse returns', async () => {
+            const ch = createMockClickHouse();
+            ch.queue.push({ candidate_uid: '550e8400-e29b-41d4-a716-446655440000' });
+            TrafficService.setDependencies(ch, createMockLogger());
+            const svc = TrafficService.getInstance();
+            await svc.setIgnoredUserIds(IGNORED);
+
+            expect(svc.isIgnored({ tid: '550E8400-E29B-41D4-A716-446655440000' })).toBe(true);
+        });
+
         it('does not match a visitor with neither identifier on the list', async () => {
             TrafficService.setDependencies(mockResolvingTidA(), createMockLogger());
             const svc = TrafficService.getInstance();
