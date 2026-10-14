@@ -31,7 +31,7 @@ All methods take and return arrays; single-item calls are one-element arrays. Th
 
 **Tags may not contain a comma.** The comma is the array delimiter in `?tags=x,y`, so a stored comma-bearing tag would be write-only — `/by-tag` could never return it. `requireTag` rejects it at the one chokepoint every write crosses (create, both sides of rename, delete), so no downstream encoding change is needed.
 
-**Reserved machine-source prefixes.** Tag text starting with `ofac:`, `usdt:`, or `chainalysis:` (case-insensitive) is rejected on every human write path via the same `requireTag` chokepoint, so an operator cannot forge a source's assertion. Only `syncSource` writes those prefixes; reads still accept them as lookup values.
+**Reserved machine-source prefixes.** Tag text starting with `ofac:`, `usdt:`, `chainalysis:`, or `market:` (case-insensitive) is rejected on every human write path via the same `requireTag` chokepoint, so an operator cannot forge a source's assertion. Only `syncSource` writes those prefixes; reads still accept them as lookup values. The first three belong to this module's own risk feeds. `market:` belongs to the `trp-resource-markets` plugin, whose rental market pipeline publishes `market:<slug>` and `market:<slug>:<role>` under the source id `rental-markets` on the addresses its examiners watch; it is a label, not a risk marker, and earns no warning on the chip.
 
 | Method | Semantics |
 |---|---|
@@ -172,7 +172,10 @@ sets disagree in either direction. It also cross-checks that list against
 inventory of ingestion sources: a source has to extend that constant or an
 operator could forge its assertions, so a source added under a new prefix fails
 this test even if nobody remembers it exists. **Adding an ingestion source means
-adding its tag constant to that test and an entry to that list.**
+adding its tag constant to that test and an entry to that list.** A reserved
+prefix whose source is a label rather than a risk feed, as `market:` is, goes in
+the test's `LABEL_ONLY_PREFIXES` list instead, which states that nothing under it
+earns a warning; the test then checks that no severity entry matches it.
 
 The cross-check narrows the gap without closing it. A future source reusing an
 already-reserved prefix — `ofac:blocked`, say — still passes unnoticed. Closing

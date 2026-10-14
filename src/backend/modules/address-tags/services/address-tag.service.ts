@@ -44,8 +44,15 @@ export const ADDRESS_TAGS_COLLECTION = 'module_address-tags_tags';
  * only `syncSource` writes them. Matching is case-insensitive because tags are
  * stored as typed, and `OFAC:sdn` would otherwise slip past the guard while
  * reading identically to the reserved form.
+ *
+ * `market:` belongs to the `trp-resource-markets` plugin, which publishes
+ * `market:<slug>` and `market:<slug>:<role>` on the addresses its rental
+ * market examiners watch, under the source id `rental-markets`. It is a
+ * label rather than a risk marker, so unlike the other three it earns no
+ * warning on the address chip; it is reserved so a hand-written tag cannot
+ * claim an address belongs to a market the pipeline never found it in.
  */
-export const RESERVED_TAG_PREFIXES: readonly string[] = ['ofac:', 'usdt:', 'chainalysis:'];
+export const RESERVED_TAG_PREFIXES: readonly string[] = ['ofac:', 'usdt:', 'chainalysis:', 'market:'];
 
 /** Base58 TRON address shape: 'T' followed by 33 base58 characters. */
 const TRON_ADDRESS_PATTERN = /^T[1-9A-HJ-NP-Za-km-z]{33}$/;
