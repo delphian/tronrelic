@@ -225,12 +225,13 @@ export async function deleteTags(tags: IAddressTagPair[]): Promise<number> {
  * The server resolves the pairs itself, so the caller never has to page the
  * addresses and send them in batches of a thousand. A pair a machine source
  * also asserts keeps the source's claim, which is why the result reports
- * `matched` and `deleted` separately.
+ * `matched`, `deleted`, and `retained` separately.
  *
  * @param tags - The exact tag values to remove everywhere.
  * @returns How many assignments carried the tags, how many were removed or
- *          had their human claim cleared, and every address touched, so the
- *          caller can refresh each one's chips.
+ *          had their human claim cleared, how many kept the tag through a
+ *          machine source, and every address touched, so the caller can
+ *          refresh each one's chips.
  */
 export async function deleteTagsByTag(tags: string[]): Promise<IAddressTagDeleteByTagResult> {
     return parse<IAddressTagDeleteByTagResult>(await fetch(`${BASE}/tags/delete-by-tag`, {

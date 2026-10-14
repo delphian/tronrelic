@@ -170,14 +170,6 @@ export class AddressTagsAdminController {
 }
 
 /**
- * Envelope check for mutation bodies: a non-empty array of objects whose
- * required keys are all strings. Field-level validation stays in the service.
- *
- * @param value - Raw body field.
- * @param keys - Keys each element must carry as strings.
- * @returns The array when structurally valid, otherwise null.
- */
-/**
  * Envelope check for a tag-value body: a non-empty array of strings. The
  * values themselves are validated by the service, which is where the tag
  * rules live.

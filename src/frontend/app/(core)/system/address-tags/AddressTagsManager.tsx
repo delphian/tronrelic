@@ -324,12 +324,17 @@ export function AddressTagsManager() {
                         try {
                             const result = await deleteTagsByTag([tag]);
                             result.addresses.forEach((address) => invalidateAddressTags(address));
-                            const kept = result.matched - result.deleted;
+                            // A pair a live machine source also asserts keeps the tag even
+                            // though its admin claim was cleared, and the service counts
+                            // that pair in `deleted`. Only `retained` reports liveness after
+                            // the write, so the removed figure is `matched` minus `retained`.
+                            const kept = result.retained;
+                            const removed = result.matched - kept;
                             notify(
                                 'success',
                                 kept > 0
-                                    ? `Removed '${tag}' from ${result.deleted} addresses; ${kept} kept it through a machine source`
-                                    : `Removed '${tag}' from ${result.deleted} addresses`
+                                    ? `Removed '${tag}' from ${removed} addresses; ${kept} kept it through a machine source`
+                                    : `Removed '${tag}' from ${removed} addresses`
                             );
                             refreshSummary();
                             await load(committedSearch, 0, false);

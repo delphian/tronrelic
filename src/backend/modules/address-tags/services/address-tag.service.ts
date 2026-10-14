@@ -71,6 +71,15 @@ const UNATTRIBUTED_ACTOR = 'unattributed';
 /** Hard ceiling on batch sizes so one request cannot stall the collection. */
 const MAX_BATCH = 1000;
 
+/**
+ * How many pair writes a delete keeps in flight at once. A tag-wide delete
+ * resolves its own pairs, so the set is bounded by how many addresses carry
+ * the tag rather than by `MAX_BATCH`. Sending the writes in chunks keeps one
+ * retirement from queuing an unbounded number of operations on the driver,
+ * while still finishing in one wave per chunk rather than one per pair.
+ */
+const DELETE_WRITE_CONCURRENCY = 50;
+
 /** Default and maximum page sizes for vocabulary and search reads. */
 const DEFAULT_LIST_LIMIT = 100;
 const MAX_LIST_LIMIT = 1000;
@@ -571,7 +580,7 @@ export class AddressTagService implements IAddressTagService {
             throw new Error(`Batch exceeds ${MAX_BATCH} tags`);
         }
         const cleaned = [...new Set(tags.map((tag) => this.requireTag(tag)))];
-        const result: IAddressTagDeleteByTagResult = { tags: cleaned, matched: 0, deleted: 0, addresses: [] };
+        const result: IAddressTagDeleteByTagResult = { tags: cleaned, matched: 0, deleted: 0, retained: 0, addresses: [] };
         if (cleaned.length > 0) {
             const collection = this.database.getCollection<IAddressTagDocument>(ADDRESS_TAGS_COLLECTION);
             // Only live pairs are candidates. A document that is already
@@ -581,12 +590,13 @@ export class AddressTagService implements IAddressTagService {
                 .sort({ tag: 1, address: 1 })
                 .toArray();
             const pairs = docs.map((doc) => ({ address: doc.address, tag: doc.tag }));
-            const outcome = await this.clearHumanClaims(pairs);
+            const outcome = await this.clearHumanClaims(pairs, docs);
             result.matched = pairs.length;
             result.deleted = outcome.deleted;
+            result.retained = outcome.retained;
             result.addresses = [...new Set(pairs.map((pair) => pair.address))].sort();
             this.logger.info(
-                { actor: actor ?? UNATTRIBUTED_ACTOR, tags: cleaned, matched: result.matched, deleted: result.deleted, changes: outcome.changes },
+                { actor: actor ?? UNATTRIBUTED_ACTOR, tags: cleaned, matched: result.matched, deleted: result.deleted, retained: result.retained, changes: outcome.changes },
                 'Address tags deleted everywhere'
             );
         }
@@ -606,53 +616,83 @@ export class AddressTagService implements IAddressTagService {
      * and the document stays for the sources' audit trail. A pair is counted
      * as taken effect on only when a human claim was actually removed or
      * cleared, since deleting a pair only a machine asserts changes nothing
-     * the caller can observe.
+     * the caller can observe. A pair whose document is still live after the
+     * write is also counted as retained, because the tag has not disappeared
+     * from that address even when the human claim on it is gone.
      *
      * @param pairs - Validated, deduplicated pairs to act on.
-     * @returns How many pairs the call took effect on, and one log entry per
-     *          pair naming its outcome.
+     * @param known - Documents already loaded for those pairs, when the caller
+     *                resolved the pairs from a query of its own. The tag-wide
+     *                delete supplies them so this method does not read back a
+     *                set it has just read; the pair-wise delete leaves it out,
+     *                because its pairs come from the caller and are capped by
+     *                `MAX_BATCH`.
+     * @returns How many pairs the call took effect on, how many still carry
+     *          the tag through a machine source, and one log entry per pair
+     *          naming its outcome.
      */
-    private async clearHumanClaims(pairs: IAddressTagPair[]): Promise<{ deleted: number; changes: IAddressTagDeleteLogEntry[] }> {
+    private async clearHumanClaims(
+        pairs: IAddressTagPair[],
+        known?: IAddressTagDocument[]
+    ): Promise<{ deleted: number; retained: number; changes: IAddressTagDeleteLogEntry[] }> {
         const collection = this.database.getCollection<IAddressTagDocument>(ADDRESS_TAGS_COLLECTION);
         const now = new Date();
-        const changes: IAddressTagDeleteLogEntry[] = [];
+        // One read for the whole set rather than one per pair. A tag-wide
+        // delete is not capped by `MAX_BATCH`, so reading per pair would cost
+        // a round trip for every address carrying the tag.
+        const documents = known ?? await this.findPairDocuments(pairs);
+        const stored = new Map(documents.map((doc) => [this.pairKey(doc.address, doc.tag), doc]));
+        const changes: IAddressTagDeleteLogEntry[] = new Array<IAddressTagDeleteLogEntry>(pairs.length);
         let deleted = 0;
-        for (const pair of pairs) {
-            const doc = await collection.findOne({ address: pair.address, tag: pair.tag });
-            if (!doc) {
-                changes.push({ ...pair, outcome: 'not-found' });
-                continue;
-            }
-            const sources = doc.sources ?? [];
-            if (sources.length === 0) {
-                const result = await collection.deleteOne({ address: pair.address, tag: pair.tag });
-                const removed = result.deletedCount ?? 0;
-                deleted += removed;
-                // A zero count means another request removed the pair
-                // between the read and the delete, so this call changed
-                // nothing and the log says so.
-                changes.push(removed > 0
-                    ? { ...pair, outcome: 'deleted', createdAt: doc.createdAt, active: false, sources }
-                    : { ...pair, outcome: 'not-found' });
-                continue;
-            }
-            const active = this.computeActive(false, sources);
-            await collection.updateOne(
-                { address: pair.address, tag: pair.tag },
-                { $set: { manual: false, active, updatedAt: now } }
-            );
-            if (doc.manual === true) {
-                deleted += 1;
-            }
-            changes.push({
-                ...pair,
-                outcome: doc.manual === true ? 'claim-cleared' : 'no-human-claim',
-                createdAt: doc.createdAt,
-                active,
-                sources
-            });
+        let retained = 0;
+        // Each pair still gets its own write, because its log entry records
+        // whether that write took effect, but a chunk of them is in flight at
+        // once, so the call's duration grows with the number of chunks rather
+        // than the number of pairs. Entries are written by index so the log
+        // keeps the order of `pairs` however the writes complete.
+        for (let start = 0; start < pairs.length; start += DELETE_WRITE_CONCURRENCY) {
+            const chunk = pairs.slice(start, start + DELETE_WRITE_CONCURRENCY);
+            await Promise.all(chunk.map(async (pair, offset) => {
+                const index = start + offset;
+                const doc = stored.get(this.pairKey(pair.address, pair.tag));
+                if (!doc) {
+                    changes[index] = { ...pair, outcome: 'not-found' };
+                    return;
+                }
+                const sources = doc.sources ?? [];
+                if (sources.length === 0) {
+                    const result = await collection.deleteOne({ address: pair.address, tag: pair.tag });
+                    const removed = result.deletedCount ?? 0;
+                    deleted += removed;
+                    // A zero count means another request removed the pair
+                    // between the read and the delete, so this call changed
+                    // nothing and the log says so.
+                    changes[index] = removed > 0
+                        ? { ...pair, outcome: 'deleted', createdAt: doc.createdAt, active: false, sources }
+                        : { ...pair, outcome: 'not-found' };
+                    return;
+                }
+                const active = this.computeActive(false, sources);
+                await collection.updateOne(
+                    { address: pair.address, tag: pair.tag },
+                    { $set: { manual: false, active, updatedAt: now } }
+                );
+                if (doc.manual === true) {
+                    deleted += 1;
+                }
+                if (active) {
+                    retained += 1;
+                }
+                changes[index] = {
+                    ...pair,
+                    outcome: doc.manual === true ? 'claim-cleared' : 'no-human-claim',
+                    createdAt: doc.createdAt,
+                    active,
+                    sources
+                };
+            }));
         }
-        return { deleted, changes };
+        return { deleted, retained, changes };
     }
 
     /** @inheritdoc */

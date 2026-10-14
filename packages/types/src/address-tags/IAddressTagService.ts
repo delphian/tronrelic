@@ -240,11 +240,19 @@ export interface IAddressTagDeleteByTagResult {
     matched: number;
     /**
      * Assignments the call took effect on: documents deleted plus documents
-     * whose `manual` flag was cleared. Less than `matched` when a machine
-     * source also asserts some of the pairs, because those keep the source's
-     * claim and stay live.
+     * whose `manual` flag was cleared. A pair only a machine source asserts
+     * is matched but not counted here, because there was no human claim to
+     * clear.
      */
     deleted: number;
+    /**
+     * Matched assignments still live after the call, because a machine source
+     * that has not withdrawn still asserts them. Those addresses keep the tag,
+     * so `matched - retained` is how many actually stopped carrying it. Do not
+     * work that figure out from `deleted`: a pair holding both a human claim
+     * and a live source is counted in `deleted` and here.
+     */
+    retained: number;
     /** Every address that carried one of the tags, so a caller can refresh them. */
     addresses: string[];
 }
@@ -400,7 +408,8 @@ export interface IAddressTagService {
      * @param actor - Who is making the change, recorded on the log line; see
      *                {@link IAddressTagService.createTags} for the id forms.
      * @returns How many assignments carried the tags, how many the call took
-     *          effect on, and the addresses touched.
+     *          effect on, how many kept the tag through a machine source, and
+     *          the addresses touched.
      */
     deleteTagsByTag(tags: string[], actor?: string): Promise<IAddressTagDeleteByTagResult>;
 
