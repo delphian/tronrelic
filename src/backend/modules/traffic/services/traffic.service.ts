@@ -949,7 +949,12 @@ export class TrafficService {
      */
     public isIgnored(subject: ITrafficIgnoreSubject): boolean {
         const userIgnored = typeof subject.userId === 'string' && this.ignoredUserIdSet.has(subject.userId);
-        const tidIgnored = typeof subject.tid === 'string' && this.ignoredCandidateUidSet.has(subject.tid);
+        // ClickHouse serializes the `candidate_uid` UUID column into the resolved
+        // set in canonical lowercase, but the tid cookie's format check is
+        // case-insensitive and keeps whatever case arrived. Lower-case the supplied
+        // tid before the lookup so an uppercase-but-valid cookie still matches its
+        // ignored account, instead of silently being counted.
+        const tidIgnored = typeof subject.tid === 'string' && this.ignoredCandidateUidSet.has(subject.tid.toLowerCase());
         return userIgnored || tidIgnored;
     }
 
