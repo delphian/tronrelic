@@ -125,6 +125,7 @@ export type { AccountIngestionStatus, AccountHistoryTickKind, AccountHistoryTick
 export { PRICE_ASSET_TRX } from './price-history/index.js';
 export type { PriceAsset, IPricePoint, IPriceHistorySettings, IPriceSourceInfo, IPriceAssetCoverage, IPriceHistoryStats, IPriceCoverageDiagnostics, IPriceHistoryService } from './price-history/index.js';
 export type { PortfolioScope, IPortfolioQuery, IPortfolioHolding, IPortfolioAllocationSlice, IPortfolioBalancePoint, IPortfolioSummary, IValuationService } from './valuation/index.js';
+export type { ITrafficIgnoreSubject, ITrafficIgnoreList } from './traffic/index.js';
 export type { IAddressTagPair, IAddressTag, IAddressTagSource, IAddressTagGroup, IAddressTagRename, IAddressTagListQuery, IAddressTagSearchQuery, IAddressTagCount, IAddressTagSummaryQuery, IAddressTagSummary, IAddressTagAssertion, IAddressTagSyncResult, IAddressTagDeleteByTagResult, IAddressTagService } from './address-tags/index.js';
 export type { IAiTool, IAiToolInputSchema, IAiConversationMessage, IAiProvider, IAiStreamChunk, IAiQueryRecord, AiQueryMode, AiQueryOutcome, IAiQueryOptions, IAiQueryResult, AiStopReason, IModelInfo, ISavedPrompt, ISavedPromptTrigger, ISavedPromptTriggerBase, ISavedPromptCronTrigger, ISavedPromptHookTrigger, IAiTranscriptSegment, IAiThinkingSegment, IAiTextSegment, IAiToolUseSegment, IAiToolResultSegment } from './ai-tools/index.js';
 export { AI_TOOL_NAME_PATTERN } from './ai-tools/index.js';

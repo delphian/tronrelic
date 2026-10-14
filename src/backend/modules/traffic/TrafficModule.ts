@@ -25,6 +25,7 @@ import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
 import { GscService } from './services/gsc.service.js';
 import { TrafficService } from './services/traffic.service.js';
 import { IgnoredUsersService } from './services/ignored-users.service.js';
+import { TrafficIgnoreList } from './services/TrafficIgnoreList.js';
 import { RedirectService } from './services/redirect.service.js';
 import { initGeoIP } from './services/geo.service.js';
 import { TrafficController } from './api/traffic.controller.js';
@@ -67,6 +68,13 @@ export interface ITrafficModuleDependencies {
      */
     serviceRegistry: IServiceRegistry;
 }
+
+/**
+ * Service registry name for the read-only ignore-list check
+ * (`ITrafficIgnoreList`). Plugins cannot import this constant at runtime, so
+ * they use the same string literal; the traffic README records it.
+ */
+export const TRAFFIC_IGNORE_LIST_SERVICE = 'traffic-ignore-list';
 
 /**
  * Namespace for the `/system/traffic` in-page tab row. Rendered as a menu via
@@ -117,6 +125,7 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
     private gscService!: GscService;
     private trafficService!: TrafficService;
     private ignoredUsersService!: IgnoredUsersService;
+    private trafficIgnoreList!: TrafficIgnoreList;
     private redirectService!: RedirectService;
     private trafficController!: TrafficController;
     private bootstrapController!: BootstrapController;
@@ -158,6 +167,9 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
         this.ignoredUsersService = IgnoredUsersService.getInstance();
         await this.ignoredUsersService.createIndexes();
         await this.trafficService.setIgnoredUserIds(await this.ignoredUsersService.getIds());
+
+        // Read-only view of that cache for other components; published in run().
+        this.trafficIgnoreList = new TrafficIgnoreList(this.trafficService);
 
         // RedirectService — admin-managed legacy-URL 301/302 map. Rules live in
         // Mongo and are served to the edge middleware, so operators add
@@ -274,6 +286,13 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
         const adminRedirectsRouter: Router = createAdminRedirectsRouter(this.redirectsController);
         this.app.use('/api/admin/redirects', requireAdmin, adminRedirectsRouter);
         this.logger.info('Admin redirects router mounted at /api/admin/redirects');
+
+        // Publish the ignore-list check so plugins that count visitor activity
+        // (such as resource-markets' affiliate clicks) exclude the same people
+        // the dashboard does. Published here rather than in init() so it is
+        // visible only once the module is fully running.
+        this.serviceRegistry.register(TRAFFIC_IGNORE_LIST_SERVICE, this.trafficIgnoreList);
+        this.logger.info(`Ignore-list check published as '${TRAFFIC_IGNORE_LIST_SERVICE}'`);
 
         // Daily GSC fetch (3 AM). SchedulerService supports late registration.
         if (this.scheduler) {

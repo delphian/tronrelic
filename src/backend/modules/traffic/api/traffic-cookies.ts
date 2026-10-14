@@ -25,6 +25,7 @@
  */
 
 import type { Request, Response } from 'express';
+import type { IHttpRequest } from '@/types';
 
 /**
  * UUID v4 format guard. Inlined here (rather than shared with the retired
@@ -57,12 +58,15 @@ export const REFERRAL_CODE_REGEX = /^[A-Za-z0-9_-]{4,32}$/;
  * Resolve the visitor's analytics traffic id from the request cookies.
  *
  * Unsigned — read straight from `req.cookies`. Returns `null` when absent or
- * malformed so callers mint a fresh one.
+ * malformed so callers mint a fresh one. Also accepts the `IHttpRequest` a
+ * plugin route receives, which at runtime is the same Express request with
+ * cookie-parser already applied, so the ignore-list check can read the tid
+ * without plugins knowing the cookie's name.
  *
- * @param req - Express request populated by cookie-parser.
+ * @param req - Express request, or a plugin route's request, populated by cookie-parser.
  * @returns Validated UUID v4 traffic id, or `null`.
  */
-export function resolveTid(req: Request): string | null {
+export function resolveTid(req: Request | IHttpRequest): string | null {
     const value = (req as unknown as { cookies?: Record<string, unknown> }).cookies?.[TID_COOKIE_NAME];
     if (typeof value === 'string' && UUID_V4_REGEX.test(value)) {
         return value;
