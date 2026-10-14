@@ -173,15 +173,15 @@ export function ObserverTable({ observers, blockIntervalSeconds }: IObserverTabl
                                         </Td>
                                         <Td muted>{observer.subscriptions?.join(', ') || '—'}</Td>
                                         <Td numeric>
-                                            <Badge tone={avgTimeTone(observer.avgProcessingTimeMs, blockIntervalSeconds)} size="xs">
+                                            <Badge tone={avgTimeTone(observer.avgProcessingTimeMs, blockIntervalSeconds)} size="xs" className={styles.nowrap}>
                                                 {`${observer.avgProcessingTimeMs.toFixed(1)} ms`}
                                             </Badge>
-                                            <span className={styles.row_meta}>
+                                            <span className={`${styles.row_meta} ${styles.nowrap}`}>
                                                 {formatNumber(observer.minProcessingTimeMs)}–{formatNumber(observer.maxProcessingTimeMs)} ms
                                             </span>
                                         </Td>
                                         <Td numeric>
-                                            <Badge tone={queueTone(observer)} size="xs">
+                                            <Badge tone={queueTone(observer)} size="xs" className={styles.nowrap}>
                                                 {observer.queueCapacity
                                                     ? `${formatNumber(observer.queueDepth)} / ${formatNumber(observer.queueCapacity)}`
                                                     : formatNumber(observer.queueDepth)}
@@ -192,11 +192,11 @@ export function ObserverTable({ observers, blockIntervalSeconds }: IObserverTabl
                                             <span className={styles.row_meta}>{unit}</span>
                                         </Td>
                                         <Td numeric>
-                                            <Badge tone={errors} size="xs">
+                                            <Badge tone={errors} size="xs" className={styles.nowrap}>
                                                 {`${formatNumber(observer.totalErrors)} (${(observer.errorRate * 100).toFixed(2)}%)`}
                                             </Badge>
                                             {observer.totalDropped > 0 && (
-                                                <Badge tone="danger" size="xs">{`${formatNumber(observer.totalDropped)} dropped`}</Badge>
+                                                <Badge tone="danger" size="xs" className={styles.nowrap}>{`${formatNumber(observer.totalDropped)} dropped`}</Badge>
                                             )}
                                             {observer.lastErrorAt && (
                                                 <span className={styles.row_meta}>

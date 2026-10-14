@@ -50,6 +50,15 @@
     color: var(--color-text-subtle);
 }
 
+/*
+ * Keeps a figure on one line, whether it is a badge or the range under it.
+ * A figure that wraps splits a number from its unit (or "0 /" from "100")
+ * and doubles the row height in a narrow column.
+ */
+.nowrap {
+    white-space: nowrap;
+}
+
 .refresh {
     display: flex;
     justify-content: flex-end;
