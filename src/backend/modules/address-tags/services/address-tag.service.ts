@@ -20,6 +20,7 @@ import type {
     IAddressTag,
     IAddressTagAssertion,
     IAddressTagCount,
+    IAddressTagDeleteByTagResult,
     IAddressTagGroup,
     IAddressTagListQuery,
     IAddressTagPair,
@@ -554,54 +555,104 @@ export class AddressTagService implements IAddressTagService {
         const pairs = this.normalizePairs(tags);
         let deleted = 0;
         if (pairs.length > 0) {
-            const collection = this.database.getCollection<IAddressTagDocument>(ADDRESS_TAGS_COLLECTION);
-            const now = new Date();
-            const changes: IAddressTagDeleteLogEntry[] = [];
-            for (const pair of pairs) {
-                const doc = await collection.findOne({ address: pair.address, tag: pair.tag });
-                if (!doc) {
-                    changes.push({ ...pair, outcome: 'not-found' });
-                    continue;
-                }
-                const sources = doc.sources ?? [];
-                if (sources.length === 0) {
-                    // Nothing but the human claim on this document — remove it.
-                    const result = await collection.deleteOne({ address: pair.address, tag: pair.tag });
-                    const removed = result.deletedCount ?? 0;
-                    deleted += removed;
-                    // A zero count means another request removed the pair
-                    // between the read and the delete, so this call changed
-                    // nothing and the log says so.
-                    changes.push(removed > 0
-                        ? { ...pair, outcome: 'deleted', createdAt: doc.createdAt, active: false, sources }
-                        : { ...pair, outcome: 'not-found' });
-                    continue;
-                }
-                // The document also carries machine assertions, and an admin
-                // removing their own tag does not revoke an external source's.
-                // Clear the human claim and recompute liveness; the document
-                // stays for the sources' audit trail. Counted as removed only
-                // when a human claim was actually cleared — deleting a pair
-                // only a machine asserts changes nothing the caller can observe.
-                const active = this.computeActive(false, sources);
-                await collection.updateOne(
-                    { address: pair.address, tag: pair.tag },
-                    { $set: { manual: false, active, updatedAt: now } }
-                );
-                if (doc.manual === true) {
-                    deleted += 1;
-                }
-                changes.push({
-                    ...pair,
-                    outcome: doc.manual === true ? 'claim-cleared' : 'no-human-claim',
-                    createdAt: doc.createdAt,
-                    active,
-                    sources
-                });
-            }
-            this.logger.info({ actor: actor ?? UNATTRIBUTED_ACTOR, requested: pairs.length, deleted, changes }, 'Address tags deleted');
+            const outcome = await this.clearHumanClaims(pairs);
+            deleted = outcome.deleted;
+            this.logger.info({ actor: actor ?? UNATTRIBUTED_ACTOR, requested: pairs.length, deleted, changes: outcome.changes }, 'Address tags deleted');
         }
         return deleted;
+    }
+
+    /** @inheritdoc */
+    public async deleteTagsByTag(tags: string[], actor?: string): Promise<IAddressTagDeleteByTagResult> {
+        // The human write path, so the reserved prefixes are refused here
+        // exactly as a pair-wise delete refuses them: retiring `ofac:sdn`
+        // everywhere is a source's decision, not an operator's.
+        if (tags.length > MAX_BATCH) {
+            throw new Error(`Batch exceeds ${MAX_BATCH} tags`);
+        }
+        const cleaned = [...new Set(tags.map((tag) => this.requireTag(tag)))];
+        const result: IAddressTagDeleteByTagResult = { tags: cleaned, matched: 0, deleted: 0, addresses: [] };
+        if (cleaned.length > 0) {
+            const collection = this.database.getCollection<IAddressTagDocument>(ADDRESS_TAGS_COLLECTION);
+            // Only live pairs are candidates. A document that is already
+            // inactive has no human claim left to clear, and listing it would
+            // overstate what the call matched.
+            const docs = await collection.find({ tag: { $in: cleaned }, active: true })
+                .sort({ tag: 1, address: 1 })
+                .toArray();
+            const pairs = docs.map((doc) => ({ address: doc.address, tag: doc.tag }));
+            const outcome = await this.clearHumanClaims(pairs);
+            result.matched = pairs.length;
+            result.deleted = outcome.deleted;
+            result.addresses = [...new Set(pairs.map((pair) => pair.address))].sort();
+            this.logger.info(
+                { actor: actor ?? UNATTRIBUTED_ACTOR, tags: cleaned, matched: result.matched, deleted: result.deleted, changes: outcome.changes },
+                'Address tags deleted everywhere'
+            );
+        }
+        return result;
+    }
+
+    /**
+     * Remove the human claim from each pair, which is the one operation both
+     * delete paths share. Kept in one place so a pair-wise delete and a
+     * tag-wide delete cannot drift in how they treat a document a machine
+     * source also asserts.
+     *
+     * A document with no source elements carries nothing but the human claim,
+     * so it is removed. A document that also carries machine assertions keeps
+     * them, because an admin removing their own tag does not revoke an
+     * external source's: the human claim is cleared, liveness is recomputed,
+     * and the document stays for the sources' audit trail. A pair is counted
+     * as taken effect on only when a human claim was actually removed or
+     * cleared, since deleting a pair only a machine asserts changes nothing
+     * the caller can observe.
+     *
+     * @param pairs - Validated, deduplicated pairs to act on.
+     * @returns How many pairs the call took effect on, and one log entry per
+     *          pair naming its outcome.
+     */
+    private async clearHumanClaims(pairs: IAddressTagPair[]): Promise<{ deleted: number; changes: IAddressTagDeleteLogEntry[] }> {
+        const collection = this.database.getCollection<IAddressTagDocument>(ADDRESS_TAGS_COLLECTION);
+        const now = new Date();
+        const changes: IAddressTagDeleteLogEntry[] = [];
+        let deleted = 0;
+        for (const pair of pairs) {
+            const doc = await collection.findOne({ address: pair.address, tag: pair.tag });
+            if (!doc) {
+                changes.push({ ...pair, outcome: 'not-found' });
+                continue;
+            }
+            const sources = doc.sources ?? [];
+            if (sources.length === 0) {
+                const result = await collection.deleteOne({ address: pair.address, tag: pair.tag });
+                const removed = result.deletedCount ?? 0;
+                deleted += removed;
+                // A zero count means another request removed the pair
+                // between the read and the delete, so this call changed
+                // nothing and the log says so.
+                changes.push(removed > 0
+                    ? { ...pair, outcome: 'deleted', createdAt: doc.createdAt, active: false, sources }
+                    : { ...pair, outcome: 'not-found' });
+                continue;
+            }
+            const active = this.computeActive(false, sources);
+            await collection.updateOne(
+                { address: pair.address, tag: pair.tag },
+                { $set: { manual: false, active, updatedAt: now } }
+            );
+            if (doc.manual === true) {
+                deleted += 1;
+            }
+            changes.push({
+                ...pair,
+                outcome: doc.manual === true ? 'claim-cleared' : 'no-human-claim',
+                createdAt: doc.createdAt,
+                active,
+                sources
+            });
+        }
+        return { deleted, changes };
     }
 
     /** @inheritdoc */

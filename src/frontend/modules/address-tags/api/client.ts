@@ -13,7 +13,7 @@
  * gates it on admin group membership rather than on login.
  */
 
-import type { IAddressTagPair, IAddressTagRename, IAddressTagSummary } from '@/types';
+import type { IAddressTagDeleteByTagResult, IAddressTagPair, IAddressTagRename, IAddressTagSummary } from '@/types';
 
 const BASE = '/api/admin/system/address-tags';
 const USER_BASE = '/api/address-tags';
@@ -26,7 +26,7 @@ export type { IAddressTagPair, IAddressTagRename } from '@/types';
  * views below, because the summary carries counts only — there is no timestamp
  * in it for JSON to turn into a string.
  */
-export type { IAddressTagCount, IAddressTagSummary } from '@/types';
+export type { IAddressTagCount, IAddressTagDeleteByTagResult, IAddressTagSummary } from '@/types';
 
 /**
  * Wire shape of one stored assignment — `IAddressTag` with its dates as the
@@ -217,6 +217,27 @@ export async function deleteTags(tags: IAddressTagPair[]): Promise<number> {
         body: JSON.stringify({ tags })
     }), 'delete address tags');
     return data.deleted;
+}
+
+/**
+ * Remove tags from every address that carries them, in one audited call.
+ *
+ * The server resolves the pairs itself, so the caller never has to page the
+ * addresses and send them in batches of a thousand. A pair a machine source
+ * also asserts keeps the source's claim, which is why the result reports
+ * `matched` and `deleted` separately.
+ *
+ * @param tags - The exact tag values to remove everywhere.
+ * @returns How many assignments carried the tags, how many were removed or
+ *          had their human claim cleared, and every address touched, so the
+ *          caller can refresh each one's chips.
+ */
+export async function deleteTagsByTag(tags: string[]): Promise<IAddressTagDeleteByTagResult> {
+    return parse<IAddressTagDeleteByTagResult>(await fetch(`${BASE}/tags/delete-by-tag`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tags })
+    }), 'delete address tags everywhere');
 }
 
 /**

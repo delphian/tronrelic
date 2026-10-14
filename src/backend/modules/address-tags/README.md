@@ -45,6 +45,7 @@ All methods take and return arrays; single-item calls are one-element arrays. Th
 | `searchAddresses({search?, limit?, skip?})` | Paged **address** search: one entry per address with its full tag list; `limit`/`skip` count addresses |
 | `updateTags(renames)` | Per-pair `oldTag → newTag`; missing pair skipped; collision with existing `(address, newTag)` collapses the human claim into it. A document carrying source elements is never renamed or deleted — the `manual` claim moves to the destination and the old document keeps its provenance with `manual` cleared |
 | `deleteTags(pairs)` | Exact-pair delete; a document carrying source elements keeps them and only loses its `manual` claim. Returns the count of documents deleted plus human claims cleared |
+| `deleteTagsByTag(tags)` | Removes each tag from every live address carrying it, with the same per-pair rule as `deleteTags`, resolving the pairs itself so a caller never pages and batches them. Refuses a reserved prefix. Returns `IAddressTagDeleteByTagResult`: the cleaned tags, `matched` live pairs, `deleted` (documents removed plus claims cleared, less than `matched` when a source holds some pairs), and the `addresses` touched |
 | `syncSource(source, assertions, mode, withdrawn?)` | Machine-source reconcile — the only writer of `sources` elements, and it only touches elements matching its own source id. `snapshot` diffs against held state and soft-withdraws the missing (refusing a fetch smaller than half the current holdings); `delta` applies only the given additions and revocations. Invalid assertions are counted `rejected` and skipped |
 
 Storage document: `{ address, tag, createdAt, updatedAt, manual, active, sources[] }`, where `manual` records a human claim, `sources[]` holds per-source `{ id, ref?, url?, observedAt, withdrawnAt? }` elements (withdrawal is soft — elements stay for audit), and `active` is denormalized liveness recomputed on every write (`manual`, or any source element not withdrawn). Indexes: `{address:1, tag:1}` unique, `{tag:1, active:1, address:1}`, `{'sources.id':1, address:1}` (multikey).
@@ -56,6 +57,7 @@ Storage document: `{ address, tag, createdAt, updatedAt, manual, active, sources
 | `Address tags created` | `created`, `claimed` (a machine-only document gained the human claim), `unchanged` | `address`, `tag`, `previous` claim flags (null when new), the `manual`/`active` written, `createdAt`, existing `sources` |
 | `Address tags renamed` | `renamed` (in place), `claim-moved`, `skipped-missing`, `skipped-same` | `address`, `oldTag`, `newTag`, `createdAt`; for `claim-moved` also `destinationExisted`, `destinationSources`, `oldDocument` (`deleted`/`kept`), `oldDocumentActive`, `oldDocumentSources` |
 | `Address tags deleted` | `deleted`, `claim-cleared`, `no-human-claim`, `not-found` | `address`, `tag`, `createdAt`, `active` after the write, `sources`; the context also carries the `deleted` count the call returns |
+| `Address tags deleted everywhere` | The same four outcomes, one entry per live pair the tags matched | As above; the context carries the `tags` asked for, `matched`, and `deleted`, so a tag-wide retirement reads as one action rather than a run of pair deletes |
 
 `actor` comes from the optional last argument of `createTags`, `updateTags`, and `deleteTags`. The admin controller passes `actorFromAdminRequest(req).id`, which is the signed-in admin's Better Auth user id, or `system:service-token` when the request used `ADMIN_API_TOKEN`. A caller that passes nothing is logged as `unattributed`. `syncSource` logs its own counts as `Source reconcile applied`.
 
@@ -82,6 +84,7 @@ Admin surface (`createAdminRateLimiter` + `requireAdmin`; admin-group session or
 | `POST /tags` | `{ tags: IAddressTagPair[] }` | Create |
 | `PATCH /tags` | `{ renames: IAddressTagRename[] }` | Rename |
 | `POST /tags/delete` | `{ tags: IAddressTagPair[] }` | Delete (POST because the operation carries a body) |
+| `POST /tags/delete-by-tag` | `{ tags: string[] }` | Delete each tag from every address carrying it; response is `IAddressTagDeleteByTagResult`. Backs the Tags tab's "Delete tag everywhere" action |
 | `GET /sources` | — | Per-source ingestion status: last run, last error, cursor, last reconcile counts |
 | `POST /sources/:id/run` | — | Run one scheduled source now (testing/recovery; ignores the enable switch; awaits the run) |
 | `POST /screen` | `{ address }` | Screen one address through Chainalysis on demand |
@@ -114,6 +117,8 @@ The form is a sorted bar list rather than a tag cloud because a cloud encodes th
 Every row is also a filter. Clicking one commits its tag as the table's search term, and clicking the selected row clears it. That is why the panel sits above the table rather than on a tab of its own — the counts are how an operator picks what to look at next, and a count is only useful if the rows behind it are one click away. `AddressTagsManager` owns the search term for both, so the highlighted row and the visible rows cannot disagree, and it bumps a token after every mutation so the counts refetch rather than describing the collection as it was before the edit.
 
 What a click hands over is a search term, not an exact-tag query, because the substring search is the table's only filter. Clicking `whale` can therefore also list an address tagged `whale-watch`, and the table can show more rows than the count on the row that was clicked. A row's number is the addresses carrying that exact tag, which is what `getTagSummary` returns; it is not a prediction of how many rows the table will render.
+
+While the filter names a tag the vocabulary lists, the panel's footer also offers **Delete tag everywhere**, which retires that tag from every address carrying it through `POST /tags/delete-by-tag` after the shared confirmation dialog. It sits beside the filter rather than on each row because a row is already a button, and because an operator should be looking at the addresses a tag is on before removing it from all of them. The server resolves the pairs, so the action is one audited call however many addresses are involved, and it follows the pair-wise rule: an address a machine source also tags keeps the source's claim, and the toast says how many did.
 
 ## Schedules and Database Tabs
 

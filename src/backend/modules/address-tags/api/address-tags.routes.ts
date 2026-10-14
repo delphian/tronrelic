@@ -47,6 +47,7 @@ export function createAddressTagsAdminRouter(
     router.post('/tags', controller.createTags);
     router.patch('/tags', controller.updateTags);
     router.post('/tags/delete', controller.deleteTags);
+    router.post('/tags/delete-by-tag', controller.deleteTagsByTag);
     router.get('/sources', sourcesController.getSources);
     router.post('/sources/:id/run', sourcesController.runSource);
     router.post('/screen', sourcesController.screen);

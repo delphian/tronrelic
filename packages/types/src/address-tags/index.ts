@@ -16,5 +16,6 @@ export type {
     IAddressTagSummary,
     IAddressTagAssertion,
     IAddressTagSyncResult,
+    IAddressTagDeleteByTagResult,
     IAddressTagService
 } from './IAddressTagService.js';

@@ -48,6 +48,7 @@ import { useModal } from '../../../../components/ui/ModalProvider';
 import {
     createTags,
     deleteTags,
+    deleteTagsByTag,
     invalidateAddressTags,
     searchAddresses,
     updateTags,
@@ -288,6 +289,62 @@ export function AddressTagsManager() {
     }, [close, committedSearch, load, notify, open, refreshSummary]);
 
     /**
+     * Retire one tag from every address carrying it, after modal confirmation.
+     *
+     * The server finds the pairs and removes them in one audited call, so the
+     * page never has to collect addresses and send them in batches. The result
+     * names every address touched, and each one is invalidated so the chips
+     * showing it drop the tag now rather than on the next full load. The table
+     * is refreshed from the committed query rather than cleared: when a
+     * machine source also asserts the tag on some addresses, those keep it,
+     * and the operator should see what remains under the filter they chose.
+     *
+     * @param tag - The tag to remove everywhere.
+     * @param addresses - How many addresses the summary reported carrying it,
+     *                    quoted in the confirmation so the operator sees the
+     *                    size of the action before taking it.
+     */
+    const handleDeleteTagEverywhere = useCallback((tag: string, addresses: number) => {
+        const modalId = `address-tag-delete-everywhere-${tag}`;
+        open({
+            id: modalId,
+            title: 'Delete tag everywhere',
+            size: 'sm',
+            content: (
+                <ConfirmDialog
+                    label={`tag '${tag}' from every address`}
+                    message={
+                        `Remove tag '${tag}' from all ${addresses.toLocaleString()} addresses that carry it? `
+                        + 'Only the admin claim is removed: an address a machine source also tags keeps that '
+                        + 'source\'s claim. This action cannot be undone.'
+                    }
+                    confirmLabel="Delete everywhere"
+                    onCancel={() => close(modalId)}
+                    onConfirm={async () => {
+                        try {
+                            const result = await deleteTagsByTag([tag]);
+                            result.addresses.forEach((address) => invalidateAddressTags(address));
+                            const kept = result.matched - result.deleted;
+                            notify(
+                                'success',
+                                kept > 0
+                                    ? `Removed '${tag}' from ${result.deleted} addresses; ${kept} kept it through a machine source`
+                                    : `Removed '${tag}' from ${result.deleted} addresses`
+                            );
+                            refreshSummary();
+                            await load(committedSearch, 0, false);
+                        } catch (error) {
+                            notify('danger', 'Failed to delete tag everywhere', error);
+                        } finally {
+                            close(modalId);
+                        }
+                    }}
+                />
+            )
+        });
+    }, [close, committedSearch, load, notify, open, refreshSummary]);
+
+    /**
      * Render one tag as a chip carrying its own rename and delete affordances,
      * swapping to an input with save/cancel while that chip is being edited.
      * Actions live on the chip rather than in a row-level column because a row
@@ -391,6 +448,7 @@ export function AddressTagsManager() {
             <TagSummaryPanel
                 activeTag={committedSearch || null}
                 onSelectTag={(tag) => void handleSelectTag(tag)}
+                onDeleteTag={handleDeleteTagEverywhere}
                 reloadToken={summaryToken}
             />
 
