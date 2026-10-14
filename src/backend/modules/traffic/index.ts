@@ -5,8 +5,9 @@
  * GSC keyword integration, the bot classifier, and geo/IP derivation helpers.
  */
 
-export { TrafficModule } from './TrafficModule.js';
+export { TrafficModule, TRAFFIC_IGNORE_LIST_SERVICE } from './TrafficModule.js';
 export type { ITrafficModuleDependencies } from './TrafficModule.js';
+export { TrafficIgnoreList } from './services/TrafficIgnoreList.js';
 
 export { TrafficService, buildTrafficEvent } from './services/traffic.service.js';
 export type {

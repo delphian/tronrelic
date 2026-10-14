@@ -39,7 +39,7 @@
  */
 
 import type { Request } from 'express';
-import type { IAccountDirectoryService, IClickHouseService, ISystemLogService } from '@/types';
+import type { IAccountDirectoryService, IClickHouseService, ISystemLogService, ITrafficIgnoreSubject } from '@/types';
 import { getClientIP, getCountryFromIP, getDeviceCategory } from './geo.service.js';
 import { getIpHash, getSubnetHash } from './ip-hash.js';
 import { classifyTrafficRequest, type BotClass } from './bot-classifier.js';
@@ -880,6 +880,14 @@ export class TrafficService {
     private ignoredUserIds: string[] = [];
     private ignoredCandidateUids: string[] = [];
 
+    /**
+     * Set forms of the two lists above, kept in step with them so
+     * {@link isIgnored} answers per-request checks from other components in
+     * constant time instead of scanning an array on every request.
+     */
+    private ignoredUserIdSet: ReadonlySet<string> = new Set();
+    private ignoredCandidateUidSet: ReadonlySet<string> = new Set();
+
     private constructor(
         private readonly clickhouse: IClickHouseService | undefined,
         private readonly logger: ISystemLogService
@@ -903,8 +911,10 @@ export class TrafficService {
      */
     public async setIgnoredUserIds(ids: string[]): Promise<void> {
         this.ignoredUserIds = ids;
+        this.ignoredUserIdSet = new Set(ids);
         if (!this.clickhouse || ids.length === 0) {
             this.ignoredCandidateUids = [];
+            this.ignoredCandidateUidSet = new Set();
             return;
         }
         // Unwindowed by design — a tid that logged in as an ignored account at
@@ -915,9 +925,32 @@ export class TrafficService {
         try {
             const rows = await this.clickhouse.query<{ candidate_uid: string }>(sql, { ignoredUserIds: ids });
             this.ignoredCandidateUids = rows.map(r => r.candidate_uid);
+            this.ignoredCandidateUidSet = new Set(this.ignoredCandidateUids);
         } catch (error) {
             this.logger.warn({ error }, 'Failed to resolve ignored candidate_uids; keeping previous exclusion set');
         }
+    }
+
+    /**
+     * Whether a visitor is on the operator ignore list, by the same
+     * whole-person rule the dashboard reads apply. Lets components outside
+     * this module, such as a plugin counting outbound clicks, skip ignored
+     * visitors without repeating the resolution done in
+     * {@link setIgnoredUserIds}.
+     *
+     * The user id is checked directly against the account list, so a
+     * logged-in ignored visitor is matched even when their tid was first seen
+     * after the last refresh. The tid is checked against the resolved set, so
+     * the same person is matched on anonymous requests too.
+     *
+     * @param subject - The visitor's Better Auth user id and `tronrelic_tid`
+     *   value as the caller found them; either may be missing.
+     * @returns True when either identifier belongs to an ignored person.
+     */
+    public isIgnored(subject: ITrafficIgnoreSubject): boolean {
+        const userIgnored = typeof subject.userId === 'string' && this.ignoredUserIdSet.has(subject.userId);
+        const tidIgnored = typeof subject.tid === 'string' && this.ignoredCandidateUidSet.has(subject.tid);
+        return userIgnored || tidIgnored;
     }
 
     /**

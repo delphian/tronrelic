@@ -1048,4 +1048,76 @@ describe('TrafficService', () => {
             expect(captured.params?.ignoredCandidateUids).toEqual(['tid-a', 'tid-b']);
         });
     });
+
+    describe('isIgnored()', () => {
+        const IGNORED = ['665f00000000000000000001'];
+
+        /**
+         * Build a ClickHouse double whose resolution query returns `tid-a` as
+         * the one browser that has logged in as an ignored account.
+         *
+         * @returns The configured mock ClickHouse double.
+         */
+        function mockResolvingTidA(): ReturnType<typeof createMockClickHouse> {
+            const ch = createMockClickHouse();
+            ch.queue.push({ candidate_uid: 'tid-a' });
+            return ch;
+        }
+
+        it('matches an ignored account by user id', async () => {
+            TrafficService.setDependencies(mockResolvingTidA(), createMockLogger());
+            const svc = TrafficService.getInstance();
+            await svc.setIgnoredUserIds(IGNORED);
+
+            expect(svc.isIgnored({ userId: IGNORED[0], tid: null })).toBe(true);
+        });
+
+        it('matches an anonymous request from a tid that once logged in as an ignored account', async () => {
+            TrafficService.setDependencies(mockResolvingTidA(), createMockLogger());
+            const svc = TrafficService.getInstance();
+            await svc.setIgnoredUserIds(IGNORED);
+
+            expect(svc.isIgnored({ userId: null, tid: 'tid-a' })).toBe(true);
+        });
+
+        it('does not match a visitor with neither identifier on the list', async () => {
+            TrafficService.setDependencies(mockResolvingTidA(), createMockLogger());
+            const svc = TrafficService.getInstance();
+            await svc.setIgnoredUserIds(IGNORED);
+
+            expect(svc.isIgnored({ userId: 'someone-else', tid: 'tid-z' })).toBe(false);
+            expect(svc.isIgnored({})).toBe(false);
+        });
+
+        it('stops matching once the list is cleared', async () => {
+            TrafficService.setDependencies(mockResolvingTidA(), createMockLogger());
+            const svc = TrafficService.getInstance();
+            await svc.setIgnoredUserIds(IGNORED);
+            await svc.setIgnoredUserIds([]);
+
+            expect(svc.isIgnored({ userId: IGNORED[0], tid: 'tid-a' })).toBe(false);
+        });
+
+        it('keeps the previous tid set when resolution fails, but still matches the new user ids', async () => {
+            const ch = mockResolvingTidA();
+            TrafficService.setDependencies(ch, createMockLogger());
+            const svc = TrafficService.getInstance();
+            await svc.setIgnoredUserIds(IGNORED);
+
+            ch.error = new Error('ClickHouse down');
+            await svc.setIgnoredUserIds([...IGNORED, '665f00000000000000000002']);
+
+            expect(svc.isIgnored({ tid: 'tid-a' })).toBe(true);
+            expect(svc.isIgnored({ userId: '665f00000000000000000002' })).toBe(true);
+        });
+
+        it('matches by user id even without ClickHouse', async () => {
+            TrafficService.setDependencies(undefined, createMockLogger());
+            const svc = TrafficService.getInstance();
+            await svc.setIgnoredUserIds(IGNORED);
+
+            expect(svc.isIgnored({ userId: IGNORED[0] })).toBe(true);
+            expect(svc.isIgnored({ tid: 'tid-a' })).toBe(false);
+        });
+    });
 });
