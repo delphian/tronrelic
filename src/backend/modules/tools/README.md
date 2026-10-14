@@ -32,12 +32,16 @@ The module resolves two shared services from `IServiceRegistry` during `init()`:
 | Tool | URL | API Endpoint | Description |
 |------|-----|-------------|-------------|
 | Address Converter | `/tools/address-converter` | `POST /api/tools/address/convert` | Hex to base58check and reverse |
-| Energy Estimator | `/tools/energy-estimator` | `POST /api/tools/energy/estimate` | Daily energy needs with staking vs rental cost comparison |
+| Energy Estimator | `/tools/energy-estimator` | `POST /api/tools/energy/estimate` | Daily energy needs, the stake that covers them, and the burn cost of not staking |
 | Stake Calculator | `/tools/stake-calculator` | `POST /api/tools/stake/from-trx` and `/from-energy` | Bidirectional TRX/energy calculation |
 | Signature Verifier | `/tools/signature-verifier` | `POST /api/tools/signature/verify` | Wallet signature verification |
 | Approval Checker | `/tools/approval-checker` | `POST /api/tools/approval/check` | Scan TRC20 token approvals (requires login) |
 | Address Origins | `/tools/address-origins` | `GET /api/tools/origins/stream` (SSE) | Trace a wallet's activation chain to its originator; multi-wallet + full ladder require login |
 | Timestamp Converter | `/tools/timestamp-converter` | `POST /api/tools/timestamp/convert` | Bidirectional timestamp/block/date conversion |
+
+### Energy Estimator Costs Are Burn Costs
+
+The estimator prices its cost figures with the chain's `energyFee`, which is what the network burns in TRX for each unit of energy an account lacks (100 SUN today). That is not a rental price: energy rental markets usually charge a fraction of it, so calling the figure "rent" overstated renting several times over. The response therefore names the figures `burnPriceSun`, `burnCostPerDayTRX`, `burnCostPerMonthTRX`, and `burnMatchesStakeDays` (the days of burning that add up to the TRX staking would lock), and the page labels them as burn costs. Core holds no energy market data, so a rental price cannot be computed here without a contract that a market plugin publishes.
 
 The Signature Verifier supports direct URL linking via query parameters: `/tools/signature-verifier?wallet=T...&message=hello&signature=0x...` — it auto-fills and verifies on page load.
 

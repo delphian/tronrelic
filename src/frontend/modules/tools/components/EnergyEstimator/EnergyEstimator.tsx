@@ -1,9 +1,10 @@
 /**
  * @fileoverview Energy estimator tool page.
  *
- * Estimates daily energy requirements based on contract type and usage patterns.
- * Returns staking vs rental cost comparison with break-even analysis.
- * User-triggered action — loading state is appropriate.
+ * Estimates daily energy requirements based on contract type and usage patterns,
+ * and compares staking for that energy with burning TRX for it. The cost figures
+ * are burn costs at the chain's energy fee, not rental prices, and are labelled
+ * that way. User-triggered action — loading state is appropriate.
  */
 'use client';
 
@@ -22,8 +23,9 @@ import styles from './EnergyEstimator.module.scss';
  * Energy estimator tool.
  *
  * Users specify a contract type, average method calls, and daily transaction
- * count. The tool returns energy requirements, staking recommendations, and
- * rental cost comparisons.
+ * count. The tool returns energy requirements, the stake that covers them, and
+ * what burning TRX for that energy costs instead. Renting is not priced here,
+ * because core holds no market data, and the note under the figures says so.
  */
 export function EnergyEstimator() {
     const [contractType, setContractType] = useState('TriggerSmartContract');
@@ -51,7 +53,7 @@ export function EnergyEstimator() {
 
     return (
         <Page>
-            <PageHeader title="Energy Estimator" subtitle="Estimate daily energy requirements and compare staking vs rental costs" />
+            <PageHeader title="Energy Estimator" subtitle="Estimate daily energy requirements and compare staking with burning TRX for fees" />
             <Card>
                 <Stack gap="md">
                     <Grid columns="responsive" gap="md">
@@ -104,17 +106,17 @@ export function EnergyEstimator() {
                                     <span className={styles.stat__value}>{result.recommendedStake.toLocaleString()} TRX</span>
                                 </div>
                                 <div className={styles.stat}>
-                                    <span className={styles.stat__label}>Rent / Day</span>
-                                    <span className={styles.stat__value}>{result.estimatedRentPerDayTRX.toLocaleString()} TRX</span>
+                                    <span className={styles.stat__label}>Burn Cost / Day</span>
+                                    <span className={styles.stat__value}>{result.burnCostPerDayTRX.toLocaleString()} TRX</span>
                                 </div>
                                 <div className={styles.stat}>
-                                    <span className={styles.stat__label}>Rent / Month</span>
-                                    <span className={styles.stat__value}>{result.estimatedRentPerMonthTRX.toLocaleString()} TRX</span>
+                                    <span className={styles.stat__label}>Burn Cost / Month</span>
+                                    <span className={styles.stat__value}>{result.burnCostPerMonthTRX.toLocaleString()} TRX</span>
                                 </div>
                                 <div className={styles.stat}>
-                                    <span className={styles.stat__label}>Break-Even</span>
+                                    <span className={styles.stat__label}>Burn Equals Stake After</span>
                                     <span className={styles.stat__value}>
-                                        {result.breakEvenDays != null ? `${result.breakEvenDays} days` : 'N/A'}
+                                        {result.burnMatchesStakeDays != null ? `${result.burnMatchesStakeDays} days` : 'N/A'}
                                     </span>
                                 </div>
                                 <div className={styles.stat}>
@@ -124,6 +126,11 @@ export function EnergyEstimator() {
                                     </Badge>
                                 </div>
                             </div>
+                            <p className="text-muted">
+                                Burn cost is the TRX the network burns, at {result.burnPriceSun.toLocaleString()} SUN per unit, when an account
+                                has no staked or rented energy. Staked TRX is locked rather than spent and can be unstaked later. Renting energy
+                                from a market usually costs less than burning.
+                            </p>
                         </div>
                     )}
                 </Stack>
