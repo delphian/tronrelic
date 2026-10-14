@@ -132,6 +132,26 @@ export class AddressTagsAdminController {
     };
 
     /**
+     * POST /tags/delete-by-tag — remove tags from every address carrying
+     * them. Body: `{ tags: string[] }`. A POST because the operation carries
+     * a body payload, and a route of its own rather than a flag on
+     * `/tags/delete` because the two take different envelopes and a reader
+     * of the audit log should see which one an operator used.
+     */
+    deleteTagsByTag = async (req: Request, res: Response): Promise<void> => {
+        try {
+            const tags = requireStringArray(req.body?.tags);
+            if (!tags) {
+                res.status(400).json({ error: 'Body must be { tags: [string] }' });
+                return;
+            }
+            res.json(await this.service.deleteTagsByTag(tags, actorFromAdminRequest(req).id));
+        } catch (error) {
+            this.fail(res, error, 'Failed to delete address tags everywhere');
+        }
+    };
+
+    /**
      * Map service validation throws to 400 and everything else to 500.
      *
      * @param res - Response to write the failure to.
@@ -147,6 +167,29 @@ export class AddressTagsAdminController {
         this.logger.error({ error }, message);
         res.status(500).json({ error: message });
     }
+}
+
+/**
+ * Envelope check for mutation bodies: a non-empty array of objects whose
+ * required keys are all strings. Field-level validation stays in the service.
+ *
+ * @param value - Raw body field.
+ * @param keys - Keys each element must carry as strings.
+ * @returns The array when structurally valid, otherwise null.
+ */
+/**
+ * Envelope check for a tag-value body: a non-empty array of strings. The
+ * values themselves are validated by the service, which is where the tag
+ * rules live.
+ *
+ * @param value - Raw body field.
+ * @returns The array when structurally valid, otherwise null.
+ */
+function requireStringArray(value: unknown): string[] | null {
+    if (!Array.isArray(value) || value.length === 0) {
+        return null;
+    }
+    return value.every((item) => typeof item === 'string') ? (value as string[]) : null;
 }
 
 /**

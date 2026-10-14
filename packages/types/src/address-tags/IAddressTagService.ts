@@ -227,6 +227,29 @@ export interface IAddressTagSyncResult {
 }
 
 /**
+ * What one tag-wide delete did, for the admin page and the log line. The
+ * operator asked to remove a tag from everywhere it appears, so the answer
+ * has to say how many addresses carried it, how many of those lost the
+ * human claim, and which addresses were touched, so the page can refresh
+ * every chip showing one of them.
+ */
+export interface IAddressTagDeleteByTagResult {
+    /** The tag values the call acted on, trimmed and deduplicated. */
+    tags: string[];
+    /** Live `(address, tag)` assignments that carried one of the tags. */
+    matched: number;
+    /**
+     * Assignments the call took effect on: documents deleted plus documents
+     * whose `manual` flag was cleared. Less than `matched` when a machine
+     * source also asserts some of the pairs, because those keep the source's
+     * claim and stay live.
+     */
+    deleted: number;
+    /** Every address that carried one of the tags, so a caller can refresh them. */
+    addresses: string[];
+}
+
+/**
  * Central CRUD authority for text tags on TRON wallet addresses. All methods
  * accept and return arrays so callers batch naturally; single-item calls are
  * just one-element arrays. Authorization is the caller's responsibility — the
@@ -361,6 +384,25 @@ export interface IAddressTagService {
      *          deleted plus documents whose `manual` flag was cleared).
      */
     deleteTags(tags: IAddressTagPair[], actor?: string): Promise<number>;
+
+    /**
+     * Remove one or more tags from every address that carries them, with the
+     * same per-pair semantics as {@link IAddressTagService.deleteTags}: a
+     * document only a human asserts is removed, and a document a machine
+     * source also asserts keeps the source's claim and only loses the human
+     * one. Exists so an operator retiring a tag does not have to collect its
+     * pairs by hand and send them in batches, and so the whole retirement is
+     * one audited action.
+     *
+     * A reserved machine-source tag is refused, as on every human write path.
+     *
+     * @param tags - The exact tag values to remove everywhere; unknown tags simply match nothing.
+     * @param actor - Who is making the change, recorded on the log line; see
+     *                {@link IAddressTagService.createTags} for the id forms.
+     * @returns How many assignments carried the tags, how many the call took
+     *          effect on, and the addresses touched.
+     */
+    deleteTagsByTag(tags: string[], actor?: string): Promise<IAddressTagDeleteByTagResult>;
 
     /**
      * Reconcile one machine source's assertions against stored provenance.

@@ -7,6 +7,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 import { AddressTagsModule } from '../index.js';
 import { AddressTagService } from '../services/address-tag.service.js';
+import { requireAdmin } from '../../../api/middleware/admin-auth.js';
+import { requireLogin } from '../../../api/middleware/require-login.js';
 
 /**
  * Build the minimal collaborator set the module needs, with spies on the
@@ -92,6 +94,28 @@ describe('AddressTagsModule', () => {
         expect(deps.menuService.create).toHaveBeenCalledWith(
             expect.objectContaining({ url: '/system/address-tags', namespace: 'main' })
         );
+    });
+
+    it('run() puts requireAdmin in front of every admin route and requireLogin in front of every read', async () => {
+        // The mutating routes, including the tag-wide delete, rely on the
+        // mount-time guard rather than checking the caller themselves, so the
+        // guard has to sit in the middleware chain ahead of the router. A
+        // route added to the admin router inherits it; a router mounted
+        // without it would be open to any caller.
+        const module = new AddressTagsModule();
+        const deps = createDeps();
+        await module.init(deps);
+        await module.run();
+
+        const mountFor = (path: string): unknown[] =>
+            deps.app.use.mock.calls.find((call: unknown[]) => call[0] === path) ?? [];
+        const adminMount = mountFor('/api/admin/system/address-tags');
+        const userMount = mountFor('/api/address-tags');
+        expect(adminMount.indexOf(requireAdmin)).toBeGreaterThan(0);
+        expect(adminMount.indexOf(requireAdmin)).toBeLessThan(adminMount.length - 1);
+        expect(adminMount).not.toContain(requireLogin);
+        expect(userMount.indexOf(requireLogin)).toBeGreaterThan(0);
+        expect(userMount).not.toContain(requireAdmin);
     });
 
     it('run() registers the submenu tab nodes with per-node admin gating', async () => {

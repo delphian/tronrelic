@@ -233,4 +233,49 @@ describe('AddressTagService', () => {
             expect(database.getCollectionData(ADDRESS_TAGS_COLLECTION)).toHaveLength(1);
         });
     });
+
+    describe('deleteTagsByTag', () => {
+        it('removes the tag from every address carrying it, leaves their other tags, and names the addresses', async () => {
+            await service.createTags([
+                { address: ADDRESS_A, tag: 'feee-io' },
+                { address: ADDRESS_A, tag: 'exchange' },
+                { address: ADDRESS_B, tag: 'feee-io' }
+            ]);
+            const result = await service.deleteTagsByTag([' feee-io ', 'feee-io', 'nobody-has-this']);
+            expect(result).toEqual({
+                tags: ['feee-io', 'nobody-has-this'],
+                matched: 2,
+                deleted: 2,
+                addresses: [ADDRESS_B, ADDRESS_A].sort()
+            });
+            const remaining = database.getCollectionData(ADDRESS_TAGS_COLLECTION);
+            expect(remaining).toHaveLength(1);
+            expect(remaining[0]).toMatchObject({ address: ADDRESS_A, tag: 'exchange' });
+        });
+
+        it('clears only the human claim on a pair a machine source also asserts, and counts it apart from matched', async () => {
+            await service.syncSource('rental-markets', [{ address: ADDRESS_A, tag: 'treasury', ref: 'tx-1' }], 'snapshot');
+            await service.createTags([
+                { address: ADDRESS_A, tag: 'treasury' },
+                { address: ADDRESS_B, tag: 'treasury' }
+            ]);
+            const result = await service.deleteTagsByTag(['treasury']);
+            expect(result.matched).toBe(2);
+            expect(result.deleted).toBe(2);
+            const remaining = database.getCollectionData(ADDRESS_TAGS_COLLECTION);
+            expect(remaining).toHaveLength(1);
+            expect(remaining[0]).toMatchObject({ address: ADDRESS_A, tag: 'treasury', manual: false, active: true });
+            // A second pass finds the source-only pair live but has no claim
+            // to clear, so it matches without taking effect.
+            const again = await service.deleteTagsByTag(['treasury']);
+            expect(again).toMatchObject({ matched: 1, deleted: 0, addresses: [ADDRESS_A] });
+        });
+
+        it('refuses a reserved machine-source tag and an oversized batch', async () => {
+            await expect(service.deleteTagsByTag(['ofac:sdn'])).rejects.toThrow(/reserved/);
+            await expect(service.deleteTagsByTag(['MARKET:catfee'])).rejects.toThrow(/reserved/);
+            await expect(service.deleteTagsByTag(Array.from({ length: 1001 }, (_, index) => `t${index}`)))
+                .rejects.toThrow(/Batch exceeds/);
+        });
+    });
 });

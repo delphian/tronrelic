@@ -30,7 +30,7 @@
  */
 
 import { useCallback, useEffect, useState, type CSSProperties } from 'react';
-import { ChevronDown, ChevronUp, Hash, Tags, Wallet, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, Hash, Tags, Trash2, Wallet, X } from 'lucide-react';
 import { Card } from '../../../../components/ui/Card';
 import { Button } from '../../../../components/ui/Button';
 import { StatGrid, StatTile } from '../../../../components/ui/StatTile';
@@ -77,6 +77,15 @@ interface ITagSummaryPanelProps {
     onSelectTag: (tag: string | null) => void;
 
     /**
+     * Retire the selected tag from every address carrying it. The panel only
+     * offers this for a tag it can see in the vocabulary, with the count the
+     * server reported, and hands the decision to the manager, which owns
+     * confirmation, the request, and the refresh of everything the deletion
+     * touched.
+     */
+    onDeleteTag: (tag: string, addresses: number) => void;
+
+    /**
      * Changes value whenever the manager has mutated a tag. Counts are derived
      * from the same documents the table edits, so without a signal to refetch,
      * deleting the last address under a tag would leave that tag sitting in
@@ -107,7 +116,7 @@ function formatCount(value: number): string {
  *        token that forces a refetch after a mutation.
  * @returns The panel, or a placeholder card while the first load is in flight.
  */
-export function TagSummaryPanel({ activeTag, onSelectTag, reloadToken }: ITagSummaryPanelProps) {
+export function TagSummaryPanel({ activeTag, onSelectTag, onDeleteTag, reloadToken }: ITagSummaryPanelProps) {
     const [summary, setSummary] = useState<IAddressTagSummary | null>(null);
     const [loading, setLoading] = useState(true);
     const [expanded, setExpanded] = useState(false);
@@ -200,6 +209,11 @@ export function TagSummaryPanel({ activeTag, onSelectTag, reloadToken }: ITagSum
     // the footer already reports the shortfall, and a button promising more
     // than the footer admits to is the one part of the panel that would lie.
     const loadedEveryTag = summary.tags.length >= summary.totalTags;
+    // The delete action is offered only for a tag the vocabulary actually
+    // lists. The filter is a free-text search term, so an operator can type
+    // something that matches rows without being a tag, and offering to delete
+    // that "everywhere" would promise an action the server could not take.
+    const activeRow = activeTag === null ? undefined : summary.tags.find((row) => row.tag === activeTag);
 
     return (
         <Card className={styles.tag_summary}>
@@ -271,6 +285,16 @@ export function TagSummaryPanel({ activeTag, onSelectTag, reloadToken }: ITagSum
                         {activeTag && (
                             <Button variant="ghost" size="sm" onClick={() => onSelectTag(null)}>
                                 <X size={14} /> Clear filter
+                            </Button>
+                        )}
+                        {activeRow && (
+                            <Button
+                                variant="danger"
+                                size="sm"
+                                onClick={() => onDeleteTag(activeRow.tag, activeRow.addresses)}
+                                aria-label={`Delete tag ${activeRow.tag} from all ${formatCount(activeRow.addresses)} addresses`}
+                            >
+                                <Trash2 size={14} /> Delete tag everywhere
                             </Button>
                         )}
                         {hasMore && (
