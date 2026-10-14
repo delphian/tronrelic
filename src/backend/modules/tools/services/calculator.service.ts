@@ -3,6 +3,8 @@
  *
  * Provides energy estimation from historical transaction data and bidirectional
  * stake calculations using live TRON network parameters via ChainParametersService.
+ * The estimate's cost figures are burn costs at the chain's `energyFee`, never
+ * rental prices, because core holds no energy market data.
  * Caches energy statistics to minimize database aggregation overhead.
  */
 
@@ -24,20 +26,33 @@ export interface IEnergyEstimateInput {
 export type ConfidenceLevel = 'low' | 'medium' | 'high';
 
 /**
- * Energy estimation result with cost comparison and metadata.
+ * Energy estimation result comparing staking with burning TRX for fees.
+ *
+ * The cost figures are burn costs: what the network charges in TRX when the
+ * account has no staked or rented energy to cover a call. They are not rental
+ * prices. Core holds no energy market data, and a rental market usually charges
+ * a fraction of the burn price, so presenting the burn figure as rent would
+ * overstate what renting costs several times over.
  */
 export interface IEnergyEstimate {
     requiredEnergy: number;
     recommendedStake: number;
-    estimatedCostTRX: number;
     averageEnergyPerCall: number;
     maxObservedEnergy: number;
     sampleSize: number;
     confidence: ConfidenceLevel;
-    energyPriceSun: number;
-    estimatedRentPerDayTRX: number;
-    estimatedRentPerMonthTRX: number;
-    breakEvenDays: number | null;
+    /** The chain's `energyFee`: SUN burned per unit of energy the account lacks. */
+    burnPriceSun: number;
+    /** TRX burned per day for `requiredEnergy` when no energy is staked or rented. */
+    burnCostPerDayTRX: number;
+    /** `burnCostPerDayTRX` over 30 days. */
+    burnCostPerMonthTRX: number;
+    /**
+     * Days of burning after which the TRX burned equals the TRX staking would
+     * lock up, or null when nothing would be burned. Staked TRX is locked rather
+     * than spent, so past this point burning has cost more than the whole stake.
+     */
+    burnMatchesStakeDays: number | null;
     bandwidthFromStake: number;
     metadata: {
         energyPerTrx: number;
@@ -103,14 +118,17 @@ export class CalculatorService {
     }
 
     /**
-     * Estimate daily energy requirements for a contract type.
+     * Estimate daily energy requirements for a contract type, and compare staking
+     * for that energy with burning TRX for it.
      *
      * Aggregates energy consumption from the last 30 days of transactions matching
-     * the contract type, then projects daily needs based on expected usage. Returns
-     * both staking and rental cost comparisons with a break-even analysis.
+     * the contract type, then projects daily needs based on expected usage. The
+     * cost side uses the chain's `energyFee`, which is the burn price, so every
+     * cost figure is a burn cost rather than a rental price; core has no market
+     * data to price a rental with.
      *
      * @param input - Contract type, method calls per tx, and transactions per day
-     * @returns Detailed energy estimate with cost comparison
+     * @returns Energy needs, the stake that covers them, and the burn cost of not staking
      */
     async estimateEnergy(input: IEnergyEstimateInput): Promise<IEnergyEstimate> {
         const stats = await this.getEnergyStats(input.contractType);
@@ -121,25 +139,23 @@ export class CalculatorService {
         const energyPerTrx = params.parameters.energyPerTrx;
         const bandwidthPerTrx = params.parameters.bandwidthPerTrx;
         const recommendedStake = energyPerTrx > 0 ? Math.ceil(requiredEnergy / energyPerTrx) : 0;
-        const energyPriceSun = params.parameters.energyFee;
+        const burnPriceSun = params.parameters.energyFee;
 
-        const rentPerDayTrx = energyPriceSun > 0 ? (requiredEnergy * energyPriceSun) / 1_000_000 : 0;
-        const rentPerMonthTrx = rentPerDayTrx * 30;
-        const estimatedCostTRX = Math.ceil(rentPerMonthTrx);
-        const breakEvenDays = rentPerDayTrx > 0 ? recommendedStake / rentPerDayTrx : null;
+        const burnPerDayTrx = burnPriceSun > 0 ? (requiredEnergy * burnPriceSun) / 1_000_000 : 0;
+        const burnPerMonthTrx = burnPerDayTrx * 30;
+        const burnMatchesStakeDays = burnPerDayTrx > 0 ? recommendedStake / burnPerDayTrx : null;
 
         return {
             requiredEnergy,
             recommendedStake,
-            estimatedCostTRX,
             averageEnergyPerCall: Math.round(averageEnergyPerCall),
             maxObservedEnergy: Math.round(stats.maxEnergy),
             sampleSize: stats.sampleSize,
             confidence: this.getConfidence(stats.sampleSize),
-            energyPriceSun,
-            estimatedRentPerDayTRX: this.round(rentPerDayTrx),
-            estimatedRentPerMonthTRX: this.round(rentPerMonthTrx),
-            breakEvenDays: breakEvenDays != null ? this.round(breakEvenDays, 1) : null,
+            burnPriceSun,
+            burnCostPerDayTRX: this.round(burnPerDayTrx),
+            burnCostPerMonthTRX: this.round(burnPerMonthTrx),
+            burnMatchesStakeDays: burnMatchesStakeDays != null ? this.round(burnMatchesStakeDays, 1) : null,
             bandwidthFromStake: this.round(recommendedStake * bandwidthPerTrx),
             metadata: {
                 energyPerTrx: this.round(energyPerTrx, 4),

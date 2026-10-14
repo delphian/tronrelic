@@ -10,19 +10,27 @@ export interface IAddressConversionResult {
     base58check: string;
 }
 
-/** Energy estimation result from the API. */
+/**
+ * Energy estimation result from the API.
+ *
+ * The cost fields are burn costs at the chain's `energyFee`, not rental prices,
+ * so the page must label them as burning TRX for fees rather than as rent.
+ */
 export interface IEnergyEstimate {
     requiredEnergy: number;
     recommendedStake: number;
-    estimatedCostTRX: number;
     averageEnergyPerCall: number;
     maxObservedEnergy: number;
     sampleSize: number;
     confidence: 'low' | 'medium' | 'high';
-    energyPriceSun: number;
-    estimatedRentPerDayTRX: number;
-    estimatedRentPerMonthTRX: number;
-    breakEvenDays: number | null;
+    /** SUN burned per unit of energy the account lacks. */
+    burnPriceSun: number;
+    /** TRX burned per day when no energy is staked or rented. */
+    burnCostPerDayTRX: number;
+    /** TRX burned over 30 days when no energy is staked or rented. */
+    burnCostPerMonthTRX: number;
+    /** Days of burning that add up to the TRX staking would lock, or null when nothing burns. */
+    burnMatchesStakeDays: number | null;
     bandwidthFromStake: number;
     metadata: {
         energyPerTrx: number;

@@ -115,7 +115,7 @@ export class ToolsController {
      * Estimate daily energy requirements for a contract type.
      *
      * Uses historical transaction data to project energy needs and
-     * returns staking vs rental cost comparison.
+     * returns the stake that covers them beside the burn cost of not staking.
      */
     estimateEnergy = async (req: Request, res: Response): Promise<void> => {
         const body = energySchema.parse(req.body);
