@@ -65,6 +65,8 @@ describe('AddressTagService provenance', () => {
                 .rejects.toThrow(/reserved/);
             await expect(service.deleteTags([{ address: ADDRESS_A, tag: 'usdt:frozen' }]))
                 .rejects.toThrow(/reserved/);
+            await expect(service.createTags([{ address: ADDRESS_A, tag: 'market:catfee' }]))
+                .rejects.toThrow(/reserved/);
         });
 
         it('rejects a reserved prefix regardless of letter case', async () => {

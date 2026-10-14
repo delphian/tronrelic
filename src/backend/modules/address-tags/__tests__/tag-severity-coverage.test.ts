@@ -39,6 +39,17 @@ import { RESERVED_TAG_PREFIXES } from '../services/address-tag.service.js';
  */
 const SOURCE_TAGS = [OFAC_TAG, USDT_TAG, CHAINALYSIS_TAG];
 
+/**
+ * Reserved prefixes whose source is a label, not a risk feed, so no tag
+ * under them earns a warning and none belongs in `SOURCE_TAGS`. `market:` is
+ * written by the `trp-resource-markets` plugin's rental market pipeline to
+ * say which market an address belongs to. Listing a prefix here is a
+ * deliberate statement that its tags render like any other annotation;
+ * leave it out and the prefix check below fails, which is the prompt to
+ * decide.
+ */
+const LABEL_ONLY_PREFIXES = ['market:'];
+
 describe('address tag severity coverage', () => {
     it('classifies every tag an ingestion source asserts', () => {
         const unclassified = SOURCE_TAGS.filter((tag) => getAddressTagSeverity(tag) === undefined);
@@ -48,16 +59,30 @@ describe('address tag severity coverage', () => {
 
     it('covers every prefix reserved for a machine source', () => {
         // `RESERVED_TAG_PREFIXES` is production's own list of the prefixes only
-        // an ingestion source may write, and a source added later has to appear
+        // a machine source may write, and a source added later has to appear
         // there or an operator could forge its assertions. Checking the list
         // above against it is what turns "a fourth source shipped and nobody
         // edited this file" into a failure here, instead of a flagged address
-        // that renders exactly like a safe one.
+        // that renders exactly like a safe one. A prefix in
+        // `LABEL_ONLY_PREFIXES` is covered by that declaration instead.
         const uncovered = RESERVED_TAG_PREFIXES.filter(
-            (prefix) => !SOURCE_TAGS.some((tag) => tag.toLowerCase().startsWith(prefix))
+            (prefix) => !LABEL_ONLY_PREFIXES.includes(prefix)
+                && !SOURCE_TAGS.some((tag) => tag.toLowerCase().startsWith(prefix))
         );
 
         expect(uncovered).toEqual([]);
+    });
+
+    it('reserves every label-only prefix, and classifies no tag under one', () => {
+        // The declaration above only means something while the prefix is
+        // actually reserved, and a label must never pick up a warning by
+        // accident.
+        expect(LABEL_ONLY_PREFIXES.filter((prefix) => !RESERVED_TAG_PREFIXES.includes(prefix))).toEqual([]);
+        const flagged = ADDRESS_TAG_SEVERITIES
+            .map((entry) => entry.tag)
+            .filter((tag) => LABEL_ONLY_PREFIXES.some((prefix) => tag.toLowerCase().startsWith(prefix)));
+
+        expect(flagged).toEqual([]);
     });
 
     it('lists no tag outside the reserved prefixes', () => {
