@@ -246,6 +246,7 @@ describe('AddressTagService', () => {
                 tags: ['feee-io', 'nobody-has-this'],
                 matched: 2,
                 deleted: 2,
+                retained: 0,
                 addresses: [ADDRESS_B, ADDRESS_A].sort()
             });
             const remaining = database.getCollectionData(ADDRESS_TAGS_COLLECTION);
@@ -262,13 +263,16 @@ describe('AddressTagService', () => {
             const result = await service.deleteTagsByTag(['treasury']);
             expect(result.matched).toBe(2);
             expect(result.deleted).toBe(2);
+            // Both claims were cleared, but ADDRESS_A still carries the tag
+            // through the source, so only one address actually lost it.
+            expect(result.retained).toBe(1);
             const remaining = database.getCollectionData(ADDRESS_TAGS_COLLECTION);
             expect(remaining).toHaveLength(1);
             expect(remaining[0]).toMatchObject({ address: ADDRESS_A, tag: 'treasury', manual: false, active: true });
             // A second pass finds the source-only pair live but has no claim
             // to clear, so it matches without taking effect.
             const again = await service.deleteTagsByTag(['treasury']);
-            expect(again).toMatchObject({ matched: 1, deleted: 0, addresses: [ADDRESS_A] });
+            expect(again).toMatchObject({ matched: 1, deleted: 0, retained: 1, addresses: [ADDRESS_A] });
         });
 
         it('refuses a reserved machine-source tag and an oversized batch', async () => {

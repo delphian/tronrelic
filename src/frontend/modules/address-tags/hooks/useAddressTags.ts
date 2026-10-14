@@ -140,8 +140,18 @@ function schedule(): void {
 }
 
 /**
- * Drop an address's cached tags and re-read it, so every chip showing that
- * address reflects an edit immediately rather than on the next full page load.
+ * Drop an address's cached tags so an edit is never served from a stale entry,
+ * and re-read the address only when a chip is currently watching it, so every
+ * chip on screen reflects the edit immediately rather than on the next full
+ * page load.
+ *
+ * The re-read is conditional because one action can invalidate thousands of
+ * addresses — removing a tag from every address carrying it does exactly that —
+ * and `flush` schedules its next batch before awaiting the current one, so
+ * queueing every address would put dozens of concurrent lookups on the wire
+ * for answers nothing is mounted to read. Dropping the cache entry is enough
+ * for an unwatched address: the next chip that mounts for it finds no cached
+ * value and fetches it then.
  *
  * @param address - The address whose assignments were just changed.
  */
@@ -151,8 +161,10 @@ export function invalidateAddressTags(address: string): void {
     // must get a fresh budget now, or a mutation confirmed against the backend
     // would still be unable to re-read its own result.
     failures.delete(address);
-    queued.add(address);
-    schedule();
+    if (subscribers.has(address)) {
+        queued.add(address);
+        schedule();
+    }
 }
 
 /**
