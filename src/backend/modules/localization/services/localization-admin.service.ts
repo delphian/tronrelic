@@ -204,6 +204,16 @@ export class LocalizationAdminService {
         if (code === DEFAULT_LANGUAGE) {
             throw new LocalizationValidationError(`"${DEFAULT_LANGUAGE}" is the default language and is always available`);
         }
+        // `api` and `mcp` are infrastructure addresses rather than available
+        // prefixes. The frontend middleware matcher skips every path beginning
+        // `api`, and `next.config.mjs` rewrites `/api/...` and the exact path
+        // `/mcp` to the backend, so a language on one of these codes would
+        // publish URLs that never reach the `[lang]` tree. They are the only
+        // reserved first segments this code pattern can produce; `uploads`,
+        // `images`, and `plugins` are too long for it to match.
+        if (code === 'api' || code.startsWith('api-') || code === 'mcp') {
+            throw new LocalizationValidationError(`"${code}" is reserved for platform routing and cannot be a language code`);
+        }
         const now = new Date();
         const document: ILanguageDocument = {
             code,
@@ -464,9 +474,15 @@ export class LocalizationAdminService {
      */
     async saveTranslation(input: ITranslationInput, actor: string): Promise<ITranslation> {
         const language = await this.requireExistingLanguage(input.language);
-        const key = await this.keys().findOne({ namespace: input.namespace, key: input.key });
+        // Both values go straight into a query filter, so reject anything that
+        // is not a plain string first. A JSON body can carry an object such as
+        // `{ "$ne": "" }`, which Mongo would read as an operator and match a
+        // key the caller never named.
+        const namespace = typeof input.namespace === 'string' ? input.namespace.trim() : '';
+        const keyName = typeof input.key === 'string' ? input.key.trim() : '';
+        const key = await this.keys().findOne({ namespace, key: keyName });
         if (!key) {
-            throw new LocalizationNotFoundError(`Key "${input.namespace}:${input.key}" not found`);
+            throw new LocalizationNotFoundError(`Key "${namespace}:${keyName}" not found`);
         }
         const text = typeof input.text === 'string' ? input.text : '';
         if (text.trim() === '' || text.length > MAX_TRANSLATION_LENGTH) {
