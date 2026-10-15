@@ -31,6 +31,7 @@ import { CORE_ZONE_DESCRIPTORS } from '../zones/descriptors.js';
 import {
     AUTH_BUTTON_TYPE_ID,
     buildCoreWidgetTypeDescriptors,
+    LANGUAGE_SWITCHER_TYPE_ID,
     MAIN_MENU_TYPE_ID,
     RAW_HTML_TYPE_ID,
     SITE_LOGO_TYPE_ID
@@ -343,5 +344,12 @@ describe('Core widget-type catalog (site-logo, main-menu)', () => {
         // so they must reach the component another way.
         await expect(resolveCoreWidget(MAIN_MENU_TYPE_ID)).resolves.toEqual({ align: 'flex-end' });
         await expect(resolveCoreWidget(MAIN_MENU_TYPE_ID, { align: 'center' })).resolves.toEqual({ align: 'center' });
+    });
+
+    it('carries only the language switcher label style, never the language list', async () => {
+        // The languages depend on the page and change on client-side
+        // navigation, so the component works them out itself.
+        await expect(resolveCoreWidget(LANGUAGE_SWITCHER_TYPE_ID)).resolves.toEqual({ display: 'native' });
+        await expect(resolveCoreWidget(LANGUAGE_SWITCHER_TYPE_ID, { display: 'code' })).resolves.toEqual({ display: 'code' });
     });
 });

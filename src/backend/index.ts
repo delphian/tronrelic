@@ -50,6 +50,7 @@ import { PriceHistoryModule } from './modules/price-history/index.js';
 import { ProvidersModule } from './modules/providers/index.js';
 import { ValuationModule } from './modules/valuation/index.js';
 import { AddressTagsModule } from './modules/address-tags/index.js';
+import { LocalizationModule } from './modules/localization/index.js';
 import { ToolsModule } from './modules/tools/index.js';
 import { AiToolsModule, createAccountEndUserResolver } from './modules/ai-tools/index.js';
 import { McpModule } from './modules/mcp/index.js';
@@ -291,6 +292,7 @@ interface BootstrapContext {
         providers: ProvidersModule;
         valuation: ValuationModule;
         addressTags: AddressTagsModule;
+        localization: LocalizationModule;
         tools: ToolsModule;
         notifications: NotificationsModule;
         curation: CurationModule;
@@ -510,6 +512,28 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     // sanctions/freeze ingestion jobs (nullable, so ENABLE_SCHEDULER=false
     // switches all ingestion off).
     await addressTagsModule.init({ database: coreDatabase, serviceRegistry, menuService, app, scheduler: schedulerService });
+    // Localization: languages, per-route publishing, and translations. Inert
+    // until an administrator enables a language and publishes a route in it.
+    // The two listers are resolved per call: CMS pages and menu entries change
+    // at runtime, and plugins are discovered after module init.
+    const localizationModule = new LocalizationModule();
+    await localizationModule.init({
+        database: coreDatabase,
+        serviceRegistry,
+        menuService,
+        app,
+        listKnownPaths: async () => {
+            const pages = await PageService.getInstance().listSitemapPages();
+            const menuUrls = menuService.getTree('main').all
+                .map(node => node.url)
+                .filter((url): url is string => typeof url === 'string' && url.startsWith('/'));
+            return [...pages.map(page => page.slug), ...menuUrls];
+        },
+        listKnownNamespaces: () => [
+            'core',
+            ...PluginManagerService.getInstance().getAllManifests().map(manifest => manifest.id)
+        ]
+    });
     await toolsModule.init(sharedDeps);
     // Notifications module: builds the category/channel registries, preference,
     // policy, and audit stores. Inits before ai-tools so its run() (which
@@ -612,6 +636,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
             providers: providersModule,
             valuation: valuationModule,
             addressTags: addressTagsModule,
+            localization: localizationModule,
             tools: toolsModule,
             notifications: notificationsModule,
             curation: curationModule,
@@ -684,6 +709,9 @@ async function bootstrapRun(ctx: BootstrapContext): Promise<void> {
     // Address-tags publishes 'address-tags' and mounts its gated routers; no
     // ordering constraint beyond menu having run (menu runs early above).
     await modules.addressTags.run();
+    // Localization publishes 'localization' and mounts its public and admin
+    // routers; no ordering constraint beyond menu having run.
+    await modules.localization.run();
     // ClickHouse accounts runs before scheduler (which runs last and starts
     // ticking), so its usage rollup job is registered before the scheduler activates.
     await modules.clickhouseAccounts.run();

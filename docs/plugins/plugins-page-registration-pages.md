@@ -4,7 +4,7 @@ Plugins declare routable pages in their frontend manifest's `pages` array. The N
 
 ## Why This Matters
 
-Without the registry, every plugin would fork `app/` routes and import core modules directly — coupling plugins to internal paths, breaking lifecycle gating, and making per-plugin SSR data fetching impossible. The single catch-all (`app/[...slug]/page.tsx`) consults `serverPluginRegistry` filtered by enabled manifests, so disabling a plugin returns 404 server-side without redeployment. Pages must receive the context as a prop because direct `apps/frontend` imports cross workspace boundaries the loader cannot satisfy.
+Without the registry, every plugin would fork `app/` routes and import core modules directly — coupling plugins to internal paths, breaking lifecycle gating, and making per-plugin SSR data fetching impossible. The single catch-all (`app/[lang]/(site)/[...slug]/page.tsx`) consults `serverPluginRegistry` filtered by enabled manifests, so disabling a plugin returns 404 server-side without redeployment. Pages must receive the context as a prop because direct `apps/frontend` imports cross workspace boundaries the loader cannot satisfy.
 
 ## How It Works
 
@@ -91,7 +91,7 @@ The manifest must declare `frontend: true` for pages and `backend: true` for men
 - `src/frontend/lib/pluginRegistry.ts` — client registry, self-bootstrapped
 - `src/frontend/lib/serverPluginRegistry.ts` — server registry filtered by enabled manifests
 - `src/frontend/components/plugins/plugins.generated.ts` — auto-generated static-import registry
-- `src/frontend/app/[...slug]/page.tsx` — catch-all route handler
+- `src/frontend/app/[lang]/(site)/[...slug]/page.tsx` — catch-all route handler
 - `src/frontend/components/PluginPageHandler.tsx` — synchronous client lookup
 - `src/frontend/components/PluginPageWithZones.tsx` — server wrapper with widget zones
 - `src/plugins/trp-ai-assistant/` — canonical reference implementation

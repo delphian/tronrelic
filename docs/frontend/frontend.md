@@ -16,6 +16,12 @@ Every public-facing component must render fully on the server with real data, th
 
 Never initialize state as `useState([])` and fetch the data when the component mounts. That breaks hydration, because the server sent HTML containing content while the client's first render produces nothing, and it brings back the loading flash this pattern exists to remove. Loading states are acceptable only for actions the user triggered, for pagination, for search, and for secondary data — never for the main content of a first render. See [react.md](./react/react.md#ssr--live-updates-pattern).
 
+### Pages Live Under the `[lang]` Segment
+
+Every route lives in `app/[lang]/`: the root layout is `app/[lang]/layout.tsx`, and pages sit in `app/[lang]/(site)/`. The middleware rewrites an English request such as `/markets` to `/en/markets` internally, and serves `/zh/markets` as Chinese only when that language is enabled and the route is published in it on `/system/localization`. The language is part of the route so that changing it re-renders the root layout, including `<html lang>`. A new route goes inside `app/[lang]/(site)/`, whose layout returns 404 for any request the middleware did not route. A page that builds metadata passes `language: await resolveMetadataLanguage(params)` to `buildMetadata`, so a translated page's canonical URL names its own address.
+
+Write visitor-facing text through the translation function, with the English at the call site: `const { t } = useTranslation()` in core components, `context.useTranslation()` in plugins, then `t('markets.title', 'Energy Markets')`. On English pages `t` returns the English unchanged. See the [Localization README](../../src/backend/modules/localization/README.md).
+
 ### Code Goes in `modules/`, Not `features/`
 
 New frontend code belongs in `src/frontend/modules/<name>/`, with everything related kept together: `components/`, `hooks/`, `api/`, `lib/`, `types/`, `slice.ts`, and `index.ts`. The older `features/` directory still holds page-specific code written before this convention. Treat it as read-only for the features already there, and do not add new work to it.
@@ -63,7 +69,7 @@ Reference implementations: `/system/address-tags` for a module, and the `trp-onc
 
 ### Container Queries, Not Viewport Media Queries
 
-Size components against their container using `container-type: inline-size` and `@container` queries, so a component adapts to wherever it is placed — a sidebar, a modal, a full page, a plugin widget, or a slideout. A viewport `@media` query cannot do this, because it only knows the size of the window. Reserve `@media` queries for the global layout in `app/layout.tsx`.
+Size components against their container using `container-type: inline-size` and `@container` queries, so a component adapts to wherever it is placed — a sidebar, a modal, a full page, a plugin widget, or a slideout. A viewport `@media` query cannot do this, because it only knows the size of the window. Reserve `@media` queries for the global layout in `app/[lang]/layout.tsx`.
 
 Breakpoint variables such as `$breakpoint-mobile-md` live in `app/breakpoints` and must be written with SCSS interpolation inside a `@container` rule, as `#{$breakpoint-mobile-md}`. See [ui-responsive-design.md](./ui/ui-responsive-design.md).
 
@@ -109,7 +115,7 @@ Before committing a UI component or a plugin page:
 - [ ] Lives in `src/frontend/modules/<name>/` or in a plugin, with its public surface exported through `index.ts` and consumers importing from the module root
 - [ ] Page structure uses the layout components (`<Page>`, `<Stack>`, `<Grid>`, `<Section>`) rather than raw `<div>` elements with utility classes
 - [ ] Component styles sit in a colocated `.module.scss` file and reference design tokens, with no hardcoded colors, spacing, fonts, or sizes
-- [ ] Responsive behaviour uses container queries; viewport `@media` queries appear only in `app/layout.tsx`
+- [ ] Responsive behaviour uses container queries; viewport `@media` queries appear only in `app/[lang]/layout.tsx`
 - [ ] Icons come from `lucide-react`; icon-only buttons carry an ARIA label; focus states are visible; markup is semantic (`<button>`, `<nav>`, `<ul>`)
 - [ ] Timestamps render through `<ClientTime>`, and no `window`, `document`, or `localStorage` access happens in the render body — only inside `useEffect`
 - [ ] Backend URLs come from `getServerConfig()` on the server or `getRuntimeConfig()` in the browser, never from `process.env.*` or a `NEXT_PUBLIC_*` variable

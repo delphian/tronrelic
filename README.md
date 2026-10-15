@@ -52,6 +52,7 @@ Everything under `src/backend/`: modules, blockchain sync, the scheduler, databa
 | [Menu Module](src/backend/modules/menu/README.md) | Managing navigation and letting plugins contribute entries |
 | [Pages Module](src/backend/modules/pages/README.md) | The markdown content management system and file uploads |
 | [Identity Module](src/backend/modules/identity/README.md) | Better Auth, user groups, the wallet store, and the account directory |
+| [Localization Module](src/backend/modules/localization/README.md) | Languages, per-route publishing, stored translations, and the `[lang]` route folder |
 | [Traffic Module](src/backend/modules/traffic/README.md) | ClickHouse `traffic_events` analytics, the tid and ref cookies, and Google Search Console data |
 | [Runtime Configuration](docs/system/system-runtime-config.md) | Serving many domains from one Docker image, and how `SITE_URL` works |
 | [Scheduler Operations](docs/system/system-scheduler-operations.md) | Managing jobs, cron schedules, and troubleshooting |

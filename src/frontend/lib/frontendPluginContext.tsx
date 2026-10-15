@@ -9,7 +9,8 @@ import type {
     ISystemComponents,
     IApiClient,
     IWebSocketClient,
-    IPluginUserState
+    IPluginUserState,
+    ITranslator
 } from '@/types';
 import { Card } from '../components/ui/Card';
 import { Panel } from '../components/ui/Panel';
@@ -56,6 +57,33 @@ import { getSocket } from './socketClient';
 import { getRuntimeConfig } from './runtimeConfig';
 import { useFilePicker } from './filePickerRegistry';
 import { useImageGen } from './imageGenRegistry';
+// Imported by direct path: the localization barrel also exports components
+// with stylesheets, which this client bundle has no use for.
+import { useTranslation } from '../modules/localization/hooks/useTranslation';
+
+/**
+ * Build the `useTranslation` hook a plugin receives on its context.
+ *
+ * Each plugin gets a hook bound to its own id, so its keys land in its own
+ * namespace and can never collide with core's or another plugin's. The global
+ * context, which has no plugin id, gets a hook bound to `core`.
+ *
+ * @param namespace - Plugin id, or `core` for the global context.
+ * @returns A hook returning the translator for that namespace.
+ */
+function createTranslationHook(namespace: string): () => ITranslator {
+    /**
+     * Return the translator for the bound namespace in the current page's language.
+     *
+     * @returns The translator.
+     */
+    return function useNamespacedTranslation(): ITranslator {
+        return useTranslation(namespace);
+    };
+}
+
+/** Translation hook for the global context, which belongs to no plugin. */
+const useCoreTranslation = createTranslationHook('core');
 
 /**
  * API client implementation for frontend plugins.
@@ -427,7 +455,8 @@ export function FrontendPluginContextProvider({ children }: { children: React.Re
             useUser: usePluginUser,
             useToast: useToastHook,
             useFilePicker,
-            useImageGen
+            useImageGen,
+            useTranslation: useCoreTranslation
         };
     }, []);
 
@@ -551,6 +580,7 @@ export function createPluginContext(pluginId: string): IFrontendPluginContext {
         useUser: usePluginUser,
         useToast: useToastHook,
         useFilePicker,
-        useImageGen
+        useImageGen,
+        useTranslation: createTranslationHook(pluginId)
     };
 }

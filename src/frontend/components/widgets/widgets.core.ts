@@ -24,6 +24,7 @@ import { NetworkActivityWidget } from './NetworkActivityWidget';
 import { AuthButtonWidget } from './AuthButtonWidget';
 import { SiteLogoWidget } from './SiteLogoWidget';
 import { MainMenuWidget } from './MainMenuWidget';
+import { LanguageSwitcherWidget } from './LanguageSwitcherWidget';
 
 /**
  * Core widget components keyed by backend widget-type id. Mirrors the
@@ -38,5 +39,6 @@ export const coreWidgetComponents: Record<string, WidgetComponent> = {
     'core:network-activity': NetworkActivityWidget,
     'core:auth-button': AuthButtonWidget,
     'core:site-logo': SiteLogoWidget,
-    'core:main-menu': MainMenuWidget
+    'core:main-menu': MainMenuWidget,
+    'core:language-switcher': LanguageSwitcherWidget
 };

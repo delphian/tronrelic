@@ -1,6 +1,6 @@
 # SchedulerMonitor Component
 
-Admin diagnostic table for BullMQ scheduled jobs. Lives in `src/frontend/modules/scheduler/`. Mounted in production at `/system/scheduler` via `app/(core)/system/scheduler/page.tsx`.
+Admin diagnostic table for BullMQ scheduled jobs. Lives in `src/frontend/modules/scheduler/`. Mounted in production at `/system/scheduler` via `app/[lang]/(site)/(core)/system/scheduler/page.tsx`.
 
 ## Why This Matters
 
@@ -31,7 +31,7 @@ interface ISchedulerMonitorProps {
 
 ## Example
 
-The canonical mount, copied from `app/(core)/system/scheduler/page.tsx`:
+The canonical mount, copied from `app/[lang]/(site)/(core)/system/scheduler/page.tsx`:
 
 ```tsx
 'use client';

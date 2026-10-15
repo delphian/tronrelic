@@ -14,7 +14,7 @@ The module follows TronRelic's two-phase lifecycle with dependency injection. It
 
 **Frontend** (`src/frontend/modules/tools/`): Interactive client components for each tool. No SSR data fetching — tools are user-driven forms where loading states are appropriate for user-triggered API calls.
 
-**Pages** (`src/frontend/app/(core)/tools/`): Thin Next.js route wrappers importing from the tools module.
+**Pages** (`src/frontend/app/[lang]/(site)/(core)/tools/`): Thin Next.js route wrappers importing from the tools module.
 
 ## Service Registry Dependencies
 

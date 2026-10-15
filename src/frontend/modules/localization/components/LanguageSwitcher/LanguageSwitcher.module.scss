@@ -1,0 +1,45 @@
+/**
+ * Language switcher: a compact inline row of language links, sized to sit in
+ * a header zone beside the sign-in button.
+ */
+
+.switcher {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-xs);
+}
+
+.icon {
+    color: var(--color-text-muted);
+    flex-shrink: 0;
+}
+
+.list {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-xs);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.link {
+    display: inline-block;
+    padding: var(--padding-2xs) var(--padding-xs);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+    transition: color var(--transition-base), background-color var(--transition-base);
+
+    &:hover {
+        color: var(--color-text);
+        background: var(--color-primary-alpha-10);
+    }
+}
+
+.link_current {
+    color: var(--color-text);
+    font-weight: var(--font-weight-semibold);
+    background: var(--color-primary-alpha-15);
+}

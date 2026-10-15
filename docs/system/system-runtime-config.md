@@ -70,7 +70,7 @@ Core file paths are cited inline above. Additional references:
 
 - `src/backend/src/api/routes/config.router.ts` — public config endpoint
 - `src/backend/src/modules/chain-parameters/chain-parameters-fetcher.ts` — scheduled fetch from TRON
-- `src/frontend/app/layout.tsx` — injects `window.__RUNTIME_CONFIG__`
+- `src/frontend/app/[lang]/layout.tsx` — injects `window.__RUNTIME_CONFIG__`
 - `src/frontend/lib/socketClient.ts` — WebSocket consumer
 - `docker-compose.{prod,dev}.yml` — interpolate `SITE_URL` into backend env
 - `docker-compose.yml` — local dev, reads `NEXT_PUBLIC_SITE_URL`

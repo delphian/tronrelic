@@ -154,7 +154,7 @@ Breakpoints are **SCSS variables** in `_breakpoints.scss`, not CSS custom proper
 | `$breakpoint-desktop-xl` | 1920px | Full HD |
 | `$breakpoint-mobile` *(alias)* | = `$breakpoint-mobile-lg` (768px) | Convenience for the common mobile cutoff |
 
-Container queries are preferred over viewport media queries; reserve `@media` for global layout in `app/layout.tsx`. The variable interpolation gotcha (`#{$breakpoint-mobile-md}` inside `@container`) lives in [ui-responsive-design.md](./ui-responsive-design.md).
+Container queries are preferred over viewport media queries; reserve `@media` for global layout in `app/[lang]/layout.tsx`. The variable interpolation gotcha (`#{$breakpoint-mobile-md}` inside `@container`) lives in [ui-responsive-design.md](./ui-responsive-design.md).
 
 ```scss
 @use '../../../app/breakpoints' as *;

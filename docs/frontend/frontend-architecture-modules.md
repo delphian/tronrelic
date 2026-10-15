@@ -68,7 +68,7 @@ import { WalletButton } from '../../../modules/user/components/WalletButton/Wall
 Routes in `app/` import and render — they do not implement. All logic lives in the module.
 
 ```typescript
-// app/(core)/system/users/page.tsx
+// app/[lang]/(site)/(core)/system/users/page.tsx
 'use client';
 import { useSystemAuth } from '../../../../features/system';
 import { UsersMonitor } from '../../../../modules/user';

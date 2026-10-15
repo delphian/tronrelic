@@ -3,6 +3,9 @@ import type { ISitemapEntry } from '@/types';
 import { getServerConfig } from '../lib/serverConfig';
 import { getServerSideApiUrlWithPath } from '../lib/api-url';
 import { absoluteUrl } from '../lib/seo';
+import type { ILocalizationPublicConfig } from '@/types';
+import { DEFAULT_LANGUAGE, findPublishedLanguages, localizePath } from '@/types';
+import { fetchLocalizationConfig } from '../modules/localization/server';
 
 /** Response shape from GET /api/sitemap-data. */
 interface SitemapData {
@@ -60,6 +63,36 @@ async function fetchDynamicData(): Promise<SitemapData> {
 }
 
 /**
+ * List the language versions of a path for its sitemap entry.
+ *
+ * A sitemap entry with `alternates.languages` is the sitemap form of the
+ * `hreflang` links the page itself carries, and it is how search engines find
+ * the translated addresses. A path that exists only in English gets no
+ * alternates, so its entry is exactly what it was before localization existed.
+ *
+ * @param config - The public localization snapshot.
+ * @param siteUrl - Public site origin.
+ * @param path - Unprefixed path of the entry.
+ * @returns The `alternates` field to spread into the entry, or an empty object.
+ */
+function languageAlternates(
+  config: ILocalizationPublicConfig,
+  siteUrl: string,
+  path: string
+): Pick<MetadataRoute.Sitemap[number], 'alternates'> {
+  const published = findPublishedLanguages(config, path);
+  let alternates: Pick<MetadataRoute.Sitemap[number], 'alternates'> = {};
+  if (published.length > 0) {
+    const languages: Record<string, string> = { [DEFAULT_LANGUAGE]: absoluteUrl(siteUrl, path) };
+    for (const code of published) {
+      languages[code] = absoluteUrl(siteUrl, localizePath(path, code));
+    }
+    alternates = { alternates: { languages } };
+  }
+  return alternates;
+}
+
+/**
  * Generates sitemap with both static and dynamic entries.
  *
  * Combines hardcoded core routes with dynamically discovered content:
@@ -74,9 +107,10 @@ async function fetchDynamicData(): Promise<SitemapData> {
  */
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const now = new Date();
-  const [{ siteUrl }, dynamicData] = await Promise.all([
+  const [{ siteUrl }, dynamicData, localizationConfig] = await Promise.all([
     getServerConfig(),
-    fetchDynamicData()
+    fetchDynamicData(),
+    fetchLocalizationConfig()
   ]);
 
   // Track all paths to prevent duplicates across static, CMS, and plugin sources
@@ -87,7 +121,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     url: absoluteUrl(siteUrl, route.path),
     lastModified: now,
     changeFrequency: route.changeFrequency,
-    priority: route.priority
+    priority: route.priority,
+    ...languageAlternates(localizationConfig, siteUrl, route.path)
   }));
 
   // CMS pages (published articles, documentation, etc.)
@@ -97,7 +132,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         url: absoluteUrl(siteUrl, page.slug),
         lastModified: page.updatedAt,
         changeFrequency: 'weekly',
-        priority: 0.7
+        priority: 0.7,
+        ...languageAlternates(localizationConfig, siteUrl, page.slug)
       });
       seenPaths.add(page.slug);
     }
@@ -110,7 +146,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         url: absoluteUrl(siteUrl, path),
         lastModified: now,
         changeFrequency: 'daily',
-        priority: 0.7
+        priority: 0.7,
+        ...languageAlternates(localizationConfig, siteUrl, path)
       });
       seenPaths.add(path);
     }
@@ -133,7 +170,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       url: absoluteUrl(siteUrl, entry.path),
       lastModified: entry.lastModified ?? now,
       changeFrequency: entry.changeFrequency ?? 'weekly',
-      priority: entry.priority !== undefined ? Math.max(0, Math.min(1, entry.priority)) : 0.7
+      priority: entry.priority !== undefined ? Math.max(0, Math.min(1, entry.priority)) : 0.7,
+      ...languageAlternates(localizationConfig, siteUrl, entry.path)
     });
     seenPaths.add(entry.path);
   }

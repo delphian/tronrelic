@@ -46,7 +46,7 @@ Use `@container` instead of `@media`. Import breakpoints from `_breakpoints.scss
 
 ### 3. Conventions
 
-Name containers after the component's purpose (`market-card`, `transaction-panel`, `whale-dashboard`) so debugging stays grep-friendly. Reserve `@media` for layout shells in `app/layout.tsx` — component-level responsiveness always uses `@container`.
+Name containers after the component's purpose (`market-card`, `transaction-panel`, `whale-dashboard`) so debugging stays grep-friendly. Reserve `@media` for layout shells in `app/[lang]/layout.tsx` — component-level responsiveness always uses `@container`.
 
 ## SCSS Variable Interpolation Gotcha
 

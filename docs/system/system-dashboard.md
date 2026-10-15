@@ -40,7 +40,7 @@ The Pipeline tab replaced the Blockchain card that used to sit below the Server 
 
 Because a panel mounts with its tab, its polling runs only while an operator is actually looking at it. That load is what the split rate-limit buckets on `/api/admin/system` are sized against — see the 429 note in [system-api.md](./system-api.md#troubleshooting).
 
-Tab nodes are registered memory-only in `registerTemporaryMenuItems` (`src/backend/index.ts`), so the row rebuilds on every boot. Section sources: `src/frontend/app/(core)/system/system/components/`. For payload details and the cross-link to runtime config restart semantics, see [system-api-overview.md](./system-api-overview.md).
+Tab nodes are registered memory-only in `registerTemporaryMenuItems` (`src/backend/index.ts`), so the row rebuilds on every boot. Section sources: `src/frontend/app/[lang]/(site)/(core)/system/system/components/`. For payload details and the cross-link to runtime config restart semantics, see [system-api-overview.md](./system-api-overview.md).
 
 ## Module-Owned Admin Pages
 
