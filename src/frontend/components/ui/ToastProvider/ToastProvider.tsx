@@ -216,12 +216,49 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     }, []);
 
     /**
+     * Pauses one toast's countdown so it is not dismissed while the reader is
+     * still looking at the stack. The time already spent is subtracted, so
+     * resuming continues the countdown rather than restarting it. The id is
+     * recorded even when no countdown exists yet, so a countdown scheduled
+     * afterwards starts out paused. Pausing a toast that is already paused
+     * changes nothing.
+     *
+     * Declared before `dismiss` because `dismiss` lists it as a dependency. A
+     * `useCallback` dependency array is evaluated where it appears during
+     * render, so a callback declared further down would not exist yet there.
+     *
+     * @param id - Toast whose countdown the current hover should hold
+     */
+    const holdTimer = useCallback((id: string) => {
+        paused.current.add(id);
+        const timer = timers.current[id];
+        if (timer && timer.timeoutId !== null) {
+            window.clearTimeout(timer.timeoutId);
+            timer.remaining = Math.max(0, timer.remaining - (Date.now() - timer.startedAt));
+            timer.timeoutId = null;
+        }
+    }, []);
+
+    /**
      * Dismisses a toast by ID and clears its auto-dismiss timer.
      *
      * Removes the toast from state and cancels any pending timeout. Safe to
      * call multiple times for the same ID. When the dismissed toast was the
      * hovered card, the anchor is cleared, and the next card the pointer
      * enters becomes the new anchor.
+     *
+     * Clearing the anchor while the pointer is still inside the viewport moves
+     * the stack to the no-anchor state, which holds every toast, so the toasts
+     * newer than the former anchor are paused here. Until now they were
+     * running, and no later event is guaranteed to pause them: the pointer may
+     * rest over a gap between cards, which fires nothing further, or over a
+     * card that slid under a pointer that never moved, which browsers do not
+     * reliably report as an enter. Only pausing is needed, because the
+     * no-anchor state holds everything the anchored state held, so nothing
+     * has to be released.
+     *
+     * `applyHover` is not called here because it depends, through
+     * `releaseTimer` and `startTimer`, on `dismiss` itself.
      *
      * @param id - Unique toast identifier to dismiss
      */
@@ -233,8 +270,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         hover.current.arrivals.delete(id);
         if (hover.current.anchorId === id) {
             hover.current.anchorId = null;
+            if (hover.current.active) {
+                order.current.forEach(holdTimer);
+            }
         }
-    }, [clearTimer]);
+    }, [clearTimer, holdTimer]);
 
     /**
      * Starts a countdown run that dismisses the toast when it reaches zero.
@@ -275,26 +315,6 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             }
         }
     }, [clearTimer, startTimer]);
-
-    /**
-     * Pauses one toast's countdown so it is not dismissed while the reader is
-     * still looking at the stack. The time already spent is subtracted, so
-     * resuming continues the countdown rather than restarting it. The id is
-     * recorded even when no countdown exists yet, so a countdown scheduled
-     * afterwards starts out paused. Pausing a toast that is already paused
-     * changes nothing.
-     *
-     * @param id - Toast whose countdown the current hover should hold
-     */
-    const holdTimer = useCallback((id: string) => {
-        paused.current.add(id);
-        const timer = timers.current[id];
-        if (timer && timer.timeoutId !== null) {
-            window.clearTimeout(timer.timeoutId);
-            timer.remaining = Math.max(0, timer.remaining - (Date.now() - timer.startedAt));
-            timer.timeoutId = null;
-        }
-    }, []);
 
     /**
      * Resumes one paused countdown with the time it had left, once the hover
