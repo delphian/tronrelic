@@ -12,10 +12,10 @@ Skipping these patterns produces prop drilling, duplicated WebSocket logic, hydr
 
 Server component fetches data and passes it as a prop. Client component initializes state from that prop, hydrates Redux on mount, and subscribes via WebSocket in `useEffect` after hydration.
 
-Canonical implementation — `app/page.tsx` + `features/transactions/components/TransactionFeed/TransactionFeed.tsx`:
+Canonical implementation — `app/[lang]/(site)/page.tsx` + `features/transactions/components/TransactionFeed/TransactionFeed.tsx`:
 
 ```typescript
-// app/page.tsx — Server Component
+// app/[lang]/(site)/page.tsx — Server Component
 export default async function HomePage() {
     const { apiUrl } = await getServerConfig();
     const response = await fetch(`${apiUrl}/blockchain/latest`, { cache: 'no-store' });
@@ -76,6 +76,7 @@ Actual order from `providers.tsx`:
 
 ```
 <Provider store={store}>            ← Redux (no SSR identity preload)
+ <LocalizationProvider>             ← page language + catalog, SSR-seeded from ssrLocalization
   <SessionProvider>                 ← Better Auth session, SSR-seeded from ssrSession
     <ToastProvider>                 ← useToast()
       <ModalProvider>               ← useModal()

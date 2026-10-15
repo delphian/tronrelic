@@ -58,7 +58,7 @@ interface PluginPageWithZonesProps {
  *
  * Holds no content about any particular plugin. A plugin's page text, its
  * structured data (IPageConfig.structuredData, injected by the catch-all route
- * at src/frontend/app/[...slug]/page.tsx), and any explanatory copy all belong
+ * at src/frontend/app/[lang]/(site)/[...slug]/page.tsx), and any explanatory copy all belong
  * to the plugin itself, so core never has to know what one plugin's page says.
  *
  * @param slug - The URL path for the plugin page (e.g., '/whales', '/memo-tracker')

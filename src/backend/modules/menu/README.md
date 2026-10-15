@@ -118,7 +118,7 @@ Reads are public — the frontend chrome fetches without a token; per-user gatin
 
 **Auto-derived URLs.** Container nodes that omit `url` get one by slugifying the label: `/{slug}` at root, `{parent-url}/{slug}` nested. The derived URL is the override key and the category-landing-page route. Slugification producing an empty string throws.
 
-**Category landing pages.** Every container with children gets an auto page at its URL: the frontend catch-all route (`app/[...slug]/page.tsx`) calls `GET /api/menu/resolve?url=...` and renders a card grid of children (icon, label, `description`). A real page registered at the same URL takes precedence.
+**Category landing pages.** Every container with children gets an auto page at its URL: the frontend catch-all route (`app/[lang]/(site)/[...slug]/page.tsx`) calls `GET /api/menu/resolve?url=...` and renders a card grid of children (icon, label, `description`). A real page registered at the same URL takes precedence.
 
 **Disabled versus hidden.** Two flags take a node out of the menu, and they differ in what else stops working.
 

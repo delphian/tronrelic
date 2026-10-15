@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { DEFAULT_LANGUAGE, localizePath } from '@/types';
 
 export const SITE_NAME = 'TronRelic';
 
@@ -38,6 +39,33 @@ export function absoluteUrl(siteUrl: string, path: string = '/'): string {
   return `${siteUrl}${normalizedPath}`;
 }
 
+/**
+ * Constructs an absolute URL for a page in a given language.
+ *
+ * A translated page must name its own address as canonical. If the Chinese
+ * version of `/markets` declared `https://site/markets` as canonical, search
+ * engines would treat it as a duplicate of the English page and drop it. This
+ * inserts the language prefix into same-site URLs and leaves English, and URLs
+ * on other hosts, exactly as `absoluteUrl` returns them.
+ *
+ * @param siteUrl - Public site URL from runtime config
+ * @param path - Relative path or absolute URL
+ * @param language - Language the page is rendered in; English adds no prefix
+ * @returns Absolute URL of that language's version
+ */
+export function localizedAbsoluteUrl(siteUrl: string, path: string = '/', language: string = DEFAULT_LANGUAGE): string {
+  let url = absoluteUrl(siteUrl, path);
+  const rest = url.slice(siteUrl.length);
+  const isSameSite = url.startsWith(siteUrl) && (rest === '' || rest.startsWith('/') || rest.startsWith('?'));
+  if (language !== DEFAULT_LANGUAGE && isSameSite) {
+    const queryIndex = rest.indexOf('?');
+    const pathname = queryIndex === -1 ? rest : rest.slice(0, queryIndex);
+    const query = queryIndex === -1 ? '' : rest.slice(queryIndex);
+    url = `${siteUrl}${localizePath(pathname || '/', language)}${query}`;
+  }
+  return url;
+}
+
 interface BuildMetadataOptions {
   /** Public site URL from runtime config (e.g., "https://tronrelic.com") */
   siteUrl: string;
@@ -62,6 +90,12 @@ interface BuildMetadataOptions {
   modifiedTime?: string;
   keywords?: string[];
   canonical?: string;
+  /**
+   * Language the page is rendered in. Non-English pages get their language
+   * prefix in the canonical and Open Graph URLs; omitted means English, which
+   * keeps every existing call's output unchanged.
+   */
+  language?: string;
 }
 
 /**
@@ -83,13 +117,15 @@ export function buildMetadata(options: BuildMetadataOptions): Metadata {
     publishedTime,
     modifiedTime,
     keywords,
-    canonical
+    canonical,
+    language = DEFAULT_LANGUAGE
   } = options;
 
   // Resolve relative canonical paths (e.g. '/resource-markets') against
-  // siteUrl so the rendered <link rel="canonical"> is always absolute.
-  // absoluteUrl() passes through values that are already absolute.
-  const url = absoluteUrl(siteUrl, canonical ?? path);
+  // siteUrl so the rendered <link rel="canonical"> is always absolute, with
+  // the language prefix for a translated page. Values that are already
+  // absolute pass through, gaining a prefix only when they are on this site.
+  const url = localizedAbsoluteUrl(siteUrl, canonical ?? path, language);
   const ogImage = image ?? `${siteUrl}${DEFAULT_OG_IMAGE_PATH}`;
 
   // Dimensions are emitted only when they are known to match the bytes: the

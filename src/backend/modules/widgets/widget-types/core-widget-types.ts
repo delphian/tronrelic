@@ -1126,6 +1126,64 @@ async function fetchMainMenuData(
 }
 
 /**
+ * Widget-type id for the language switcher. Namespaced under `core:` so it
+ * never collides with a plugin-declared id; the frontend component registry
+ * (`widgets.core.ts`) keys its renderer on this string.
+ */
+export const LANGUAGE_SWITCHER_TYPE_ID = 'core:language-switcher';
+
+/**
+ * SSR payload the language-switcher data fetcher returns and the frontend
+ * `LanguageSwitcherWidget` consumes.
+ *
+ * Which languages to offer is deliberately not in it. That depends on the
+ * page being viewed, and widget data is cached per route, so the component
+ * works the list out itself from the localization snapshot the root layout
+ * already loaded. That also keeps the list right after a client-side
+ * navigation, when no widget data is fetched again.
+ */
+export interface ILanguageSwitcherWidgetData {
+    /** Show each language by its own name (`简体中文`) or by its code (`ZH`). */
+    display: 'native' | 'code';
+}
+
+/**
+ * JSON Schema (Draft 7) for the language-switcher placement's `instanceConfig`.
+ */
+export const LANGUAGE_SWITCHER_CONFIG_SCHEMA: JSONSchema7 = {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+        display: {
+            type: 'string',
+            enum: ['native', 'code'],
+            default: 'native',
+            title: 'Label',
+            description:
+                "'native' shows each language in its own script, such as 简体中文; 'code' shows a short code such as ZH, for a tight header row."
+        }
+    }
+};
+
+/**
+ * Resolve the language-switcher SSR payload from the placement's instance config.
+ *
+ * @param _route - Unused; the component reads the current path itself.
+ * @param _params - Unused.
+ * @param placement - Placement context carrying the operator config.
+ * @returns The label style, defaulting to native names.
+ */
+async function fetchLanguageSwitcherData(
+    _route: string,
+    _params: Record<string, string>,
+    placement?: IWidgetPlacementContext
+): Promise<ILanguageSwitcherWidgetData> {
+    const display = placement?.instanceConfig?.display === 'code' ? 'code' : 'native';
+
+    return { display };
+}
+
+/**
  * Build the core widget-type catalog as plain registration inputs.
  *
  * A factory rather than a constant because the block-ticker and
@@ -1211,6 +1269,15 @@ export function buildCoreWidgetTypeDescriptors(
             category: 'Navigation',
             defaultDataFetcher: fetchMainMenuData,
             configSchema: MAIN_MENU_CONFIG_SCHEMA
+        },
+        {
+            id: LANGUAGE_SWITCHER_TYPE_ID,
+            label: 'Language switcher',
+            description:
+                'Links to the current page in every other language it is published in (managed at /system/localization). Renders nothing on a page that exists only in English.',
+            category: 'Navigation',
+            defaultDataFetcher: fetchLanguageSwitcherData,
+            configSchema: LANGUAGE_SWITCHER_CONFIG_SCHEMA
         }
     ];
 }

@@ -16,6 +16,8 @@ import { PageViewTracker } from '../modules/user/components/PageViewTracker';
 import { MenuSeedProvider } from '../modules/menu/components/MenuSeedProvider';
 import type { IMenuSeed } from '../modules/menu/types';
 import type { ISSRSession } from '../modules/user/lib/session-server';
+import { LocalizationProvider, ENGLISH_SEED } from '../modules/localization/components/LocalizationProvider';
+import type { ILocalizationSeed } from '../modules/localization/types';
 
 // Re-export the SSR session shape for layout.tsx
 export type { ISSRSession };
@@ -39,6 +41,12 @@ interface ProvidersProps {
      * `MenuSeedProvider` instead of the widget payload.
      */
     ssrMenus?: Record<string, IMenuSeed>;
+    /**
+     * Language, live-language snapshot, and translation catalog the root
+     * layout resolved for this request. Seeds `LocalizationProvider` so the
+     * first browser render shows the same text the server rendered.
+     */
+    ssrLocalization?: ILocalizationSeed;
 }
 
 /**
@@ -48,7 +56,7 @@ interface ProvidersProps {
  * @param props - The page subtree plus the session and menu trees resolved during SSR.
  * @returns The subtree wrapped in every provider.
  */
-export function Providers({ children, ssrSession, ssrMenus }: ProvidersProps) {
+export function Providers({ children, ssrSession, ssrMenus, ssrLocalization }: ProvidersProps) {
     // Memoize the store so it survives re-renders. No SSR slice is preloaded
     // — identity is seeded into the SessionProvider via React context, not
     // Redux.
@@ -70,26 +78,30 @@ export function Providers({ children, ssrSession, ssrMenus }: ProvidersProps) {
                 Both viewports must stay inside every provider a toast or modal
                 body may use. Moving either one higher brings that failure back
                 for whichever context it is lifted above. */}
-            <SessionProvider initialSession={ssrSession ?? null}>
-                <ToastProvider>
-                    <ModalProvider>
-                        <FrontendPluginContextProvider>
-                            <SocketBridge />
-                            <CoreToastHandler />
-                            {/* Per-user notification toasts (identity-room targeted),
-                                sibling to the global CoreToastHandler. */}
-                            <NotificationHandler />
-                            <PluginLoader />
-                            <PageViewTracker />
-                            <MenuSeedProvider seeds={ssrMenus ?? EMPTY_MENU_SEEDS}>
-                                {children}
-                            </MenuSeedProvider>
-                            <ToastViewport />
-                            <ModalViewport />
-                        </FrontendPluginContextProvider>
-                    </ModalProvider>
-                </ToastProvider>
-            </SessionProvider>
+            {/* Localization sits above every provider that draws text, so a
+                toast or dialog body translates the same way page content does. */}
+            <LocalizationProvider seed={ssrLocalization ?? ENGLISH_SEED}>
+                <SessionProvider initialSession={ssrSession ?? null}>
+                    <ToastProvider>
+                        <ModalProvider>
+                            <FrontendPluginContextProvider>
+                                <SocketBridge />
+                                <CoreToastHandler />
+                                {/* Per-user notification toasts (identity-room targeted),
+                                    sibling to the global CoreToastHandler. */}
+                                <NotificationHandler />
+                                <PluginLoader />
+                                <PageViewTracker />
+                                <MenuSeedProvider seeds={ssrMenus ?? EMPTY_MENU_SEEDS}>
+                                    {children}
+                                </MenuSeedProvider>
+                                <ToastViewport />
+                                <ModalViewport />
+                            </FrontendPluginContextProvider>
+                        </ModalProvider>
+                    </ToastProvider>
+                </SessionProvider>
+            </LocalizationProvider>
         </Provider>
     );
 }

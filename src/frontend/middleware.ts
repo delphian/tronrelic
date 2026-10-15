@@ -3,6 +3,11 @@
  *
  * Handles:
  * - Legacy URL redirects with referrer preservation
+ * - Language routing: every page request is rewritten into the `[lang]` route
+ *   folder, `/markets` to `/en/markets` internally, while `/zh/markets` is
+ *   served as Chinese only when that language is enabled and the route is
+ *   published in it. With no language enabled every path routes to English,
+ *   which is how the site behaved before localization existed.
  * - Custom headers for server components (pathname for widget zone routing)
  *
  * Referrer preservation prevents attribution loss that occurs with static
@@ -12,7 +17,11 @@
 
 import { NextResponse } from 'next/server';
 import type { NextRequest, NextFetchEvent } from 'next/server';
+import type { ILocalizationPublicConfig } from '@/types';
+import { DEFAULT_LANGUAGE, resolveLocalizedPath } from '@/types';
 import { getServerSideApiUrl } from './lib/api-url';
+import { createCachedBackendFeed } from './lib/cachedBackendFeed';
+import { LANGUAGE_REQUEST_HEADER } from './modules/localization/lib/LANGUAGE_REQUEST_HEADER';
 
 /** Cookie name for preserved external referrer */
 export const ORIGINAL_REFERRER_COOKIE = '_original_ref';
@@ -249,110 +258,93 @@ interface RedirectRule {
 }
 
 /**
- * How long (ms) a fetched redirect map is served before a background refresh.
- * Matches the backend feed's Cache-Control, so an admin-added rule goes live in
- * at most this long.
+ * How long (ms) a fetched feed is served before a background refresh. Matches
+ * the backend feeds' Cache-Control, so an admin-added redirect, an enabled
+ * language, or a newly published route goes live in at most this long.
  */
-const REDIRECT_CACHE_TTL_MS = 60_000;
+const FEED_CACHE_TTL_MS = 60_000;
 
 /**
- * Backoff (ms) applied after a failed warm refresh (non-OK response or a thrown
- * fetch). Shorter than the healthy TTL so recovery is detected quickly, yet far
- * longer than a single request — it caps the frontend to one feed retry per
- * window during a backend incident instead of one fetch per page view. Without
- * it the warm path leaves the already-expired cache in place and re-fetches on
- * every request, amplifying load against an already-unhealthy backend.
+ * Backoff (ms) applied after a failed warm refresh. Shorter than the healthy
+ * TTL so recovery is detected quickly, yet far longer than a single request, so
+ * a backend incident costs one feed retry per window rather than one fetch per
+ * page view.
  */
-const REDIRECT_RETRY_BACKOFF_MS = 10_000;
+const FEED_RETRY_BACKOFF_MS = 10_000;
 
 /**
- * Timeout (ms) for the server-to-server redirect-map fetch. The map load sits on
- * the request critical path, so a slow backend must not stall navigation — on
- * timeout the last-known (or empty) map is used and the request proceeds.
+ * Timeout (ms) for a feed fetch. The feeds sit on the request critical path, so
+ * a slow backend must not stall navigation — on timeout the last-known value is
+ * used and the request proceeds.
  */
-const REDIRECT_FETCH_TIMEOUT_MS = 3000;
+const FEED_FETCH_TIMEOUT_MS = 3000;
 
 /**
- * Module-scope cache of the admin-managed redirect map. Redirect rules are no
- * longer hardcoded here — they live in Mongo (`module_traffic_redirects`) and
- * are edited from `/system/traffic`. This middleware runs on the Edge runtime
- * and cannot reach Mongo directly, so it pulls the map from the backend's public
- * `/api/redirects` feed and caches it in module scope. In the standalone Node
- * server this cache persists across requests in one instance, so the steady
- * state is ~one backend call per TTL window, not per request.
+ * The admin-managed redirect map. Rules live in Mongo
+ * (`module_traffic_redirects`) and are edited from `/system/traffic`; this
+ * middleware runs on the Edge runtime and cannot reach Mongo, so it reads the
+ * backend's public `/api/redirects` feed. Every failure keeps the last-known
+ * (or empty) map, so a redirect lookup never stalls or fails a request.
  */
-let cachedRedirectRules: RedirectRule[] = [];
-
-/** Epoch ms after which the cached map is stale; 0 means never fetched (cold). */
-let redirectCacheExpiry = 0;
-
-/** Dedupes concurrent background refreshes so only one fetch runs at a time. */
-let redirectRefreshInFlight: Promise<void> | null = null;
-
-/**
- * Fetch the active redirect map from the backend and replace the cache. A
- * non-OK response leaves the last-known map in place rather than clearing it, so
- * a transient backend hiccup never drops live redirects.
- */
-async function refreshRedirectRules(): Promise<void> {
-    const response = await fetch(`${getServerSideApiUrl()}/api/redirects`, {
-        cache: 'no-store',
-        signal: AbortSignal.timeout(REDIRECT_FETCH_TIMEOUT_MS)
-    });
-    if (!response.ok) {
-        return;
+const getRedirectRules = createCachedBackendFeed<RedirectRule[]>({
+    path: '/api/redirects',
+    ttlMs: FEED_CACHE_TTL_MS,
+    retryBackoffMs: FEED_RETRY_BACKOFF_MS,
+    timeoutMs: FEED_FETCH_TIMEOUT_MS,
+    initial: [],
+    parse: body => {
+        const rules = (body as { rules?: unknown })?.rules;
+        return Array.isArray(rules) ? rules as RedirectRule[] : [];
     }
-    const data = await response.json() as { rules?: RedirectRule[] };
-    cachedRedirectRules = Array.isArray(data.rules) ? data.rules : [];
-    redirectCacheExpiry = Date.now() + REDIRECT_CACHE_TTL_MS;
-}
+});
 
 /**
- * Return the current redirect map, refreshing as needed. On a cold cache it
- * blocks on the first fetch so a redirect fires on the very first request; once
- * warm it serves the cached map immediately and refreshes stale data in the
- * background (deduped), so no request pays fetch latency after warmup. Every
- * failure path degrades to the last-known (or empty) map and lets the request
- * fall through — a redirect lookup must never 500 or stall navigation.
+ * The localization snapshot: which languages are enabled and which routes are
+ * published in them, edited at `/system/localization`. Until the first fetch
+ * succeeds, and whenever the backend is unreachable on a cold start, it is the
+ * English-only snapshot, which routes every request exactly as before
+ * localization existed.
+ */
+const getLocalizationConfig = createCachedBackendFeed<ILocalizationPublicConfig>({
+    path: '/api/localization/config',
+    ttlMs: FEED_CACHE_TTL_MS,
+    retryBackoffMs: FEED_RETRY_BACKOFF_MS,
+    timeoutMs: FEED_FETCH_TIMEOUT_MS,
+    initial: { defaultLanguage: DEFAULT_LANGUAGE, languages: [], routes: [] },
+    parse: body => {
+        const snapshot = (body ?? {}) as Partial<ILocalizationPublicConfig>;
+        return {
+            defaultLanguage: DEFAULT_LANGUAGE,
+            languages: Array.isArray(snapshot.languages) ? snapshot.languages : [],
+            routes: Array.isArray(snapshot.routes) ? snapshot.routes : []
+        };
+    }
+});
+
+/**
+ * Public files the middleware must not rewrite into the `[lang]` folder.
  *
- * @returns The active redirect rules.
+ * Next.js checks the public directory and the root metadata files against the
+ * path after the middleware runs, so rewriting `/images/logo.png` to
+ * `/en/images/logo.png` would make the file unreachable. Only paths with a file
+ * extension under the public folders, plus the root icon routes, are left
+ * alone. Anything else, including a missing file under these folders, still
+ * ends in the normal 404 page, because the `(site)` layout refuses a request
+ * the middleware did not route.
  */
-async function getRedirectRules(): Promise<RedirectRule[]> {
-    const now = Date.now();
-    if (redirectCacheExpiry === 0) {
-        // Cold: block once so the very first request can still redirect. Arm the
-        // expiry either way so subsequent requests take the non-blocking warm
-        // path instead of blocking on every hit while a backend is unreachable.
-        try {
-            await refreshRedirectRules();
-        } catch {
-            /* leave the map empty; the background path will retry after the TTL */
-        }
-        if (redirectCacheExpiry === 0) {
-            redirectCacheExpiry = now + REDIRECT_CACHE_TTL_MS;
-        }
-        return cachedRedirectRules;
-    }
-    if (now >= redirectCacheExpiry && !redirectRefreshInFlight) {
-        // Snapshot the stale (already-expired) deadline so the settlement
-        // handler can distinguish a successful refresh — which pushes the
-        // expiry a full TTL into the future — from a failed one. Both failure
-        // modes (a non-OK response, which returns without advancing the
-        // expiry, and a thrown fetch caught below) leave the expiry equal to
-        // this snapshot. On failure, arm a short backoff so an unhealthy feed
-        // is retried once per backoff window instead of re-fetched on every
-        // request during a backend incident; the last-known map is retained.
-        const staleExpiry = redirectCacheExpiry;
-        redirectRefreshInFlight = refreshRedirectRules()
-            .catch(() => { /* keep last-known map on failure */ })
-            .finally(() => {
-                if (redirectCacheExpiry === staleExpiry) {
-                    redirectCacheExpiry = Date.now() + REDIRECT_RETRY_BACKOFF_MS;
-                }
-                redirectRefreshInFlight = null;
-            });
-    }
-    return cachedRedirectRules;
+const UNLOCALIZED_PATH_PATTERNS: readonly RegExp[] = [
+    /^\/(?:images|plugins)\/.+\.[A-Za-z0-9]+$/,
+    /^\/(?:icon|apple-icon)(?:\.[A-Za-z0-9]+)?$/
+];
+
+/**
+ * Decide whether a path is a public file the middleware must pass through.
+ *
+ * @param pathname - The request path.
+ * @returns True when the path must not be rewritten.
+ */
+function isUnlocalizedPath(pathname: string): boolean {
+    return UNLOCALIZED_PATH_PATTERNS.some(pattern => pattern.test(pathname));
 }
 
 /**
@@ -434,10 +426,14 @@ async function emitRedirectHit(request: NextRequest, rule: RedirectRule): Promis
 export async function middleware(request: NextRequest, event: NextFetchEvent) {
     const pathname = request.nextUrl.pathname;
 
-    // Check for a matching admin-managed redirect rule. The map is fetched from
-    // the backend and cached in module scope (see getRedirectRules) — no rules
-    // are hardcoded in this bundle.
-    const rule = findRedirectRule(pathname, await getRedirectRules());
+    // Both feeds are cached in module scope; after start-up neither costs a
+    // backend call on the request path. Fetched together so a cold start waits
+    // for one round trip rather than two.
+    const [redirectRules, localizationConfig] = await Promise.all([getRedirectRules(), getLocalizationConfig()]);
+
+    // Check for a matching admin-managed redirect rule. No rules are hardcoded
+    // in this bundle.
+    const rule = findRedirectRule(pathname, redirectRules);
 
     if (rule) {
         const referer = request.headers.get('referer');
@@ -491,12 +487,36 @@ export async function middleware(request: NextRequest, event: NextFetchEvent) {
         await emitBootstrapEvent(request, tid, referralCode);
     }
 
-    // No redirect - continue with normal request processing
-    const response = NextResponse.next({
-        request: {
-            headers: request.headers
+    // No redirect - route the request to its language.
+    //
+    // The language header is always cleared first, so a value a visitor sends
+    // never survives; the layouts trust it only because this line owns it.
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.delete(LANGUAGE_REQUEST_HEADER);
+
+    // The path pages and widgets see. For a translated page it drops the
+    // language prefix, so widgets and head fragments placed on /markets also
+    // apply on /zh/markets.
+    let routedPath = pathname;
+    let response: NextResponse;
+    if (isUnlocalizedPath(pathname)) {
+        // A public file: pass it through untouched so Next.js can serve it.
+        response = NextResponse.next({ request: { headers: requestHeaders } });
+    } else {
+        const { language, path } = resolveLocalizedPath(pathname, localizationConfig);
+        requestHeaders.set(LANGUAGE_REQUEST_HEADER, language);
+        routedPath = path;
+        if (language === DEFAULT_LANGUAGE) {
+            // English keeps its unprefixed address in the browser and is
+            // served from the [lang] folder as `en` internally.
+            const target = request.nextUrl.clone();
+            target.pathname = pathname === '/' ? `/${DEFAULT_LANGUAGE}` : `/${DEFAULT_LANGUAGE}${pathname}`;
+            response = NextResponse.rewrite(target, { request: { headers: requestHeaders } });
+        } else {
+            // `/zh/markets` already names its [lang] segment; no rewrite needed.
+            response = NextResponse.next({ request: { headers: requestHeaders } });
         }
-    });
+    }
 
     const isProduction = request.nextUrl.protocol === 'https:';
 
@@ -526,7 +546,7 @@ export async function middleware(request: NextRequest, event: NextFetchEvent) {
     }
 
     // Set pathname header for widget zone routing
-    response.headers.set('x-pathname', pathname);
+    response.headers.set('x-pathname', routedPath);
 
     return response;
 }

@@ -22,6 +22,7 @@ interface IFrontendPluginContext {
     useToast: () => { push, dismiss };
     useFilePicker: () => IFilePickerClient;   // pick/upload files; provider-delivered
     useImageGen: () => IImageGenClient;       // prompt→saved image; provider-delivered
+    useTranslation: () => ITranslator;        // t(key, englishText) in the page's language
 }
 ```
 
@@ -189,6 +190,17 @@ const composed = await generate({ prompt: 'the watch from image 1 on the wrist i
 ```
 
 Providers are provider-neutral by construction — never bind to one vendor's service name. To check whether *any* image provider is reachable, use `isAvailable`, not a probe of a specific plugin.
+
+## Translation (`context.useTranslation`)
+
+`useTranslation()` returns `{ t, language, direction }` for the language of the page being rendered. Write the English at the call site and give it a stable key: `t('page.title', 'Energy Markets')`. Keys are scoped to your plugin id automatically. On an English page `t` returns the English unchanged; on a translated page (`/zh/...`) it returns the stored translation, or the English when none exists yet. The same lookup runs on the server and in the browser, so it is safe in SSR-rendered components. Pass values as `{name}` placeholders through the third argument rather than concatenating, so a translator can move them.
+
+Keys are discovered automatically the first time the server renders them and appear on `/system/localization`, where translations are stored and routes published. Keep a key unchanged when only the English wording changes: the translation is then flagged stale instead of being orphaned. See the [Localization README](../../src/backend/modules/localization/README.md).
+
+```typescript
+const { t } = context.useTranslation();
+return <layout.PageHeader title={t('page.title', 'Energy Markets')} subtitle={t('page.count', '{count} markets', { count })} />;
+```
 
 ## Detail Documents
 

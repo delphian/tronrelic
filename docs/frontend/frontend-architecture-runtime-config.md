@@ -40,7 +40,7 @@ There are no `NEXT_PUBLIC_*` variables in production code by design.
 **Server component fetching SSR data:**
 
 ```typescript
-// app/(core)/markets/page.tsx
+// app/[lang]/(site)/(core)/markets/page.tsx
 import { getServerConfig } from '@/lib/serverConfig';
 
 export default async function MarketsPage() {

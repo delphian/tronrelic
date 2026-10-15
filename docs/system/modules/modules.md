@@ -51,7 +51,7 @@ The pages module (`core:page`) is the reference implementation. See [system-cont
 | Depth of integration | Reaches the Express app and the core database | Only what the injected `IPluginContext` exposes |
 | Frontend UI | Optional | Usually included |
 
-**Existing modules:** Pages, Menu, Identity, Traffic, Scheduler, Logs, Database.
+**Existing modules:** Pages, Menu, Identity, Traffic, Scheduler, Logs, Database, Localization.
 
 Decide by asking whether the application can function without the feature, rather than by asking whether it provides shared services. If the application cannot function without it, build a module. If it can, build a plugin, even when other components will consume its services. The service registry (`context.services`) is what makes that possible: a plugin can offer a shared capability at runtime without being promoted to a module.
 

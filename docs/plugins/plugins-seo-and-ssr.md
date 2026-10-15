@@ -8,7 +8,7 @@ Plugin pages used to render entirely client-side: the catch-all route delegated 
 
 ## How It Works
 
-The catch-all route at `src/frontend/app/[...slug]/page.tsx` is the integration point. During SSR it calls `getEnabledPluginPageConfig(slug)` from the server-side plugin registry, which returns the `IPageConfig` only if the owning plugin is currently enabled. From there:
+The catch-all route at `src/frontend/app/[lang]/(site)/[...slug]/page.tsx` is the integration point. During SSR it calls `getEnabledPluginPageConfig(slug)` from the server-side plugin registry, which returns the `IPageConfig` only if the owning plugin is currently enabled. From there:
 
 1. **`generateMetadata`** reads the page config's SEO fields (title, description, keywords, ogImage, ogType, canonical, structuredData, noindex) and composes a Next.js Metadata object via the existing `buildMetadata()` helper. The metadata lands in the `<head>` of the HTML response that crawlers and social scrapers receive — no JavaScript involved.
 

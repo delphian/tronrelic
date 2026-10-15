@@ -9,6 +9,7 @@ import type { IAiToolSchemaViewProps } from '../ui/IAiToolSchemaViewProps.js';
 import type { IPanelProps } from '../ui/IPanelProps.js';
 import type { IFigureListProps } from '../ui/IFigureListProps.js';
 import type { IPriceRailProps } from '../ui/IPriceRailProps.js';
+import type { ITranslator } from '../localization/ITranslator.js';
 
 /**
  * User state exposed to frontend plugins.
@@ -1888,4 +1889,23 @@ export interface IFrontendPluginContext {
      * ```
      */
     useImageGen: () => IImageGenClient;
+
+    /**
+     * Translation hook — renders the plugin's interface text in the language
+     * of the current page. Keys are scoped to this plugin automatically, so two
+     * plugins can both use `title` without colliding. On an English page `t`
+     * returns the English text passed to it; on a translated page it returns
+     * the stored translation, or the English text when none exists yet. The
+     * same lookup runs during server rendering and in the browser, so the
+     * first client render matches the server HTML. Translations are managed on
+     * `/system/localization`. Must be called within a component context
+     * (React hooks pattern).
+     *
+     * @example
+     * ```typescript
+     * const { t } = context.useTranslation();
+     * return <layout.PageHeader title={t('page.title', 'Energy Markets')} />;
+     * ```
+     */
+    useTranslation: () => ITranslator;
 }

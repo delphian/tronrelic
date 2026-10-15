@@ -10,7 +10,7 @@ Adding pages used to require editing navigation components, route configuration,
 
 Backend `init()` calls `context.menuService.create()`, writing a database node and emitting `menu:updated`; the NavBar refetches and re-renders. Admin entries parent under `MAIN_SYSTEM_CONTAINER_ID`, and the menu service walks the parent chain to force `requiresAdmin: true` on every descendant — gating cannot be misconfigured.
 
-Frontend `pages` arrays are statically imported into `plugins.generated.ts` by `generate:plugins`, so the registry bootstraps synchronously — no fetch, no loading flash. The catch-all route (`app/[...slug]/page.tsx`) consults `serverPluginRegistry` filtered by enabled manifests and returns 404 server-side for disabled plugins.
+Frontend `pages` arrays are statically imported into `plugins.generated.ts` by `generate:plugins`, so the registry bootstraps synchronously — no fetch, no loading flash. The catch-all route (`app/[lang]/(site)/[...slug]/page.tsx`) consults `serverPluginRegistry` filtered by enabled manifests and returns 404 server-side for disabled plugins.
 
 ## Quick Reference
 
