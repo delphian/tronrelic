@@ -10,16 +10,10 @@ import { WidgetZone, fetchWidgetsForRoute } from '../../components/widgets';
 import { fetchMenuNamespace } from '../../modules/menu/server';
 import { getServerSession, type ISSRSession } from '../../modules/user/lib/session-server';
 import { DEFAULT_LANGUAGE } from '@/types';
-import {
-    fetchLocalizationConfig,
-    fetchTranslationCatalog,
-    resolveMetadataLanguage,
-    resolveRequestLanguage
-} from '../../modules/localization/server';
+import { fetchLocalizationSeed, resolveMetadataLanguage } from '../../modules/localization/server';
 // Imported from the files rather than the module barrel, which also exports
 // components with stylesheets and would pull their CSS into the layout bundle.
 import { buildLanguageAlternates } from '../../modules/localization/lib/buildLanguageAlternates';
-import type { ILocalizationSeed } from '../../modules/localization/types';
 
 /** Route params of the `[lang]` segment. */
 interface ILanguageParams {
@@ -332,11 +326,7 @@ export default async function RootLayout({ children, params }: { children: React
   const headersList = await headers();
   const pathname = headersList.get('x-pathname') || '/';
 
-  // The language the middleware routed this request to. A request it left
-  // alone (a missing file under /images/) renders as English here and is
-  // turned into a 404 by the (site) layout.
   const { lang } = await params;
-  const { language } = await resolveRequestLanguage(lang);
 
   // Cookie map handed to the head-fragments hook so cookie-aware
   // contributors (e.g. locale switchers, A/B markers) can branch on the
@@ -358,28 +348,23 @@ export default async function RootLayout({ children, params }: { children: React
   // the System container). The tree reaches the widget through
   // MenuSeedProvider.
   //
-  // The localization snapshot and catalog come from the Next.js fetch cache,
-  // so they cost a backend call about once a minute rather than per request.
-  // The catalog is skipped entirely for English.
-  const [runtimeConfig, headFragments, htmlAttributes, ssrSession, widgetBundle, mainMenu, localizationConfig, catalog] = await Promise.all([
+  // The localization seed carries the language the middleware routed this
+  // request to. A request it left alone (a missing file under /images/)
+  // renders as English here and is turned into a 404 by the (site) layout.
+  // The snapshot and catalog inside it come from the Next.js fetch cache, so
+  // they cost a backend call about once a minute rather than per request, and
+  // the catalog is skipped entirely for English.
+  const [runtimeConfig, headFragments, htmlAttributes, ssrSession, widgetBundle, mainMenu, localizationSeed] = await Promise.all([
     getServerConfig(),
     fetchHeadFragments(pathname, cookieMap),
     fetchHtmlAttributes(pathname, cookieMap),
     fetchSSRSession(),
     fetchWidgetsForRoute(pathname, {}),
     fetchMenuNamespace('main', cookieStore.toString()),
-    fetchLocalizationConfig(),
-    fetchTranslationCatalog(language)
+    fetchLocalizationSeed(lang)
   ]);
 
-  const direction = localizationConfig.languages.find(entry => entry.code === language)?.direction ?? 'ltr';
-  const localizationSeed: ILocalizationSeed = {
-    language,
-    direction,
-    path: pathname,
-    config: localizationConfig,
-    catalog
-  };
+  const { language, direction, config: localizationConfig } = localizationSeed;
 
   // hreflang links naming every language version of this page. Empty for a
   // page that exists only in English, so those pages render the same head as

@@ -420,19 +420,25 @@ export function TranslationsTab({ initialRoute }: ITranslationsTabProps) {
             </Panel>
 
             <Panel title="Add a key by hand" meta="For text you want ready before any page renders it">
-                <form className={styles.form_row} onSubmit={event => void handleCreateKey(event)}>
-                    <Field label="Namespace" hint="core, or a plugin id" className={styles.form_field_narrow}>
-                        <Input value={newKey.namespace} onChange={event => setNewKey({ ...newKey, namespace: event.target.value })} required />
-                    </Field>
-                    <Field label="Key" hint="As passed to t(), e.g. markets.title" className={styles.form_field}>
-                        <Input value={newKey.key} onChange={event => setNewKey({ ...newKey, key: event.target.value })} required />
-                    </Field>
-                    <Field label="English text" className={styles.form_field}>
-                        <Input value={newKey.source} onChange={event => setNewKey({ ...newKey, source: event.target.value })} required />
-                    </Field>
-                    <Button type="submit" variant="primary" loading={creating} icon={<Plus size={18} />}>
-                        Add key
-                    </Button>
+                <form onSubmit={event => void handleCreateKey(event)}>
+                    <Stack gap="sm">
+                        <div className={styles.form_row}>
+                            <Field label="Namespace" hint="core, or a plugin id" className={styles.form_field_narrow}>
+                                <Input value={newKey.namespace} onChange={event => setNewKey({ ...newKey, namespace: event.target.value })} required />
+                            </Field>
+                            <Field label="Key" hint="As passed to t(), e.g. markets.title" className={styles.form_field}>
+                                <Input value={newKey.key} onChange={event => setNewKey({ ...newKey, key: event.target.value })} required />
+                            </Field>
+                            <Field label="English text" className={styles.form_field}>
+                                <Input value={newKey.source} onChange={event => setNewKey({ ...newKey, source: event.target.value })} required />
+                            </Field>
+                        </div>
+                        <div className={styles.form_actions}>
+                            <Button type="submit" variant="primary" loading={creating} icon={<Plus size={18} />}>
+                                Add key
+                            </Button>
+                        </div>
+                    </Stack>
                 </form>
             </Panel>
         </Stack>

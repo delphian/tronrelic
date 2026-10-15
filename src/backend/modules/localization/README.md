@@ -13,7 +13,7 @@ Serves the site in languages other than English. Administrators add languages, p
 | Admin API | `/api/admin/system/localization` (`requireAdmin`, grouped rate limiter) |
 | Types | `@/types` → `packages/types/src/localization/` (contracts plus the shared helpers `matchRoutePattern`, `isValidRoutePattern`, `resolveLocalizedPath`, `findPublishedLanguages`, `localizePath`, `interpolateTranslation`, `DEFAULT_LANGUAGE`) |
 | Storage | `module_localization_languages`, `module_localization_routes`, `module_localization_keys`, `module_localization_translations` |
-| Frontend module | `src/frontend/modules/localization/` — `LocalizationProvider`, `useTranslation`, `LanguageSwitcher`, admin tabs; server-only helpers in `./server` |
+| Frontend module | `src/frontend/modules/localization/` — `LocalizationProvider`, `useTranslation`, `LanguageSwitcher`, admin tabs; server-only helpers in `./server`, including `getServerTranslator` and `fetchLocalizationSeed` |
 | Plugin API | `context.useTranslation()` on `IFrontendPluginContext`, keys scoped to the plugin id |
 | Widget | `core:language-switcher` (widgets module catalog) |
 | Log service | `tronrelic:localization` — missing-translation warnings land here |
@@ -48,6 +48,13 @@ Core components: `const { t } = useTranslation();` from `modules/localization` (
 ```tsx
 const { t } = context.useTranslation();
 return <layout.PageHeader title={t('page.title', 'Energy Markets')} subtitle={t('page.count', '{count} markets', { count })} />;
+```
+
+Server code that cannot call a hook, chiefly a page's `generateMetadata`, uses `getServerTranslator(params)` from `modules/localization/server`. It returns the same translator, built from the same seed the root layout uses, and its `language` is the value to pass to `buildMetadata`, so a translated page sends search engines a translated title and description. `/about` is the reference:
+
+```tsx
+const [{ siteUrl }, { t, language }] = await Promise.all([getServerConfig(), getServerTranslator(params)]);
+return buildMetadata({ siteUrl, language, title: t('about.meta.title', 'About TronRelic'), path: '/about' });
 ```
 
 Pass values as `{name}` placeholders instead of concatenating, so a translator can move them. There is no plural support; use separate keys. Backend code producing visitor-facing text calls `serviceRegistry.get<ILocalizationService>('localization')?.translate(namespace, key, language, englishText, params)`.

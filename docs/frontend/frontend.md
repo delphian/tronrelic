@@ -20,7 +20,7 @@ Never initialize state as `useState([])` and fetch the data when the component m
 
 Every route lives in `app/[lang]/`: the root layout is `app/[lang]/layout.tsx`, and pages sit in `app/[lang]/(site)/`. The middleware rewrites an English request such as `/markets` to `/en/markets` internally, and serves `/zh/markets` as Chinese only when that language is enabled and the route is published in it on `/system/localization`. The language is part of the route so that changing it re-renders the root layout, including `<html lang>`. A new route goes inside `app/[lang]/(site)/`, whose layout returns 404 for any request the middleware did not route. A page that builds metadata passes `language: await resolveMetadataLanguage(params)` to `buildMetadata`, so a translated page's canonical URL names its own address.
 
-Write visitor-facing text through the translation function, with the English at the call site: `const { t } = useTranslation()` in core components, `context.useTranslation()` in plugins, then `t('markets.title', 'Energy Markets')`. On English pages `t` returns the English unchanged. See the [Localization README](../../src/backend/modules/localization/README.md).
+Write visitor-facing text through the translation function, with the English at the call site: `const { t } = useTranslation()` in core components, `context.useTranslation()` in plugins, then `t('markets.title', 'Energy Markets')`. On English pages `t` returns the English unchanged. A page's `generateMetadata` cannot call a hook, so it gets the same `t` from `await getServerTranslator(params)` in `modules/localization/server`. See the [Localization README](../../src/backend/modules/localization/README.md).
 
 ### Code Goes in `modules/`, Not `features/`
 

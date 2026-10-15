@@ -10,9 +10,7 @@ import { useContext, useMemo } from 'react';
 import type { ITranslator } from '@/types';
 import { LocalizationContext } from '../components/LocalizationProvider';
 import { createTranslator } from '../lib/createTranslator';
-
-/** Namespace for text rendered by core components rather than plugins. */
-export const CORE_TRANSLATION_NAMESPACE = 'core';
+import { CORE_TRANSLATION_NAMESPACE } from '../lib/CORE_TRANSLATION_NAMESPACE';
 
 /**
  * Get a `t` function for the current page's language.

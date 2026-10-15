@@ -253,9 +253,6 @@ export function RoutesTab({ onShowKeys }: IRoutesTabProps) {
                             <Field label="Route pattern" hint="For example /markets or /blog/*" className={styles.form_field}>
                                 <Input value={pattern} onChange={event => setPattern(event.target.value)} required />
                             </Field>
-                            <Button type="submit" variant="primary" loading={creating} icon={<Plus size={18} />}>
-                                Publish route
-                            </Button>
                         </div>
                         {languages.length === 0 ? (
                             <p className={styles.intro}>Add a language on the Languages tab first.</p>
@@ -274,6 +271,11 @@ export function RoutesTab({ onShowKeys }: IRoutesTabProps) {
                                 ))}
                             </div>
                         )}
+                        <div className={styles.form_actions}>
+                            <Button type="submit" variant="primary" loading={creating} icon={<Plus size={18} />}>
+                                Publish route
+                            </Button>
+                        </div>
                     </Stack>
                 </form>
             </Panel>

@@ -247,25 +247,31 @@ export function LanguagesTab() {
             </Panel>
 
             <Panel title="Add a language">
-                <form className={styles.form_row} onSubmit={event => void handleCreate(event)}>
-                    <Field label="Code" hint="BCP 47, e.g. zh or pt-BR" className={styles.form_field_narrow}>
-                        <Input value={form.code} onChange={event => setForm({ ...form, code: event.target.value })} required />
-                    </Field>
-                    <Field label="English name" className={styles.form_field}>
-                        <Input value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} required />
-                    </Field>
-                    <Field label="Native name" hint="Shown to visitors in the switcher" className={styles.form_field}>
-                        <Input value={form.nativeName} onChange={event => setForm({ ...form, nativeName: event.target.value })} required />
-                    </Field>
-                    <Field label="Direction" className={styles.form_field_narrow}>
-                        <Select value={form.direction} onChange={event => setForm({ ...form, direction: event.target.value as LanguageDirection })}>
-                            <option value="ltr">Left to right</option>
-                            <option value="rtl">Right to left</option>
-                        </Select>
-                    </Field>
-                    <Button type="submit" variant="primary" loading={creating} icon={<Plus size={18} />}>
-                        Add language
-                    </Button>
+                <form onSubmit={event => void handleCreate(event)}>
+                    <Stack gap="sm">
+                        <div className={styles.form_row}>
+                            <Field label="Code" hint="BCP 47, e.g. zh or pt-BR" className={styles.form_field_narrow}>
+                                <Input value={form.code} onChange={event => setForm({ ...form, code: event.target.value })} required />
+                            </Field>
+                            <Field label="English name" className={styles.form_field}>
+                                <Input value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} required />
+                            </Field>
+                            <Field label="Native name" hint="Shown to visitors in the switcher" className={styles.form_field}>
+                                <Input value={form.nativeName} onChange={event => setForm({ ...form, nativeName: event.target.value })} required />
+                            </Field>
+                            <Field label="Direction" className={styles.form_field_narrow}>
+                                <Select value={form.direction} onChange={event => setForm({ ...form, direction: event.target.value as LanguageDirection })}>
+                                    <option value="ltr">Left to right</option>
+                                    <option value="rtl">Right to left</option>
+                                </Select>
+                            </Field>
+                        </div>
+                        <div className={styles.form_actions}>
+                            <Button type="submit" variant="primary" loading={creating} icon={<Plus size={18} />}>
+                                Add language
+                            </Button>
+                        </div>
+                    </Stack>
                 </form>
             </Panel>
         </Stack>
