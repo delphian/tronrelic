@@ -14,12 +14,22 @@
     line-height: var(--line-height-relaxed);
 }
 
-/* A row of form controls that wraps onto further lines in a narrow container. */
+/*
+ * A row of form fields that wraps onto further lines in a narrow container.
+ * Fields align at the top so every label and input sits on the same line
+ * whether or not a field shows a hint underneath; aligning at the bottom
+ * pushed inputs with a hint higher than inputs without one.
+ */
 .form_row {
     display: flex;
     flex-wrap: wrap;
     gap: var(--gap-sm);
-    align-items: flex-end;
+    align-items: flex-start;
+}
+
+/* The submit button on its own line below the fields, at its natural width. */
+.form_actions {
+    display: flex;
 }
 
 /* Text fields share a base width and shrink together. */

@@ -11,3 +11,5 @@
 export { fetchLocalizationConfig, fetchTranslationCatalog, ENGLISH_ONLY_CONFIG } from './lib/fetchLocalization';
 export { resolveRequestLanguage, resolveMetadataLanguage } from './lib/resolveRequestLanguage';
 export type { IRequestLanguage } from './lib/resolveRequestLanguage';
+export { fetchLocalizationSeed } from './lib/fetchLocalizationSeed';
+export { getServerTranslator } from './lib/getServerTranslator';
