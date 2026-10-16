@@ -9,7 +9,7 @@
  */
 
 import type { Express, Router } from 'express';
-import type { IDatabaseService, IMenuService, IModule, IModuleMetadata, IServiceRegistry } from '@/types';
+import type { IAiProviderRegistry, IDatabaseService, IMenuService, IModule, IModuleMetadata, IServiceRegistry } from '@/types';
 import { logger } from '../../lib/logger.js';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
 import { createGroupedAdminRateLimiter } from '../../api/middleware/rate-limit.js';
@@ -17,13 +17,23 @@ import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
 import { ensureLocalizationIndexes } from './database/index.js';
 import { LocalizationService } from './services/localization.service.js';
 import { LocalizationAdminService } from './services/localization-admin.service.js';
+import { LocalizationSettingsService } from './services/localization-settings.service.js';
 import { TranslationObservationService } from './services/translation-observation.service.js';
+import { TranslationSuggestionService } from './services/translation-suggestion.service.js';
 import { LocalizationPublicController } from './api/localization-public.controller.js';
 import { LocalizationAdminController } from './api/localization-admin.controller.js';
 import { createLocalizationAdminRouter, createLocalizationPublicRouter } from './api/localization.routes.js';
 
 /** Name the read-side service is published under in the service registry. */
 export const LOCALIZATION_SERVICE_NAME = 'localization';
+
+/**
+ * Registry name of the core AI provider registry, as documented in
+ * `docs/system/system-ai-tools.md`. Written out rather than imported from the
+ * ai-tools module, whose barrel would load that whole module and its Redis and
+ * WebSocket dependencies into this one.
+ */
+const AI_PROVIDERS_SERVICE_NAME = 'ai-providers';
 
 /**
  * Menu namespace holding the page's in-page tab row. Kept out of `main` so the
@@ -35,16 +45,18 @@ const SUBMENU_NAMESPACE = 'localization';
 /**
  * The page's tab row, declared as menu nodes so it inherits per-user gating,
  * ordering, and live refresh. Languages comes first because nothing else can
- * be configured until a language exists. Database and Logs are the tabs every
- * module owning storage and an admin page carries, built from the core
- * browsers scoped to this module.
+ * be configured until a language exists. Settings holds the AI translation
+ * assist's prompt and model. Database and Logs are the tabs every module owning
+ * storage and an admin page carries, built from the core browsers scoped to
+ * this module.
  */
 const SUBMENU_TABS: ReadonlyArray<{ label: string; tab: string; icon: string; order: number }> = [
     { label: 'Languages', tab: 'languages', icon: 'Languages', order: 0 },
     { label: 'Routes', tab: 'routes', icon: 'Route', order: 1 },
     { label: 'Translations', tab: 'translations', icon: 'FileText', order: 2 },
-    { label: 'Database', tab: 'database', icon: 'Database', order: 3 },
-    { label: 'Logs', tab: 'logs', icon: 'ScrollText', order: 4 }
+    { label: 'Settings', tab: 'settings', icon: 'Settings', order: 3 },
+    { label: 'Database', tab: 'database', icon: 'Database', order: 4 },
+    { label: 'Logs', tab: 'logs', icon: 'ScrollText', order: 5 }
 ];
 
 /** Dependencies the localization module needs at bootstrap. */
@@ -88,6 +100,8 @@ export class LocalizationModule implements IModule<ILocalizationModuleDependenci
     private app!: Express;
     private service!: LocalizationService;
     private adminService!: LocalizationAdminService;
+    private settingsService!: LocalizationSettingsService;
+    private suggestionService!: TranslationSuggestionService;
     private observationService!: TranslationObservationService;
     private initialized = false;
     private readonly logger = logger.child({ module: 'localization' });
@@ -120,6 +134,18 @@ export class LocalizationModule implements IModule<ILocalizationModuleDependenci
             listKnownNamespaces: deps.listKnownNamespaces
         });
 
+        this.settingsService = new LocalizationSettingsService({ database: deps.database, logger: this.logger });
+
+        // The provider registry is looked up per request rather than captured
+        // here: the ai-tools module publishes it in its own run(), and provider
+        // plugins register and unregister on it at runtime.
+        this.suggestionService = new TranslationSuggestionService({
+            database: deps.database,
+            settings: this.settingsService,
+            getProviderRegistry: () => this.serviceRegistry.get<IAiProviderRegistry>(AI_PROVIDERS_SERVICE_NAME) ?? null,
+            logger: this.logger
+        });
+
         this.initialized = true;
         this.logger.info('Localization module initialized');
     }
@@ -142,11 +168,24 @@ export class LocalizationModule implements IModule<ILocalizationModuleDependenci
         // Translation saves get their own rate-limit bucket: a translator
         // working down a list saves far more often than anyone edits languages
         // or routes, and should not lock themselves out of the other tabs.
-        const adminController = new LocalizationAdminController(this.adminService, this.logger);
+        // Suggestions get one too, since each click fills a row the
+        // translator then saves.
+        const adminController = new LocalizationAdminController(
+            this.adminService,
+            this.settingsService,
+            this.suggestionService,
+            this.logger
+        );
         const adminRouter: Router = createLocalizationAdminRouter(adminController);
         this.app.use(
             '/api/admin/system/localization',
-            createGroupedAdminRateLimiter({ translations: 'localization-admin-translations' }, 'localization-admin'),
+            createGroupedAdminRateLimiter(
+                {
+                    translations: 'localization-admin-translations',
+                    'translation-suggestions': 'localization-admin-suggestions'
+                },
+                'localization-admin'
+            ),
             requireAdmin,
             adminRouter
         );

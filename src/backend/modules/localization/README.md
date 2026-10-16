@@ -8,12 +8,13 @@ Serves the site in languages other than English. Administrators add languages, p
 |---|---|
 | Module id | `localization` |
 | Service registry name | `'localization'` → `ILocalizationService` (read-only: snapshot, catalog, `translate`, `getLanguagesForPath`) |
-| Admin UI | `/system/localization` — Languages, Routes, Translations, Database, Logs tabs |
+| Admin UI | `/system/localization` — Languages, Routes, Translations, Settings, Database, Logs tabs |
 | Public API | `/api/localization` |
 | Admin API | `/api/admin/system/localization` (`requireAdmin`, grouped rate limiter) |
 | Types | `@/types` → `packages/types/src/localization/` (contracts plus the shared helpers `matchRoutePattern`, `isValidRoutePattern`, `resolveLocalizedPath`, `findPublishedLanguages`, `localizePath`, `localizeHref`, `interpolateTranslation`, `DEFAULT_LANGUAGE`) |
 | Frontend hooks | `useTranslation`, `useLocalization`, `useLocalizedHref` |
-| Storage | `module_localization_languages`, `module_localization_routes`, `module_localization_keys`, `module_localization_translations` |
+| Storage | `module_localization_languages`, `module_localization_routes`, `module_localization_keys`, `module_localization_translations`, `module_localization_settings` |
+| AI provider | Read per request from the core `'ai-providers'` registry (`IAiProviderRegistry`); the module works without one, and only the Suggest buttons need it |
 | Frontend module | `src/frontend/modules/localization/` — `LocalizationProvider`, `useTranslation`, `LanguageSwitcher`, admin tabs; server-only helpers in `./server`, including `getServerTranslator` and `fetchLocalizationSeed` |
 | Plugin API | `context.useTranslation()` on `IFrontendPluginContext`, keys scoped to the plugin id |
 | Widget | `core:language-switcher` (widgets module catalog) |
@@ -35,12 +36,27 @@ A language change is a change of the `[lang]` segment, so Next.js re-renders the
 ## Rollout Workflow
 
 1. **Languages tab** — add the language. It starts disabled; nothing changes for visitors.
-2. **Translations tab** — keys appear as the site renders them. Pick the language and translate, narrowing the list by namespace, status, published route, or text. A key whose English changed after its translation was saved shows as *stale*.
+2. **Translations tab** — keys appear as the site renders them. Pick the language and translate, narrowing the list by namespace, status, published route, or text. A key whose English changed after its translation was saved shows as *stale*. The Suggest buttons fill editors from an AI model; see [AI Translation Suggestions](#ai-translation-suggestions).
 3. **Routes tab** — publish the route pattern in the language. The missing count shows how many keys rendered on that route still lack a translation; "Show keys" opens the Translations tab filtered to them.
 4. **Languages tab** — enable the language. Enabling is refused when existing CMS pages or menu URLs already start with `/<code>/`.
 5. Place the **Language switcher** widget (`/system/widgets`) so visitors can reach the translated pages. It renders nothing on English-only pages.
 
 A translated page that falls back to English for a missing key still renders; the frontend reports it and the backend logs a warning once per language and key per process (Logs tab).
+
+## AI Translation Suggestions
+
+Each row on the Translations tab has a Suggest button, and the panel header has **Suggest page**. Both send English text to an AI model and place its translations in the editors. **Nothing is saved**: the administrator reviews the text and saves the rows they accept.
+
+| | |
+|---|---|
+| Per-row button | Translates that row, replacing whatever its editor holds |
+| Suggest page | Translates every *missing* or *stale* row on the current page that has no unsaved text, in **one** request (at most `MAX_TRANSLATION_SUGGESTION_KEYS`, 50, the page size), so terms stay consistent across the batch |
+| Settings tab | The system prompt (tone and glossary, such as "TRON is always 波场") and the provider and model. A null provider means the active one; a null model means the provider's default |
+| Toast | The model's remarks on the batch, its per-key notes, keys it skipped, and the cost the provider reported (`costUsd`) with token counts. Stays open when there are notes |
+
+`TranslationSuggestionService` resolves the provider through the `'ai-providers'` registry at request time: `getProvider(id)` when Settings names one, which fails with 503 rather than falling back if that provider is gone, otherwise `getActive()`. It calls `query()` with `toolAllowlist: []`, `expandVariables: false`, and `thinkingBudget: 0`, because the English comes from the site and plugins and must not be able to invoke a tool or expand a `{%variable%}`. The prompt (built in `translation-suggestion-prompt.ts`) sends the strings as JSON data with numbered ids, includes a stale row's previous translation as context, and asks for a JSON reply. The parser drops entries with unknown ids or empty text, reports their keys as unanswered, and adds a note when a translation dropped a `{placeholder}` the English has. A `refusal` or `max_tokens` stop is reported as a 502 instead of a parse error. Every run is logged under `tronrelic:localization` with the actor, model, token usage, and cost.
+
+The cost is the provider's figure after the run. There is no estimate beforehand, because `IAiProvider` has no pricing method and per-model rates live inside the provider plugin. The suggestion route has its own limit of 20 requests a minute on top of the admin limiter, since each one is a paid call.
 
 ## Translating Text in Code
 
@@ -76,7 +92,7 @@ Observations are validated: the namespace must be `core` or a discovered plugin 
 
 ## Admin REST
 
-All under `/api/admin/system/localization`. Errors: 400 validation, 404 not found, 409 conflict, each with `{ error }`.
+All under `/api/admin/system/localization`. Errors: 400 validation, 404 not found, 409 conflict, 502 unusable AI reply, 503 no AI provider, each with `{ error }`.
 
 | Method | Path | Body / query | Returns |
 |---|---|---|---|
@@ -94,6 +110,9 @@ All under `/api/admin/system/localization`. Errors: 400 validation, 404 not foun
 | DELETE | `/translations` | `?namespace&key&language` | 204 |
 | POST | `/keys` | `{ namespace, key, source }` | `{ key }` 201, `origin: 'manual'` |
 | DELETE | `/keys` | `?namespace&key` | 204; deletes its translations too |
+| GET | `/settings` | — | `{ settings: ILocalizationSettings }`, with the default system prompt before the first save |
+| PATCH | `/settings` | `{ systemPrompt?, providerId?, model? }` | `{ settings }`; changing `providerId` without `model` clears the model |
+| POST | `/translation-suggestions` | `{ language, keys: [{ namespace, key }] }` (1–50 keys) | `ITranslationSuggestionResult`; saves nothing. Limited to 20 a minute |
 
 Every change visitors could see clears the read service's in-memory snapshot; the frontend caches pick it up within 60 seconds.
 
@@ -109,6 +128,7 @@ Literal segments match exactly, `:name` matches one segment, and a final `*` mat
 | `module_localization_routes` | `pattern` | `_id`, `pattern`, `languages[]`, `updatedAt` |
 | `module_localization_keys` | `(namespace, key)` | `namespace`, `key`, `source`, `routes[]` (≤ 20, newest first), `origin`, `firstSeenAt`, `lastSeenAt`, `sourceChangedAt` |
 | `module_localization_translations` | `(namespace, key, language)`; plus `language` | `namespace`, `key`, `language`, `text`, `updatedAt`, `updatedBy` |
+| `module_localization_settings` | `key` (always `'settings'`) | `key`, `systemPrompt`, `providerId`, `model`, `updatedAt`, `updatedBy` |
 
 A translation is *stale* when `translations.updatedAt < keys.sourceChangedAt`. Stale translations are still served.
 
@@ -121,6 +141,9 @@ A translation is *stale* when `translations.updatedAt < keys.sourceChangedAt`. S
 | `services/localization-admin.service.ts` | Language, route, key, and translation management; all validation |
 | `services/translation-observation.service.ts` | Intake of reported keys; missing-translation warnings |
 | `services/translation-key-rules.ts` | Key pattern and length caps shared by both write paths |
+| `services/localization-settings.service.ts` | The settings document: system prompt, provider, model, and the default prompt |
+| `services/translation-suggestion.service.ts` | Resolves the AI provider, runs the translation request, logs usage and cost |
+| `services/translation-suggestion-prompt.ts` | Pure prompt builder and reply parser |
 | `api/isInternalServiceRequest.ts` | The frontend-container check guarding the observation route |
 | `api/*.controller.ts`, `api/localization.routes.ts` | Thin HTTP adapters |
 | `database/` | Document shapes, collection names, `ensureLocalizationIndexes` |

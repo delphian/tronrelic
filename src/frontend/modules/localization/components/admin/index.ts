@@ -6,3 +6,4 @@
 export { LanguagesTab } from './LanguagesTab';
 export { RoutesTab } from './RoutesTab';
 export { TranslationsTab } from './TranslationsTab';
+export { SettingsTab } from './SettingsTab';

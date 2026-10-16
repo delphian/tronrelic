@@ -4,10 +4,15 @@
  * @fileoverview Languages tab of `/system/localization`.
  *
  * Lists the configured languages with how far each one's translation has got,
- * lets an administrator add one, switch it on or off for visitors, rename it,
- * or remove it. Adding a language changes nothing a visitor sees, and enabling
- * one only allows routes to be published in it, so this tab is safe to use
- * before any translation work is done.
+ * lets an administrator add one, switch it on or off for visitors, change its
+ * script direction, or remove it. Adding a language changes nothing a visitor
+ * sees, and enabling one only allows routes to be published in it, so this tab
+ * is safe to use before any translation work is done.
+ *
+ * The tab is one panel. The add form opens from the panel header and sits
+ * above the table, and the consequences of switching a language on or off are
+ * stated in the toast that confirms the switch, where the administrator reads
+ * them at the moment they apply.
  *
  * Like the other `/system` managers it fetches its own data on mount: the
  * SSR + Live Updates rule covers public pages, and admin surfaces are exempt
@@ -19,7 +24,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import type { ILanguageSummary, LanguageDirection } from '@/types';
-import { Stack } from '../../../../components/layout';
 import { Panel } from '../../../../components/ui/Panel';
 import { Button } from '../../../../components/ui/Button';
 import { IconButton } from '../../../../components/ui/IconButton';
@@ -33,13 +37,17 @@ import { ConfirmDialog } from '../../../../components/ui/ConfirmDialog';
 import { useToast } from '../../../../components/ui/ToastProvider';
 import { useModal } from '../../../../components/ui/ModalProvider';
 import { createLanguage, deleteLanguage, listLanguages, updateLanguage } from '../../api/client';
+import { InlineAddForm } from './InlineAddForm';
 import styles from './LocalizationAdmin.module.scss';
 
 /** Empty values for the add-language form. */
 const EMPTY_FORM = { code: '', name: '', nativeName: '', direction: 'ltr' as LanguageDirection };
 
+/** Element id of the add form, referenced by the header button's `aria-controls`. */
+const ADD_FORM_ID = 'localization-add-language';
+
 /**
- * The Languages tab: the language table and the add-language form.
+ * The Languages tab: the language table and its add form.
  *
  * @returns The tab content.
  */
@@ -48,6 +56,7 @@ export function LanguagesTab() {
     const [loading, setLoading] = useState(true);
     const [busyCode, setBusyCode] = useState<string | null>(null);
     const [form, setForm] = useState(EMPTY_FORM);
+    const [adding, setAdding] = useState(false);
     const [creating, setCreating] = useState(false);
     const { push } = useToast();
     const { open, close } = useModal();
@@ -59,9 +68,11 @@ export function LanguagesTab() {
      * @param tone - Success or failure.
      * @param title - What happened.
      * @param error - The thrown error, on failure.
+     * @param description - What the change means for visitors, on success.
      */
-    const notify = useCallback((tone: 'success' | 'danger', title: string, error?: unknown) => {
-        push({ tone, title, description: error ? (error instanceof Error ? error.message : String(error)) : undefined });
+    const notify = useCallback((tone: 'success' | 'danger', title: string, error?: unknown, description?: string) => {
+        const errorText = error ? (error instanceof Error ? error.message : String(error)) : undefined;
+        push({ tone, title, description: errorText ?? description });
     }, [push]);
 
     /**
@@ -82,7 +93,7 @@ export function LanguagesTab() {
     }, [load]);
 
     /**
-     * Submit the add-language form.
+     * Submit the add-language form, then close it so the table is back in view.
      *
      * @param event - The form submission.
      */
@@ -92,7 +103,8 @@ export function LanguagesTab() {
         try {
             await createLanguage(form);
             setForm(EMPTY_FORM);
-            notify('success', `Added ${form.name}`);
+            setAdding(false);
+            notify('success', `Added ${form.name}`, undefined, 'It stays off until you enable it.');
             await load();
         } catch (error) {
             notify('danger', 'Could not add language', error);
@@ -102,7 +114,8 @@ export function LanguagesTab() {
     }, [form, load, notify]);
 
     /**
-     * Switch a language on or off for visitors.
+     * Switch a language on or off for visitors. The toast says what the switch
+     * means, because that is the moment the administrator needs to know it.
      *
      * @param language - The row being toggled.
      * @param enabled - The new state.
@@ -111,7 +124,14 @@ export function LanguagesTab() {
         setBusyCode(language.code);
         try {
             await updateLanguage(language.code, { enabled });
-            notify('success', `${language.name} ${enabled ? 'enabled' : 'disabled'}`);
+            notify(
+                'success',
+                `${language.name} ${enabled ? 'enabled' : 'disabled'}`,
+                undefined,
+                enabled
+                    ? `Pages answer at /${language.code}/ once their route is published in it.`
+                    : `Its /${language.code}/ pages are offline. Translations are kept.`
+            );
             await load();
         } catch (error) {
             notify('danger', `Could not ${enabled ? 'enable' : 'disable'} ${language.name}`, error);
@@ -169,111 +189,146 @@ export function LanguagesTab() {
         });
     }, [close, load, notify, open]);
 
-    return (
-        <Stack gap="md">
-            <Panel title="Languages" meta="English is the default and is always available">
-                <Stack gap="sm">
-                    <p className={styles.intro}>
-                        Adding a language changes nothing visitors see. Enabling it lets routes be published in it on the
-                        Routes tab; a page answers at its /code/ address only once its route lists the language. Disabling a
-                        language takes all of its pages offline without deleting any translation.
-                    </p>
-                    {loading ? (
-                        <div className={styles.placeholder}>Loading languages…</div>
-                    ) : languages.length === 0 ? (
-                        <div className={styles.placeholder}>No languages yet. Add one below.</div>
-                    ) : (
-                        <Table className={styles.stack_table}>
-                            <Thead>
-                                <Tr>
-                                    <Th>Language</Th>
-                                    <Th>Direction</Th>
-                                    <Th>Progress</Th>
-                                    <Th width="shrink">Visible</Th>
-                                    <Th width="shrink"><span className={styles.visually_hidden}>Actions</span></Th>
-                                </Tr>
-                            </Thead>
-                            <Tbody>
-                                {languages.map(language => (
-                                    <Tr key={language.code}>
-                                        <Td data-label="Language">
-                                            <div className={styles.cell_primary} lang={language.code}>{language.nativeName}</div>
-                                            <div className={styles.cell_meta}>{language.name} · <span className={styles.mono}>{language.code}</span></div>
-                                        </Td>
-                                        <Td data-label="Direction">
-                                            <Select
-                                                size="sm"
-                                                value={language.direction}
-                                                disabled={busyCode === language.code}
-                                                onChange={event => void handleDirection(language, event.target.value as LanguageDirection)}
-                                                aria-label={`Script direction for ${language.name}`}
-                                            >
-                                                <option value="ltr">Left to right</option>
-                                                <option value="rtl">Right to left</option>
-                                            </Select>
-                                        </Td>
-                                        <Td data-label="Progress">
-                                            <div className={styles.badge_row}>
-                                                <Badge size="sm" tone="success">{language.translated} translated</Badge>
-                                                {language.stale > 0 && <Badge size="sm" tone="warning">{language.stale} stale</Badge>}
-                                                <Badge size="sm" tone={language.missing > 0 ? 'neutral' : 'success'}>{language.missing} missing</Badge>
-                                            </div>
-                                        </Td>
-                                        <Td data-label="Visible">
-                                            <Switch
-                                                on={language.enabled}
-                                                disabled={busyCode === language.code}
-                                                onChange={next => void handleToggle(language, next)}
-                                                aria-label={`${language.enabled ? 'Disable' : 'Enable'} ${language.name}`}
-                                            />
-                                        </Td>
-                                        <Td data-label="Actions">
-                                            <div className={styles.actions}>
-                                                <IconButton
-                                                    variant="danger"
-                                                    onClick={() => handleDelete(language)}
-                                                    aria-label={`Delete ${language.name}`}
-                                                >
-                                                    <Trash2 size={16} />
-                                                </IconButton>
-                                            </div>
-                                        </Td>
-                                    </Tr>
-                                ))}
-                            </Tbody>
-                        </Table>
-                    )}
-                </Stack>
-            </Panel>
+    // With no languages the form is the only useful thing on the tab, so it
+    // stays open and the header button that toggles it is not offered.
+    const empty = !loading && languages.length === 0;
+    const formOpen = adding || empty;
 
-            <Panel title="Add a language">
-                <form onSubmit={event => void handleCreate(event)}>
-                    <Stack gap="sm">
-                        <div className={styles.form_row}>
-                            <Field label="Code" hint="BCP 47, e.g. zh or pt-BR" className={styles.form_field_narrow}>
-                                <Input value={form.code} onChange={event => setForm({ ...form, code: event.target.value })} required />
-                            </Field>
-                            <Field label="English name" className={styles.form_field}>
-                                <Input value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} required />
-                            </Field>
-                            <Field label="Native name" hint="Shown to visitors in the switcher" className={styles.form_field}>
-                                <Input value={form.nativeName} onChange={event => setForm({ ...form, nativeName: event.target.value })} required />
-                            </Field>
-                            <Field label="Direction" className={styles.form_field_narrow}>
-                                <Select value={form.direction} onChange={event => setForm({ ...form, direction: event.target.value as LanguageDirection })}>
-                                    <option value="ltr">Left to right</option>
-                                    <option value="rtl">Right to left</option>
-                                </Select>
-                            </Field>
-                        </div>
-                        <div className={styles.form_actions}>
-                            <Button type="submit" variant="primary" loading={creating} icon={<Plus size={18} />}>
-                                Add language
-                            </Button>
-                        </div>
-                    </Stack>
-                </form>
-            </Panel>
-        </Stack>
+    return (
+        <Panel
+            title="Languages"
+            meta="English is always on and needs no setup"
+            actions={!empty && (
+                <Button
+                    size="sm"
+                    variant="secondary"
+                    icon={<Plus size={16} />}
+                    aria-expanded={formOpen}
+                    aria-controls={ADD_FORM_ID}
+                    onClick={() => setAdding(current => !current)}
+                >
+                    Add language
+                </Button>
+            )}
+        >
+            {formOpen && (
+                <InlineAddForm
+                    id={ADD_FORM_ID}
+                    label="Add a language"
+                    submitLabel="Add language"
+                    submitting={creating}
+                    onSubmit={event => void handleCreate(event)}
+                >
+                    <Field label="Code" className={styles.form_field_narrow}>
+                        <Input
+                            size="sm"
+                            value={form.code}
+                            placeholder="zh, pt-BR"
+                            onChange={event => setForm({ ...form, code: event.target.value })}
+                            required
+                        />
+                    </Field>
+                    <Field label="English name" className={styles.form_field}>
+                        <Input
+                            size="sm"
+                            value={form.name}
+                            placeholder="Chinese"
+                            onChange={event => setForm({ ...form, name: event.target.value })}
+                            required
+                        />
+                    </Field>
+                    <Field label="Native name, shown in the switcher" className={styles.form_field}>
+                        <Input
+                            size="sm"
+                            value={form.nativeName}
+                            placeholder="中文"
+                            onChange={event => setForm({ ...form, nativeName: event.target.value })}
+                            required
+                        />
+                    </Field>
+                    <Field label="Direction" className={styles.form_field_narrow}>
+                        <Select
+                            size="sm"
+                            value={form.direction}
+                            onChange={event => setForm({ ...form, direction: event.target.value as LanguageDirection })}
+                        >
+                            <option value="ltr">Left to right</option>
+                            <option value="rtl">Right to left</option>
+                        </Select>
+                    </Field>
+                </InlineAddForm>
+            )}
+
+            {loading ? (
+                <div className={styles.placeholder}>Loading languages…</div>
+            ) : empty ? (
+                <div className={styles.placeholder}>No languages yet. Add the first one above.</div>
+            ) : (
+                <Table variant="compact" flush className={styles.stack_table}>
+                    <Thead>
+                        <Tr>
+                            <Th>Language</Th>
+                            <Th>Progress</Th>
+                            <Th width="shrink">Direction</Th>
+                            <Th width="shrink">Enabled</Th>
+                            <Th width="shrink"><span className={styles.visually_hidden}>Actions</span></Th>
+                        </Tr>
+                    </Thead>
+                    <Tbody>
+                        {languages.map(language => (
+                            <Tr key={language.code}>
+                                <Td data-label="Language">
+                                    <div className={styles.cell_inline}>
+                                        <span className={styles.cell_primary} lang={language.code}>{language.nativeName}</span>
+                                        <span className={styles.cell_meta}>{language.name}</span>
+                                        <span className={`${styles.cell_meta} ${styles.mono}`}>{language.code}</span>
+                                    </div>
+                                </Td>
+                                <Td data-label="Progress">
+                                    <div className={styles.badge_row}>
+                                        <Badge size="xs" tone="success">{language.translated} translated</Badge>
+                                        {language.stale > 0 && <Badge size="xs" tone="warning">{language.stale} stale</Badge>}
+                                        {language.missing > 0 && <Badge size="xs" tone="neutral">{language.missing} missing</Badge>}
+                                    </div>
+                                </Td>
+                                <Td data-label="Direction">
+                                    <Select
+                                        size="xs"
+                                        value={language.direction}
+                                        disabled={busyCode === language.code}
+                                        onChange={event => void handleDirection(language, event.target.value as LanguageDirection)}
+                                        aria-label={`Script direction for ${language.name}`}
+                                    >
+                                        <option value="ltr">Left to right</option>
+                                        <option value="rtl">Right to left</option>
+                                    </Select>
+                                </Td>
+                                <Td data-label="Enabled">
+                                    <Switch
+                                        size="sm"
+                                        on={language.enabled}
+                                        disabled={busyCode === language.code}
+                                        onChange={next => void handleToggle(language, next)}
+                                        aria-label={`${language.enabled ? 'Disable' : 'Enable'} ${language.name}`}
+                                    />
+                                </Td>
+                                <Td data-label="Actions">
+                                    <div className={styles.actions}>
+                                        <IconButton
+                                            size="sm"
+                                            variant="danger"
+                                            onClick={() => handleDelete(language)}
+                                            aria-label={`Delete ${language.name}`}
+                                        >
+                                            <Trash2 size={14} />
+                                        </IconButton>
+                                    </div>
+                                </Td>
+                            </Tr>
+                        ))}
+                    </Tbody>
+                </Table>
+            )}
+        </Panel>
     );
 }

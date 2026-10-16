@@ -1,54 +1,82 @@
 @use '../../../../app/breakpoints' as *;
 
 /**
- * Shared styles for the three localization admin tabs. They are one surface
- * split across tabs, so the forms, tables, and status text read the same on
- * each.
+ * Shared styles for the localization admin tabs. They are one surface split
+ * across tabs, so the forms, tables, and status text read the same on each.
+ *
+ * Every tab is one panel: a header row with the title, a short meta line, and
+ * the controls, then an optional add form, then a flush table. Explanations
+ * live in placeholders, empty states, and the toasts that follow an action,
+ * rather than in paragraphs above the table that an administrator reads once
+ * and then scrolls past on every visit.
  */
 
-/* Explanatory lead paragraph inside a panel. */
+/* Muted helper text, such as a notice inside a form. */
 .intro {
     margin: 0;
     color: var(--color-text-muted);
     font-size: var(--font-size-body-sm);
-    line-height: var(--line-height-relaxed);
+    line-height: var(--line-height-normal);
 }
 
 /*
- * A row of form fields that wraps onto further lines in a narrow container.
- * Fields align at the top so every label and input sits on the same line
- * whether or not a field shows a hint underneath; aligning at the bottom
- * pushed inputs with a hint higher than inputs without one.
+ * The add form opened from a panel's header. Fields and the submit button sit
+ * on one row and wrap in a narrow container. The fields carry labels but no
+ * hints, so every field ends at its input and bottom alignment puts the button
+ * level with the inputs. The hairline below separates the form from the
+ * table's header row.
  */
-.form_row {
+.add_form {
     display: flex;
     flex-wrap: wrap;
     gap: var(--gap-sm);
-    align-items: flex-start;
+    align-items: flex-end;
+    padding-bottom: var(--padding-sm);
+    border-bottom: var(--border-width-thin) solid var(--color-border-subtle);
 }
 
-/* The submit button on its own line below the fields, at its natural width. */
-.form_actions {
-    display: flex;
+/* The submit button keeps its natural width when the row wraps. */
+.add_form_submit {
+    flex: none;
 }
 
 /* Text fields share a base width and shrink together. */
 .form_field {
-    flex: 1 1 var(--max-width-xs);
+    flex: 1 1 calc(var(--max-width-xs) * 0.75);
     min-width: 0;
 }
 
-/* Short fields such as a language code. */
+/* Short fields such as a language code or a namespace. */
 .form_field_narrow {
-    flex: 0 1 calc(var(--max-width-xs) / 2);
+    flex: 0 1 calc(var(--max-width-xs) / 2.5);
     min-width: 0;
+}
+
+/* A labelled group of switches inside the add form's row, such as the
+   languages a new route is published in. A fieldset, so the label is
+   announced for every switch in the group. */
+.form_toggles {
+    display: flex;
+    flex-direction: column;
+    gap: var(--field-gap);
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: none;
+}
+
+.form_toggles_label {
+    padding: 0;
+    font-size: var(--field-label-font-size);
+    font-weight: var(--field-label-font-weight);
+    color: var(--field-label-color);
 }
 
 /* Filter strip above the translation table. */
 .filters {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--gap-sm);
+    gap: var(--gap-xs);
     align-items: center;
 }
 
@@ -57,7 +85,7 @@
 .filters_search {
     display: flex;
     flex: 1 1 var(--max-width-xs);
-    gap: var(--gap-sm);
+    gap: var(--gap-2xs);
     align-items: center;
     min-width: 0;
 }
@@ -71,24 +99,42 @@
  * Translation table column shares. Without them the translation column took
  * the whole width and the key and English columns collapsed to a few
  * characters, because identifiers may break between any two letters. The
- * status column keeps its own shrink width.
+ * actions column keeps its own shrink width.
  */
 .col_key {
-    width: 22%;
+    width: 24%;
 }
 
 .col_source {
-    width: 33%;
+    width: 34%;
 }
 
 .col_translation {
-    width: 45%;
+    width: 42%;
 }
 
 /* Rows hold text of different heights, so every cell starts at the top
-   rather than centring the editor and badge against a tall English cell. */
+   rather than centring the editor and buttons against a tall English cell. */
 .translation_table td {
     vertical-align: top;
+}
+
+/* The English source, at the editor's text size so the two read side by side. */
+.source_text {
+    font-size: var(--font-size-body-sm);
+    line-height: var(--line-height-normal);
+    overflow-wrap: anywhere;
+}
+
+/* A primary value with quiet metadata on the same line, wrapping when the
+   cell is narrow. Keeps each row one line tall where the content allows. */
+.cell_inline {
+    display: flex;
+    flex-wrap: wrap;
+    column-gap: var(--gap-xs);
+    row-gap: var(--gap-2xs);
+    align-items: baseline;
+    min-width: 0;
 }
 
 /* A primary line with a quiet metadata line under it. */
@@ -118,11 +164,12 @@
     align-items: center;
 }
 
-/* Language toggles inside a route row or the add-route form. */
+/* Language switches inside the add-route form. */
 .toggle_row {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--gap-sm);
+    column-gap: var(--gap-sm);
+    row-gap: var(--gap-2xs);
     align-items: center;
 }
 
@@ -134,33 +181,69 @@
     color: var(--color-text);
 }
 
-/* The translation editor: the field above its save and remove buttons. Its
-   width comes from the column share above, so it sets no minimum of its own. */
-.editor {
+/*
+ * One cell of the routes grid: the publish switch for that language beside the
+ * count of keys still missing in it. Pairing them puts the decision and the
+ * evidence for it in the same place, instead of in two columns that each
+ * repeat the language list.
+ */
+.route_cell {
+    display: inline-flex;
+    gap: var(--gap-xs);
+    align-items: center;
+}
+
+/* Language column header in the routes grid: the code with its "off" marker. */
+.language_head {
+    display: inline-flex;
+    gap: var(--gap-2xs);
+    align-items: center;
+}
+
+/* Row actions sit on one line at the row's end. */
+.actions {
+    display: flex;
+    gap: var(--gap-2xs);
+    align-items: center;
+    justify-content: flex-end;
+    white-space: nowrap;
+}
+
+/* Empty and loading message inside a panel. */
+.placeholder {
+    padding: var(--padding-md) 0;
+    text-align: center;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+}
+
+/* The settings tab's model select keeps a readable width instead of
+   stretching across the whole panel. */
+.model_field {
+    max-width: var(--max-width-md);
+}
+
+/* Body of the toast shown after an AI translation request: the model's
+   remarks, its per-key notes, and the cost line. */
+.suggestion_summary {
     display: flex;
     flex-direction: column;
     gap: var(--gap-xs);
 }
 
-.editor_actions {
-    display: flex;
-    gap: var(--gap-xs);
-    align-items: center;
+.suggestion_text {
+    margin: 0;
 }
 
-.actions {
-    display: flex;
-    gap: var(--gap-xs);
-    align-items: center;
-    justify-content: flex-end;
+.suggestion_notes {
+    margin: 0;
+    padding-left: var(--padding-md);
 }
 
-/* Empty and loading placeholder inside a table card. */
-.placeholder {
-    padding: var(--padding-lg);
-    text-align: center;
+.suggestion_cost {
+    margin: 0;
     color: var(--color-text-muted);
-    font-size: var(--font-size-body-sm);
+    font-size: var(--font-size-caption);
 }
 
 /* Text for screen readers only, such as the header of an actions column. The
@@ -191,6 +274,7 @@
 
     .stack_table td {
         display: block;
+        width: auto;
         padding: var(--padding-2xs) 0;
         border-bottom: none;
     }
@@ -201,8 +285,10 @@
         margin-bottom: var(--gap-2xs);
         font-size: var(--font-size-caption);
         font-weight: var(--font-weight-semibold);
-        letter-spacing: var(--letter-spacing-wide);
-        text-transform: uppercase;
         color: var(--color-text-muted);
+    }
+
+    .stack_table .actions {
+        justify-content: flex-start;
     }
 }
