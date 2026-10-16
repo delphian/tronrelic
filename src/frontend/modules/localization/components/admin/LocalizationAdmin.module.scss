@@ -163,15 +163,6 @@
     font-size: var(--font-size-body-sm);
 }
 
-/* An active route filter, with the button that clears it. */
-.route_filter {
-    display: inline-flex;
-    gap: var(--gap-xs);
-    align-items: center;
-    font-size: var(--font-size-body-sm);
-    color: var(--color-text-muted);
-}
-
 /* Text for screen readers only, such as the header of an actions column. The
    project keeps this pattern scoped to the component rather than global. The
    1px box is functional, not a design value: it keeps the text in the

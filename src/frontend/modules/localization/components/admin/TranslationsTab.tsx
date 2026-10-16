@@ -20,8 +20,14 @@
  */
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Plus, Save, Search, Trash2, X } from 'lucide-react';
-import type { ILanguageSummary, ITranslationNamespaceSummary, ITranslationRow, TranslationStatus } from '@/types';
+import { Plus, Save, Search, Trash2 } from 'lucide-react';
+import type {
+    ILanguageSummary,
+    ILocalizedRouteSummary,
+    ITranslationNamespaceSummary,
+    ITranslationRow,
+    TranslationStatus
+} from '@/types';
 import { Stack } from '../../../../components/layout';
 import { Panel } from '../../../../components/ui/Panel';
 import { Button } from '../../../../components/ui/Button';
@@ -42,6 +48,7 @@ import {
     deleteTranslation,
     listLanguages,
     listNamespaces,
+    listRoutes,
     listTranslations,
     saveTranslation
 } from '../../api/client';
@@ -83,6 +90,7 @@ function rowId(row: { namespace: string; key: string }): string {
 export function TranslationsTab({ initialRoute }: ITranslationsTabProps) {
     const [languages, setLanguages] = useState<ILanguageSummary[]>([]);
     const [namespaces, setNamespaces] = useState<ITranslationNamespaceSummary[]>([]);
+    const [routes, setRoutes] = useState<ILocalizedRouteSummary[]>([]);
     const [language, setLanguage] = useState('');
     const [namespace, setNamespace] = useState('');
     const [status, setStatus] = useState<TranslationStatus | ''>('');
@@ -118,14 +126,19 @@ export function TranslationsTab({ initialRoute }: ITranslationsTabProps) {
     }, [initialRoute]);
 
     /**
-     * Load the languages and namespaces the filters offer. Picks the first
-     * language so the table has something to show.
+     * Load the languages, namespaces, and published routes the filters offer.
+     * Picks the first language so the table has something to show.
      */
     const loadFilters = useCallback(async () => {
         try {
-            const [nextLanguages, nextNamespaces] = await Promise.all([listLanguages(), listNamespaces()]);
+            const [nextLanguages, nextNamespaces, nextRoutes] = await Promise.all([
+                listLanguages(),
+                listNamespaces(),
+                listRoutes()
+            ]);
             setLanguages(nextLanguages);
             setNamespaces(nextNamespaces);
+            setRoutes(nextRoutes);
             setLanguage(current => current || nextLanguages[0]?.code || '');
         } catch (error) {
             notify('danger', 'Could not load filters', error);
@@ -274,6 +287,10 @@ export function TranslationsTab({ initialRoute }: ITranslationsTabProps) {
     }, [loadFilters, loadRows, newKey, notify]);
 
     const currentLanguage = languages.find(entry => entry.code === language);
+    // A route filter set from the Routes tab can name a route deleted since the
+    // list loaded. It still gets an option, so the dropdown never shows a
+    // different value from the filter actually applied.
+    const routeIsListed = !route || routes.some(entry => entry.pattern === route);
 
     return (
         <Stack gap="md">
@@ -320,6 +337,18 @@ export function TranslationsTab({ initialRoute }: ITranslationsTabProps) {
                                     <option value="stale">Stale</option>
                                     <option value="translated">Translated</option>
                                 </Select>
+                                <Select
+                                    size="sm"
+                                    value={route}
+                                    onChange={event => { setRoute(event.target.value); setPage(1); }}
+                                    aria-label="Route"
+                                >
+                                    <option value="">All routes</option>
+                                    {!routeIsListed && <option value={route}>{route}</option>}
+                                    {routes.map(entry => (
+                                        <option key={entry.id} value={entry.pattern}>{entry.pattern} ({entry.keyCount})</option>
+                                    ))}
+                                </Select>
                                 <div className={styles.filters_search}>
                                     <Input
                                         size="sm"
@@ -332,14 +361,6 @@ export function TranslationsTab({ initialRoute }: ITranslationsTabProps) {
                                     <Button type="submit" size="sm" variant="secondary" icon={<Search size={16} />}>Search</Button>
                                 </div>
                             </form>
-                            {route && (
-                                <div className={styles.route_filter}>
-                                    Showing keys rendered on <span className={styles.mono}>{route}</span>
-                                    <IconButton size="sm" onClick={() => { setRoute(''); setPage(1); }} aria-label="Clear the route filter">
-                                        <X size={14} />
-                                    </IconButton>
-                                </div>
-                            )}
                             {loading ? (
                                 <div className={styles.placeholder}>Loading translations…</div>
                             ) : rows.length === 0 ? (

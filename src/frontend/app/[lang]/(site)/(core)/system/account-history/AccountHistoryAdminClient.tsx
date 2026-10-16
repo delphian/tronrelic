@@ -22,7 +22,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import type { MenuNodeSerialized } from '@/shared';
-import { Page, PageHeader } from '../../../../../../components/layout';
+import { Page, PageHeader, Stack } from '../../../../../../components/layout';
 import { Badge } from '../../../../../../components/ui/Badge';
 import { ClientTime } from '../../../../../../components/ui/ClientTime';
 import { MenuNavClient } from '../../../../../../components/layout/MenuNav/MenuNavClient';
@@ -147,35 +147,38 @@ export function AccountHistoryAdminClient({ submenuTree, submenuGeneratedAt, ini
 
     return (
         <Page>
-            <PageHeader
-                title="Account History"
-                subtitle="Track specific TRON accounts, backfill their full transaction history into ClickHouse, and keep completed accounts current with forward sync."
-            />
+            {/* One Stack holds the header, intro, summary, tab row, and active
+                panel so they sit one stack gap apart instead of the page's
+                wider gap. */}
+            <Stack gap="md">
+                <PageHeader
+                    title="Account History"
+                    subtitle="Track specific TRON accounts, backfill their full transaction history into ClickHouse, and keep completed accounts current with forward sync."
+                />
 
-            <p className={styles.intro}>
-                Two pull-based passes run on their own schedules, independent of the live block sync. A bounded <strong>backfill</strong>{' '}
-                walks each tracked account&apos;s full history newest-first until both TronGrid endpoints exhaust; once an account is
-                complete, <strong>forward sync</strong> keeps it current by appending transactions that land afterward. Use the tabs to
-                manage the tracked set, tune pacing, and edit the two schedules.
-            </p>
+                <p className={styles.intro}>
+                    Two pull-based passes run on their own schedules, independent of the live block sync. A bounded <strong>backfill</strong>{' '}
+                    walks each tracked account&apos;s full history newest-first until both TronGrid endpoints exhaust; once an account is
+                    complete, <strong>forward sync</strong> keeps it current by appending transactions that land afterward. Use the tabs to
+                    manage the tracked set, tune pacing, and edit the two schedules.
+                </p>
 
-            {stats && (
-                <div className={styles.summary}>
-                    <Badge tone="info">{stats.totals.trackedAccounts} tracked</Badge>
-                    <Badge tone="neutral">{stats.totals.rowsIngested.toLocaleString()} rows</Badge>
-                    {stats.totals.completeAccounts > 0 && <Badge tone="success">{stats.totals.completeAccounts} complete</Badge>}
-                    {stats.totals.catchingUpAccounts > 0 && <Badge tone="warning">{stats.totals.catchingUpAccounts} catching up</Badge>}
-                    {stats.totals.failedAccounts > 0 && <Badge tone="danger">{stats.totals.failedAccounts} failed</Badge>}
-                    <Badge tone={stats.totals.snapshottedTodayAccounts >= stats.totals.trackedAccounts ? 'success' : 'neutral'}>
-                        {stats.totals.snapshottedTodayAccounts}/{stats.totals.trackedAccounts} snapshotted today
-                    </Badge>
-                    {stats.totals.oldestNewestTimestamp && (
-                        <Badge tone="neutral">current to <ClientTime date={stats.totals.oldestNewestTimestamp} format="relative" /></Badge>
-                    )}
-                </div>
-            )}
+                {stats && (
+                    <div className={styles.summary}>
+                        <Badge tone="info">{stats.totals.trackedAccounts} tracked</Badge>
+                        <Badge tone="neutral">{stats.totals.rowsIngested.toLocaleString()} rows</Badge>
+                        {stats.totals.completeAccounts > 0 && <Badge tone="success">{stats.totals.completeAccounts} complete</Badge>}
+                        {stats.totals.catchingUpAccounts > 0 && <Badge tone="warning">{stats.totals.catchingUpAccounts} catching up</Badge>}
+                        {stats.totals.failedAccounts > 0 && <Badge tone="danger">{stats.totals.failedAccounts} failed</Badge>}
+                        <Badge tone={stats.totals.snapshottedTodayAccounts >= stats.totals.trackedAccounts ? 'success' : 'neutral'}>
+                            {stats.totals.snapshottedTodayAccounts}/{stats.totals.trackedAccounts} snapshotted today
+                        </Badge>
+                        {stats.totals.oldestNewestTimestamp && (
+                            <Badge tone="neutral">current to <ClientTime date={stats.totals.oldestNewestTimestamp} format="relative" /></Badge>
+                        )}
+                    </div>
+                )}
 
-            <div className={styles.submenu}>
                 <MenuNavClient
                     namespace={SUBMENU_NAMESPACE}
                     items={submenuTree}
@@ -184,14 +187,12 @@ export function AccountHistoryAdminClient({ submenuTree, submenuGeneratedAt, ini
                     activeUrl={`/system/account-history?tab=${activeTab}`}
                     onItemSelect={handleTabSelect}
                 />
-            </div>
 
-            <div className={styles.content}>
                 {activeTab === 'accounts' && <AccountsTab stats={stats} onChanged={loadStats} />}
                 {activeTab === 'activity' && <ActivityTab stats={stats} />}
                 {activeTab === 'settings' && <SettingsTab />}
                 {activeTab === 'schedules' && <SchedulerMonitor jobFilter={isAccountHistoryJob} title="Account History Schedules" />}
-            </div>
+            </Stack>
         </Page>
     );
 }

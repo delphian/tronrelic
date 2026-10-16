@@ -19,7 +19,7 @@
 import { useCallback, useState } from 'react';
 import type { MenuNodeSerialized } from '@/shared';
 import type { IConnectedAppAdminRow, IMcpGroup, IMcpSettings, IMcpStatus, IMcpToolExposure } from '@/types';
-import { Page, PageHeader } from '../../../../../../components/layout';
+import { Page, PageHeader, Stack } from '../../../../../../components/layout';
 import { MenuNavClient } from '../../../../../../components/layout/MenuNav/MenuNavClient';
 import { CollectionBrowser } from '../../../../../../modules/database';
 import { SystemLogsMonitor } from '../../../../../../modules/logs';
@@ -144,14 +144,17 @@ export function McpAdminClient({
 
     return (
         <Page>
-            <PageHeader
-                title="MCP"
-                subtitle="Let members of the mcp-users group connect their own AI client to TronRelic and call the tools you grant to their user groups."
-            />
+            {/* One Stack holds the header, kill switch, tab row, and active
+                panel so they sit one stack gap apart instead of the page's
+                wider gap. */}
+            <Stack gap="md">
+                <PageHeader
+                    title="MCP"
+                    subtitle="Let members of the mcp-users group connect their own AI client to TronRelic and call the tools you grant to their user groups."
+                />
 
-            <KillSwitchCard status={status} onSettingsChange={handleSettingsChanged} />
+                <KillSwitchCard status={status} onSettingsChange={handleSettingsChanged} />
 
-            <div className={styles.submenu}>
                 <MenuNavClient
                     namespace={SUBMENU_NAMESPACE}
                     items={submenuTree}
@@ -160,24 +163,26 @@ export function McpAdminClient({
                     activeUrl={`/system/mcp?tab=${activeTab}`}
                     onItemSelect={handleTabSelect}
                 />
-            </div>
 
-            <div className={styles.content}>
-                {activeTab === 'overview' && <OverviewTab status={status} />}
-                {/* Tools and Apps stay mounted and are only hidden, because they
-                    seed their state from the SSR props once. Unmounting them on a
-                    tab switch would bring back the SSR snapshot, so an approval or
-                    a revocation made earlier would appear to be undone. */}
-                <div hidden={activeTab !== 'tools'}>
-                    <ToolsTab initialTools={initialTools} initialGroups={initialGroups} onToolsChanged={handleToolsChanged} />
+                {/* The panels share one wrapper so the hidden Tools and Apps
+                    panels never count as Stack children. */}
+                <div>
+                    {activeTab === 'overview' && <OverviewTab status={status} />}
+                    {/* Tools and Apps stay mounted and are only hidden, because they
+                        seed their state from the SSR props once. Unmounting them on a
+                        tab switch would bring back the SSR snapshot, so an approval or
+                        a revocation made earlier would appear to be undone. */}
+                    <div hidden={activeTab !== 'tools'}>
+                        <ToolsTab initialTools={initialTools} initialGroups={initialGroups} onToolsChanged={handleToolsChanged} />
+                    </div>
+                    <div hidden={activeTab !== 'apps'}>
+                        <AppsTab initialApps={initialApps} initialTotal={initialAppsTotal} />
+                    </div>
+                    {activeTab === 'activity' && <ActivityTab fixedTriggerPath="mcp" />}
+                    {activeTab === 'database' && <CollectionBrowser prefix={COLLECTION_PREFIX} title="MCP Collections" />}
+                    {activeTab === 'logs' && <SystemLogsMonitor service={LOG_SERVICE} />}
                 </div>
-                <div hidden={activeTab !== 'apps'}>
-                    <AppsTab initialApps={initialApps} initialTotal={initialAppsTotal} />
-                </div>
-                {activeTab === 'activity' && <ActivityTab fixedTriggerPath="mcp" />}
-                {activeTab === 'database' && <CollectionBrowser prefix={COLLECTION_PREFIX} title="MCP Collections" />}
-                {activeTab === 'logs' && <SystemLogsMonitor service={LOG_SERVICE} />}
-            </div>
+            </Stack>
         </Page>
     );
 }

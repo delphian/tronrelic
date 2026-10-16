@@ -35,7 +35,7 @@ A language change is a change of the `[lang]` segment, so Next.js re-renders the
 ## Rollout Workflow
 
 1. **Languages tab** — add the language. It starts disabled; nothing changes for visitors.
-2. **Translations tab** — keys appear as the site renders them. Pick the language and translate. A key whose English changed after its translation was saved shows as *stale*.
+2. **Translations tab** — keys appear as the site renders them. Pick the language and translate, narrowing the list by namespace, status, published route, or text. A key whose English changed after its translation was saved shows as *stale*.
 3. **Routes tab** — publish the route pattern in the language. The missing count shows how many keys rendered on that route still lack a translation; "Show keys" opens the Translations tab filtered to them.
 4. **Languages tab** — enable the language. Enabling is refused when existing CMS pages or menu URLs already start with `/<code>/`.
 5. Place the **Language switcher** widget (`/system/widgets`) so visitors can reach the translated pages. It renders nothing on English-only pages.
