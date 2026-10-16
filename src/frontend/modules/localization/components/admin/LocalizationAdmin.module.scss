@@ -52,9 +52,43 @@
     align-items: center;
 }
 
+/* The search box and its button wrap as one unit, so the button never ends up
+   alone on a line below the strip. */
 .filters_search {
+    display: flex;
     flex: 1 1 var(--max-width-xs);
+    gap: var(--gap-sm);
+    align-items: center;
     min-width: 0;
+}
+
+.filters_search_input {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/*
+ * Translation table column shares. Without them the translation column took
+ * the whole width and the key and English columns collapsed to a few
+ * characters, because identifiers may break between any two letters. The
+ * status column keeps its own shrink width.
+ */
+.col_key {
+    width: 22%;
+}
+
+.col_source {
+    width: 33%;
+}
+
+.col_translation {
+    width: 45%;
+}
+
+/* Rows hold text of different heights, so every cell starts at the top
+   rather than centring the editor and badge against a tall English cell. */
+.translation_table td {
+    vertical-align: top;
 }
 
 /* A primary line with a quiet metadata line under it. */
@@ -100,12 +134,12 @@
     color: var(--color-text);
 }
 
-/* The translation editor: the field beside its save and remove buttons. */
+/* The translation editor: the field above its save and remove buttons. Its
+   width comes from the column share above, so it sets no minimum of its own. */
 .editor {
     display: flex;
     flex-direction: column;
     gap: var(--gap-xs);
-    min-width: var(--max-width-xs);
 }
 
 .editor_actions {
@@ -179,9 +213,5 @@
         letter-spacing: var(--letter-spacing-wide);
         text-transform: uppercase;
         color: var(--color-text-muted);
-    }
-
-    .editor {
-        min-width: 0;
     }
 }
