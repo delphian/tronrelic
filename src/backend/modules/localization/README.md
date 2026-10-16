@@ -36,7 +36,7 @@ A language change is a change of the `[lang]` segment, so Next.js re-renders the
 ## Rollout Workflow
 
 1. **Languages tab** — add the language. It starts disabled; nothing changes for visitors.
-2. **Translations tab** — keys appear as the site renders them. Pick the language and translate, narrowing the list by namespace, status, published route, or text. A key whose English changed after its translation was saved shows as *stale*. The Suggest buttons fill editors from an AI model; see [AI Translation Suggestions](#ai-translation-suggestions).
+2. **Translations tab** — keys appear as the site renders them. Pick the language and translate, narrowing the list by namespace, status, published route, or text. A key whose English changed after its translation was saved shows as *stale*. Each row shows the English above its editor; when two or more editors hold unsaved text, **Save all** in the panel header saves them in one request. The Suggest buttons fill editors from an AI model; see [AI Translation Suggestions](#ai-translation-suggestions).
 3. **Routes tab** — publish the route pattern in the language. The missing count shows how many keys rendered on that route still lack a translation; "Show keys" opens the Translations tab filtered to them.
 4. **Languages tab** — enable the language. Enabling is refused when existing CMS pages or menu URLs already start with `/<code>/`.
 5. Place the **Language switcher** widget (`/system/widgets`) so visitors can reach the translated pages. It renders nothing on English-only pages.
@@ -107,6 +107,7 @@ All under `/api/admin/system/localization`. Errors: 400 validation, 404 not foun
 | GET | `/namespaces` | — | `{ namespaces: ITranslationNamespaceSummary[] }` |
 | GET | `/translations` | `language` (required), `namespace`, `status`, `search`, `route`, `limit` ≤ 200, `offset` | `ITranslationPage` |
 | PUT | `/translations` | `{ namespace, key, language, text }` | `{ translation }`; key and language must exist |
+| PUT | `/translations/batch` | `{ language, translations: [{ namespace, key, text }] }` (1–200) | `{ translations }`; every entry is checked before any is written, so one bad entry saves nothing. Backs **Save all**, which would otherwise spend one admin rate-limit slot per row |
 | DELETE | `/translations` | `?namespace&key&language` | 204 |
 | POST | `/keys` | `{ namespace, key, source }` | `{ key }` 201, `origin: 'manual'` |
 | DELETE | `/keys` | `?namespace&key` | 204; deletes its translations too |

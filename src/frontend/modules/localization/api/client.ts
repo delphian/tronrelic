@@ -206,6 +206,23 @@ export async function saveTranslation(input: { namespace: string; key: string; l
 }
 
 /**
+ * Save several translations into one language in a single request. The
+ * Translations tab uses this for Save all, because one request per row would
+ * use up the admin rate limit partway through a page. The backend checks every
+ * entry before writing any, so a bad entry saves nothing.
+ *
+ * @param input - The language and the key and text of each entry.
+ * @returns The stored translations, in the order they were sent.
+ */
+export async function saveTranslations(input: {
+    language: string;
+    translations: Array<{ namespace: string; key: string; text: string }>;
+}): Promise<ITranslation[]> {
+    const body = await send<{ translations: ITranslation[] }>('PUT', '/translations/batch', 'save translations', input);
+    return body.translations;
+}
+
+/**
  * Remove one translation so the English text shows again.
  *
  * @param namespace - Owner of the key.

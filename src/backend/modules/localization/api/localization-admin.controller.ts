@@ -157,6 +157,14 @@ export class LocalizationAdminController {
         });
     };
 
+    /** PUT /translations/batch — save several translations at once. Body: `{ language, translations: [{ namespace, key, text }] }`. */
+    saveTranslations = async (req: Request, res: Response): Promise<void> => {
+        await this.handle(res, 'Failed to save translations', async () => {
+            const translations = await this.service.saveTranslations(req.body ?? {}, actorFromAdminRequest(req).id);
+            res.json({ translations });
+        });
+    };
+
     /** DELETE /translations?namespace=&key=&language= — remove one translation. */
     deleteTranslation = async (req: Request, res: Response): Promise<void> => {
         await this.handle(res, 'Failed to delete translation', async () => {

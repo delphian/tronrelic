@@ -55,6 +55,7 @@ export function createLocalizationAdminRouter(controller: LocalizationAdminContr
     router.get('/namespaces', controller.listNamespaces);
     router.get('/translations', controller.listTranslations);
     router.put('/translations', controller.saveTranslation);
+    router.put('/translations/batch', controller.saveTranslations);
     router.delete('/translations', controller.deleteTranslation);
     router.post('/keys', controller.createKey);
     router.delete('/keys', controller.deleteKey);
