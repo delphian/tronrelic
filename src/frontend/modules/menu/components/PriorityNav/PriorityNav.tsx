@@ -1,13 +1,16 @@
 /**
  * PriorityNav Component
  *
- * Implements Priority+ navigation pattern using IntersectionObserver.
- * Shows as many navigation items as fit, moving overflow items to a "More" dropdown.
- * Adapts automatically to container width without fixed breakpoints.
+ * Implements the Priority+ navigation pattern: shows as many navigation items
+ * as fit in the available width and moves the rest into a "More" dropdown.
+ * Adapts to its container's width without fixed breakpoints, in both
+ * directions — items move into "More" as the container narrows and come back
+ * out as it widens again.
  *
  * Key features:
- * - IntersectionObserver-based overflow detection (no width calculations)
- * - Automatic adaptation to container size changes
+ * - Measurement-based overflow detection driven by a ResizeObserver
+ * - Measures each item at its narrowest unclipped width, so host CSS that
+ *   stretches items to fill the row does not change which items fit
  * - "More" dropdown for overflow items with item count
  * - Optional collapseAtCount to prevent orphan items
  * - Accessible keyboard navigation
@@ -23,11 +26,18 @@
  */
 'use client';
 
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { createPortal } from 'react-dom';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
+import { createPortal, flushSync } from 'react-dom';
 import { MoreHorizontal, X } from 'lucide-react';
 import { useBodyScrollLock } from '../../hooks';
 import styles from './PriorityNav.module.scss';
+
+/**
+ * How far, in pixels, the items may exceed the available width and still
+ * count as fitting. Widths are fractional, so without this allowance an item
+ * that fits exactly can be pushed into "More" by a rounding difference.
+ */
+const FIT_TOLERANCE_PX = 1;
 
 /**
  * Props for individual menu items.
@@ -79,18 +89,107 @@ export interface IPriorityNavProps {
     moreButtonLabel?: string;
 
     /**
-     * Callback fired after IntersectionObserver completes first measurement.
+     * Callback fired after the first overflow measurement has rendered.
      * Use this to coordinate fade-in timing with parent components.
      */
     onInitialized?: () => void;
 }
 
 /**
+ * Raw widths read from the DOM during one measurement pass.
+ */
+interface IOverflowMeasurement {
+    /**
+     * Narrowest unclipped width of each item, in display order.
+     */
+    itemWidths: number[];
+
+    /**
+     * Gap the primary row places between neighbouring items.
+     */
+    itemGap: number;
+
+    /**
+     * Width of the container's content box, which the items and the
+     * "More" button share.
+     */
+    availableWidth: number;
+
+    /**
+     * Width the "More" button takes when shown, including the gap that
+     * separates it from the primary row.
+     */
+    moreButtonSpace: number;
+}
+
+/**
+ * Works out how many leading items stay visible.
+ *
+ * Kept separate from the DOM reads so the fitting rule can be read on its
+ * own. When every item fits in the full width, all of them stay and no
+ * "More" button is needed. Otherwise the button will be shown, so the items
+ * have to fit in what is left beside it, and they are taken in order until
+ * the next one would not fit.
+ *
+ * @param measurement - Widths read from the DOM in one measurement pass
+ * @returns The number of items, counted from the start, that remain visible
+ */
+function countFittingItems(measurement: IOverflowMeasurement): number {
+    const { itemWidths, itemGap, availableWidth, moreButtonSpace } = measurement;
+    const totalWidth = itemWidths.reduce((sum, width) => sum + width, 0)
+        + itemGap * Math.max(itemWidths.length - 1, 0);
+
+    let fitCount = itemWidths.length;
+
+    if (totalWidth > availableWidth + FIT_TOLERANCE_PX) {
+        const roomBesideMoreButton = availableWidth - moreButtonSpace;
+        let usedWidth = 0;
+        fitCount = 0;
+
+        for (const width of itemWidths) {
+            const widthWithItem = usedWidth + (fitCount > 0 ? itemGap : 0) + width;
+            if (widthWithItem > roomBesideMoreButton + FIT_TOLERANCE_PX) {
+                break;
+            }
+            usedWidth = widthWithItem;
+            fitCount += 1;
+        }
+    }
+
+    return fitCount;
+}
+
+/**
+ * Reports whether two sets of item ids hold the same members.
+ *
+ * Measurement runs after every render, so it must leave state untouched when
+ * nothing changed. Returning the previous set in that case lets React skip
+ * the re-render instead of looping.
+ *
+ * @param first - The overflow ids currently in state
+ * @param second - The overflow ids from the latest measurement
+ * @returns True when both sets contain exactly the same ids
+ */
+function haveSameIds(first: Set<string>, second: Set<string>): boolean {
+    let same = first.size === second.size;
+    if (same) {
+        for (const id of first) {
+            if (!second.has(id)) {
+                same = false;
+                break;
+            }
+        }
+    }
+    return same;
+}
+
+/**
  * Priority+ navigation component with automatic overflow handling.
  *
- * Uses IntersectionObserver to detect which items overflow the container
- * boundary and moves them to a "More" dropdown. This approach is more
- * efficient than width calculations and adapts to any container size.
+ * Measures every item's narrowest unclipped width and the space available,
+ * then moves the items that do not fit into a "More" dropdown. Measurement
+ * runs after every render and whenever the container is resized, so the
+ * split stays correct as the container narrows and as it widens again.
  */
 export function PriorityNav({
     items,
@@ -101,39 +200,38 @@ export function PriorityNav({
     onInitialized
 }: IPriorityNavProps) {
     const containerRef = useRef<HTMLDivElement>(null);
-    const observerRef = useRef<IntersectionObserver | null>(null);
-    const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+    const primaryRef = useRef<HTMLDivElement>(null);
     const hasCalledOnInitializedRef = useRef(false);
-    const observedItemsRef = useRef<Set<string>>(new Set());
 
     const [overflowIds, setOverflowIds] = useState<Set<string>>(new Set());
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [isMounted, setIsMounted] = useState(false);
-    const [hasObserverFired, setHasObserverFired] = useState(false);
+    const [hasMeasured, setHasMeasured] = useState(false);
 
     const dropdownRef = useRef<HTMLDivElement>(null);
     const moreButtonRef = useRef<HTMLButtonElement>(null);
 
-    // Stable dependency for observer setup - only recreate when item IDs change
-    const itemIds = useMemo(() => items.map(i => i.id).join(','), [items]);
-
-    // Track mount state for portal rendering (SSR safety)
+    /**
+     * Track mount state so the dropdown portal only renders in the browser,
+     * where `document.body` exists.
+     */
     useEffect(() => {
         setIsMounted(true);
     }, []);
 
     /**
-     * Call onInitialized after overflow state has rendered.
+     * Call onInitialized after the first measurement has rendered.
      *
-     * This effect runs AFTER the render that includes the new overflowIds,
-     * ensuring the DOM reflects the correct overflow state before fade-in.
+     * This effect runs after the render that includes the measured
+     * overflowIds, so the DOM already shows the correct split when the
+     * parent starts its fade-in.
      */
     useEffect(() => {
-        if (hasObserverFired && !hasCalledOnInitializedRef.current) {
+        if (hasMeasured && !hasCalledOnInitializedRef.current) {
             hasCalledOnInitializedRef.current = true;
             onInitialized?.();
         }
-    }, [hasObserverFired, onInitialized]);
+    }, [hasMeasured, onInitialized]);
 
     /**
      * Close dropdown and return focus to More button.
@@ -144,9 +242,15 @@ export function PriorityNav({
     }, []);
 
     /**
-     * Handle Escape key to close dropdown.
+     * Close the dropdown when the user presses Escape, so keyboard users can
+     * leave it without tabbing through every item.
      */
     useEffect(() => {
+        /**
+         * Close the open dropdown on Escape.
+         *
+         * @param event - The keydown event from the document
+         */
         const handleEscape = (event: KeyboardEvent) => {
             if (event.key === 'Escape' && isDropdownOpen) {
                 closeDropdown();
@@ -158,9 +262,16 @@ export function PriorityNav({
     }, [isDropdownOpen, closeDropdown]);
 
     /**
-     * Handle clicks outside dropdown to close it.
+     * Close the dropdown when the user clicks anywhere outside it, which is
+     * what people expect from a popup menu.
      */
     useEffect(() => {
+        /**
+         * Close the open dropdown when a click lands outside both the
+         * dropdown and the button that opened it.
+         *
+         * @param event - The mousedown event from the document
+         */
         const handleClickOutside = (event: MouseEvent) => {
             if (
                 isDropdownOpen &&
@@ -180,75 +291,95 @@ export function PriorityNav({
     useBodyScrollLock(isDropdownOpen);
 
     /**
-     * Set up IntersectionObserver to detect overflow.
+     * Measure the items and update which of them overflow.
+     *
+     * Hidden items are taken out of the row, and host CSS may stretch the
+     * visible ones, so neither shows its real minimum width as currently laid
+     * out. The measurement therefore adds the `measuring` class, which puts
+     * every item back in the row at its narrowest unclipped width and shows
+     * the "More" button. It reads the widths and removes the class in the
+     * same synchronous step, so the browser never paints that state.
+     *
+     * The available width is read before the class is added, so it reflects
+     * the container as the user actually sees it.
+     *
+     * Items are read from the DOM in display order rather than from the
+     * `items` prop, so this callback never goes stale and needs no
+     * dependencies.
      */
-    useEffect(() => {
-        if (!enabled || !containerRef.current) {
-            setOverflowIds(new Set());
-            return;
-        }
-
+    const measureOverflow = useCallback(() => {
         const container = containerRef.current;
+        const primary = primaryRef.current;
 
-        // Handle empty items array - nothing to observe, initialize immediately
-        if (items.length === 0) {
-            setOverflowIds(new Set());
-            if (!hasObserverFired) {
-                setHasObserverFired(true);
-            }
-            return;
+        if (container && primary) {
+            const containerStyle = getComputedStyle(container);
+            const availableWidth = container.clientWidth
+                - parseFloat(containerStyle.paddingLeft)
+                - parseFloat(containerStyle.paddingRight);
+
+            container.classList.add(styles.measuring);
+            const itemElements = Array.from(
+                primary.querySelectorAll<HTMLElement>(':scope > [data-priority-nav-id]')
+            );
+            const measurement: IOverflowMeasurement = {
+                itemWidths: itemElements.map((element) => element.getBoundingClientRect().width),
+                itemGap: parseFloat(getComputedStyle(primary).columnGap) || 0,
+                availableWidth,
+                moreButtonSpace: (moreButtonRef.current?.getBoundingClientRect().width ?? 0)
+                    + (parseFloat(containerStyle.columnGap) || 0)
+            };
+            container.classList.remove(styles.measuring);
+
+            const fitCount = countFittingItems(measurement);
+            const nextOverflowIds = new Set(
+                itemElements
+                    .slice(fitCount)
+                    .map((element) => element.getAttribute('data-priority-nav-id') ?? '')
+            );
+
+            setOverflowIds((previous) => (haveSameIds(previous, nextOverflowIds) ? previous : nextOverflowIds));
+            setHasMeasured(true);
+        }
+    }, []);
+
+    /**
+     * Re-measure after every render.
+     *
+     * A render can change item widths without the container changing size,
+     * for example when the item list, a translated label, or the active
+     * item's styling changes. Running before paint keeps the user from
+     * seeing an unmeasured frame, and measureOverflow leaves state untouched
+     * when nothing changed, so this does not loop.
+     */
+    useLayoutEffect(() => {
+        if (enabled) {
+            measureOverflow();
+        } else {
+            setOverflowIds((previous) => (previous.size === 0 ? previous : new Set()));
+        }
+    });
+
+    /**
+     * Re-measure whenever the container is resized.
+     *
+     * The callback commits the new split with flushSync, so the change is
+     * applied before the browser paints the resized frame. Without it, items
+     * would show clipped at the edge for a frame while the user drags the
+     * window narrower.
+     */
+    useLayoutEffect(() => {
+        const container = containerRef.current;
+        let resizeObserver: ResizeObserver | null = null;
+
+        if (enabled && container) {
+            resizeObserver = new ResizeObserver(() => {
+                flushSync(measureOverflow);
+            });
+            resizeObserver.observe(container);
         }
 
-        // Reset tracking for new item set
-        observedItemsRef.current = new Set();
-
-        // Create observer that detects when items leave the container boundary
-        observerRef.current = new IntersectionObserver(
-            (entries) => {
-                setOverflowIds((prev) => {
-                    const next = new Set(prev);
-
-                    entries.forEach((entry) => {
-                        const id = entry.target.getAttribute('data-priority-nav-id');
-                        if (!id) return;
-
-                        // Track that this item has been observed
-                        observedItemsRef.current.add(id);
-
-                        if (entry.isIntersecting && entry.intersectionRatio >= 0.99) {
-                            // Item is fully visible, remove from overflow
-                            next.delete(id);
-                        } else {
-                            // Item is clipped or hidden, add to overflow
-                            next.add(id);
-                        }
-                    });
-
-                    return next;
-                });
-
-                // Only signal initialization after ALL items have been observed
-                const allItemsObserved = items.every(item => observedItemsRef.current.has(item.id));
-                if (allItemsObserved && !hasObserverFired) {
-                    setHasObserverFired(true);
-                }
-            },
-            {
-                root: container,
-                threshold: [0, 0.99, 1],
-                rootMargin: '0px'
-            }
-        );
-
-        // Observe all item elements
-        itemRefs.current.forEach((element) => {
-            observerRef.current?.observe(element);
-        });
-
-        return () => {
-            observerRef.current?.disconnect();
-        };
-    }, [enabled, itemIds]);
+        return () => resizeObserver?.disconnect();
+    }, [enabled, measureOverflow]);
 
     /**
      * Calculate which items should be visible vs in overflow.
@@ -275,37 +406,16 @@ export function PriorityNav({
 
     const hasOverflow = finalOverflowItems.length > 0;
 
-    /**
-     * Store ref for an item element and observe if observer exists.
-     *
-     * Handles dynamic item additions by observing new elements immediately
-     * when they're added to the DOM, rather than waiting for effect re-run.
-     */
-    const setItemRef = useCallback((id: string, element: HTMLDivElement | null) => {
-        if (element) {
-            itemRefs.current.set(id, element);
-            // Observe newly added elements immediately
-            observerRef.current?.observe(element);
-        } else {
-            const existingElement = itemRefs.current.get(id);
-            if (existingElement) {
-                observerRef.current?.unobserve(existingElement);
-            }
-            itemRefs.current.delete(id);
-        }
-    }, []);
-
     return (
         <div
             ref={containerRef}
             className={`${styles.container} ${className}`}
         >
             {/* Primary navigation items */}
-            <div className={styles.primary}>
+            <div ref={primaryRef} className={styles.primary}>
                 {items.map((item) => (
                     <div
                         key={item.id}
-                        ref={(el) => setItemRef(item.id, el)}
                         data-priority-nav-id={item.id}
                         className={`${styles.item} ${overflowIds.has(item.id) || shouldCollapseAll ? styles.item_hidden : ''}`}
                     >
@@ -314,7 +424,9 @@ export function PriorityNav({
                 ))}
             </div>
 
-            {/* More button - only visible when there are overflow items */}
+            {/* More button - only visible when there are overflow items. The
+                count badge is always rendered so the measuring pass sees the
+                button at the width it will have once it appears. */}
             {enabled && (
                 <button
                     ref={moreButtonRef}
@@ -325,11 +437,9 @@ export function PriorityNav({
                     aria-haspopup="true"
                 >
                     <MoreHorizontal size={20} />
-                    {hasOverflow && (
-                        <span className={styles.more_count}>
-                            {finalOverflowItems.length}
-                        </span>
-                    )}
+                    <span className={styles.more_count}>
+                        {finalOverflowItems.length}
+                    </span>
                 </button>
             )}
 

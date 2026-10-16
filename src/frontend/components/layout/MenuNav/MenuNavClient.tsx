@@ -9,8 +9,8 @@
  * menu items to be dynamically managed through the IMenuService without requiring
  * client-side fetching or hardcoded navigation arrays.
  *
- * Responsive behavior uses Priority+ navigation pattern with IntersectionObserver
- * to automatically show as many items as fit, moving overflow items to a "More"
+ * Responsive behavior uses the Priority+ navigation pattern (PriorityNav) to
+ * automatically show as many items as fit, moving overflow items to a "More"
  * dropdown based on the namespace configuration from the backend.
  *
  * Admin items live as a subtree of `main` rooted at the System
@@ -132,9 +132,9 @@ interface IMenuNavClientProps {
  * Active state uses startsWith matching to highlight tabs for nested routes
  * (e.g., /system/pages/edit shows "Pages" tab as active).
  *
- * Responsive behavior uses Priority+ navigation with IntersectionObserver to
- * automatically detect overflow and move items to a "More" dropdown based on
- * available space and the namespace configuration.
+ * Responsive behavior uses Priority+ navigation (PriorityNav) to measure
+ * overflow and move items to a "More" dropdown based on available space and
+ * the namespace configuration.
  *
  * @param props - Component props
  * @param props.namespace - Menu namespace for config lookup
@@ -215,7 +215,7 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel, onItem
     }, []);
 
     /**
-     * Callback from PriorityNav when IntersectionObserver completes measurement.
+     * Callback from PriorityNav once its first overflow measurement has rendered.
      * Triggers the fade-in transition by adding the initialized class.
      */
     const handlePriorityNavInitialized = useCallback(() => {
