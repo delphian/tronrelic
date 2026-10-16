@@ -503,7 +503,10 @@ export class LocalizationAdminService {
      * filled by one AI suggestion run. Saving them one request at a time would
      * spend a slot of the admin rate limit per row and run out partway through
      * a page. Every entry is validated before anything is written, so a bad
-     * entry rejects the whole batch instead of leaving half of it saved.
+     * entry rejects the whole batch instead of leaving half of it saved. A
+     * database failure partway through the writes can still leave part of the
+     * batch saved, so the read side is invalidated and the saved rows logged
+     * whenever any write landed.
      *
      * @param input - The shared language and the entries to save.
      * @param actor - Who made the change, recorded on each translation and in the log.
@@ -520,12 +523,25 @@ export class LocalizationAdminService {
         for (const entry of entries) {
             documents.push(await this.buildTranslationDocument({ ...entry, language }, language, actor));
         }
-        for (const document of documents) {
-            await this.writeTranslation(document);
+        // Each entry is its own upsert, so a database failure partway through
+        // leaves the earlier ones committed. The read side drops its cached
+        // catalog only when `onChange` runs, so without the `finally` a
+        // transient failure would keep the site serving the old text for keys
+        // that were in fact saved, with nothing in the log to say so.
+        let written = 0;
+        try {
+            for (const document of documents) {
+                await this.writeTranslation(document);
+                written += 1;
+            }
+        } finally {
+            if (written > 0) {
+                this.onChange();
+                const saved = documents.slice(0, written);
+                this.logger.info({ language, count: written, requested: documents.length, partial: written < documents.length, keys: saved.map(document => joinKeyId(document.namespace, document.key)), actor }, 'Translations saved');
+            }
         }
 
-        this.onChange();
-        this.logger.info({ language, count: documents.length, keys: documents.map(document => joinKeyId(document.namespace, document.key)), actor }, 'Translations saved');
         return documents.map(document => this.toTranslation(document));
     }
 
