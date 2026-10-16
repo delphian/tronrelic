@@ -21,10 +21,11 @@
  * `core:auth-button` is the sign-in / profile button; its SSR payload is
  * the administrator's sign-in image from the system configuration, and
  * `AuthButtonWidget` decides between sign-in and profile from the
- * visitor's session. `core:site-logo` and `core:main-menu` are the rest of
- * what used to be the fixed site header. The menu's items are per-visitor,
- * so they reach the component through `MenuSeedProvider`, never through
- * this cached payload.
+ * visitor's session. `core:site-logo` and the menu widget (`core:main-menu`,
+ * which renders whichever menu namespace its placement names) are the rest
+ * of what used to be the fixed site header. The menu's items are
+ * per-visitor, so they reach the component through `MenuSeedProvider`,
+ * never through this cached payload.
  *
  * Because the block-ticker fetcher needs a runtime dependency the other
  * two do not, the catalog is a *factory* — `buildCoreWidgetTypeDescriptors`
@@ -58,7 +59,7 @@ import type {
     WidgetDataFetcher,
     IAuthButtonLink
 } from '@/types';
-import { WIDGET_ICON_FORMAT, WIDGET_IMAGE_FORMAT } from '@/types';
+import { WIDGET_ICON_FORMAT, WIDGET_IMAGE_FORMAT, WIDGET_MENU_NAMESPACE_FORMAT } from '@/types';
 
 /**
  * Widget-type id for the raw text/HTML block. Namespaced under `core:`
@@ -1065,36 +1066,64 @@ async function fetchSiteLogoData(
 }
 
 /**
- * Widget-type id for the main navigation menu. Namespaced under `core:`
- * so it never collides with a plugin-declared id; the frontend component
- * registry (`widgets.core.ts`) keys its renderer on this string.
+ * Widget-type id for the menu widget. Namespaced under `core:` so it never
+ * collides with a plugin-declared id; the frontend component registry
+ * (`widgets.core.ts`) keys its renderer on this string.
+ *
+ * The widget once rendered only the `main` namespace, which is where the
+ * `main-menu` in the id comes from. The id is stored on every placement row
+ * and widget migrations are run by an operator rather than at deploy, so
+ * renaming it would make every existing menu placement stop rendering until
+ * someone ran a migration. The id therefore stays as it was.
  */
-export const MAIN_MENU_TYPE_ID = 'core:main-menu';
+export const MENU_TYPE_ID = 'core:main-menu';
+
+/** Namespace a menu placement renders when it names none, matching the widget's original behaviour. */
+const MENU_DEFAULT_NAMESPACE = 'main';
+
+/** Compiled once, because the menu fetcher checks a placement's namespace on every page render. */
+const MENU_NAMESPACE_PATTERN = new RegExp(WIDGET_MENU_NAMESPACE_FORMAT.pattern);
 
 /**
- * SSR payload the main-menu data fetcher returns and the frontend
- * `MainMenuWidget` consumes.
+ * SSR payload the menu data fetcher returns and the frontend `MenuWidget`
+ * consumes.
  *
- * The menu's items are deliberately not in it. The `main` tree depends on
- * who is asking — admins see the System container, anonymous visitors do
- * not — while widget data is cached per route with nothing about the
- * visitor in the key, so a tree here would show one visitor's menu to the
- * next. The root layout fetches the visitor's own tree on every request and
- * seeds it through `MenuSeedProvider` instead; this payload carries only
- * the operator's layout choice.
+ * The menu's items are deliberately not in it. A menu tree depends on who
+ * is asking — in `main`, admins see the System container and anonymous
+ * visitors do not — while widget data is cached per route with nothing
+ * about the visitor in the key, so a tree here would show one visitor's
+ * menu to the next. The root layout reads the namespaces out of this
+ * payload, fetches the visitor's own tree for each on every request, and
+ * seeds them through `MenuSeedProvider` instead.
  */
-export interface IMainMenuWidgetData {
+export interface IMenuWidgetData {
+    /** The menu namespace this placement renders, such as `main` or `footer`. */
+    namespace: string;
     /** How the menu sits within the space its placement is given. */
     align: 'flex-start' | 'center' | 'flex-end';
 }
 
 /**
- * JSON Schema (Draft 7) for the main-menu placement's `instanceConfig`.
+ * JSON Schema (Draft 7) for the menu placement's `instanceConfig`.
+ *
+ * `namespace` declares the {@link WIDGET_MENU_NAMESPACE_FORMAT} format, which
+ * makes the placement form offer a dropdown of the namespaces the menu
+ * service holds and makes the API reject a value that cannot be a namespace
+ * name. It is optional so placements saved before the setting existed keep
+ * rendering `main`.
  */
-export const MAIN_MENU_CONFIG_SCHEMA: JSONSchema7 = {
+export const MENU_CONFIG_SCHEMA: JSONSchema7 = {
     type: 'object',
     additionalProperties: false,
     properties: {
+        namespace: {
+            type: 'string',
+            format: WIDGET_MENU_NAMESPACE_FORMAT.name,
+            default: MENU_DEFAULT_NAMESPACE,
+            title: 'Menu',
+            description:
+                'Which menu namespace to render. Namespaces and their items are managed at /system/menu. Each visitor sees only the items they may open.'
+        },
         align: {
             type: 'string',
             enum: ['flex-start', 'center', 'flex-end'],
@@ -1107,22 +1136,33 @@ export const MAIN_MENU_CONFIG_SCHEMA: JSONSchema7 = {
 };
 
 /**
- * Resolve the main-menu SSR payload from the placement's instance config.
+ * Resolve the menu SSR payload from the placement's instance config.
+ *
+ * The placement API already checked `namespace` against
+ * {@link MENU_CONFIG_SCHEMA}, but a row saved before the setting existed has
+ * none, and a row edited in the database by hand may hold anything. The root
+ * layout passes this value to the menu API in a URL, so it is checked again
+ * here and replaced with `main` when it is missing or malformed.
  *
  * @param _route - Unused; the active item is worked out on the client from the pathname.
  * @param _params - Unused.
  * @param placement - Placement context carrying the operator config.
- * @returns The alignment for the frontend component, defaulting to the end.
+ * @returns The namespace and alignment for the frontend component.
  */
-async function fetchMainMenuData(
+async function fetchMenuData(
     _route: string,
     _params: Record<string, string>,
     placement?: IWidgetPlacementContext
-): Promise<IMainMenuWidgetData> {
-    const configured = placement?.instanceConfig?.align;
-    const align = configured === 'flex-start' || configured === 'center' ? configured : 'flex-end';
+): Promise<IMenuWidgetData> {
+    const configuredNamespace = placement?.instanceConfig?.namespace;
+    const namespace = typeof configuredNamespace === 'string'
+        && MENU_NAMESPACE_PATTERN.test(configuredNamespace)
+        ? configuredNamespace
+        : MENU_DEFAULT_NAMESPACE;
+    const configuredAlign = placement?.instanceConfig?.align;
+    const align = configuredAlign === 'flex-start' || configuredAlign === 'center' ? configuredAlign : 'flex-end';
 
-    return { align };
+    return { namespace, align };
 }
 
 /**
@@ -1262,13 +1302,13 @@ export function buildCoreWidgetTypeDescriptors(
             configSchema: SITE_LOGO_CONFIG_SCHEMA
         },
         {
-            id: MAIN_MENU_TYPE_ID,
-            label: 'Main menu',
+            id: MENU_TYPE_ID,
+            label: 'Menu',
             description:
-                'The site navigation from the main menu namespace (edited at /system/menu), with each visitor seeing only the items they may open. Folds items that do not fit into "More".',
+                'Navigation from a menu namespace chosen in the placement settings (namespaces are edited at /system/menu), with each visitor seeing only the items they may open. Folds items that do not fit into "More".',
             category: 'Navigation',
-            defaultDataFetcher: fetchMainMenuData,
-            configSchema: MAIN_MENU_CONFIG_SCHEMA
+            defaultDataFetcher: fetchMenuData,
+            configSchema: MENU_CONFIG_SCHEMA
         },
         {
             id: LANGUAGE_SWITCHER_TYPE_ID,

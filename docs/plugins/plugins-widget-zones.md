@@ -20,7 +20,7 @@ Every operation — register, list, mutate, resolve — flows through one named 
 
 | Zone id | Host | Where it renders | Typical use |
 |---|---|---|---|
-| `site-top` | `site` | Root layout, the first element inside `<body>`, wrapped in the page's `<header>` | The site header itself: the core Site logo, Main menu, and Sign-in button widgets, plus announcement bars |
+| `site-top` | `site` | Root layout, the first element inside `<body>`, wrapped in the page's `<header>` | The site header itself: the core Site logo, Menu (set to the `main` namespace), and Sign-in button widgets, plus announcement bars |
 | `ticker-after` | `site` | Root layout, directly below `site-top` | Reaches every route the root layout serves — scope with route filters |
 | `footer` | `site` | Root layout, below `<main>` inside a semantic `<footer>` | Site-wide links, legal text, attribution |
 | `main-before` | `core` | Above page content inside the `(core)` route group | Banners, alerts on front-of-house pages |

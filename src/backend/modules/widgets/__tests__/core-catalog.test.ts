@@ -32,7 +32,7 @@ import {
     AUTH_BUTTON_TYPE_ID,
     buildCoreWidgetTypeDescriptors,
     LANGUAGE_SWITCHER_TYPE_ID,
-    MAIN_MENU_TYPE_ID,
+    MENU_TYPE_ID,
     RAW_HTML_TYPE_ID,
     SITE_LOGO_TYPE_ID
 } from '../widget-types/core-widget-types.js';
@@ -297,7 +297,7 @@ describe('Core widget-type catalog (auth-button)', () => {
     });
 });
 
-describe('Core widget-type catalog (site-logo, main-menu)', () => {
+describe('Core widget-type catalog (site-logo, menu)', () => {
     /**
      * Resolve one core widget's SSR payload through a real placement in the
      * `site-top` zone.
@@ -339,11 +339,21 @@ describe('Core widget-type catalog (site-logo, main-menu)', () => {
         }
     });
 
-    it('carries only the menu alignment, never the per-visitor menu items', async () => {
+    it('carries only the menu namespace and alignment, never the per-visitor menu items', async () => {
         // The items differ by visitor and this payload is cached per route,
         // so they must reach the component another way.
-        await expect(resolveCoreWidget(MAIN_MENU_TYPE_ID)).resolves.toEqual({ align: 'flex-end' });
-        await expect(resolveCoreWidget(MAIN_MENU_TYPE_ID, { align: 'center' })).resolves.toEqual({ align: 'center' });
+        await expect(resolveCoreWidget(MENU_TYPE_ID)).resolves.toEqual({ namespace: 'main', align: 'flex-end' });
+        await expect(resolveCoreWidget(MENU_TYPE_ID, { namespace: 'footer', align: 'center' }))
+            .resolves.toEqual({ namespace: 'footer', align: 'center' });
+    });
+
+    it('falls back to the main namespace when a stored namespace is malformed', async () => {
+        // The API refuses these on write; the fetcher refuses them again
+        // because the root layout puts the value in a menu API URL.
+        for (const namespace of ['Main', 'a b', '../admin', '', 'x'.repeat(65)]) {
+            await expect(resolveCoreWidget(MENU_TYPE_ID, { namespace }))
+                .resolves.toEqual({ namespace: 'main', align: 'flex-end' });
+        }
     });
 
     it('carries only the language switcher label style, never the language list', async () => {

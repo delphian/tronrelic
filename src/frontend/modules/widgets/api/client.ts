@@ -124,6 +124,21 @@ export async function restorePlacementDefaults(id: string): Promise<IWidgetPlace
 }
 
 /**
+ * List the menu namespaces the menu service holds, so a menu widget's
+ * settings can offer them as a dropdown instead of a free-text box. The
+ * request carries the admin's session, so the list includes any namespace
+ * hidden from anonymous callers.
+ *
+ * @returns Namespace names, sorted by the server.
+ */
+export async function fetchMenuNamespaces(): Promise<string[]> {
+    const res = await fetch('/api/menu/namespaces');
+    if (!res.ok) throw await toError(res, 'Load menus');
+    const body = await res.json() as { namespaces?: string[] };
+    return body.namespaces ?? [];
+}
+
+/**
  * Persist a zone's flexbox layout override.
  *
  * @param zoneId - The zone to change.

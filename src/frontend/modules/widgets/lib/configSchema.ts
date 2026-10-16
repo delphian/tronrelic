@@ -15,7 +15,7 @@
  */
 
 import type { JSONSchema7, JSONSchema7Definition } from 'json-schema';
-import { WIDGET_ICON_FORMAT, WIDGET_IMAGE_FORMAT } from '@/types';
+import { WIDGET_ICON_FORMAT, WIDGET_IMAGE_FORMAT, WIDGET_MENU_NAMESPACE_FORMAT } from '@/types';
 import { enumOptionLabel, humanizeKey } from './layoutPresets';
 
 /**
@@ -36,7 +36,7 @@ export interface IConfigFieldDescriptor {
 }
 
 /** The control a field renders as. */
-export type ConfigControlType = 'boolean' | 'enum' | 'number' | 'text' | 'array' | 'icon' | 'image';
+export type ConfigControlType = 'boolean' | 'enum' | 'number' | 'text' | 'array' | 'icon' | 'image' | 'menuNamespace';
 
 /**
  * Resolve a schema property's primary scalar type, ignoring a nullable
@@ -58,7 +58,9 @@ export function primaryType(schema: JSONSchema7): string | undefined {
  * renders as the icon picker, because an operator cannot be expected to
  * type lucide export names from memory. A string declaring the shared
  * image-URL format renders as the file picker with a preview, for the same
- * reason with upload URLs.
+ * reason with upload URLs. A string declaring the shared menu-namespace
+ * format renders as a dropdown of the namespaces that exist, so an operator
+ * picks a menu rather than spelling its name.
  *
  * @param schema - Property schema.
  * @returns The control kind to render.
@@ -78,6 +80,8 @@ export function fieldControlType(schema: JSONSchema7): ConfigControlType {
         control = 'icon';
     } else if (type === 'string' && schema.format === WIDGET_IMAGE_FORMAT.name) {
         control = 'image';
+    } else if (type === 'string' && schema.format === WIDGET_MENU_NAMESPACE_FORMAT.name) {
+        control = 'menuNamespace';
     }
     return control;
 }

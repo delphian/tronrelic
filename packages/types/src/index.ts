@@ -34,7 +34,7 @@ export type {
     WidgetsRegistrationDisposer,
     IAuthButtonLink
 } from './widget/index.js';
-export { WIDGET_ICON_FORMAT, WIDGET_IMAGE_FORMAT } from './widget/index.js';
+export { WIDGET_ICON_FORMAT, WIDGET_IMAGE_FORMAT, WIDGET_MENU_NAMESPACE_FORMAT } from './widget/index.js';
 export type { ISystemConfig, ISystemConfigService } from './system-config/index.js';
 export type { ISystemLogService, ISystemLogQuery, ISystemLogPaginatedResponse, ISaveLogData, LogLevel } from './system-log/index.js';
 export type { ISystemLogCursor, ISystemLogCursorQuery, ISystemLogCursorPage } from './system-log/index.js';
@@ -128,7 +128,7 @@ export type { PortfolioScope, IPortfolioQuery, IPortfolioHolding, IPortfolioAllo
 export type { ITrafficIgnoreSubject, ITrafficIgnoreList } from './traffic/index.js';
 export type { IAddressTagPair, IAddressTag, IAddressTagSource, IAddressTagGroup, IAddressTagRename, IAddressTagListQuery, IAddressTagSearchQuery, IAddressTagCount, IAddressTagSummaryQuery, IAddressTagSummary, IAddressTagAssertion, IAddressTagSyncResult, IAddressTagDeleteByTagResult, IAddressTagService } from './address-tags/index.js';
 export type { LanguageDirection, ILanguage, ILocalizedRoute, ITranslationKey, ITranslation, IPublicLanguage, IPublicLocalizedRoute, ILocalizationPublicConfig, ITranslationCatalog, ITranslationObservation, TranslationParams, ITranslator, ILocalizationService, TranslationStatus, ILanguageSummary, ILocalizedRouteSummary, ITranslationRow, ITranslationPage, ITranslationNamespaceSummary, IResolvedLocalizedPath } from './localization/index.js';
-export { DEFAULT_LANGUAGE, LANGUAGE_CODE_PATTERN, matchRoutePattern, isValidRoutePattern, localizePath, findPublishedLanguages, resolveLocalizedPath, interpolateTranslation } from './localization/index.js';
+export { DEFAULT_LANGUAGE, LANGUAGE_CODE_PATTERN, matchRoutePattern, isValidRoutePattern, localizePath, localizeHref, findPublishedLanguages, resolveLocalizedPath, interpolateTranslation } from './localization/index.js';
 export type { IAiTool, IAiToolInputSchema, IAiConversationMessage, IAiProvider, IAiStreamChunk, IAiQueryRecord, AiQueryMode, AiQueryOutcome, IAiQueryOptions, IAiQueryResult, AiStopReason, IModelInfo, ISavedPrompt, ISavedPromptTrigger, ISavedPromptTriggerBase, ISavedPromptCronTrigger, ISavedPromptHookTrigger, IAiTranscriptSegment, IAiThinkingSegment, IAiTextSegment, IAiToolUseSegment, IAiToolResultSegment } from './ai-tools/index.js';
 export { AI_TOOL_NAME_PATTERN } from './ai-tools/index.js';
 export { UNTRUSTED_CONTENT_NOTICE, UNTRUSTED_CONTENT_SYSTEM_CLAUSE, wrapUntrustedToolResult } from './ai-tools/index.js';

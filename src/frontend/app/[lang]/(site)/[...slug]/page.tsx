@@ -7,8 +7,9 @@ import { PluginPageWithZones } from '../../../../components/PluginPageWithZones'
 import { CategoryLandingPage } from '../../../../modules/menu';
 import { getServerSideApiUrlWithPath } from '../../../../lib/api-url';
 import { buildMetadata, buildArticleStructuredData, localizedAbsoluteUrl, toOpenGraphLocale } from '../../../../lib/seo';
-import { localizePath } from '@/types';
-import { resolveMetadataLanguage } from '../../../../modules/localization/server';
+import { localizeHref, localizePath } from '@/types';
+import { fetchLocalizationSeed, getServerTranslator, resolveMetadataLanguage } from '../../../../modules/localization/server';
+import { menuTranslationKey } from '../../../../modules/menu/lib/menuTranslationKey';
 import { getServerConfig } from '../../../../lib/serverConfig';
 import { getEnabledPluginPageConfig } from '../../../../lib/serverPluginRegistry';
 import { runPluginServerDataFetcher } from '../../../../lib/runPluginServerDataFetcher';
@@ -76,6 +77,13 @@ interface ICategoryResolveResponse {
         icon?: string;
     }[];
 }
+
+/**
+ * Menu namespace category pages resolve in. `resolveSlug` calls
+ * `/menu/resolve` without a namespace, and the backend then searches `main`,
+ * so the landing page's translation keys belong to `main` as well.
+ */
+const CATEGORY_MENU_NAMESPACE = 'main';
 
 /**
  * Discriminated result from resolving a slug to a page type.
@@ -371,17 +379,26 @@ export async function generateMetadata({ params }: { params: Promise<IPageParams
 
     if (resolution.type === 'category') {
         const category = resolution.data;
-        const { siteUrl } = await getServerConfig();
-        if (category.node.label && category.node.description) {
+        const [{ siteUrl }, { t }] = await Promise.all([getServerConfig(), getServerTranslator(params)]);
+        // Same keys the page body uses, so a translated landing page sends
+        // search engines the translated title and description it displays.
+        const keyNode = { url: category.node.url ?? slug, label: category.node.label };
+        const title = category.node.label
+            ? t(menuTranslationKey(CATEGORY_MENU_NAMESPACE, keyNode), category.node.label)
+            : '';
+        const description = category.node.description
+            ? t(menuTranslationKey(CATEGORY_MENU_NAMESPACE, keyNode, 'description'), category.node.description)
+            : '';
+        if (title && description) {
             return buildMetadata({
                 siteUrl,
                 language,
-                title: category.node.label,
-                description: category.node.description,
+                title,
+                description,
                 path: slug
             });
         }
-        return category.node.label ? { title: category.node.label } : {};
+        return title ? { title } : {};
     }
 
     return {};
@@ -462,7 +479,31 @@ export default async function UnifiedPage({ params }: { params: Promise<IPagePar
 
     // Menu category page — auto-generated landing page for container nodes
     if (resolution.type === 'category') {
-        return <CategoryLandingPage node={resolution.data.node} items={resolution.data.children} />;
+        const [{ t }, { language, config }] = await Promise.all([
+            getServerTranslator(params),
+            fetchLocalizationSeed(resolvedParams.lang)
+        ]);
+        const node = { ...resolution.data.node, url: resolution.data.node.url ?? slug };
+
+        /**
+         * Point a card's stored link at this page's language, so a visitor on
+         * a translated landing page stays in that language wherever the
+         * target page is published in it.
+         *
+         * @param href - A child item's stored, unprefixed URL.
+         * @returns The link the card renders.
+         */
+        const localizeCardHref = (href: string): string => localizeHref(href, language, config);
+
+        return (
+            <CategoryLandingPage
+                node={node}
+                items={resolution.data.children}
+                namespace={CATEGORY_MENU_NAMESPACE}
+                t={t}
+                localizeHref={localizeCardHref}
+            />
+        );
     }
 
     // No system owns this URL

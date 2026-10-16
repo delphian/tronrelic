@@ -11,6 +11,7 @@ import {
     findPublishedLanguages,
     interpolateTranslation,
     isValidRoutePattern,
+    localizeHref,
     localizePath,
     matchRoutePattern,
     resolveLocalizedPath
@@ -67,6 +68,29 @@ describe('localizePath', () => {
         expect(localizePath('/markets', 'en')).toBe('/markets');
         expect(localizePath('/markets', 'zh')).toBe('/zh/markets');
         expect(localizePath('/', 'zh')).toBe('/zh');
+    });
+});
+
+describe('localizeHref', () => {
+    it('prefixes an on-site link only when its target is live in the page language', () => {
+        expect(localizeHref('/markets', 'zh', CONFIG)).toBe('/zh/markets');
+        expect(localizeHref('/markets', 'ru', CONFIG)).toBe('/ru/markets');
+        expect(localizeHref('/', 'zh', CONFIG)).toBe('/zh');
+        // Not published in Russian, so a prefixed link would 404.
+        expect(localizeHref('/blog/post', 'ru', CONFIG)).toBe('/blog/post');
+        expect(localizeHref('/about', 'zh', CONFIG)).toBe('/about');
+    });
+
+    it('keeps a query string or fragment after the localized path', () => {
+        expect(localizeHref('/markets?sort=price', 'zh', CONFIG)).toBe('/zh/markets?sort=price');
+        expect(localizeHref('/markets#top', 'zh', CONFIG)).toBe('/zh/markets#top');
+    });
+
+    it('leaves English pages and links that leave the site untouched', () => {
+        expect(localizeHref('/markets', 'en', CONFIG)).toBe('/markets');
+        for (const href of ['https://example.com/markets', '//example.com/markets', '/\\example.com', 'mailto:a@b.c']) {
+            expect(localizeHref(href, 'zh', CONFIG)).toBe(href);
+        }
     });
 });
 

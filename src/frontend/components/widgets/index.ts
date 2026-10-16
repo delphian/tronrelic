@@ -12,6 +12,7 @@
 
 export { WidgetZone } from './WidgetZone';
 export { fetchWidgetsForRoute } from './fetchWidgetsForRoute';
+export { collectMenuNamespaces } from './collectMenuNamespaces';
 export type { IWidgetBundle } from './fetchWidgetsForRoute';
 export { getWidgetComponent } from './getWidgetComponent';
 export { widgetComponentRegistry } from './widgets.generated';

@@ -23,7 +23,7 @@ import { BlockTickerWidget } from './BlockTickerWidget';
 import { NetworkActivityWidget } from './NetworkActivityWidget';
 import { AuthButtonWidget } from './AuthButtonWidget';
 import { SiteLogoWidget } from './SiteLogoWidget';
-import { MainMenuWidget } from './MainMenuWidget';
+import { MenuWidget } from './MenuWidget';
 import { LanguageSwitcherWidget } from './LanguageSwitcherWidget';
 
 /**
@@ -39,6 +39,8 @@ export const coreWidgetComponents: Record<string, WidgetComponent> = {
     'core:network-activity': NetworkActivityWidget,
     'core:auth-button': AuthButtonWidget,
     'core:site-logo': SiteLogoWidget,
-    'core:main-menu': MainMenuWidget,
+    // The menu widget; the id predates its namespace setting and is kept so
+    // existing placements keep rendering.
+    'core:main-menu': MenuWidget,
     'core:language-switcher': LanguageSwitcherWidget
 };

@@ -6,8 +6,9 @@ import { getServerSideApiUrl } from '../../lib/api-url';
 import { buildMetadata, SITE_NAME } from '../../lib/seo';
 import '../globals.scss';
 import { Providers } from '../providers';
-import { WidgetZone, fetchWidgetsForRoute } from '../../components/widgets';
+import { WidgetZone, collectMenuNamespaces, fetchWidgetsForRoute } from '../../components/widgets';
 import { fetchMenuNamespace } from '../../modules/menu/server';
+import type { IMenuSeed } from '../../modules/menu/types';
 import { getServerSession, type ISSRSession } from '../../modules/user/lib/session-server';
 import { DEFAULT_LANGUAGE } from '@/types';
 import { fetchLocalizationSeed, resolveMetadataLanguage } from '../../modules/localization/server';
@@ -326,11 +327,13 @@ export default async function RootLayout({ children, params }: { children: React
   // ssr.htmlAttributes, so no separate fetchActiveThemes call or cookie
   // branch is needed in this layout.
   //
-  // The main menu is fetched here, per visitor, rather than by its widget:
-  // the `core:main-menu` widget's data is cached per route and shared by
-  // every visitor, while the menu tree is filtered per visitor (admins see
-  // the System container). The tree reaches the widget through
-  // MenuSeedProvider.
+  // Menus are fetched here, per visitor, rather than by their widgets: a
+  // menu widget's data is cached per route and shared by every visitor,
+  // while a menu tree is filtered per visitor (admins see the System
+  // container in `main`). The trees reach the widgets through
+  // MenuSeedProvider. `main` is fetched alongside the widgets because the
+  // site header almost always places it; any other namespace a menu widget
+  // on this page names is fetched once the widgets have resolved.
   //
   // The localization seed carries the language the middleware routed this
   // request to. A request it left alone (a missing file under /images/)
@@ -347,6 +350,15 @@ export default async function RootLayout({ children, params }: { children: React
     fetchMenuNamespace('main', cookieStore.toString()),
     fetchLocalizationSeed(lang)
   ]);
+
+  const extraMenuNamespaces = collectMenuNamespaces(widgetBundle.widgets).filter(namespace => namespace !== 'main');
+  const extraMenus = await Promise.all(
+    extraMenuNamespaces.map(namespace => fetchMenuNamespace(namespace, cookieStore.toString()))
+  );
+  const ssrMenus: Record<string, IMenuSeed> = { main: mainMenu };
+  extraMenuNamespaces.forEach((namespace, index) => {
+    ssrMenus[namespace] = extraMenus[index];
+  });
 
   const { language, direction, config: localizationConfig } = localizationSeed;
 
@@ -389,9 +401,9 @@ export default async function RootLayout({ children, params }: { children: React
         ))}
       </head>
       <body>
-        <Providers ssrSession={ssrSession} ssrMenus={{ main: mainMenu }} ssrLocalization={localizationSeed}>
+        <Providers ssrSession={ssrSession} ssrMenus={ssrMenus} ssrLocalization={localizationSeed}>
           {/* The site header is built entirely from widgets an operator places
-              in site-top: the Site logo, Main menu, and Sign-in button. The
+              in site-top: the Site logo, a Menu showing `main`, and the Sign-in button. The
               zone sits inside <header> so the page keeps its header landmark
               for assistive technology. */}
           <header>

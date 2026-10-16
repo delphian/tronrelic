@@ -10,9 +10,9 @@
  * visitor's cookies so MenuService.getTreeForUser can apply per-user visibility gating
  * (requiresGroups / requiresAdmin); without this the SSR pass would always render the
  * anonymous-visible subset and admins would see admin items only after a
- * post-hydration refetch. The site's main navigation no longer uses this component:
- * it is the `core:main-menu` widget, seeded by the root layout through
- * `MenuSeedProvider`.
+ * post-hydration refetch. The site's navigation menus no longer use this component:
+ * they are menu widgets (`core:main-menu`, which renders whichever namespace its
+ * placement names), seeded by the root layout through `MenuSeedProvider`.
  *
  * @example
  * ```tsx

@@ -11,7 +11,8 @@ Serves the site in languages other than English. Administrators add languages, p
 | Admin UI | `/system/localization` — Languages, Routes, Translations, Database, Logs tabs |
 | Public API | `/api/localization` |
 | Admin API | `/api/admin/system/localization` (`requireAdmin`, grouped rate limiter) |
-| Types | `@/types` → `packages/types/src/localization/` (contracts plus the shared helpers `matchRoutePattern`, `isValidRoutePattern`, `resolveLocalizedPath`, `findPublishedLanguages`, `localizePath`, `interpolateTranslation`, `DEFAULT_LANGUAGE`) |
+| Types | `@/types` → `packages/types/src/localization/` (contracts plus the shared helpers `matchRoutePattern`, `isValidRoutePattern`, `resolveLocalizedPath`, `findPublishedLanguages`, `localizePath`, `localizeHref`, `interpolateTranslation`, `DEFAULT_LANGUAGE`) |
+| Frontend hooks | `useTranslation`, `useLocalization`, `useLocalizedHref` |
 | Storage | `module_localization_languages`, `module_localization_routes`, `module_localization_keys`, `module_localization_translations` |
 | Frontend module | `src/frontend/modules/localization/` — `LocalizationProvider`, `useTranslation`, `LanguageSwitcher`, admin tabs; server-only helpers in `./server`, including `getServerTranslator` and `fetchLocalizationSeed` |
 | Plugin API | `context.useTranslation()` on `IFrontendPluginContext`, keys scoped to the plugin id |
@@ -58,6 +59,8 @@ return buildMetadata({ siteUrl, language, title: t('about.meta.title', 'About Tr
 ```
 
 Pass values as `{name}` placeholders instead of concatenating, so a translator can move them. There is no plural support; use separate keys. Backend code producing visitor-facing text calls `serviceRegistry.get<ILocalizationService>('localization')?.translate(namespace, key, language, englishText, params)`.
+
+**Links keep the visitor in their language.** Stored links, such as menu URLs, are unprefixed, so on a Chinese page a link to `/markets` would drop the visitor back into English. Prefixing every link is not safe either, because `/zh/x` returns 404 unless `x` is published in Chinese. `localizeHref(href, language, config)` in `@/types` applies the middleware's rule: it adds the prefix only when the target is live in the page's language, keeps any query string or fragment, and leaves English pages and off-site links alone. Client components call `const localize = useLocalizedHref()` and render `href={localize(url)}`; server components build the same function from `fetchLocalizationSeed(lang)`. Menus (`MenuNavClient`) and category landing pages use it today. Other links across the site are still unprefixed and should adopt it as they are touched.
 
 **Only text rendered on the server is reported.** Text that only appears after an interaction (a modal, a toast) is translated if a translation exists, but its key is not discovered automatically — add it on the Translations tab. CMS page bodies are content, not interface text, and are not translated by this module.
 
