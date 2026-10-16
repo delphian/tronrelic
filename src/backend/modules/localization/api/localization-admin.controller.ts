@@ -11,7 +11,15 @@ import type { Request, Response } from 'express';
 import type { ISystemLogService, TranslationStatus } from '@/types';
 import { actorFromAdminRequest } from '../../../services/content-actor.js';
 import type { LocalizationAdminService } from '../services/localization-admin.service.js';
-import { LocalizationConflictError, LocalizationNotFoundError, LocalizationValidationError } from '../services/localization-errors.js';
+import type { LocalizationSettingsService } from '../services/localization-settings.service.js';
+import type { TranslationSuggestionService } from '../services/translation-suggestion.service.js';
+import {
+    LocalizationConflictError,
+    LocalizationNotFoundError,
+    LocalizationProviderError,
+    LocalizationUnavailableError,
+    LocalizationValidationError
+} from '../services/localization-errors.js';
 
 /** Status values the listing filter accepts. */
 const STATUSES: ReadonlyArray<TranslationStatus> = ['missing', 'stale', 'translated'];
@@ -38,15 +46,20 @@ function queryNumber(value: unknown): number | undefined {
 }
 
 /**
- * Handlers for languages, routes, keys, and translations.
+ * Handlers for languages, routes, keys, translations, settings, and AI
+ * translation suggestions.
  */
 export class LocalizationAdminController {
     /**
      * @param service - Write side of the module.
+     * @param settings - Storage for the system prompt, provider, and model.
+     * @param suggestions - Runs AI translation requests for the Translations tab.
      * @param logger - Module-scoped logger for unexpected failures.
      */
     constructor(
         private readonly service: LocalizationAdminService,
+        private readonly settings: LocalizationSettingsService,
+        private readonly suggestions: TranslationSuggestionService,
         private readonly logger: ISystemLogService
     ) {}
 
@@ -177,6 +190,28 @@ export class LocalizationAdminController {
         });
     };
 
+    /** GET /settings — the system prompt, provider, and model the AI buttons use. */
+    getSettings = async (_req: Request, res: Response): Promise<void> => {
+        await this.handle(res, 'Failed to load localization settings', async () => {
+            res.json({ settings: await this.settings.getSettings() });
+        });
+    };
+
+    /** PATCH /settings — change the system prompt, provider, or model. Body: `{ systemPrompt?, providerId?, model? }`. */
+    updateSettings = async (req: Request, res: Response): Promise<void> => {
+        await this.handle(res, 'Failed to save localization settings', async () => {
+            const settings = await this.settings.updateSettings(req.body ?? {}, actorFromAdminRequest(req).id);
+            res.json({ settings });
+        });
+    };
+
+    /** POST /translation-suggestions — ask the AI model to translate keys. Body: `{ language, keys: [{ namespace, key }] }`. */
+    suggestTranslations = async (req: Request, res: Response): Promise<void> => {
+        await this.handle(res, 'Failed to suggest translations', async () => {
+            res.json(await this.suggestions.suggest(req.body ?? {}, actorFromAdminRequest(req).id));
+        });
+    };
+
     /**
      * Run a handler body and translate the service's error classes into
      * status codes, so each handler states only its happy path.
@@ -195,6 +230,10 @@ export class LocalizationAdminController {
                 res.status(404).json({ error: error.message });
             } else if (error instanceof LocalizationConflictError) {
                 res.status(409).json({ error: error.message });
+            } else if (error instanceof LocalizationProviderError) {
+                res.status(502).json({ error: error.message });
+            } else if (error instanceof LocalizationUnavailableError) {
+                res.status(503).json({ error: error.message });
             } else {
                 this.logger.error({ error }, message);
                 res.status(500).json({ error: message });

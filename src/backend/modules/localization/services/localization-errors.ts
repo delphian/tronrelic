@@ -48,3 +48,33 @@ export class LocalizationConflictError extends Error {
         this.name = 'LocalizationConflictError';
     }
 }
+
+/**
+ * A translation suggestion cannot run because no AI provider is installed, or
+ * the provider chosen on the Settings tab is not. Mapped to 503, because the
+ * request was fine and the missing piece is something an operator installs.
+ */
+export class LocalizationUnavailableError extends Error {
+    /**
+     * @param message - Explanation shown to the administrator as-is.
+     */
+    constructor(message: string) {
+        super(message);
+        this.name = 'LocalizationUnavailableError';
+    }
+}
+
+/**
+ * The AI provider ran but its answer could not be used: the call failed, the
+ * model refused, its reply was cut off, or the reply was not the JSON asked
+ * for. Mapped to 502, the status for a bad answer from an upstream service.
+ */
+export class LocalizationProviderError extends Error {
+    /**
+     * @param message - Explanation shown to the administrator as-is.
+     */
+    constructor(message: string) {
+        super(message);
+        this.name = 'LocalizationProviderError';
+    }
+}

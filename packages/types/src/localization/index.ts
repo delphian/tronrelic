@@ -25,8 +25,13 @@ export type { ITranslationRow } from './ITranslationRow.js';
 export type { ITranslationPage } from './ITranslationPage.js';
 export type { ITranslationNamespaceSummary } from './ITranslationNamespaceSummary.js';
 export type { IResolvedLocalizedPath } from './IResolvedLocalizedPath.js';
+export type { ILocalizationSettings } from './ILocalizationSettings.js';
+export type { ITranslationSuggestion } from './ITranslationSuggestion.js';
+export type { ITranslationSuggestionRequest } from './ITranslationSuggestionRequest.js';
+export type { ITranslationSuggestionResult } from './ITranslationSuggestionResult.js';
 
 export { DEFAULT_LANGUAGE } from './DEFAULT_LANGUAGE.js';
+export { MAX_TRANSLATION_SUGGESTION_KEYS } from './MAX_TRANSLATION_SUGGESTION_KEYS.js';
 export { LANGUAGE_CODE_PATTERN } from './LANGUAGE_CODE_PATTERN.js';
 export { matchRoutePattern } from './matchRoutePattern.js';
 export { isValidRoutePattern } from './isValidRoutePattern.js';

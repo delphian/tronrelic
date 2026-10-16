@@ -40,7 +40,7 @@ export function createLocalizationPublicRouter(controller: LocalizationPublicCon
  * Build the admin router.
  *
  * @param controller - Admin handlers.
- * @returns Router exposing the language, route, key, and translation endpoints.
+ * @returns Router exposing the language, route, key, translation, settings, and suggestion endpoints.
  */
 export function createLocalizationAdminRouter(controller: LocalizationAdminController): Router {
     const router = Router();
@@ -58,5 +58,15 @@ export function createLocalizationAdminRouter(controller: LocalizationAdminContr
     router.delete('/translations', controller.deleteTranslation);
     router.post('/keys', controller.createKey);
     router.delete('/keys', controller.deleteKey);
+    router.get('/settings', controller.getSettings);
+    router.patch('/settings', controller.updateSettings);
+    // Each suggestion is a paid model call, so it carries its own ceiling on
+    // top of the admin limiter. Twenty a minute is far more than anyone
+    // clicking through rows needs, and stops a stuck script running up a bill.
+    router.post(
+        '/translation-suggestions',
+        createRateLimiter({ windowSeconds: 60, maxRequests: 20, keyPrefix: 'localization-suggestions' }),
+        controller.suggestTranslations
+    );
     return router;
 }

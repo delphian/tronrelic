@@ -75,6 +75,7 @@ describe('LocalizationModule', () => {
             '/system/localization?tab=languages',
             '/system/localization?tab=routes',
             '/system/localization?tab=translations',
+            '/system/localization?tab=settings',
             '/system/localization?tab=database',
             '/system/localization?tab=logs'
         ]);

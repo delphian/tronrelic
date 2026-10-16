@@ -14,12 +14,15 @@
 import type {
     ILanguage,
     ILanguageSummary,
+    ILocalizationSettings,
     ILocalizedRoute,
     ILocalizedRouteSummary,
     ITranslation,
     ITranslationKey,
     ITranslationNamespaceSummary,
     ITranslationPage,
+    ITranslationSuggestionRequest,
+    ITranslationSuggestionResult,
     LanguageDirection,
     TranslationStatus
 } from '@/types';
@@ -234,4 +237,38 @@ export async function createKey(input: { namespace: string; key: string; source:
 export async function deleteKey(namespace: string, key: string): Promise<void> {
     const params = new URLSearchParams({ namespace, key });
     await send<void>('DELETE', `/keys?${params.toString()}`, 'delete key');
+}
+
+/**
+ * Read the AI translation settings: system prompt, provider, and model.
+ *
+ * @returns The current settings, with defaults for anything never saved.
+ */
+export async function getLocalizationSettings(): Promise<ILocalizationSettings> {
+    const body = await send<{ settings: ILocalizationSettings }>('GET', '/settings', 'load settings');
+    return body.settings;
+}
+
+/**
+ * Change the AI translation settings.
+ *
+ * @param patch - Fields to change; a null provider or model means "automatic".
+ * @returns The settings after the change.
+ */
+export async function updateLocalizationSettings(
+    patch: Partial<{ systemPrompt: string; providerId: string | null; model: string | null }>
+): Promise<ILocalizationSettings> {
+    const body = await send<{ settings: ILocalizationSettings }>('PATCH', '/settings', 'save settings', patch);
+    return body.settings;
+}
+
+/**
+ * Ask the AI model to translate keys. Nothing is saved; the caller places the
+ * suggested text in its editors for the administrator to review.
+ *
+ * @param request - Target language and the keys to translate.
+ * @returns Suggested text per key, the model's notes, and the cost of the run.
+ */
+export async function suggestTranslations(request: ITranslationSuggestionRequest): Promise<ITranslationSuggestionResult> {
+    return send<ITranslationSuggestionResult>('POST', '/translation-suggestions', 'suggest translations', request);
 }

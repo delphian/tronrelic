@@ -21,3 +21,6 @@ export const KEYS_COLLECTION = `${LOCALIZATION_COLLECTION_PREFIX}keys`;
 
 /** Translated text, one document per namespace, key, and language. */
 export const TRANSLATIONS_COLLECTION = `${LOCALIZATION_COLLECTION_PREFIX}translations`;
+
+/** The module's settings, one document keyed `settings`. */
+export const SETTINGS_COLLECTION = `${LOCALIZATION_COLLECTION_PREFIX}settings`;
