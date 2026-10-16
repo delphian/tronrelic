@@ -60,4 +60,27 @@ describe('menuTranslationKey', () => {
             expect(menuTranslationKey('main', node, 'description')).toMatch(BACKEND_KEY_PATTERN);
         }
     });
+
+    it('leaves a key readable when nothing had to be replaced or shortened', () => {
+        expect(menuTranslationKey('main', { url: '/tools/address-converter', label: 'Converter' }))
+            .toBe('menu.main.url::tools:address-converter');
+    });
+
+    it('keeps URLs apart when different unaccepted characters would flatten alike', () => {
+        expect(menuTranslationKey('main', { url: '/foo bar', label: 'A' }))
+            .not.toBe(menuTranslationKey('main', { url: '/foo+bar', label: 'A' }));
+        expect(menuTranslationKey('main', { url: '/工具', label: 'A' }))
+            .not.toBe(menuTranslationKey('main', { url: '/测试', label: 'A' }));
+    });
+
+    it('keeps URLs apart when they share their first 200 characters', () => {
+        const shared = 'y'.repeat(250);
+        expect(menuTranslationKey('main', { url: `/${shared}/one`, label: 'A' }))
+            .not.toBe(menuTranslationKey('main', { url: `/${shared}/two`, label: 'A' }));
+    });
+
+    it('keeps labels apart when different unaccepted characters would flatten alike', () => {
+        expect(menuTranslationKey('main', { label: '工具' }))
+            .not.toBe(menuTranslationKey('main', { label: '表格' }));
+    });
 });
