@@ -55,7 +55,7 @@ import type {
 import type { GscService } from './services/gsc.service.js';
 import type { RedirectService } from './services/redirect.service.js';
 import type { INewVisitorOrigin, TrafficService } from './services/traffic.service.js';
-import { composeConversionFunnel } from './services/traffic.service.js';
+import { composeConversionFunnel, isStorableCountryCode } from './services/traffic.service.js';
 
 /** Provider id passed to `registerTool` so the admin UI groups tools under this module. */
 export const PROVIDER_ID = 'traffic';
@@ -282,12 +282,16 @@ function resolveExcludeBots(value: unknown): boolean {
 }
 
 /**
- * Read the optional `country` argument as an uppercase ISO-3166 alpha-2 code.
+ * Read the optional `country` argument as an uppercase ISO-3166 alpha-2 code
+ * that ingestion could actually have stored.
  *
  * The traffic table stores two-letter uppercase codes, so a model passing
  * "kr" or "Korea" would otherwise match no rows and report an empty country
- * as fact. Lowercase is normalized; anything that is not two letters is
- * rejected with an error the model can correct from.
+ * as fact. The same trap exists for Cloudflare's non-country sentinels: `XX`
+ * (unknown) and `T1` (Tor) look like codes, but ingestion collapses both to
+ * NULL, so a query for either is guaranteed to come back empty and would be
+ * narrated as a real zero. Both cases are rejected with an error the model can
+ * correct from, using the same test the ingest path applies.
  *
  * @param value - Raw `country` input; undefined or empty means every country.
  * @returns The normalized code, or undefined when no filter was requested.
@@ -297,9 +301,11 @@ function resolveCountry(value: unknown): string | undefined {
         return undefined;
     }
     const country = String(value).trim().toUpperCase();
-    if (!/^[A-Z]{2}$/.test(country)) {
+    if (!isStorableCountryCode(country)) {
         throw new Error(
-            `Parameter "country" must be an ISO-3166 alpha-2 code such as "KR" or "US". Got: ${String(value)}`
+            `Parameter "country" must be an ISO-3166 alpha-2 code such as "KR" or "US", and not a ` +
+            `non-country sentinel such as "XX" or "T1", which traffic ingestion never stores. ` +
+            `Got: ${String(value)}`
         );
     }
     return country;

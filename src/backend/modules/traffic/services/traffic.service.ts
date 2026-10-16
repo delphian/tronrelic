@@ -3297,6 +3297,23 @@ export function buildTrafficEvent(
 }
 
 /**
+ * Decide whether a two-letter code is one the traffic store can actually hold.
+ *
+ * Cloudflare emits `XX` (unknown) and `T1` (Tor) beside real country codes, and
+ * ingestion drops both, so no stored row ever carries them. A reader that
+ * accepted one would run a query guaranteed to match nothing and present the
+ * empty result as a genuine zero, which is why the ingest path and the query
+ * path share this one test instead of each writing their own copy.
+ *
+ * @param value - Candidate code, already trimmed and uppercased by the caller,
+ *                since both call sites normalize before they validate.
+ * @returns True when the code is two letters and not one of the sentinels.
+ */
+export function isStorableCountryCode(value: string): boolean {
+    return /^[A-Z]{2}$/.test(value) && value !== 'XX' && value !== 'T1';
+}
+
+/**
  * Normalize the `CF-IPCountry` header into a storable ISO-3166 alpha-2
  * code. Cloudflare emits `XX` (unknown) and `T1` (Tor) sentinels that are
  * not countries — collapsing them to `null` keeps the geo dimension clean
@@ -3309,7 +3326,7 @@ function normalizeCfCountry(value: string | undefined): string | null {
     let country: string | null = null;
     if (value) {
         const v = value.trim().toUpperCase();
-        if (/^[A-Z]{2}$/.test(v) && v !== 'XX' && v !== 'T1') {
+        if (isStorableCountryCode(v)) {
             country = v;
         }
     }
