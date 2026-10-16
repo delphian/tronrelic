@@ -23,6 +23,7 @@ interface IFrontendPluginContext {
     useFilePicker: () => IFilePickerClient;   // pick/upload files; provider-delivered
     useImageGen: () => IImageGenClient;       // prompt→saved image; provider-delivered
     useTranslation: () => ITranslator;        // t(key, englishText) in the page's language
+    useLocalizedHref: () => (href: string) => string;   // keeps on-site links in the page's language
 }
 ```
 
@@ -200,6 +201,15 @@ Keys are discovered automatically the first time the server renders them and app
 ```typescript
 const { t } = context.useTranslation();
 return <layout.PageHeader title={t('page.title', 'Energy Markets')} subtitle={t('page.count', '{count} markets', { count })} />;
+```
+
+A helper that builds visitor text outside a component, such as a function assembling FAQ entries, cannot call the hook. Give it a `t: ITranslator['t']` parameter and pass the component's `t` in. A page's `serverDataFetcher` and `serverMetadataFetcher` receive the same translator on `ctx.translator`; see [plugins-seo-and-ssr.md](./plugins-seo-and-ssr.md#translating-metadata) for translating a page's title, description, and structured data.
+
+**Links.** `useLocalizedHref()` returns a function that points an on-site link at the page's language. On `/zh/resource-markets`, a plain `href="/"` would send the visitor back to the English site. Render `href={localize('/')}` instead: the prefix is added only when the target route is published in that language, and English pages and off-site links pass through unchanged, so call it on every on-site link.
+
+```typescript
+const localize = context.useLocalizedHref();
+return <a href={localize(`/resource-markets/${slug}`)}>{name}</a>;
 ```
 
 ## Detail Documents

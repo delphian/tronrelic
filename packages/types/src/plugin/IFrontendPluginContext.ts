@@ -1908,4 +1908,24 @@ export interface IFrontendPluginContext {
      * ```
      */
     useTranslation: () => ITranslator;
+
+    /**
+     * Link localization hook — returns a function that points an on-site
+     * link at the current page's language. Without it, a link on a translated
+     * page such as `/zh/resource-markets` sends the visitor back to the
+     * English site. The returned function adds the language prefix only when
+     * the target route is published in that language, keeps any query string
+     * or fragment, and returns English-page links and off-site links
+     * unchanged, so it is safe to call on every link. The server and the
+     * browser read the same localization data, so both render the same
+     * `href`. Must be called within a component context (React hooks
+     * pattern).
+     *
+     * @example
+     * ```typescript
+     * const localize = context.useLocalizedHref();
+     * return <a href={localize('/resource-markets/catfee')}>CatFee</a>;
+     * ```
+     */
+    useLocalizedHref: () => (href: string) => string;
 }

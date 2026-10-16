@@ -6,6 +6,8 @@ import { getEnabledPluginPageConfig } from '../../../../../../../lib/serverPlugi
  * Dynamic route params for plugin admin pages.
  */
 interface IPageParams {
+    /** Language segment the middleware routed to; passed on to the page's fetcher. */
+    lang: string;
     slug: string[];
 }
 
@@ -47,11 +49,11 @@ interface IPageParams {
  */
 export default async function PluginAdminPage({ params }: { params: Promise<IPageParams> }) {
     // Reconstruct full path including /system/plugins prefix
-    const { slug } = await params;
+    const { lang, slug } = await params;
     const fullSlug = '/system/plugins/' + slug.join('/');
 
     const pageConfig = await getEnabledPluginPageConfig(fullSlug);
-    const initialData = pageConfig ? await runPluginServerDataFetcher(pageConfig, fullSlug) : undefined;
+    const initialData = pageConfig ? await runPluginServerDataFetcher(pageConfig, fullSlug, lang) : undefined;
 
     return <PluginPageWithZones slug={fullSlug} initialData={initialData} />;
 }

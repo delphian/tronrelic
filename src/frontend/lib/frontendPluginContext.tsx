@@ -60,6 +60,7 @@ import { useImageGen } from './imageGenRegistry';
 // Imported by direct path: the localization barrel also exports components
 // with stylesheets, which this client bundle has no use for.
 import { useTranslation } from '../modules/localization/hooks/useTranslation';
+import { useLocalizedHref } from '../modules/localization/hooks/useLocalizedHref';
 
 /**
  * Build the `useTranslation` hook a plugin receives on its context.
@@ -456,7 +457,8 @@ export function FrontendPluginContextProvider({ children }: { children: React.Re
             useToast: useToastHook,
             useFilePicker,
             useImageGen,
-            useTranslation: useCoreTranslation
+            useTranslation: useCoreTranslation,
+            useLocalizedHref
         };
     }, []);
 
@@ -581,6 +583,7 @@ export function createPluginContext(pluginId: string): IFrontendPluginContext {
         useToast: useToastHook,
         useFilePicker,
         useImageGen,
-        useTranslation: createTranslationHook(pluginId)
+        useTranslation: createTranslationHook(pluginId),
+        useLocalizedHref
     };
 }

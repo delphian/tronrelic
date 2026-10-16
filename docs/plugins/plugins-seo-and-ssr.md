@@ -12,7 +12,7 @@ The catch-all route at `src/frontend/app/[lang]/(site)/[...slug]/page.tsx` is th
 
 1. **`generateMetadata`** reads the page config's SEO fields (title, description, keywords, ogImage, ogType, canonical, structuredData, noindex) and composes a Next.js Metadata object via the existing `buildMetadata()` helper. The metadata lands in the `<head>` of the HTML response that crawlers and social scrapers receive — no JavaScript involved.
 
-2. **The page render** awaits the page config's `serverDataFetcher` if present, passing it an `IServerDataContext` containing the backend API URL and the public site URL. The fetcher returns JSON-serializable data which the route forwards through `<PluginPageWithZones>` to `<PluginPageHandler>`, which passes it to the plugin component as the `initialData` prop. Errors from `serverDataFetcher` are caught and logged; the page renders without `initialData` rather than 500ing.
+2. **The page render** awaits the page config's `serverDataFetcher` if present, passing it an `IServerDataContext` containing the backend API URL, the public site URL, the requested path, and a translator for the request's language. The fetcher returns JSON-serializable data which the route forwards through `<PluginPageWithZones>` to `<PluginPageHandler>`, which passes it to the plugin component as the `initialData` prop. Errors from `serverDataFetcher` are caught and logged; the page renders without `initialData` rather than 500ing.
 
 3. **The plugin component** is a `'use client'` React component. It receives `initialData` and uses it as the initial state for the data it would otherwise have fetched in `useEffect`. Static structure (headers, forms, descriptive text) renders during the SSR pass automatically because Next.js SSRs client components.
 
@@ -51,6 +51,7 @@ serverDataFetcher?: (ctx: IServerDataContext) => Promise<unknown>;
 | `apiBaseUrl` | Backend API base URL with `/api` suffix (Docker-internal in containers, localhost otherwise) |
 | `siteUrl` | Public site URL from runtime config |
 | `path` | The concrete URL being rendered (e.g. `/blog/my-post`) — essential for wildcard pages, whose registered path (`/blog/*`) doesn't identify the resource |
+| `translator` | An `ITranslator` for the language the request was routed to, with keys scoped to your plugin id — the same namespace `context.useTranslation()` uses. See [Translating Metadata](#translating-metadata) |
 
 The returned data **must be JSON-serializable** because it crosses the React Server Components boundary. Functions, class instances, Maps, Sets, and component references will fail. Stick to plain objects, arrays, strings, numbers, booleans, and `null`.
 
@@ -63,6 +64,24 @@ serverMetadataFetcher?: (ctx: IServerDataContext) => Promise<IPluginPageMetadata
 ```
 
 The return value carries a contract with teeth: return `null` **only** when the backend authoritatively reported the resource absent (HTTP 404) — the catch-all then emits noindex metadata and renders a 404. Throw on transient failures instead; thrown errors are caught and the route falls back to the static fields, so a brief backend outage never serves 404s to crawlers. The catch-all invokes the fetcher once per request (shared between `generateMetadata` and the body via `React.cache()`), so a fetcher and a `serverDataFetcher` hitting the same URL cost one backend call under Next's fetch dedupe.
+
+## Translating Metadata
+
+The static SEO fields on `IPageConfig` are plain strings fixed when the plugin registers its pages, so they are never translated. A page published in another language on `/system/localization` would otherwise send search engines an English `<title>`, description, and JSON-LD from its `/zh/...` address while its body is in Chinese.
+
+A fetcher cannot call `context.useTranslation()`, because it runs outside any React component. It receives the same translator on `ctx.translator` instead. Return the title, description, and `structuredData` from `serverMetadataFetcher`, built with `ctx.translator.t`. Use the same keys the page body uses for any text both show, such as FAQ answers declared as `FAQPage` markup, so the markup matches the visible text in every language. Keys used only in metadata are reported to `/system/localization` like any other key, the first time a server renders them.
+
+Keep the static fields as the English fallback the route uses if the fetcher throws. Build both from one function so the English wording lives in one place, and do not let a failed backend request throw away the translated title: catch it inside the fetcher when the page can still describe itself without the data. `trp-resource-markets` is the reference, in `src/frontend/frontend.ts` and `buildMarketsPageSeo.ts`.
+
+```typescript
+serverMetadataFetcher: async (ctx) => {
+    const { t } = ctx.translator;
+    return {
+        title: t('meta.title', 'Best TRON Energy Rental 2026 — Cheapest Prices | TronRelic'),
+        description: t('meta.description', 'See which TRON energy provider is cheapest right now.')
+    };
+}
+```
 
 ## Canonical Example: bazi-fortune
 
@@ -140,6 +159,7 @@ Before adding SEO and SSR to a plugin page, verify:
 - [ ] `ogType` is set explicitly (`'website'` or `'article'`)
 - [ ] `structuredData` includes a Schema.org `@type` appropriate for the page
 - [ ] Admin pages have `noindex: true`
+- [ ] A page published in other languages returns its title, description, and `structuredData` from `serverMetadataFetcher`, built with `ctx.translator.t`
 - [ ] If the page needs pre-fetched data, `serverDataFetcher` returns JSON-serializable values
 - [ ] The plugin component accepts `initialData` and initializes state from it
 - [ ] Client-side `useEffect` only re-fetches when context warrants (timezone, user input, live updates)

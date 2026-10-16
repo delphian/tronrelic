@@ -13,6 +13,7 @@ import { menuTranslationKey } from '../../../../modules/menu/lib/menuTranslation
 import { getServerConfig } from '../../../../lib/serverConfig';
 import { getEnabledPluginPageConfig } from '../../../../lib/serverPluginRegistry';
 import { runPluginServerDataFetcher } from '../../../../lib/runPluginServerDataFetcher';
+import { buildServerDataContext } from '../../../../lib/buildServerDataContext';
 import styles from './page.module.scss';
 
 /**
@@ -172,20 +173,19 @@ type IMetadataFetchOutcome = IPluginPageMetadata | null | 'none' | 'error';
  * mirroring how resolveSlug() is shared.
  *
  * @param slug - The requested URL path, passed to the fetcher as ctx.path
+ * @param lang - The request's `[lang]` route parameter, which sets the
+ *   language of the fetcher's ctx.translator so a translated page gets a
+ *   translated title, description, and structured data
  * @returns The fetched metadata, null (authoritative not-found), 'none'
  *   (no fetcher declared), or 'error' (fetcher threw; use static fields)
  */
-const runServerMetadataFetcher = cache(async (slug: string): Promise<IMetadataFetchOutcome> => {
+const runServerMetadataFetcher = cache(async (slug: string, lang: string): Promise<IMetadataFetchOutcome> => {
     const resolution = await resolveSlug(slug);
     let outcome: IMetadataFetchOutcome = 'none';
     if (resolution.type === 'plugin' && resolution.config.serverMetadataFetcher) {
         try {
-            const { siteUrl } = await getServerConfig();
-            outcome = await resolution.config.serverMetadataFetcher({
-                apiBaseUrl: getServerSideApiUrlWithPath(),
-                siteUrl,
-                path: slug
-            });
+            const ctx = await buildServerDataContext(resolution.config.pluginId, slug, lang);
+            outcome = await resolution.config.serverMetadataFetcher(ctx);
         } catch (error) {
             console.error(`[catch-all] serverMetadataFetcher failed for ${slug}:`, error);
             outcome = 'error';
@@ -260,7 +260,7 @@ export async function generateMetadata({ params }: { params: Promise<IPageParams
         // noindex here and 404s in the body below; a thrown fetcher error
         // ('error') falls back to the static fields so a transient backend
         // outage never blanks metadata or serves 404s to crawlers.
-        const fetched = await runServerMetadataFetcher(slug);
+        const fetched = await runServerMetadataFetcher(slug, resolvedParams.lang);
         if (fetched === null) {
             return { robots: { index: false, follow: false } };
         }
@@ -518,7 +518,7 @@ export default async function UnifiedPage({ params }: { params: Promise<IPagePar
     // the component anyway would show a broken page at a URL crawlers were
     // just told not to index. A fetcher error ('error') renders normally —
     // the component's own data fetch decides what to show.
-    const fetchedMetadata = await runServerMetadataFetcher(slug);
+    const fetchedMetadata = await runServerMetadataFetcher(slug, resolvedParams.lang);
     if (fetchedMetadata === null) {
         notFound();
     }
@@ -534,7 +534,7 @@ export default async function UnifiedPage({ params }: { params: Promise<IPagePar
     // The plugin's body content arrives in the initial HTML so crawlers see it
     // without executing JavaScript, and the client component initializes its
     // state from the same data after hydration.
-    const initialData = await runPluginServerDataFetcher(pluginPage, slug);
+    const initialData = await runPluginServerDataFetcher(pluginPage, slug, resolvedParams.lang);
 
     // PluginPageWithZones wraps with widget zones for cross-plugin content injection.
     // The structured data JSON is escaped so any string value containing
