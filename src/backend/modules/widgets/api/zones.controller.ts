@@ -11,7 +11,7 @@
 import type { Request, Response } from 'express';
 import type { IWidgetsService, ISystemLogService, IZoneLayoutConfig } from '@/types';
 import { UnknownZoneError } from '../widgets.errors.js';
-import { ZoneCssValidator, ZONE_CSS_MAX_LENGTH } from '../zones/zone-css.validator.js';
+import { ScopedCssValidator, SCOPED_CSS_MAX_LENGTH } from '../css/ScopedCssValidator.js';
 
 /** Allowed values per flex field — the body is operator input, never trusted. */
 const FLEX_DIRECTIONS = ['row', 'row-reverse', 'column', 'column-reverse'] as const;
@@ -72,8 +72,8 @@ function validateLayoutBody(body: unknown): { config?: IZoneLayoutConfig; error?
         if (typeof b.customCss !== 'string') {
             return { error: 'customCss must be a string.' };
         }
-        if (b.customCss.length > ZONE_CSS_MAX_LENGTH) {
-            return { error: `customCss exceeds ${ZONE_CSS_MAX_LENGTH} characters.` };
+        if (b.customCss.length > SCOPED_CSS_MAX_LENGTH) {
+            return { error: `customCss exceeds ${SCOPED_CSS_MAX_LENGTH} characters.` };
         }
         if (b.customCss.trim().length > 0) config.customCss = b.customCss;
     }
@@ -88,7 +88,7 @@ export class ZonesController {
     constructor(
         private readonly widgets: IWidgetsService,
         private readonly logger: ISystemLogService,
-        private readonly cssValidator: ZoneCssValidator
+        private readonly cssValidator: ScopedCssValidator
     ) {}
 
     /**

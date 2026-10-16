@@ -399,6 +399,25 @@ describe('PlacementService CRUD', () => {
         expect(cleared?.title).toBe('Operator Title');
     });
 
+    it('persists customCss on create, replaces it on update, and clears it with customCss: null', async () => {
+        const placement = await service.create({
+            typeId: 't',
+            zoneId: 'main-after',
+            routes: ['/'],
+            title: 'Operator Title',
+            customCss: 'a { color: red; }'
+        });
+        expect(placement.customCss).toBe('a { color: red; }');
+
+        const updated = await service.update(placement.id, { customCss: 'gap: 1rem;' });
+        expect(updated?.customCss).toBe('gap: 1rem;');
+
+        const cleared = await service.update(placement.id, { customCss: null });
+        // Clearing the CSS leaves the placement's other fields intact.
+        expect(cleared?.customCss).toBeUndefined();
+        expect(cleared?.title).toBe('Operator Title');
+    });
+
     it('persists layoutWeight on create and clears it with layoutWeight: null', async () => {
         const placement = await service.create({
             typeId: 't',
@@ -483,6 +502,7 @@ describe('PlacementResolver', () => {
         routes: overrides.routes ?? [],
         order: overrides.order ?? 10,
         title: overrides.title,
+        customCss: overrides.customCss,
         instanceConfig: overrides.instanceConfig,
         enabled: overrides.enabled ?? true,
         source: overrides.source ?? 'plugin',
@@ -647,6 +667,22 @@ describe('PlacementResolver', () => {
 
         expect(result).toHaveLength(1);
         expect(result[0].instanceConfig).toEqual({});
+    });
+
+    it('carries the placement id and customCss onto the returned IWidgetData', async () => {
+        (typeRegistry as any).__types.set('plugin:type', buildType('plugin:type', async () => ({ ok: true })));
+        (placementService.findByRoute as ReturnType<typeof vi.fn>).mockResolvedValue([
+            buildPlacement({ id: 'p-css', typeId: 'plugin:type', customCss: 'a { color: red; }' })
+        ]);
+
+        const result = await resolver.resolveForRoute('/', {});
+
+        expect(result).toHaveLength(1);
+        // `id` names the type; the placement id is what tells two placements
+        // of one type apart, and the CSS is scoped to it on the page.
+        expect(result[0].id).toBe('plugin:type');
+        expect(result[0].placementId).toBe('p-css');
+        expect(result[0].customCss).toBe('a { color: red; }');
     });
 
     it('sorts results by zone (alphabetical), then order', async () => {

@@ -24,10 +24,13 @@ import type {
     IWidgetsService,
     PlacementSource,
     WidgetTitleSize,
-    IPlacementListFilter
+    IPlacementInput,
+    IPlacementListFilter,
+    IPlacementPatch
 } from '@/types';
 import { PLUGIN_ID_PATTERN, WIDGET_ICON_FORMAT, WIDGET_IMAGE_FORMAT, WIDGET_MENU_NAMESPACE_FORMAT } from '@/types';
 import { normaliseRoutePattern } from '../placements/route-matcher.js';
+import { ScopedCssValidator, SCOPED_CSS_MAX_LENGTH } from '../css/ScopedCssValidator.js';
 import {
     InvalidParentPlacementError,
     MissingPluginDefaultsError,
@@ -41,9 +44,9 @@ import {
 /**
  * Per-field validation error reported back to the client in the
  * structured 400 body when `instanceConfig` fails a widget type's
- * declared schema. `path` is the JSON Pointer to the offending field
- * (empty string for root-level errors); `message` is AJV's human-
- * readable summary.
+ * declared schema, or when `customCss` fails the scoped-CSS check.
+ * `path` is the JSON Pointer to the offending field (empty string for
+ * root-level errors); `message` is the human-readable reason.
  */
 interface IInstanceConfigFieldError {
     readonly path: string;
@@ -167,9 +170,17 @@ export class PlacementsController {
      */
     private readonly validatorCache: WeakMap<JSONSchema7, ValidateFunction>;
 
+    /**
+     * @param widgets - The widgets service every placement operation goes through.
+     * @param logger - Scoped logger for failures the operator cannot see.
+     * @param cssValidator - Checks a placement's `customCss` before it is
+     *   stored, since the renderer injects it verbatim into a `<style>` tag.
+     *   Constructed in nested mode so rules inside the placement are allowed.
+     */
     constructor(
         private readonly widgets: IWidgetsService,
-        private readonly logger: ISystemLogService
+        private readonly logger: ISystemLogService,
+        private readonly cssValidator: ScopedCssValidator
     ) {
         this.ajv = new Ajv({ allErrors: true, strict: false });
         addFormats(this.ajv);
@@ -309,6 +320,12 @@ export class PlacementsController {
                 }
             }
 
+            const cssErrors = await this.findCustomCssErrors(parsed.input.customCss);
+            if (cssErrors) {
+                res.status(400).json({ success: false, error: 'customCss is not valid', errors: cssErrors });
+                return;
+            }
+
             const placement = await this.widgets.createPlacement(parsed.input);
             res.status(201).json({ success: true, placement });
         } catch (err) {
@@ -360,6 +377,12 @@ export class PlacementsController {
                     });
                     return;
                 }
+            }
+
+            const cssErrors = await this.findCustomCssErrors(parsed.patch.customCss ?? undefined);
+            if (cssErrors) {
+                res.status(400).json({ success: false, error: 'customCss is not valid', errors: cssErrors });
+                return;
             }
 
             const placement = await this.widgets.updatePlacement(req.params.id, parsed.patch);
@@ -427,7 +450,7 @@ export class PlacementsController {
     };
 
     private parseCreateBody(body: unknown):
-        | { input: { typeId: string; zoneId: string; parentId?: string; routes: string[]; order?: number; layoutWeight?: number; title?: string; titleUrl?: string; titleSize?: WidgetTitleSize; instanceConfig?: Record<string, unknown>; enabled?: boolean } }
+        | { input: IPlacementInput }
         | { error: string } {
         if (!body || typeof body !== 'object') {
             return { error: 'Request body must be an object' };
@@ -469,6 +492,9 @@ export class PlacementsController {
         const titleSizeResult = this.parseTitleSize(b.titleSize);
         if ('error' in titleSizeResult) return titleSizeResult;
 
+        const customCssResult = this.parseCustomCss(b.customCss);
+        if ('error' in customCssResult) return customCssResult;
+
         const instanceConfigResult = this.parseInstanceConfig(b.instanceConfig);
         if ('error' in instanceConfigResult) return instanceConfigResult;
 
@@ -485,6 +511,8 @@ export class PlacementsController {
                 title: titleResult.title,
                 titleUrl: titleUrlResult.titleUrl,
                 titleSize: titleSizeResult.titleSize,
+                // A blank CSS box on create stores nothing rather than an empty string.
+                customCss: customCssResult.customCss ?? undefined,
                 instanceConfig: instanceConfigResult.instanceConfig,
                 enabled
             }
@@ -492,13 +520,13 @@ export class PlacementsController {
     }
 
     private parsePatchBody(body: unknown):
-        | { patch: { zoneId?: string; routes?: string[]; order?: number; layoutWeight?: number | null; title?: string | null; titleUrl?: string | null; titleSize?: WidgetTitleSize | null; instanceConfig?: Record<string, unknown>; enabled?: boolean } }
+        | { patch: IPlacementPatch }
         | { error: string } {
         if (!body || typeof body !== 'object') {
             return { error: 'Request body must be an object' };
         }
         const b = body as Record<string, unknown>;
-        const patch: { zoneId?: string; parentId?: string | null; routes?: string[]; order?: number; layoutWeight?: number | null; title?: string | null; titleUrl?: string | null; titleSize?: WidgetTitleSize | null; instanceConfig?: Record<string, unknown>; enabled?: boolean } = {};
+        const patch: IPlacementPatch = {};
 
         if (b.zoneId !== undefined) {
             if (typeof b.zoneId !== 'string' || b.zoneId.length === 0) {
@@ -575,6 +603,18 @@ export class PlacementsController {
                 const result = this.parseTitleSize(b.titleSize);
                 if ('error' in result) return result;
                 patch.titleSize = result.titleSize;
+            }
+        }
+
+        if (b.customCss !== undefined) {
+            if (b.customCss === null) {
+                // Explicit clear — the placement renders with no style block.
+                patch.customCss = null;
+            } else {
+                const result = this.parseCustomCss(b.customCss);
+                if ('error' in result) return result;
+                // A string that is only whitespace clears the CSS too.
+                patch.customCss = result.customCss;
             }
         }
 
@@ -722,6 +762,53 @@ export class PlacementsController {
             return { error: `titleSize must be one of: ${WIDGET_TITLE_SIZES.join(', ')}` };
         }
         return { titleSize: value as WidgetTitleSize };
+    }
+
+    /**
+     * Check the wire shape of an optional `customCss`: it must be a string
+     * within {@link SCOPED_CSS_MAX_LENGTH}. Whether the CSS itself is safe is
+     * checked afterwards by {@link findCustomCssErrors}, which is async and so
+     * cannot run inside the synchronous body parsers.
+     *
+     * @param value - Raw `customCss` from the request body.
+     * @returns The CSS, `null` when the string is blank (so a patch clears the
+     *   field and a create stores nothing), `undefined` when absent, or an error.
+     */
+    private parseCustomCss(value: unknown): { customCss?: string | null } | { error: string } {
+        let result: { customCss?: string | null } | { error: string } = { customCss: undefined };
+        if (value !== undefined) {
+            if (typeof value !== 'string') {
+                result = { error: 'customCss must be a string' };
+            } else if (value.length > SCOPED_CSS_MAX_LENGTH) {
+                result = { error: `customCss must be at most ${SCOPED_CSS_MAX_LENGTH} characters` };
+            } else {
+                result = { customCss: value.trim().length > 0 ? value : null };
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Run a placement's `customCss` through the scoped-CSS validator before it
+     * is stored. The renderer injects the text verbatim into a `<style>` tag,
+     * so this is what keeps it from closing the tag or escaping its rule.
+     *
+     * @param css - CSS the request is about to store; absent or `null` (a
+     *   clear) needs no check.
+     * @returns The validator's reasons for refusing the CSS, in the same
+     *   `{ path, message }` shape as the `instanceConfig` errors so the admin
+     *   form formats both alike, or `null` when there is nothing to store or
+     *   the CSS is acceptable.
+     */
+    private async findCustomCssErrors(
+        css: string | null | undefined
+    ): Promise<ReadonlyArray<IInstanceConfigFieldError> | null> {
+        let errors: ReadonlyArray<IInstanceConfigFieldError> | null = null;
+        if (typeof css === 'string') {
+            const result = await this.cssValidator.validate(css);
+            if (!result.valid) errors = result.errors.map(message => ({ path: '/customCss', message }));
+        }
+        return errors;
     }
 
     private parseInstanceConfig(value: unknown):

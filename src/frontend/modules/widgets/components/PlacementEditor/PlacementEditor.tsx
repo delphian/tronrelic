@@ -126,6 +126,7 @@ export function PlacementEditor({
     const [title, setTitle] = useState<string>(initial?.title ?? '');
     const [titleUrl, setTitleUrl] = useState<string>(initial?.titleUrl ?? '');
     const [titleSize, setTitleSize] = useState<WidgetTitleSize>(initial?.titleSize ?? 'heading-md');
+    const [customCss, setCustomCss] = useState<string>(initial?.customCss ?? '');
     const [enabled, setEnabled] = useState<boolean>(initial?.enabled ?? true);
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState<string | null>(null);
@@ -315,6 +316,9 @@ export function PlacementEditor({
         const effectiveRoutes = nested || routeScope === 'all' ? [] : routes;
         const trimmedTitle = title.trim();
         const trimmedTitleUrl = titleUrl.trim();
+        // Whitespace is kept inside the CSS, which is stored as typed; only a
+        // box holding nothing but whitespace counts as empty.
+        const hasCustomCss = customCss.trim().length > 0;
 
         try {
             if (mode === 'create') {
@@ -326,6 +330,7 @@ export function PlacementEditor({
                     title: trimmedTitle.length > 0 ? trimmedTitle : undefined,
                     titleUrl: trimmedTitleUrl.length > 0 ? trimmedTitleUrl : undefined,
                     titleSize: titleSize !== 'heading-md' ? titleSize : undefined,
+                    customCss: hasCustomCss ? customCss : undefined,
                     instanceConfig: config.value,
                     enabled
                 });
@@ -335,6 +340,7 @@ export function PlacementEditor({
                 const hadTitle = typeof initial.title === 'string' && initial.title.length > 0;
                 const hadTitleUrl = typeof initial.titleUrl === 'string' && initial.titleUrl.length > 0;
                 const hadParent = typeof initial.parentId === 'string';
+                const hadCustomCss = typeof initial.customCss === 'string' && initial.customCss.length > 0;
                 const initialTitleSize: WidgetTitleSize = initial.titleSize ?? 'heading-md';
                 await onSave(initial.id, {
                     zoneId,
@@ -343,6 +349,7 @@ export function PlacementEditor({
                     title: trimmedTitle.length > 0 ? trimmedTitle : hadTitle ? null : undefined,
                     titleUrl: trimmedTitleUrl.length > 0 ? trimmedTitleUrl : hadTitleUrl ? null : undefined,
                     titleSize: titleSize === initialTitleSize ? undefined : titleSize === 'heading-md' ? null : titleSize,
+                    customCss: hasCustomCss ? customCss : hadCustomCss ? null : undefined,
                     instanceConfig: config.value,
                     enabled
                 });
@@ -640,6 +647,31 @@ export function PlacementEditor({
                 ) : undefined}
             >
                 {renderSettings()}
+            </FormSection>
+
+            <FormSection title="Custom CSS">
+                <Field
+                    label="CSS for this placement"
+                    hint={(
+                        <>
+                            Applied only to this placement, as <code>[data-placement-id] {'{ … }'}</code>. Declarations style the
+                            widget&rsquo;s box; nested rules such as <code>a {'{ … }'}</code> style elements inside it. Checked when saved.
+                        </>
+                    )}
+                >
+                    <Textarea
+                        id={`${formId}-custom-css`}
+                        size="sm"
+                        className={styles.json}
+                        rows={6}
+                        value={customCss}
+                        onChange={(e) => setCustomCss(e.target.value)}
+                        placeholder={'a {\n    padding: var(--padding-sm) var(--padding-md);\n}'}
+                        maxLength={4000}
+                        spellCheck={false}
+                        disabled={saving}
+                    />
+                </Field>
             </FormSection>
 
             <div className={styles.footer}>

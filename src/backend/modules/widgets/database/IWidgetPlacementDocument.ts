@@ -57,6 +57,8 @@ export interface IWidgetPlacementDocument {
     titleUrl?: string;
     /** Optional heading-size token for the chrome title. Operator-only; absent renders `heading-md`. */
     titleSize?: WidgetTitleSize;
+    /** Optional CSS scoped to this placement's element. Operator-only; absent when unset. */
+    customCss?: string;
     /** Per-instance configuration. */
     instanceConfig?: Record<string, unknown>;
     /** Whether the placement currently renders. */
