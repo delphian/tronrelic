@@ -286,6 +286,17 @@ export function TranslationsTab({ initialRoute }: ITranslationsTabProps) {
         void loadRows();
     }, [loadRows]);
 
+    // The loader for the filters shown now. A reload that follows a save or a
+    // delete goes through this ref, so it reloads the query the administrator
+    // is actually looking at rather than the one that was current when the
+    // request started. Without it, changing the language while a request ran
+    // left rows from the old language under the new language's heading, and
+    // editing one of those rows then wrote its text into the new language.
+    const loadRowsRef = useRef(loadRows);
+    useEffect(() => {
+        loadRowsRef.current = loadRows;
+    }, [loadRows]);
+
     /**
      * Apply the typed search text.
      *
@@ -329,13 +340,13 @@ export function TranslationsTab({ initialRoute }: ITranslationsTabProps) {
             await saveTranslation({ namespace: row.namespace, key: row.key, language, text });
             notify('success', `Saved ${row.key}`);
             dropDraft(id);
-            await loadRows({ keepDrafts: true });
+            await loadRowsRef.current({ keepDrafts: true });
         } catch (error) {
             notify('danger', `Could not save ${row.key}`, error);
         } finally {
             setBusyId(null);
         }
-    }, [drafts, dropDraft, language, loadRows, notify]);
+    }, [drafts, dropDraft, language, notify]);
 
     /**
      * Save every row on the page whose editor holds unsaved text, in one
@@ -360,13 +371,13 @@ export function TranslationsTab({ initialRoute }: ITranslationsTabProps) {
             setDrafts(current => Object.fromEntries(
                 Object.entries(current).filter(([id]) => !savedIds.has(id))
             ));
-            await loadRows({ keepDrafts: true });
+            await loadRowsRef.current({ keepDrafts: true });
         } catch (error) {
             notify('danger', 'Could not save translations', error);
         } finally {
             setSavingAll(false);
         }
-    }, [drafts, language, loadRows, notify]);
+    }, [drafts, language, notify]);
 
     /**
      * Save the row from the keyboard. Ctrl+Enter, or Cmd+Enter on a Mac, saves
@@ -443,13 +454,13 @@ export function TranslationsTab({ initialRoute }: ITranslationsTabProps) {
             await deleteTranslation(row.namespace, row.key, language);
             notify('success', `Removed the ${language} text for ${row.key}`);
             dropDraft(id);
-            await loadRows({ keepDrafts: true });
+            await loadRowsRef.current({ keepDrafts: true });
         } catch (error) {
             notify('danger', `Could not remove ${row.key}`, error);
         } finally {
             setBusyId(null);
         }
-    }, [dropDraft, language, loadRows, notify]);
+    }, [dropDraft, language, notify]);
 
     /**
      * Ask for confirmation, then delete a key and every translation of it.
@@ -471,7 +482,7 @@ export function TranslationsTab({ initialRoute }: ITranslationsTabProps) {
                             await deleteKey(row.namespace, row.key);
                             notify('success', `Deleted ${row.key}`);
                             dropDraft(rowId(row));
-                            await Promise.all([loadRows({ keepDrafts: true }), loadFilters()]);
+                            await Promise.all([loadRowsRef.current({ keepDrafts: true }), loadFilters()]);
                         } catch (error) {
                             notify('danger', `Could not delete ${row.key}`, error);
                         } finally {
@@ -481,7 +492,7 @@ export function TranslationsTab({ initialRoute }: ITranslationsTabProps) {
                 />
             )
         });
-    }, [close, dropDraft, loadFilters, loadRows, notify, open]);
+    }, [close, dropDraft, loadFilters, notify, open]);
 
     /**
      * Submit the add-key form, then close it so the table is back in view.
@@ -496,13 +507,13 @@ export function TranslationsTab({ initialRoute }: ITranslationsTabProps) {
             notify('success', `Added ${newKey.namespace}:${newKey.key}`);
             setNewKey({ ...newKey, key: '', source: '' });
             setAdding(false);
-            await Promise.all([loadRows({ keepDrafts: true }), loadFilters()]);
+            await Promise.all([loadRowsRef.current({ keepDrafts: true }), loadFilters()]);
         } catch (error) {
             notify('danger', 'Could not add key', error);
         } finally {
             setCreating(false);
         }
-    }, [loadFilters, loadRows, newKey, notify]);
+    }, [loadFilters, newKey, notify]);
 
     const currentLanguage = languages.find(entry => entry.code === language);
     const languageName = currentLanguage?.name ?? language;
