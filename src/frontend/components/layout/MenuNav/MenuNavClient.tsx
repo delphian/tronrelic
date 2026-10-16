@@ -27,6 +27,15 @@
  * not change between tabs. Both default to undefined, leaving existing
  * navigation consumers untouched.
  *
+ * Every label, and every accessible name built from one, renders through the
+ * localization module's `t()`, so a menu on a translated page shows the labels
+ * saved on `/system/localization`. Item labels are keyed by namespace and URL
+ * (see `menuTranslationKey`), because an item a plugin registers without
+ * saving it gets a new id on every backend restart. Links go through
+ * `useLocalizedHref`, so on a translated page an item whose target is
+ * published in the same language links to that language's address, and
+ * active-item highlighting compares against that address.
+ *
  * @example
  * ```tsx
  * <MenuNavClient
@@ -47,6 +56,11 @@ import { usePathname } from 'next/navigation';
 import type { MenuNodeSerialized } from '@/shared';
 import { PriorityNav, useMenuConfig, useBodyScrollLock } from '../../../modules/menu';
 import { menuTreeSeeded } from '../../../modules/menu/slice';
+import { menuTranslationKey } from '../../../modules/menu/lib/menuTranslationKey';
+// Imported from the hook file rather than the localization barrel, which also
+// exports components with stylesheets.
+import { useTranslation } from '../../../modules/localization/hooks/useTranslation';
+import { useLocalizedHref } from '../../../modules/localization/hooks/useLocalizedHref';
 import { useAppDispatch, useAppSelector } from '../../../store/hooks';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { MenuNodeIcon } from './MenuNodeIcon';
@@ -134,6 +148,8 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel, onItem
     const pathname = usePathname();
     const dispatch = useAppDispatch();
     const menuConfig = useMenuConfig(namespace);
+    const { t } = useTranslation();
+    const localizeHref = useLocalizedHref();
     const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(null);
     // Tracks an open second-level submenu inside the currently expanded category
     // dropdown. Single-open invariant matches top-level categories. Initial null
@@ -296,6 +312,41 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel, onItem
     };
 
     /**
+     * Return an item's label in the page's language.
+     *
+     * Labels are stored in English, so they go through the translator like
+     * any other visible text. On an English page this returns the stored
+     * label unchanged; on a translated page it returns the saved translation,
+     * or the English label when none exists yet. The key comes from the
+     * item's URL rather than its id so it survives a backend restart; see
+     * `menuTranslationKey`.
+     *
+     * @param item - The menu item being rendered.
+     * @returns The label to show and announce.
+     */
+    const labelOf = (item: MenuNodeSerialized): string => t(menuTranslationKey(namespace, item), item.label);
+
+    /**
+     * Build the accessible name of a button that opens or closes an item's
+     * submenu, so screen readers hear it in the page's language too.
+     *
+     * @param label - The item's already-translated label.
+     * @param isExpanded - Whether the submenu is open, which decides the verb.
+     * @returns The button's `aria-label`.
+     */
+    const submenuToggleLabel = (label: string, isExpanded: boolean): string => (isExpanded
+        ? t('menu.nav.collapseSubmenu', 'Collapse {label} submenu', { label })
+        : t('menu.nav.expandSubmenu', 'Expand {label} submenu', { label }));
+
+    /**
+     * Build the accessible name of an open submenu panel.
+     *
+     * @param label - The already-translated label of the item that owns the panel.
+     * @returns The panel's `aria-label`.
+     */
+    const submenuPanelLabel = (label: string): string => t('menu.nav.submenu', '{label} submenu', { label });
+
+    /**
      * Renders a link menu item.
      *
      * For nested links (inside category dropdowns), dispatches a mousedown event
@@ -304,6 +355,11 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel, onItem
      * that overflowed into the "More" menu.
      */
     const renderLinkItem = (item: MenuNodeSerialized, isNested = false): JSX.Element => {
+        // The stored url is unprefixed; on a translated page the link and the
+        // pathname both carry the language prefix when the target is live in
+        // that language, so highlighting compares against the localized link.
+        const href = item.url ? localizeHref(item.url) : item.url!;
+
         // When the caller supplies `activeUrl` (in-page tab mode) the active
         // item is the one whose url matches it exactly — the route does not
         // change between tabs, so pathname matching cannot tell them apart.
@@ -311,8 +367,8 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel, onItem
         const isActive = activeUrl !== undefined
             ? item.url === activeUrl
             : item.url === '/'
-                ? pathname === '/'
-                : !!item.url && pathname.startsWith(item.url);
+                ? pathname === href
+                : !!item.url && pathname.startsWith(href);
 
         // Nested rows (inside category dropdowns) are vertical-list items
         // where icon-top and label-hiding both degrade readability. Force
@@ -335,18 +391,19 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel, onItem
         const icon = rowIconEnabled
             ? <MenuNodeIcon name={item.icon!} size={16} />
             : null;
+        const labelText = labelOf(item);
         const label = rowShowLabels
-            ? <span>{item.label}</span>
-            : <span className={styles.sr_only}>{item.label}</span>;
+            ? <span>{labelText}</span>
+            : <span className={styles.sr_only}>{labelText}</span>;
 
         return (
             <Link
                 key={item._id}
-                href={item.url!}
+                href={href}
                 className={className}
                 role={isNested ? 'menuitem' : undefined}
                 aria-current={isActive ? 'page' : undefined}
-                aria-label={rowShowLabels ? undefined : item.label}
+                aria-label={rowShowLabels ? undefined : labelText}
                 onClick={(event) => {
                     // Opt-in activation: when the caller provides onItemSelect,
                     // the item drives in-page state (e.g. a `?tab=` submenu)
@@ -382,8 +439,9 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel, onItem
      */
     const renderCategoryToggle = (item: MenuNodeSerialized): JSX.Element => {
         const isExpanded = expandedCategoryId === item._id;
-        const isActive = item.url
-            ? (item.url === '/' ? pathname === '/' : pathname === item.url || pathname.startsWith(`${item.url}/`))
+        const href = item.url ? localizeHref(item.url) : undefined;
+        const isActive = href
+            ? (item.url === '/' ? pathname === href : pathname === href || pathname.startsWith(`${href}/`))
             : false;
 
         const rowIconEnabled = iconsEnabled && !!item.icon;
@@ -398,9 +456,10 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel, onItem
         const icon = rowIconEnabled
             ? <MenuNodeIcon name={item.icon!} size={16} />
             : null;
+        const labelText = labelOf(item);
         const label = showLabels
-            ? <span>{item.label}</span>
-            : <span className={styles.sr_only}>{item.label}</span>;
+            ? <span>{labelText}</span>
+            : <span className={styles.sr_only}>{labelText}</span>;
         const chevron = isExpanded ? (
             <ChevronDown size={16} className={styles.categoryChevron} />
         ) : (
@@ -425,7 +484,7 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel, onItem
                     }}
                     aria-expanded={isExpanded}
                     aria-haspopup="true"
-                    aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${item.label} submenu`}
+                    aria-label={submenuToggleLabel(labelText, isExpanded)}
                 >
                     {iconPosition !== 'right' && icon}
                     {iconStackTop ? (
@@ -466,7 +525,7 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel, onItem
         }
 
         // Fallback for invalid nodes
-        return <span key={item._id}>{item.label}</span>;
+        return <span key={item._id}>{labelOf(item)}</span>;
     };
 
     /**
@@ -498,7 +557,7 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel, onItem
         node: renderMenuItem(item)
     }));
 
-    const navAriaLabel = ariaLabel || `${namespace} navigation`;
+    const navAriaLabel = ariaLabel || t('menu.nav.ariaLabel', '{namespace} navigation', { namespace });
 
     /**
      * Renders one row inside an expanded category dropdown.
@@ -525,9 +584,11 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel, onItem
         }
 
         const isSubExpanded = expandedSubcategoryId === child._id;
-        const isActive = child.url
-            ? (pathname === child.url || pathname.startsWith(`${child.url}/`))
+        const childHref = child.url ? localizeHref(child.url) : undefined;
+        const isActive = childHref
+            ? (pathname === childHref || pathname.startsWith(`${childHref}/`))
             : false;
+        const childLabel = labelOf(child);
 
         return (
             <div key={child._id} className={styles.categoryDropdownItem} role="none">
@@ -541,9 +602,9 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel, onItem
                     role="menuitem"
                     aria-expanded={isSubExpanded}
                     aria-haspopup="menu"
-                    aria-label={`${isSubExpanded ? 'Collapse' : 'Expand'} ${child.label} submenu`}
+                    aria-label={submenuToggleLabel(childLabel, isSubExpanded)}
                 >
-                    <span>{child.label}</span>
+                    <span>{childLabel}</span>
                     {isSubExpanded ? (
                         <ChevronDown size={14} className={styles.subcategoryChevron} />
                     ) : (
@@ -554,7 +615,7 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel, onItem
                     <div
                         className={styles.subcategoryPanel}
                         role="menu"
-                        aria-label={`${child.label} submenu`}
+                        aria-label={submenuPanelLabel(childLabel)}
                     >
                         {child.url && (
                             <div className={styles.categoryDropdownItem} role="none">
@@ -612,7 +673,7 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel, onItem
                     ref={dropdownRef}
                     className={dropdownClassName}
                     role="menu"
-                    aria-label={`${expandedCategory.label} submenu`}
+                    aria-label={submenuPanelLabel(labelOf(expandedCategory))}
                     style={{
                         top: position.top,
                         left: position.left
@@ -650,7 +711,7 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel, onItem
                         items={priorityNavItems}
                         enabled={overflowEnabled}
                         collapseAtCount={menuConfig.overflow?.collapseAtCount}
-                        moreButtonLabel={`More ${namespace} menu items`}
+                        moreButtonLabel={t('menu.nav.more', 'More {namespace} menu items', { namespace })}
                         onInitialized={handlePriorityNavInitialized}
                     />
                 </nav>

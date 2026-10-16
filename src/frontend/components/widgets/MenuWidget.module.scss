@@ -1,5 +1,5 @@
 /**
- * MainMenuWidget styles
+ * MenuWidget styles
  *
  * Mirrors the old header's navigation slot. The menu fills whatever width
  * its placement is given and aligns its items within it; Priority+ overflow
@@ -10,7 +10,7 @@
 
 .menu {
     display: flex;
-    justify-content: var(--main-menu-justify, flex-end);
+    justify-content: var(--menu-widget-justify, flex-end);
     width: 100%;
     min-width: var(--icon-button-size-lg);
 }

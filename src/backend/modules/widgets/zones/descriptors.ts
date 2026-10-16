@@ -29,7 +29,7 @@ export const CORE_ZONE_DESCRIPTORS: ReadonlyArray<IRegisterZoneInput> = [
         id: 'site-top',
         label: 'Site top',
         description:
-            'The first thing inside <body>, wrapped in the page\'s <header> landmark, across every route the root layout serves — admin pages included. The home for the site header: the Site logo, Main menu, and Sign-in button widgets, usually arranged in a row through a layout group. The zone imposes no width constraint of its own, so set its arrangement, gap, and any custom CSS (such as a max-width and padding matching the page content) from the zone layout controls.',
+            'The first thing inside <body>, wrapped in the page\'s <header> landmark, across every route the root layout serves — admin pages included. The home for the site header: the Site logo, Menu (set to the main namespace), and Sign-in button widgets, usually arranged in a row through a layout group. The zone imposes no width constraint of its own, so set its arrangement, gap, and any custom CSS (such as a max-width and padding matching the page content) from the zone layout controls.',
         host: 'site',
         layout: 'vertical',
         order: 0

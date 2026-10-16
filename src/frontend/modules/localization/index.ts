@@ -13,6 +13,7 @@ export { LanguagesTab, RoutesTab, TranslationsTab } from './components/admin';
 export { useTranslation } from './hooks/useTranslation';
 export { CORE_TRANSLATION_NAMESPACE } from './lib/CORE_TRANSLATION_NAMESPACE';
 export { useLocalization } from './hooks/useLocalization';
+export { useLocalizedHref } from './hooks/useLocalizedHref';
 export { createTranslator } from './lib/createTranslator';
 export { buildLanguageAlternates } from './lib/buildLanguageAlternates';
 export type { ILanguageAlternate } from './lib/buildLanguageAlternates';

@@ -9,7 +9,9 @@
  * with min, max, and step, a textarea for long-form strings, the icon
  * picker for a string declaring the shared icon-name format, the file
  * picker with a preview for a string declaring the shared image-URL format,
- * a text input otherwise, and a repeatable row editor for arrays. The label carries the
+ * a dropdown of existing menus for a string declaring the shared
+ * menu-namespace format, a text input otherwise, and a repeatable row
+ * editor for arrays. The label carries the
  * schema title and a required marker; the description becomes help text,
  * or a tooltip and placeholder inside a list row where repeated paragraphs
  * would bury the controls.
@@ -17,7 +19,7 @@
  * @module modules/widgets/components/InstanceConfigField
  */
 
-import type { ReactElement } from 'react';
+import { useEffect, useState, type ReactElement } from 'react';
 import { ImageIcon, Plus, Shapes, Trash2 } from 'lucide-react';
 import { MenuNodeIcon } from '../../../../components/layout/MenuNav/MenuNodeIcon';
 import { Button } from '../../../../components/ui/Button';
@@ -33,6 +35,7 @@ import { Textarea } from '../../../../components/ui/Textarea';
 import { useToast } from '../../../../components/ui/ToastProvider/ToastProvider';
 import { cn } from '../../../../lib/cn';
 import { useFilePicker } from '../../../../lib/filePickerRegistry';
+import { fetchMenuNamespaces } from '../../api/client';
 import {
     coerceInitialConfig,
     describeArrayItems,
@@ -367,6 +370,91 @@ function InstanceConfigImageField({ field, value, idPrefix, disabled, compact = 
 }
 
 /**
+ * Renders a menu-namespace setting as a dropdown of the namespaces the menu
+ * service holds, so an operator picks an existing menu rather than typing
+ * its name and getting an empty menu from a typo. The list is fetched when
+ * the control mounts, which only happens after an operator opens the
+ * placement editor. Until it arrives, and if it fails, the saved value stays
+ * selectable so the control never shows a blank choice for a placement that
+ * has one. If the list cannot be loaded, the control falls back to a text
+ * input and says why; the placements API checks the value's shape either way.
+ *
+ * @param props - See {@link IInstanceConfigFieldProps}.
+ * @returns The labelled namespace control.
+ */
+function InstanceConfigMenuNamespaceField({ field, value, idPrefix, disabled, compact = false, className, onChange }: IInstanceConfigFieldProps) {
+    const [namespaces, setNamespaces] = useState<string[] | null>(null);
+    const [loadError, setLoadError] = useState<string | null>(null);
+    const fieldId = `${idPrefix}-${field.key}`;
+    const current = typeof value === 'string' ? value : '';
+    const hint = compact ? undefined : field.description;
+    const tooltip = compact ? field.description : undefined;
+
+    /**
+     * Load the namespace list once per mount. The `cancelled` flag stops a
+     * response that arrives after the editor closed from setting state on an
+     * unmounted control.
+     */
+    useEffect(() => {
+        let cancelled = false;
+        fetchMenuNamespaces()
+            .then((names) => {
+                if (!cancelled) setNamespaces(names);
+            })
+            .catch((error: unknown) => {
+                if (!cancelled) setLoadError(error instanceof Error ? error.message : String(error));
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
+    // The saved value joins the list so a namespace that has since lost all
+    // its nodes, or one the list has not loaded yet, still shows as chosen.
+    const options = Array.from(new Set([...(namespaces ?? []), ...(current ? [current] : [])])).sort();
+    let rendered: ReactElement;
+
+    if (loadError) {
+        const noticeId = `${fieldId}-notice`;
+        rendered = (
+            <Field label={field.label} required={field.required} hint={hint} className={className} htmlFor={fieldId}>
+                <Input
+                    id={fieldId}
+                    size="sm"
+                    value={current}
+                    onChange={(e) => onChange(e.target.value)}
+                    disabled={disabled}
+                    placeholder="main"
+                    title={tooltip}
+                    aria-describedby={hint ? `${fieldId}-hint ${noticeId}` : noticeId}
+                />
+                <span id={noticeId} className={styles.hint}>
+                    The list of menus could not be loaded ({loadError}), so type the namespace name instead.
+                </span>
+            </Field>
+        );
+    } else {
+        rendered = (
+            <Field label={field.label} required={field.required} hint={hint} className={className}>
+                <Select
+                    id={fieldId}
+                    size="sm"
+                    value={current}
+                    onChange={(e) => onChange(e.target.value)}
+                    disabled={disabled}
+                    title={tooltip}
+                >
+                    {!field.required && <option value="">Default</option>}
+                    {options.map(name => <option key={name} value={name}>{name}</option>)}
+                </Select>
+            </Field>
+        );
+    }
+
+    return rendered;
+}
+
+/**
  * One setting, rendered with the control its schema implies.
  *
  * @param props - See {@link IInstanceConfigFieldProps}.
@@ -387,6 +475,8 @@ export function InstanceConfigField(props: IInstanceConfigFieldProps) {
         rendered = <InstanceConfigIconField {...props} />;
     } else if (control === 'image') {
         rendered = <InstanceConfigImageField {...props} />;
+    } else if (control === 'menuNamespace') {
+        rendered = <InstanceConfigMenuNamespaceField {...props} />;
     } else if (control === 'boolean') {
         rendered = (
             <div className={cn(styles.toggle_row, className)}>
