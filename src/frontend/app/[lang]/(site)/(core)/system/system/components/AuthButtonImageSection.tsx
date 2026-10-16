@@ -42,6 +42,16 @@ import styles from './AuthButtonImageSection.module.scss';
 const NO_IMAGE: IAuthButtonImageView = { authButtonImageUrl: null, authButtonImageFileId: null };
 
 /**
+ * Pixel size of the square image the picker saves when the admin crops.
+ *
+ * The button is drawn at `--avatar-size-md` (48px), so twice that keeps it
+ * sharp on high-density screens. Without a fixed size the picker stored the
+ * crop at full source resolution, and every visitor downloaded a photo-sized
+ * file to fill a 48px circle.
+ */
+const BUTTON_IMAGE_SIZE = 96;
+
+/**
  * Render the sign-in button image card.
  *
  * @returns The card, or a placeholder line while the first fetch is in flight.
@@ -94,12 +104,25 @@ export function AuthButtonImageSection() {
     /**
      * Open the file picker and put the chosen image in the draft.
      *
-     * The picker's `accept` list is only a hint to the provider, so the
-     * returned MIME type is checked here as well. Both the URL and the file id
-     * are kept, because the backend stores them as one setting.
+     * The picker offers an optional square crop saved at `BUTTON_IMAGE_SIZE`.
+     * An admin who takes it gets a small copy sized for the button, with the
+     * original upload untouched. An admin who skips it, or picks a format the
+     * crop step cannot process such as SVG, gets the original file as-is. The
+     * picker's `accept` list and crop options are only hints to the provider,
+     * so the returned MIME type is checked here as well. Both the URL and the
+     * file id are kept, because the backend stores them as one setting.
      */
     const choose = useCallback(async () => {
-        const selection = await pick({ accept: ['image/*'], title: 'Choose the sign-in button image' });
+        const selection = await pick({
+            accept: ['image/*'],
+            title: 'Choose the sign-in button image',
+            image: {
+                aspectRatio: 1,
+                width: BUTTON_IMAGE_SIZE,
+                height: BUTTON_IMAGE_SIZE,
+                crop: 'optional'
+            }
+        });
 
         if (selection && selection.mimeType.startsWith('image/')) {
             setDraft({ authButtonImageUrl: selection.url, authButtonImageFileId: selection.fileId });
@@ -182,8 +205,9 @@ export function AuthButtonImageSection() {
                         Replaces the &quot;Sign in&quot; button with a round image, such as the site mascot, wherever the
                         Sign-in button widget is placed on /system/widgets. Visitors who are signed out open the sign-in
                         dialog when they click it, and visitors who are signed in go to their profile. A square image
-                        with a transparent background works best, at least 96 pixels on each side so it stays sharp on
-                        high-density screens.
+                        with a transparent background works best. Use &quot;Crop and resize&quot; in the picker to save a
+                        {' '}{BUTTON_IMAGE_SIZE}×{BUTTON_IMAGE_SIZE} pixel copy for the button, which keeps the download
+                        small for visitors and leaves the original in the file library.
                     </p>
 
                     <div className={styles.preview_row}>
