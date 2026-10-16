@@ -320,15 +320,17 @@ export function TranslationsTab({ initialRoute }: ITranslationsTabProps) {
                                     <option value="stale">Stale</option>
                                     <option value="translated">Translated</option>
                                 </Select>
-                                <Input
-                                    size="sm"
-                                    className={styles.filters_search}
-                                    value={searchDraft}
-                                    onChange={event => setSearchDraft(event.target.value)}
-                                    placeholder="Search keys and English text"
-                                    aria-label="Search keys and English text"
-                                />
-                                <Button type="submit" size="sm" variant="secondary" icon={<Search size={16} />}>Search</Button>
+                                <div className={styles.filters_search}>
+                                    <Input
+                                        size="sm"
+                                        className={styles.filters_search_input}
+                                        value={searchDraft}
+                                        onChange={event => setSearchDraft(event.target.value)}
+                                        placeholder="Search keys and English text"
+                                        aria-label="Search keys and English text"
+                                    />
+                                    <Button type="submit" size="sm" variant="secondary" icon={<Search size={16} />}>Search</Button>
+                                </div>
                             </form>
                             {route && (
                                 <div className={styles.route_filter}>
@@ -343,12 +345,12 @@ export function TranslationsTab({ initialRoute }: ITranslationsTabProps) {
                             ) : rows.length === 0 ? (
                                 <div className={styles.placeholder}>No keys match these filters.</div>
                             ) : (
-                                <Table className={styles.stack_table}>
+                                <Table className={`${styles.stack_table} ${styles.translation_table}`}>
                                     <Thead>
                                         <Tr>
-                                            <Th>Key</Th>
-                                            <Th>English</Th>
-                                            <Th width="expand">{currentLanguage?.name ?? language}</Th>
+                                            <Th className={styles.col_key}>Key</Th>
+                                            <Th className={styles.col_source}>English</Th>
+                                            <Th className={styles.col_translation}>{currentLanguage?.name ?? language}</Th>
                                             <Th width="shrink">Status</Th>
                                         </Tr>
                                     </Thead>
