@@ -6,8 +6,8 @@
  * injects verbatim into a `<style>` tag, wrapped in a rule for one element
  * (`[data-zone="…"] { … }` or `[data-placement-id="…"] { … }`). Because the
  * text reaches the page unchanged, this validator is what stops it from
- * closing the `<style>` element, escaping the wrapper rule, or loading
- * outside resources. It mirrors `trp-themes`'s `ThemeValidator` in using
+ * closing the `<style>` element, escaping the wrapper rule, or importing
+ * another stylesheet with `@import`. It mirrors `trp-themes`'s `ThemeValidator` in using
  * PostCSS for the syntax check and in not checking token names, since an
  * operator may reference a token that does not exist yet.
  *
@@ -21,7 +21,9 @@
  *
  * Scoping is a convenience rather than a sandbox. Only administrators can
  * save this CSS, and they can already write unscoped CSS in a theme, so a
- * nested selector that reaches a sibling (`& + *`) is allowed. The security
+ * nested selector that reaches outside the placement is allowed, whether it
+ * reaches a sibling (`& + *`) or, through a negation, most of the page
+ * (`:not(&)`). The security
  * guarantees are the three described on {@link ScopedCssValidator.validate}.
  *
  * @module backend/modules/widgets/css/ScopedCssValidator
