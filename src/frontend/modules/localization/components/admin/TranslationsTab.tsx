@@ -219,8 +219,19 @@ export function TranslationsTab({ initialRoute }: ITranslationsTabProps) {
 
     /**
      * Load the current page for the current filters.
+     *
+     * Unsaved editor text is dropped by default, because a change of language,
+     * namespace, status, route, search, or page lists different keys, and a
+     * draft kept against the old list would surface under a key the
+     * administrator never typed it for. A reload that follows an action on one
+     * row passes `keepDrafts`, since the same keys are listed again and the
+     * other editors may hold a page-sized AI suggestion the administrator paid
+     * for, or text they typed by hand.
+     *
+     * @param options - Pass `keepDrafts` when the listed rows are not changing,
+     *        so the text waiting in the other editors survives the reload.
      */
-    const loadRows = useCallback(async () => {
+    const loadRows = useCallback(async (options?: { keepDrafts?: boolean }) => {
         if (language) {
             setLoading(true);
             try {
@@ -235,7 +246,9 @@ export function TranslationsTab({ initialRoute }: ITranslationsTabProps) {
                 });
                 setRows(result.rows);
                 setTotal(result.total);
-                setDrafts({});
+                if (options?.keepDrafts !== true) {
+                    setDrafts({});
+                }
             } catch (error) {
                 notify('danger', 'Could not load translations', error);
             } finally {
@@ -265,7 +278,26 @@ export function TranslationsTab({ initialRoute }: ITranslationsTabProps) {
     }, [searchDraft]);
 
     /**
+     * Drop one row's unsaved editor text, leaving every other row's alone. Used
+     * after an action on that row, so its editor shows what the server now
+     * holds while the other editors keep the text waiting in them.
+     *
+     * @param id - The row id whose draft to drop.
+     */
+    const dropDraft = useCallback((id: string) => {
+        setDrafts(current => {
+            const next = { ...current };
+            delete next[id];
+            return next;
+        });
+    }, []);
+
+    /**
      * Save the draft translation for one row.
+     *
+     * Only this row's draft is dropped. Clearing the whole draft map here threw
+     * away the rest of a page-sized suggestion, and any text typed by hand, as
+     * soon as the first row was saved.
      *
      * @param row - The row being saved.
      */
@@ -276,13 +308,14 @@ export function TranslationsTab({ initialRoute }: ITranslationsTabProps) {
         try {
             await saveTranslation({ namespace: row.namespace, key: row.key, language, text });
             notify('success', `Saved ${row.key}`);
-            await loadRows();
+            dropDraft(id);
+            await loadRows({ keepDrafts: true });
         } catch (error) {
             notify('danger', `Could not save ${row.key}`, error);
         } finally {
             setBusyId(null);
         }
-    }, [drafts, language, loadRows, notify]);
+    }, [drafts, dropDraft, language, loadRows, notify]);
 
     /**
      * Save the row from the keyboard. Ctrl+Enter, or Cmd+Enter on a Mac, saves
@@ -347,6 +380,8 @@ export function TranslationsTab({ initialRoute }: ITranslationsTabProps) {
 
     /**
      * Remove one row's translation so visitors see the English text again.
+     * This row's draft goes too, so its editor does not keep offering the text
+     * that was just removed, while the other editors keep what they hold.
      *
      * @param row - The row whose translation to remove.
      */
@@ -356,13 +391,14 @@ export function TranslationsTab({ initialRoute }: ITranslationsTabProps) {
         try {
             await deleteTranslation(row.namespace, row.key, language);
             notify('success', `Removed the ${language} text for ${row.key}`);
-            await loadRows();
+            dropDraft(id);
+            await loadRows({ keepDrafts: true });
         } catch (error) {
             notify('danger', `Could not remove ${row.key}`, error);
         } finally {
             setBusyId(null);
         }
-    }, [language, loadRows, notify]);
+    }, [dropDraft, language, loadRows, notify]);
 
     /**
      * Ask for confirmation, then delete a key and every translation of it.
@@ -383,7 +419,8 @@ export function TranslationsTab({ initialRoute }: ITranslationsTabProps) {
                         try {
                             await deleteKey(row.namespace, row.key);
                             notify('success', `Deleted ${row.key}`);
-                            await Promise.all([loadRows(), loadFilters()]);
+                            dropDraft(rowId(row));
+                            await Promise.all([loadRows({ keepDrafts: true }), loadFilters()]);
                         } catch (error) {
                             notify('danger', `Could not delete ${row.key}`, error);
                         } finally {
@@ -393,7 +430,7 @@ export function TranslationsTab({ initialRoute }: ITranslationsTabProps) {
                 />
             )
         });
-    }, [close, loadFilters, loadRows, notify, open]);
+    }, [close, dropDraft, loadFilters, loadRows, notify, open]);
 
     /**
      * Submit the add-key form, then close it so the table is back in view.
@@ -408,7 +445,7 @@ export function TranslationsTab({ initialRoute }: ITranslationsTabProps) {
             notify('success', `Added ${newKey.namespace}:${newKey.key}`);
             setNewKey({ ...newKey, key: '', source: '' });
             setAdding(false);
-            await Promise.all([loadRows(), loadFilters()]);
+            await Promise.all([loadRows({ keepDrafts: true }), loadFilters()]);
         } catch (error) {
             notify('danger', 'Could not add key', error);
         } finally {

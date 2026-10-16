@@ -186,10 +186,16 @@ export class TranslationSuggestionService {
     /**
      * Send the request and check the model actually answered.
      *
-     * A returned result only means the transport worked. A refusal or a reply
-     * cut off by the token limit also comes back as a result, and a cut-off
-     * JSON reply would fail to parse with a confusing message, so both are
-     * reported here in plain terms.
+     * A returned result only means the transport worked. A refusal, a reply cut
+     * off by the token limit, and a run that paused or stopped to call a tool
+     * all come back as results with no final answer. A partial JSON reply from
+     * one of those either fails to parse with a confusing message or, worse,
+     * parses cleanly and fills the editors from an unfinished answer. So the
+     * stop reason is checked as an allowlist: only `end_turn` and
+     * `stop_sequence`, the two endings the model chose for itself, go on to the
+     * parser. A refusal and the token limit keep their own wording because an
+     * administrator can act on each, and every other reason, including one
+     * added to `AiStopReason` later, is reported rather than accepted.
      *
      * @param provider - Provider to call.
      * @param options - Prompt, system prompt, model, and output budget.
@@ -222,6 +228,11 @@ export class TranslationSuggestionService {
         if (result.stopReason === 'max_tokens') {
             throw new LocalizationProviderError(
                 'The model ran out of output space before finishing. Narrow the filters so fewer keys are on the page, then try again.'
+            );
+        }
+        if (result.stopReason !== 'end_turn' && result.stopReason !== 'stop_sequence') {
+            throw new LocalizationProviderError(
+                `The model stopped before finishing its answer (${result.stopReason}). Try again, or choose a different model on the Settings tab.`
             );
         }
         return result;

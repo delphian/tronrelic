@@ -206,6 +206,18 @@ describe('TranslationSuggestionService', () => {
             .rejects.toBeInstanceOf(LocalizationProviderError);
     });
 
+    it('reports a paused run as a provider error even when its JSON parses', async () => {
+        // A `pause_turn` or `tool_use` stop means the run has no final answer.
+        // Parseable JSON in one would otherwise reach the editors as a
+        // finished translation.
+        const provider = createProvider({
+            responseText: '{"translations":[{"id":"1","text":"地址转换器","note":null}],"notes":null}',
+            stopReason: 'pause_turn'
+        });
+        await expect(createService(createRegistry(provider)).suggest({ language: 'zh', keys: [{ namespace: 'core', key: 'tools.title' }] }, 'admin'))
+            .rejects.toBeInstanceOf(LocalizationProviderError);
+    });
+
     it('refuses a key that is not a plain string', async () => {
         const provider = createProvider({});
         await expect(createService(createRegistry(provider)).suggest(
