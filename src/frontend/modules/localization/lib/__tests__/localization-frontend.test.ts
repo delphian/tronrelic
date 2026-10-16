@@ -108,6 +108,11 @@ describe('toOpenGraphLocale', () => {
         expect(toOpenGraphLocale('zh-tw')).toBe('zh_TW');
     });
 
+    it('finds the region in a code that also carries a script or a variant', () => {
+        expect(toOpenGraphLocale('zh-Hant-HK')).toBe('zh_HK');
+        expect(toOpenGraphLocale('de-DE-1996')).toBe('de_DE');
+    });
+
     it('omits the tag rather than emit a value outside language_TERRITORY', () => {
         expect(toOpenGraphLocale('ja')).toBeUndefined();
     });

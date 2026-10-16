@@ -95,7 +95,14 @@ const OPEN_GRAPH_LOCALES: Record<string, string> = {
  */
 export function toOpenGraphLocale(language: string): string | undefined {
   const parts = language.split('-');
-  const region = parts.length === 2 && /^[A-Za-z]{2}$/.test(parts[1]) ? parts[1] : undefined;
+  // BCP 47 puts the region straight after the language, or after a four-letter
+  // script subtag when one is present, so `zh-Hant-HK` and `de-DE-1996` both
+  // carry a usable region even though they hold more than two subtags. Only a
+  // region can be two letters here: extlang is three, script is four, and a
+  // variant is five or more, so no other subtag can be mistaken for one.
+  const hasScript = parts.length > 1 && /^[A-Za-z]{4}$/.test(parts[1]);
+  const candidate = parts[hasScript ? 2 : 1];
+  const region = candidate && /^[A-Za-z]{2}$/.test(candidate) ? candidate : undefined;
   return region
     ? `${parts[0].toLowerCase()}_${region.toUpperCase()}`
     : OPEN_GRAPH_LOCALES[language.toLowerCase()];
