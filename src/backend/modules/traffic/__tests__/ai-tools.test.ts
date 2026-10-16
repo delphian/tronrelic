@@ -423,6 +423,15 @@ describe('traffic AI tools', () => {
                 .rejects.toThrow(/ISO-3166 alpha-2/);
         });
 
+        it('rejects the Cloudflare sentinels that ingestion never stores', async () => {
+            // XX and T1 are well-formed but always collapse to NULL on ingest,
+            // so a query for either could only ever report an empty country.
+            await expect(built.get(AI_TOOL_NAMES.overview)!.handler({ country: 'xx' }))
+                .rejects.toThrow(/non-country sentinel/);
+            await expect(built.get(AI_TOOL_NAMES.breakdown)!.handler({ dimension: 'sources', country: 'T1' }))
+                .rejects.toThrow(/non-country sentinel/);
+        });
+
         it('refuses to combine a country with the geo dimension', async () => {
             // A geo breakdown filtered to one country only repeats the filter.
             await expect(built.get(AI_TOOL_NAMES.breakdown)!.handler({ dimension: 'geo', country: 'KR' }))
