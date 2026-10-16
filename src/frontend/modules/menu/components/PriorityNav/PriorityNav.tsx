@@ -406,6 +406,25 @@ export function PriorityNav({
 
     const hasOverflow = finalOverflowItems.length > 0;
 
+    /**
+     * Close the dropdown once the measured overflow empties.
+     *
+     * A container that widens hands every item back to the primary row while
+     * the dropdown is open, which removes both the "More" button and the
+     * portal. An open flag left set after that keeps the mobile body scroll
+     * lock applied with nothing on screen to dismiss, and reopens the
+     * dropdown by itself as soon as the container narrows again. Clearing the
+     * flag here releases the lock, because useBodyScrollLock only restores
+     * the body's overflow when its argument changes. Focus is deliberately
+     * not moved to the "More" button as closeDropdown would do, since that
+     * button is display:none whenever there is no overflow.
+     */
+    useEffect(() => {
+        if (isDropdownOpen && !hasOverflow) {
+            setIsDropdownOpen(false);
+        }
+    }, [isDropdownOpen, hasOverflow]);
+
     return (
         <div
             ref={containerRef}
