@@ -214,17 +214,24 @@ export interface ITrafficAggregateOptions {
 }
 
 /**
- * Inclusive date window for the dashboard analytics reads.
+ * Inclusive date window for the dashboard analytics reads, optionally narrowed
+ * to one country.
  *
  * Defined locally (rather than imported from the user module) so the traffic
  * module owns its analytics surface and does not couple to the soon-to-be-
- * removed `UserService`. Structurally identical to the legacy `IDateRange`.
+ * removed `UserService`.
  */
 export interface IAnalyticsDateRange {
     /** Start of the window (inclusive). */
     since: Date;
     /** End of the window (inclusive). Defaults to "now" when omitted. */
     until?: Date;
+    /**
+     * Restrict the read to event rows recorded from this ISO-3166 alpha-2
+     * country (e.g. `'KR'`). Applied per row, so a visitor whose rows span two
+     * countries counts in each. Omit for every country.
+     */
+    country?: string;
 }
 
 /** One day's distinct-visitor count. */
@@ -1408,7 +1415,31 @@ export class TrafficService {
         const excluded = this.ignoredUsersExclusion();
         clause += excluded.fragment;
         Object.assign(params, excluded.params);
+        // The country scope rides the same chokepoint for the same reason:
+        // every read built on this clause, including the membership subquery,
+        // narrows to the requested country without a per-read change.
+        const scoped = this.countryScope(range);
+        clause += scoped.fragment;
+        Object.assign(params, scoped.params);
         return { clause, params };
+    }
+
+    /**
+     * Build the optional country filter for an analytics window.
+     *
+     * Lets a caller ask "where do visitors from Korea come from" without a
+     * separate query per read. The value is bound as a parameter rather than
+     * spliced into the SQL, so an unexpected string cannot change the query.
+     *
+     * @param range - The window; its `country`, when set, selects the rows.
+     * @returns A leading-AND fragment and its params, both empty when no
+     *          country was requested.
+     */
+    private countryScope(range: IAnalyticsDateRange): { fragment: string; params: Record<string, unknown> } {
+        if (!range.country) {
+            return { fragment: '', params: {} };
+        }
+        return { fragment: ' AND country = {country:String}', params: { country: range.country } };
     }
 
     /**
@@ -1466,9 +1497,12 @@ export class TrafficService {
         // already bound in `params` (rangeParams set it); only the fragment needs
         // appending, so no per-read subquery returns.
         const excluded = this.ignoredUsersExclusion();
+        // Same for the country scope: its param is already bound by
+        // rangeParams, so only the fragment is appended.
+        const scoped = this.countryScope(range);
         // session_start <= until holds automatically — the scan admits no row
         // past the upper bound — so only the lower bound needs the HAVING.
-        return { where: `${where}${botFilter}${excluded.fragment}`, having: 'session_start >= parseDateTimeBestEffort({since:String})', params };
+        return { where: `${where}${botFilter}${excluded.fragment}${scoped.fragment}`, having: 'session_start >= parseDateTimeBestEffort({since:String})', params };
     }
 
     /**
@@ -2142,10 +2176,13 @@ export class TrafficService {
         const windowMs = Math.max(until.getTime() - range.since.getTime(), HOUR_MS);
         const granularity: 'hour' | 'day' = windowMs <= 48 * HOUR_MS ? 'hour' : 'day';
 
-        const currentRange: IAnalyticsDateRange = { since: range.since, until };
+        // Both windows carry the caller's country so the period-over-period
+        // delta compares like with like.
+        const currentRange: IAnalyticsDateRange = { since: range.since, until, country: range.country };
         const previousRange: IAnalyticsDateRange = {
             since: new Date(range.since.getTime() - windowMs),
-            until: range.since
+            until: range.since,
+            country: range.country
         };
 
         const botFilter = excludeBots ? ` AND ${HUMAN_ROWS_FILTER}` : '';

@@ -74,10 +74,15 @@ async function fetchDynamicData(): Promise<SitemapData> {
  * which caches results for 10 minutes. Static entries that overlap with
  * dynamic data are automatically deduplicated.
  *
+ * An entry carries `lastModified` only when its source records a real
+ * modification time. Google uses `<lastmod>` only while it is consistently
+ * accurate, so stamping undated routes with the generation time would teach
+ * it to ignore the real dates on CMS pages and blog posts as well. Undated
+ * entries omit the field instead.
+ *
  * @returns Sitemap array with runtime siteUrl and all discoverable pages
  */
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const now = new Date();
   const [{ siteUrl }, dynamicData, localizationConfig] = await Promise.all([
     getServerConfig(),
     fetchDynamicData(),
@@ -95,7 +100,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     route.path,
     {
       url: absoluteUrl(siteUrl, route.path),
-      lastModified: now,
       changeFrequency: route.changeFrequency,
       priority: route.priority
     },
@@ -121,7 +125,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       seenPaths.add(path);
       entries.push(...withLanguageVersions(localizationConfig, siteUrl, path, {
         url: absoluteUrl(siteUrl, path),
-        lastModified: now,
         changeFrequency: 'daily',
         priority: 0.7
       }, seenPaths));
@@ -144,7 +147,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     seenPaths.add(entry.path);
     entries.push(...withLanguageVersions(localizationConfig, siteUrl, entry.path, {
       url: absoluteUrl(siteUrl, entry.path),
-      lastModified: entry.lastModified ?? now,
+      lastModified: entry.lastModified,
       changeFrequency: entry.changeFrequency ?? 'weekly',
       priority: entry.priority !== undefined ? Math.max(0, Math.min(1, entry.priority)) : 0.7
     }, seenPaths));

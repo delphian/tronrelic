@@ -392,6 +392,76 @@ describe('traffic AI tools', () => {
         });
     });
 
+    describe('country filter', () => {
+        let trafficStub: ReturnType<typeof createTrafficServiceStub>;
+        let built: Map<string, IAiTool>;
+
+        beforeEach(() => {
+            trafficStub = createTrafficServiceStub();
+            ({ tools: built } = registerAndCapture(createGscServiceStub(), {}, trafficStub));
+        });
+
+        it('passes a normalized country through to the breakdown read and echoes it', async () => {
+            // The table stores uppercase codes, so a lowercase "kr" from the
+            // model would otherwise match nothing and read as an empty country.
+            const result = await built.get(AI_TOOL_NAMES.breakdown)!.handler({
+                dimension: 'sources',
+                country: 'kr'
+            }) as { country: string | null };
+
+            expect(trafficStub.getTrafficSources).toHaveBeenCalledWith(
+                expect.objectContaining({ country: 'KR' }),
+                true
+            );
+            expect(result.country).toBe('KR');
+        });
+
+        it('rejects a value that is not a two-letter country code', async () => {
+            await expect(built.get(AI_TOOL_NAMES.breakdown)!.handler({ dimension: 'sources', country: 'Korea' }))
+                .rejects.toThrow(/ISO-3166 alpha-2/);
+            await expect(built.get(AI_TOOL_NAMES.newVisitors)!.handler({ country: 'K1' }))
+                .rejects.toThrow(/ISO-3166 alpha-2/);
+        });
+
+        it('refuses to combine a country with the geo dimension', async () => {
+            // A geo breakdown filtered to one country only repeats the filter.
+            await expect(built.get(AI_TOOL_NAMES.breakdown)!.handler({ dimension: 'geo', country: 'KR' }))
+                .rejects.toThrow(/cannot be combined with dimension "geo"/);
+        });
+
+        it('scopes the new-visitor, audience, and overview reads', async () => {
+            await built.get(AI_TOOL_NAMES.newVisitors)!.handler({ country: 'KR' });
+            await built.get(AI_TOOL_NAMES.audience)!.handler({ country: 'KR' });
+            await built.get(AI_TOOL_NAMES.overview)!.handler({ country: 'KR' });
+
+            const scoped = expect.objectContaining({ country: 'KR' });
+            expect(trafficStub.getNewVisitors).toHaveBeenCalledWith(scoped, 20, 0, true);
+            expect(trafficStub.getDailyVisitors).toHaveBeenCalledWith(scoped, true);
+            expect(trafficStub.getOverviewTrend).toHaveBeenCalledWith(scoped, true);
+            expect(trafficStub.getEngagementMetrics).toHaveBeenCalledWith(scoped, true);
+        });
+
+        it('reports no live count beside country-scoped overview figures', async () => {
+            // The live counter is never country-scoped, so pairing it with
+            // Korean figures would present an all-country number as Korean.
+            const result = await built.get(AI_TOOL_NAMES.overview)!.handler({ country: 'KR' }) as {
+                liveVisitors: number | null;
+            };
+
+            expect(result.liveVisitors).toBeNull();
+            expect(trafficStub.getLiveVisitorCount).not.toHaveBeenCalled();
+        });
+
+        it('leaves the reads unscoped when no country is given', async () => {
+            const result = await built.get(AI_TOOL_NAMES.overview)!.handler({}) as {
+                country: string | null; liveVisitors: number | null;
+            };
+
+            expect(result.country).toBeNull();
+            expect(result.liveVisitors).toBe(3);
+        });
+    });
+
     describe('dashboard parity views', () => {
         it('serves the raw all-traffic aggregates the Crawlers tab shows, labeled as row counts', async () => {
             const paths = await tools.get(AI_TOOL_NAMES.crawlers)!.handler({ view: 'top-paths' }) as {
