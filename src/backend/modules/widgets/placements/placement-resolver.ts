@@ -224,6 +224,10 @@ export class PlacementResolver {
                 title: placement.title,
                 titleUrl: placement.titleUrl,
                 titleSize: placement.titleSize,
+                // The placement id tells two placements of one type apart on
+                // the page; the renderer scopes the placement's CSS to it.
+                placementId: placement.id,
+                customCss: placement.customCss,
                 data,
                 // Forward the same instance config the fetcher received so
                 // the frontend component can branch on it. Mirror the

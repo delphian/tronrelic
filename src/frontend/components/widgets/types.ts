@@ -55,6 +55,19 @@ export interface WidgetData {
     titleSize?: WidgetTitleSize;
 
     /**
+     * Id of the placement this item came from. `id` names the widget type,
+     * which two placements can share, so this is what tells them apart. The
+     * renderer writes it to `data-placement-id`, which `customCss` is scoped to.
+     */
+    placementId?: string;
+
+    /**
+     * Operator CSS for this placement, validated server-side when it was
+     * saved. The renderer wraps it in a `[data-placement-id="…"]` rule.
+     */
+    customCss?: string;
+
+    /**
      * Pre-fetched data for SSR rendering.
      *
      * The structure is defined by the individual plugin and can be any

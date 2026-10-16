@@ -75,6 +75,12 @@ export interface IPlacementPatch {
      * the same three-state convention as `title`/`titleUrl`.
      */
     titleSize?: WidgetTitleSize | null;
+    /**
+     * Set the placement's custom CSS, or remove it with `null` (`$unset`).
+     * Omission leaves it unchanged — the same three-state convention as
+     * `title`/`titleUrl`. See {@link IWidgetPlacement.customCss}.
+     */
+    customCss?: string | null;
     instanceConfig?: Record<string, unknown>;
     enabled?: boolean;
 }

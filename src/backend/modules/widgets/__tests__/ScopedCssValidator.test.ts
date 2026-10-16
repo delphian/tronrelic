@@ -1,21 +1,23 @@
 /// <reference types="vitest" />
 
 /**
- * @fileoverview Unit tests for ZoneCssValidator — the security boundary that
- * sanitizes operator-authored zone `customCss` before it is injected verbatim
- * into a public `<style>` tag. The validator is the primary defense against a
- * CSS-injection / `<style>`-breakout XSS, so these tests pin its guarantees:
- * the `</style` escape sequence is rejected, real syntax errors are caught,
- * selector and at-rule breakouts are refused, the conditional-group at-rule
- * allowlist is honored, and oversized input is capped. A regression here
- * re-opens the injection vector, so the coverage is deliberately exhaustive.
+ * @fileoverview Unit tests for ScopedCssValidator — the security boundary that
+ * checks operator-authored zone and placement `customCss` before it is
+ * injected verbatim into a public `<style>` tag. The validator is the primary
+ * defense against a `<style>`-breakout XSS, so these tests pin its guarantees
+ * in both modes: the `</style` escape sequence is rejected, real syntax errors
+ * are caught, rules that escape the wrapper are refused, the conditional-group
+ * at-rule allowlist is honored, and oversized input is capped. The nested
+ * mode used by placements additionally accepts rules inside the wrapper while
+ * still refusing anything at the top level. A regression here re-opens the
+ * injection vector, so the coverage is deliberately exhaustive.
  *
- * @module backend/modules/widgets/__tests__/zone-css.validator.test
+ * @module backend/modules/widgets/__tests__/ScopedCssValidator.test
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { ISystemLogService } from '@/types';
-import { ZoneCssValidator, ZONE_CSS_MAX_LENGTH } from '../zones/zone-css.validator.js';
+import { ScopedCssValidator, SCOPED_CSS_MAX_LENGTH } from '../css/ScopedCssValidator.js';
 
 /**
  * Build a minimal `ISystemLogService` stub. The validator only calls `warn`
@@ -53,13 +55,16 @@ function buildLoggerStub(): ISystemLogService {
     } as unknown as ISystemLogService;
 }
 
-describe('ZoneCssValidator.validate', () => {
+describe.each([
+    { mode: 'declarations-only (zones)', allowNestedRules: false },
+    { mode: 'nested (placements)', allowNestedRules: true }
+])('ScopedCssValidator.validate — guarantees shared by both modes, $mode', ({ allowNestedRules }) => {
     let logger: ISystemLogService;
-    let validator: ZoneCssValidator;
+    let validator: ScopedCssValidator;
 
     beforeEach(() => {
         logger = buildLoggerStub();
-        validator = new ZoneCssValidator(logger);
+        validator = new ScopedCssValidator(logger, { allowNestedRules });
     });
 
     it('accepts well-formed bare declarations', async () => {
@@ -89,10 +94,9 @@ describe('ZoneCssValidator.validate', () => {
         expect(result.errors[0]).toContain('</style');
     });
 
-    it('rejects a selector that breaks out of the wrapper', async () => {
+    it('rejects a rule that breaks out of the wrapper', async () => {
         const result = await validator.validate('} body { display: none;');
         expect(result.valid).toBe(false);
-        expect(result.errors.some(e => e.includes('body'))).toBe(true);
     });
 
     it('rejects a disallowed at-rule (@import can pull remote CSS)', async () => {
@@ -111,18 +115,76 @@ describe('ZoneCssValidator.validate', () => {
     );
 
     it('rejects input longer than the max length', async () => {
-        const oversized = 'a'.repeat(ZONE_CSS_MAX_LENGTH + 1);
+        const oversized = 'a'.repeat(SCOPED_CSS_MAX_LENGTH + 1);
         const result = await validator.validate(oversized);
         expect(result.valid).toBe(false);
-        expect(result.errors[0]).toContain(String(ZONE_CSS_MAX_LENGTH));
+        expect(result.errors[0]).toContain(String(SCOPED_CSS_MAX_LENGTH));
     });
 
     it('accepts input exactly at the max-length boundary (cap is inclusive)', async () => {
         const base = 'color: red;';
-        const padding = ZONE_CSS_MAX_LENGTH - base.length - '/**/'.length;
+        const padding = SCOPED_CSS_MAX_LENGTH - base.length - '/**/'.length;
         const css = `${base}/*${'x'.repeat(padding)}*/`;
-        expect(css.length).toBe(ZONE_CSS_MAX_LENGTH);
+        expect(css.length).toBe(SCOPED_CSS_MAX_LENGTH);
         const result = await validator.validate(css);
         expect(result.valid).toBe(true);
+    });
+});
+
+describe('ScopedCssValidator.validate — declarations-only mode', () => {
+    let validator: ScopedCssValidator;
+
+    beforeEach(() => {
+        validator = new ScopedCssValidator(buildLoggerStub(), { allowNestedRules: false });
+    });
+
+    it('rejects a nested rule and names its selector', async () => {
+        const result = await validator.validate('a { color: red; }');
+        expect(result.valid).toBe(false);
+        expect(result.errors.some(e => e.includes('"a"'))).toBe(true);
+    });
+
+    it('names the selector of a breakout rule', async () => {
+        const result = await validator.validate('} body { display: none;');
+        expect(result.errors.some(e => e.includes('body'))).toBe(true);
+    });
+});
+
+describe('ScopedCssValidator.validate — nested mode', () => {
+    let validator: ScopedCssValidator;
+
+    beforeEach(() => {
+        validator = new ScopedCssValidator(buildLoggerStub(), { allowNestedRules: true });
+    });
+
+    it('accepts nested rules alongside declarations', async () => {
+        const css = 'gap: 1rem; a { padding: 12px 16px; } a:hover { color: var(--color-primary); }';
+        const result = await validator.validate(css);
+        expect(result.valid).toBe(true);
+        expect(result.errors).toEqual([]);
+    });
+
+    it('accepts nesting-selector forms and rules inside an at-rule', async () => {
+        const css = '&:hover { opacity: 0.9; } @container (max-width: 480px) { a svg { width: 16px; } }';
+        const result = await validator.validate(css);
+        expect(result.valid).toBe(true);
+    });
+
+    it('rejects a breakout that opens a second top-level rule', async () => {
+        const result = await validator.validate('color: red; } body { display: none; } .x {');
+        expect(result.valid).toBe(false);
+        expect(result.errors[0]).toContain('closes the scoped rule early');
+    });
+
+    it('rejects a breakout into a top-level at-rule', async () => {
+        const result = await validator.validate('} @media screen { body { display: none; } } .x {');
+        expect(result.valid).toBe(false);
+        expect(result.errors[0]).toContain('closes the scoped rule early');
+    });
+
+    it('rejects a disallowed at-rule nested inside a rule', async () => {
+        const result = await validator.validate('a { @font-face { font-family: x; } }');
+        expect(result.valid).toBe(false);
+        expect(result.errors.some(e => e.includes('@font-face'))).toBe(true);
     });
 });

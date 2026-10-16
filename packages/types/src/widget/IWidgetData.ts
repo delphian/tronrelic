@@ -61,6 +61,22 @@ export interface IWidgetData {
     titleSize?: WidgetTitleSize;
 
     /**
+     * Id of the placement this item was resolved from. `id` names the widget
+     * type, which two placements can share, so this is what tells two
+     * placements of the same type apart on the page. The `WidgetZone`
+     * renderer writes it to `data-placement-id`, which is the element a
+     * placement's `customCss` is scoped to.
+     */
+    placementId?: string;
+
+    /**
+     * Operator CSS for this placement, carried verbatim from the resolved
+     * placement. The `WidgetZone` renderer wraps it in a
+     * `[data-placement-id="…"]` rule. Absent when the placement has none.
+     */
+    customCss?: string;
+
+    /**
      * Pre-fetched data for SSR rendering.
      *
      * This is the result of calling the widget's fetchData() function.

@@ -16,6 +16,7 @@ import type { Request, Response } from 'express';
 import type { JSONSchema7 } from 'json-schema';
 import type { ISystemLogService, IWidgetsService, IWidgetPlacement } from '@/types';
 import { PlacementsController } from '../api/placements.controller.js';
+import { ScopedCssValidator } from '../css/ScopedCssValidator.js';
 import { SITE_LOGO_CONFIG_SCHEMA } from '../widget-types/core-widget-types.js';
 
 /**
@@ -81,6 +82,19 @@ function buildLoggerStub(): ISystemLogService {
 }
 
 /**
+ * Build the controller the way `WidgetsModule` does, with a real scoped-CSS
+ * validator in nested mode, so the `customCss` tests exercise the same
+ * checks production runs rather than a stub that always passes.
+ *
+ * @param widgets - The widgets service stub the test configured.
+ * @param logger - The logger stub, shared with the validator.
+ * @returns A controller wired like production.
+ */
+function buildController(widgets: IWidgetsService, logger: ISystemLogService): PlacementsController {
+    return new PlacementsController(widgets, logger, new ScopedCssValidator(logger, { allowNestedRules: true }));
+}
+
+/**
  * Construct a minimal Express response stub recording `status()` and
  * `json()` calls so assertions can inspect the wire shape.
  */
@@ -131,7 +145,7 @@ describe('PlacementsController instanceConfig schema validation', () => {
                 getTypeConfigSchema: vi.fn(() => schema),
                 createPlacement: vi.fn(async () => { throw new Error('should not reach service'); })
             });
-            controller = new PlacementsController(widgets, logger);
+            controller = buildController(widgets, logger);
 
             const req = {
                 body: {
@@ -162,7 +176,7 @@ describe('PlacementsController instanceConfig schema validation', () => {
                 getTypeConfigSchema: vi.fn(() => undefined),
                 createPlacement: vi.fn(async () => ({ id: 'new-id' } as IWidgetPlacement))
             });
-            controller = new PlacementsController(widgets, logger);
+            controller = buildController(widgets, logger);
 
             const req = {
                 body: {
@@ -194,7 +208,7 @@ describe('PlacementsController instanceConfig schema validation', () => {
                 getTypeConfigSchema: vi.fn(() => schema),
                 createPlacement: vi.fn(async () => ({ id: 'new-id' } as IWidgetPlacement))
             });
-            controller = new PlacementsController(widgets, logger);
+            controller = buildController(widgets, logger);
 
             const req = {
                 body: {
@@ -234,7 +248,7 @@ describe('PlacementsController instanceConfig schema validation', () => {
                 findPlacementById: vi.fn(async () => existing),
                 updatePlacement: vi.fn(async () => { throw new Error('should not reach service'); })
             });
-            controller = new PlacementsController(widgets, logger);
+            controller = buildController(widgets, logger);
 
             const req = {
                 params: { id: 'p-1' },
@@ -259,7 +273,7 @@ describe('PlacementsController instanceConfig schema validation', () => {
                 findPlacementById: vi.fn(async () => null),
                 updatePlacement: vi.fn()
             });
-            controller = new PlacementsController(widgets, logger);
+            controller = buildController(widgets, logger);
 
             const req = {
                 params: { id: 'p-missing' },
@@ -289,7 +303,7 @@ describe('PlacementsController titleUrl validation', () => {
         widgets = buildWidgetsServiceStub({
             createPlacement: vi.fn(async () => { throw new Error('should not reach service'); })
         });
-        controller = new PlacementsController(widgets, logger);
+        controller = buildController(widgets, logger);
 
         const req = {
             body: { ...validCreateBody, titleUrl: 'https://evil.example.com' }
@@ -304,7 +318,7 @@ describe('PlacementsController titleUrl validation', () => {
 
     it('rejects a protocol-relative titleUrl', async () => {
         widgets = buildWidgetsServiceStub();
-        controller = new PlacementsController(widgets, logger);
+        controller = buildController(widgets, logger);
 
         const req = {
             body: { ...validCreateBody, titleUrl: '//evil.example.com' }
@@ -324,7 +338,7 @@ describe('PlacementsController titleUrl validation', () => {
         widgets = buildWidgetsServiceStub({
             createPlacement: vi.fn(async () => { throw new Error('should not reach service'); })
         });
-        controller = new PlacementsController(widgets, logger);
+        controller = buildController(widgets, logger);
 
         const req = {
             body: { ...validCreateBody, titleUrl }
@@ -340,7 +354,7 @@ describe('PlacementsController titleUrl validation', () => {
         widgets = buildWidgetsServiceStub({
             createPlacement: vi.fn(async () => ({ id: 'new-id' } as IWidgetPlacement))
         });
-        controller = new PlacementsController(widgets, logger);
+        controller = buildController(widgets, logger);
 
         const req = {
             body: { ...validCreateBody, titleUrl: '/markets?tab=energy' }
@@ -358,7 +372,7 @@ describe('PlacementsController titleUrl validation', () => {
         widgets = buildWidgetsServiceStub({
             updatePlacement: vi.fn(async () => ({ id: 'p1' } as IWidgetPlacement))
         });
-        controller = new PlacementsController(widgets, logger);
+        controller = buildController(widgets, logger);
 
         const req = {
             params: { id: 'p1' },
@@ -387,7 +401,7 @@ describe('PlacementsController titleSize validation', () => {
 
     it('rejects an unknown titleSize with 400 and never reaches the service', async () => {
         widgets = buildWidgetsServiceStub({ createPlacement: vi.fn() });
-        controller = new PlacementsController(widgets, logger);
+        controller = buildController(widgets, logger);
 
         const req = { body: { ...validCreateBody, titleSize: 'heading-huge' } } as Request;
         await controller.createPlacement(req, res);
@@ -401,7 +415,7 @@ describe('PlacementsController titleSize validation', () => {
         widgets = buildWidgetsServiceStub({
             createPlacement: vi.fn(async () => ({ id: 'new-id' } as IWidgetPlacement))
         });
-        controller = new PlacementsController(widgets, logger);
+        controller = buildController(widgets, logger);
 
         const req = { body: { ...validCreateBody, titleSize: 'heading-lg' } } as Request;
         await controller.createPlacement(req, res);
@@ -416,7 +430,7 @@ describe('PlacementsController titleSize validation', () => {
         widgets = buildWidgetsServiceStub({
             updatePlacement: vi.fn(async () => ({ id: 'p1' } as IWidgetPlacement))
         });
-        controller = new PlacementsController(widgets, logger);
+        controller = buildController(widgets, logger);
 
         const req = {
             params: { id: 'p1' },
@@ -447,7 +461,7 @@ describe('PlacementsController layoutWeight validation', () => {
         widgets = buildWidgetsServiceStub({
             createPlacement: vi.fn(async () => { throw new Error('should not reach service'); })
         });
-        controller = new PlacementsController(widgets, logger);
+        controller = buildController(widgets, logger);
 
         const req = { body: { ...validCreateBody, layoutWeight } } as Request;
 
@@ -462,7 +476,7 @@ describe('PlacementsController layoutWeight validation', () => {
         widgets = buildWidgetsServiceStub({
             createPlacement: vi.fn(async () => ({ id: 'new-id' } as IWidgetPlacement))
         });
-        controller = new PlacementsController(widgets, logger);
+        controller = buildController(widgets, logger);
 
         const req = { body: { ...validCreateBody, layoutWeight: 2 } } as Request;
 
@@ -478,7 +492,7 @@ describe('PlacementsController layoutWeight validation', () => {
         widgets = buildWidgetsServiceStub({
             updatePlacement: vi.fn(async () => ({ id: 'p1' } as IWidgetPlacement))
         });
-        controller = new PlacementsController(widgets, logger);
+        controller = buildController(widgets, logger);
 
         const req = {
             params: { id: 'p1' },
@@ -491,6 +505,106 @@ describe('PlacementsController layoutWeight validation', () => {
             'p1',
             expect.objectContaining({ layoutWeight: null })
         );
+    });
+});
+
+describe('PlacementsController customCss validation', () => {
+    let widgets: IWidgetsService;
+    let logger: ISystemLogService;
+    let controller: PlacementsController;
+    let res: ReturnType<typeof buildResponseStub>;
+
+    beforeEach(() => {
+        logger = buildLoggerStub();
+        res = buildResponseStub();
+    });
+
+    it('accepts declarations and nested rules on create and forwards them', async () => {
+        widgets = buildWidgetsServiceStub({
+            createPlacement: vi.fn(async () => ({ id: 'new-id' } as IWidgetPlacement))
+        });
+        controller = buildController(widgets, logger);
+        const customCss = 'gap: 1rem; a { padding: 12px 16px; }';
+
+        const req = { body: { ...validCreateBody, customCss } } as Request;
+        await controller.createPlacement(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(201);
+        expect(widgets.createPlacement).toHaveBeenCalledWith(expect.objectContaining({ customCss }));
+    });
+
+    it('stores nothing when the create body carries blank CSS', async () => {
+        widgets = buildWidgetsServiceStub({
+            createPlacement: vi.fn(async () => ({ id: 'new-id' } as IWidgetPlacement))
+        });
+        controller = buildController(widgets, logger);
+
+        const req = { body: { ...validCreateBody, customCss: '   ' } } as Request;
+        await controller.createPlacement(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(201);
+        const input = (widgets.createPlacement as ReturnType<typeof vi.fn>).mock.calls[0][0];
+        expect(input.customCss).toBeUndefined();
+    });
+
+    it.each([
+        ['a rule that escapes the placement', 'color: red; } body { display: none; } .x {'],
+        ['the </style sequence', 'color: red; </style><script>alert(1)</script>'],
+        ['an @import', "@import url('https://evil.example/x.css');"]
+    ])('rejects %s with 400 and never reaches the service', async (_label, customCss) => {
+        widgets = buildWidgetsServiceStub({
+            createPlacement: vi.fn(async () => { throw new Error('should not reach service'); })
+        });
+        controller = buildController(widgets, logger);
+
+        const req = { body: { ...validCreateBody, customCss } } as Request;
+        await controller.createPlacement(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(400);
+        const payload = res.json.mock.calls[0][0];
+        expect(payload.error).toMatch(/customCss/);
+        expect(payload.errors.length).toBeGreaterThan(0);
+        expect(widgets.createPlacement).not.toHaveBeenCalled();
+    });
+
+    it('rejects a non-string customCss', async () => {
+        widgets = buildWidgetsServiceStub({ createPlacement: vi.fn() });
+        controller = buildController(widgets, logger);
+
+        const req = { body: { ...validCreateBody, customCss: { color: 'red' } } } as Request;
+        await controller.createPlacement(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(widgets.createPlacement).not.toHaveBeenCalled();
+    });
+
+    it('rejects an invalid customCss on patch before the service is called', async () => {
+        widgets = buildWidgetsServiceStub({ updatePlacement: vi.fn() });
+        controller = buildController(widgets, logger);
+
+        const req = {
+            params: { id: 'p1' },
+            body: { customCss: '} body { display: none; } .x {' }
+        } as unknown as Request;
+        await controller.updatePlacement(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(widgets.updatePlacement).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ['null', null],
+        ['a blank string', '  ']
+    ])('forwards %s on patch as an explicit clear', async (_label, customCss) => {
+        widgets = buildWidgetsServiceStub({
+            updatePlacement: vi.fn(async () => ({ id: 'p1' } as IWidgetPlacement))
+        });
+        controller = buildController(widgets, logger);
+
+        const req = { params: { id: 'p1' }, body: { customCss } } as unknown as Request;
+        await controller.updatePlacement(req, res);
+
+        expect(widgets.updatePlacement).toHaveBeenCalledWith('p1', expect.objectContaining({ customCss: null }));
     });
 });
 
@@ -515,7 +629,7 @@ describe('PlacementsController image-url format validation', () => {
             getTypeConfigSchema: vi.fn(() => SITE_LOGO_CONFIG_SCHEMA),
             createPlacement: vi.fn(async () => ({ id: 'new-id' } as IWidgetPlacement))
         });
-        const controller = new PlacementsController(widgets, logger);
+        const controller = buildController(widgets, logger);
         const req = {
             body: { ...validCreateBody, typeId: 'core:site-logo', instanceConfig: { imageUrl } }
         } as Request;

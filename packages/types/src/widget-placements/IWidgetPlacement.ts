@@ -95,6 +95,15 @@ export interface IWidgetPlacement {
      */
     readonly titleSize?: WidgetTitleSize;
     /**
+     * Operator-authored CSS for this one placement. Operator-only; plugins
+     * never seed it. The renderer wraps it in a rule scoped to the
+     * placement's own element, so bare declarations style the widget's box
+     * and nested rules (for example `a { … }`) reach elements inside it.
+     * Checked by a CSS parser at the admin boundary, which refuses anything
+     * that would close the rule early or load outside resources.
+     */
+    readonly customCss?: string;
+    /**
      * Per-instance configuration the widget type's data fetcher /
      * component may consume. Validated against the type's
      * `configSchema` if provided (admin UI concern, forthcoming).
@@ -139,6 +148,8 @@ export interface IPlacementInput {
     titleUrl?: string;
     /** Optional heading-size token for the chrome title. See {@link IWidgetPlacement.titleSize}. */
     titleSize?: WidgetTitleSize;
+    /** Optional operator CSS scoped to this placement. See {@link IWidgetPlacement.customCss}. */
+    customCss?: string;
     instanceConfig?: Record<string, unknown>;
     enabled?: boolean;
 }

@@ -47,6 +47,31 @@ const TITLE_SIZE_CLASS: Record<NonNullable<WidgetData['titleSize']>, string> = {
 };
 
 /**
+ * Shape of a placement id: a stringified Mongo ObjectId. The id is written
+ * into a CSS selector, so anything else is refused rather than trusted.
+ */
+const PLACEMENT_ID_PATTERN = /^[a-f0-9]{24}$/;
+
+/**
+ * Inject operator CSS scoped to one element, for a zone or a placement.
+ *
+ * The CSS is admin-gated and checked by the backend's `ScopedCssValidator`
+ * before it is stored, which refuses `</style` and anything that escapes the
+ * wrapper rule. It is injected the same way theme CSS is in
+ * `app/[lang]/layout.tsx`. The `<style>` element is not displayed, so it
+ * takes no part in the surrounding flex layout.
+ *
+ * @param props.selector - The selector for the one element the CSS applies
+ *   to, such as `[data-zone="footer"]`.
+ * @param props.css - The operator's CSS, placed inside that selector's rule.
+ * @returns The style element, or nothing when the CSS is blank.
+ */
+function ScopedStyle({ selector, css }: { selector: string; css: string | undefined }) {
+    const hasCss = typeof css === 'string' && css.trim().length > 0;
+    return hasCss ? <style dangerouslySetInnerHTML={{ __html: `${selector}{${css}}` }} /> : null;
+}
+
+/**
  * Map a token gap size to the CSS value the container's `gap` resolves
  * to. Sizes map to the `--gap-*` design tokens (never a raw length) so
  * zone spacing stays on the token scale; `none` is a literal `0`.
@@ -239,7 +264,7 @@ function LayoutGroupContainer({ widget, route, params }: WidgetRendererProps) {
                 data-widget-group={widget.id}
             >
                 {children.map(child => (
-                    <WidgetItem key={child.id} widget={child} route={route} params={params} />
+                    <WidgetItem key={child.placementId ?? child.id} widget={child} route={route} params={params} />
                 ))}
             </div>
         </div>
@@ -275,6 +300,11 @@ function WidgetItem({ widget, route, params }: WidgetRendererProps) {
     // custom property the class consumes; an unweighted item renders exactly
     // as before (auto width, no inline style).
     const weightStyle = itemWeightStyle(widget.layoutWeight);
+    // Only a well-formed id goes into the selector; without one the
+    // placement's CSS has nothing to scope to and is not drawn.
+    const placementId = widget.placementId && PLACEMENT_ID_PATTERN.test(widget.placementId)
+        ? widget.placementId
+        : undefined;
 
     return (
         <div
@@ -282,7 +312,11 @@ function WidgetItem({ widget, route, params }: WidgetRendererProps) {
             style={weightStyle}
             data-widget-id={widget.id}
             data-plugin-id={widget.pluginId}
+            data-placement-id={placementId}
         >
+            {placementId && (
+                <ScopedStyle selector={`[data-placement-id="${placementId}"]`} css={widget.customCss} />
+            )}
             {widget.title && (
                 <h2 className={cn(styles.item_title, TITLE_SIZE_CLASS[widget.titleSize ?? 'heading-md'] ?? styles.item_title_md)}>
                     {/* The bare `a` rule in globals.scss is deliberately neutral —
@@ -376,24 +410,16 @@ export function WidgetZone({
     // `data-zone` hook unchanged.
     return (
         <div className={styles.zone_container}>
-            {effectiveLayout.customCss && effectiveLayout.customCss.trim().length > 0 && (
-                // Operator-authored declarations, admin-gated and PostCSS-validated
-                // server-side before persisting — mirrors how theme CSS is injected
-                // via dangerouslySetInnerHTML in app/[lang]/layout.tsx. Scoped to this zone
-                // by wrapping the bare declarations in a `[data-zone="..."]` rule.
-                <style
-                    dangerouslySetInnerHTML={{
-                        __html: `[data-zone="${name}"]{${effectiveLayout.customCss}}`
-                    }}
-                />
-            )}
+            <ScopedStyle selector={`[data-zone="${name}"]`} css={effectiveLayout.customCss} />
             <div
                 className={cn(styles.zone, collapseClassFor(effectiveLayout.collapseBelow))}
                 data-zone={name}
                 style={zoneStyle(effectiveLayout)}
             >
+                {/* The placement id, not the type id, keys each item: two
+                    placements of one widget type can share a zone. */}
                 {zoneWidgets.map(widget => (
-                    <WidgetItem key={widget.id} widget={widget} route={route} params={params} />
+                    <WidgetItem key={widget.placementId ?? widget.id} widget={widget} route={route} params={params} />
                 ))}
             </div>
         </div>

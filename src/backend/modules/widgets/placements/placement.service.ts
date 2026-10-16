@@ -305,6 +305,7 @@ export class PlacementService implements IPlacementService {
         if (input.title !== undefined) doc.title = input.title;
         if (input.titleUrl !== undefined) doc.titleUrl = input.titleUrl;
         if (input.titleSize !== undefined) doc.titleSize = input.titleSize;
+        if (input.customCss !== undefined) doc.customCss = input.customCss;
         if (input.instanceConfig !== undefined) doc.instanceConfig = input.instanceConfig;
         if (source === 'plugin' && options.pluginId !== undefined) doc.pluginId = options.pluginId;
 
@@ -363,6 +364,13 @@ export class PlacementService implements IPlacementService {
         } else if (patch.titleSize !== undefined) {
             setOps.titleSize = patch.titleSize;
         }
+        if (patch.customCss === null) {
+            // Explicit clear — drop the CSS so the placement renders with
+            // no scoped style block.
+            unsetOps.customCss = '';
+        } else if (patch.customCss !== undefined) {
+            setOps.customCss = patch.customCss;
+        }
         if (patch.instanceConfig !== undefined) setOps.instanceConfig = patch.instanceConfig;
         if (patch.enabled !== undefined) setOps.enabled = patch.enabled;
 
@@ -406,11 +414,11 @@ export class PlacementService implements IPlacementService {
      * restore from a plain update.
      *
      * @param id - Placement id (stringified ObjectId).
-     * @param defaults - Plugin defaults to apply. `instanceConfig` and
-     *   `titleUrl` are not part of plugin registration args — they are
-     *   operator state — so they are intentionally absent from the
-     *   input. The row's existing `instanceConfig` and `titleUrl`
-     *   survive restore.
+     * @param defaults - Plugin defaults to apply. `instanceConfig`,
+     *   `titleUrl`, and `customCss` are not part of plugin registration
+     *   args — they are operator state — so they are intentionally absent
+     *   from the input. The row's existing `instanceConfig`, `titleUrl`,
+     *   and `customCss` survive restore.
      * @returns Updated placement, or null when no row matches.
      */
     async restoreToPluginDefaults(
@@ -540,6 +548,7 @@ function toPublic(doc: IWidgetPlacementDocument): IWidgetPlacement {
         title: doc.title,
         titleUrl: doc.titleUrl,
         titleSize: doc.titleSize,
+        customCss: doc.customCss,
         instanceConfig: doc.instanceConfig,
         enabled: doc.enabled,
         source: doc.source,
