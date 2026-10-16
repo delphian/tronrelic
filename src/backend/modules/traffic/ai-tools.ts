@@ -282,6 +282,30 @@ function resolveExcludeBots(value: unknown): boolean {
 }
 
 /**
+ * Read the optional `country` argument as an uppercase ISO-3166 alpha-2 code.
+ *
+ * The traffic table stores two-letter uppercase codes, so a model passing
+ * "kr" or "Korea" would otherwise match no rows and report an empty country
+ * as fact. Lowercase is normalized; anything that is not two letters is
+ * rejected with an error the model can correct from.
+ *
+ * @param value - Raw `country` input; undefined or empty means every country.
+ * @returns The normalized code, or undefined when no filter was requested.
+ */
+function resolveCountry(value: unknown): string | undefined {
+    if (value === undefined || value === null || value === '') {
+        return undefined;
+    }
+    const country = String(value).trim().toUpperCase();
+    if (!/^[A-Z]{2}$/.test(country)) {
+        throw new Error(
+            `Parameter "country" must be an ISO-3166 alpha-2 code such as "KR" or "US". Got: ${String(value)}`
+        );
+    }
+    return country;
+}
+
+/**
  * Strip the correlation keys from a new-visitor row before it reaches the model.
  *
  * `userId` is the cookieless tid and `subnetHash` the salted source hash; either
@@ -367,6 +391,18 @@ function buildTools(
         description: 'End of an explicit custom window, ISO-8601. Must be supplied together with startDate.'
     };
 
+    /**
+     * Shared `country` schema property for the date-range reads that support
+     * narrowing to one country, so each states the same per-row semantics.
+     */
+    const countryProperty = {
+        type: 'string' as const,
+        description:
+            'Optional ISO-3166 alpha-2 country code (e.g. "KR"). Restricts every figure to activity recorded from ' +
+            'that country. Applied per event row, so a visitor seen from two countries counts in each. ' +
+            'Omit for all countries.'
+    };
+
     /** Shared `excludeBots` schema property. */
     const excludeBotsProperty = {
         type: 'boolean' as const,
@@ -389,6 +425,8 @@ function buildTools(
             'strip shows) and use `engagement` only for pagesPerSession, which the trend does not carry. ' +
             'Windows: pass `period` for a preset, or `startDate`+`endDate` (ISO-8601) for a custom range; always report ' +
             'the returned windowStart/windowEnd. ' +
+            'Pass `country` to narrow every figure, including the previous-window comparison, to one country; ' +
+            'liveVisitors is then null because the live counter is not country-scoped. ' +
             'Does NOT include registered-account totals — call ' + AI_TOOL_NAMES.audience + ' for those. ' +
             'Wide windows (more than ' + MAX_BUCKETS + ' buckets, e.g. 90d) return the visitors/pageviews series WITHOUT ' +
             'its per-bucket top paths, countries, and sources, and set seriesDetailTrimmed:true — call ' +
@@ -405,11 +443,12 @@ function buildTools(
         capability: { sideEffect: 'read', reversible: true, sensitivity: 'internal', surfacesUntrustedContent: true },
         inputSchema: {
             type: 'object',
-            description: 'Window and bot-filter options for the overview',
+            description: 'Window, country, and bot-filter options for the overview',
             properties: {
                 period: periodProperty,
                 startDate: startDateProperty,
                 endDate: endDateProperty,
+                country: countryProperty,
                 excludeBots: excludeBotsProperty
             },
             required: [],
@@ -418,17 +457,23 @@ function buildTools(
         inputExamples: [
             {},
             { period: '7d' },
+            { period: '30d', country: 'KR' },
             { period: '90d', excludeBots: false },
             { startDate: '2026-03-01T00:00:00Z', endDate: '2026-03-15T23:59:59Z' }
         ],
         handler: async (input) => {
             const { since, until, period, windowStart, windowEnd } = resolveRange(input);
+            const country = resolveCountry(input.country);
             const excludeBots = resolveExcludeBots(input.excludeBots);
+            const range = { since, until, country };
 
+            // The live counter reads the last five minutes with no window or
+            // country scope, so it is skipped rather than reported beside
+            // country-scoped figures it does not match.
             const [trend, liveVisitors, engagement] = await Promise.all([
-                trafficService.getOverviewTrend({ since, until }, excludeBots),
-                trafficService.getLiveVisitorCount(excludeBots),
-                trafficService.getEngagementMetrics({ since, until }, excludeBots)
+                trafficService.getOverviewTrend(range, excludeBots),
+                country ? Promise.resolve(null) : trafficService.getLiveVisitorCount(excludeBots),
+                trafficService.getEngagementMetrics(range, excludeBots)
             ]);
 
             // Bound the series against the model's context window. Capping the
@@ -457,6 +502,7 @@ function buildTools(
                 period,
                 windowStart,
                 windowEnd,
+                country: country ?? null,
                 excludeBots,
                 clickhouseEnabled: trafficService.isEnabled(),
                 trend: boundedTrend,
@@ -488,6 +534,8 @@ function buildTools(
             'A consequence worth stating when asked about paid traffic: "sources" classifies by referrer domain only, ' +
             'so an auto-tagged ad click reads as "organic" there — "campaigns" is the dimension that sees paid tagging. ' +
             '"geo" and "devices" are plain in-window visitor counts, not attributed at all. ' +
+            'Pass `country` to break down one country\'s traffic, e.g. dimension "sources" with country "KR" answers ' +
+            '"where do Korean visitors come from". `country` cannot be combined with dimension "geo". ' +
             'Windows: pass `period` for a preset, or `startDate`+`endDate` (ISO-8601) for a custom range. ' +
             'Returns at most ' + MAX_BUCKETS + ' buckets. This tool is read-only.',
         // Capability: read / internal / surfaces-untrusted — the referrer
@@ -501,7 +549,7 @@ function buildTools(
         capability: { sideEffect: 'read', reversible: true, sensitivity: 'internal', surfacesUntrustedContent: true },
         inputSchema: {
             type: 'object',
-            description: 'Dimension, window, and bot-filter options for the breakdown',
+            description: 'Dimension, window, country, and bot-filter options for the breakdown',
             properties: {
                 dimension: {
                     type: 'string',
@@ -523,6 +571,7 @@ function buildTools(
                         'Only valid with dimension "sources". Drills into one referrer domain, returning its landing ' +
                         'pages and campaigns instead of the all-sources list.'
                 },
+                country: countryProperty,
                 excludeBots: excludeBotsProperty
             },
             required: ['dimension'],
@@ -532,6 +581,7 @@ function buildTools(
             { dimension: 'sources' },
             { dimension: 'landing-pages', period: '7d', limit: 10 },
             { dimension: 'sources', source: 'google.com', period: '30d' },
+            { dimension: 'sources', country: 'KR', period: '30d' },
             { dimension: 'geo', startDate: '2026-03-01T00:00:00Z', endDate: '2026-03-15T23:59:59Z', excludeBots: false }
         ],
         handler: async (input) => {
@@ -541,13 +591,23 @@ function buildTools(
             }
 
             const { since, until, period, windowStart, windowEnd } = resolveRange(input);
+            const country = resolveCountry(input.country);
             const limit = resolveLimit(input.limit);
             const excludeBots = resolveExcludeBots(input.excludeBots);
-            const range = { since, until };
+            const range = { since, until, country };
 
             const source = typeof input.source === 'string' && input.source.length > 0 ? input.source : undefined;
             if (source !== undefined && dimension !== 'sources') {
                 throw new Error('Parameter "source" is only valid with dimension "sources".');
+            }
+            // A geo breakdown narrowed to one country is a single row that
+            // repeats the filter back, so the request is almost certainly a
+            // mistake the model should rephrase rather than narrate.
+            if (country !== undefined && dimension === 'geo') {
+                throw new Error(
+                    'Parameter "country" cannot be combined with dimension "geo". Use another dimension to break ' +
+                    'that country down, or omit "country" to compare countries.'
+                );
             }
 
             let buckets: unknown;
@@ -577,6 +637,7 @@ function buildTools(
                 period,
                 windowStart,
                 windowEnd,
+                country: country ?? null,
                 limit,
                 excludeBots,
                 clickhouseEnabled: trafficService.isEnabled(),
@@ -602,6 +663,8 @@ function buildTools(
             'unavailable — null means unknown, never zero, so do not report a null rate as 0% adoption. ' +
             'COST: at 30d and 90d the funnel fans out one account-directory read per active account, so it is materially ' +
             'heavier than the other tools — call it once per question, not per follow-up. ' +
+            'Pass `country` to narrow the funnel, retention, and daily series to one country; the `accounts` block ' +
+            'stays site-wide and is never country-scoped. ' +
             'Windows: pass `period` for a preset, or `startDate`+`endDate` (ISO-8601) for a custom range. ' +
             'Returns clickhouseEnabled:false with empty figures when the analytics store is down. This tool is read-only.',
         // Capability: read / internal — cohort counts and site-wide account
@@ -611,11 +674,12 @@ function buildTools(
         capability: { sideEffect: 'read', reversible: true, sensitivity: 'internal' },
         inputSchema: {
             type: 'object',
-            description: 'Window and bot-filter options for the behaviour read',
+            description: 'Window, country, and bot-filter options for the behaviour read',
             properties: {
                 period: periodProperty,
                 startDate: startDateProperty,
                 endDate: endDateProperty,
+                country: countryProperty,
                 excludeBots: excludeBotsProperty
             },
             required: [],
@@ -624,12 +688,14 @@ function buildTools(
         inputExamples: [
             {},
             { period: '30d' },
+            { period: '7d', country: 'KR' },
             { startDate: '2026-03-01T00:00:00Z', endDate: '2026-03-15T23:59:59Z' }
         ],
         handler: async (input) => {
             const { since, until, period, windowStart, windowEnd } = resolveRange(input);
+            const country = resolveCountry(input.country);
             const excludeBots = resolveExcludeBots(input.excludeBots);
-            const range = { since, until };
+            const range = { since, until, country };
 
             // Resolved at call time, not registration time: identity registers
             // 'accounts' and 'wallets' during its own run() and the tool must
@@ -651,6 +717,7 @@ function buildTools(
                 period,
                 windowStart,
                 windowEnd,
+                country: country ?? null,
                 excludeBots,
                 clickhouseEnabled: trafficService.isEnabled(),
                 funnel,
@@ -687,6 +754,8 @@ function buildTools(
             'are too coarse and you need the individual arrival shapes. ' +
             'Rows are DELIBERATELY anonymous: the visitor cookie id and the network-source hash are stripped before they ' +
             'reach you, so rows CANNOT be correlated into per-person trails and you must not claim they identify anyone. ' +
+            'Pass `country` to list only new visitors with in-window activity from that country; each row still ' +
+            'reports the visitor\'s true first touch, so its `country` field can differ when they first arrived elsewhere. ' +
             'Windows: pass `period` for a preset, or `startDate`+`endDate` (ISO-8601) for a custom range; report the ' +
             'returned `windowStart`/`windowEnd`, not the window you asked for. ' +
             'Returns at most ' + MAX_BUCKETS + ' rows plus the unpaginated total. This tool is read-only.',
@@ -697,11 +766,12 @@ function buildTools(
         capability: { sideEffect: 'read', reversible: true, sensitivity: 'internal', surfacesUntrustedContent: true },
         inputSchema: {
             type: 'object',
-            description: 'Window, paging, and bot-filter options for the new-visitor read',
+            description: 'Window, country, paging, and bot-filter options for the new-visitor read',
             properties: {
                 period: periodProperty,
                 startDate: startDateProperty,
                 endDate: endDateProperty,
+                country: countryProperty,
                 limit: {
                     type: 'integer',
                     minimum: 1,
@@ -716,19 +786,22 @@ function buildTools(
         inputExamples: [
             {},
             { period: '7d', limit: 25 },
+            { period: '30d', country: 'KR', limit: 50 },
             { startDate: '2026-03-01T00:00:00Z', endDate: '2026-03-15T23:59:59Z' }
         ],
         handler: async (input) => {
             const { since, until, period, windowStart, windowEnd } = resolveRange(input);
+            const country = resolveCountry(input.country);
             const limit = resolveLimit(input.limit);
             const excludeBots = resolveExcludeBots(input.excludeBots);
 
-            const page = await trafficService.getNewVisitors({ since, until }, limit, 0, excludeBots);
+            const page = await trafficService.getNewVisitors({ since, until, country }, limit, 0, excludeBots);
 
             return {
                 period,
                 windowStart,
                 windowEnd,
+                country: country ?? null,
                 limit,
                 excludeBots,
                 clickhouseEnabled: trafficService.isEnabled(),

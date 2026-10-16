@@ -52,8 +52,10 @@ export interface ISitemapEntry {
  * Context handed to handlers of the `http.sitemapEntries` hook.
  *
  * Deliberately minimal — a contributor reads its own storage, not request
- * state. `generatedAt` is provided as a sensible fallback `lastModified` for an
- * entry whose resource carries no timestamp of its own.
+ * state. Do not use `generatedAt` as a fallback `lastModified`: an entry whose
+ * resource carries no timestamp of its own should omit the field. Google uses
+ * `<lastmod>` only while it is consistently accurate, so a generation-time
+ * stamp on undated entries undermines the real dates elsewhere in the sitemap.
  */
 export interface ISitemapHookContext {
     /** ISO 8601 timestamp of this sitemap generation pass. */

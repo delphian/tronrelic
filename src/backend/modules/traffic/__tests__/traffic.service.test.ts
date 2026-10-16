@@ -1049,6 +1049,81 @@ describe('TrafficService', () => {
         });
     });
 
+    describe('country scope', () => {
+        const COUNTRY_FILTER = 'country = {country:String}';
+
+        /**
+         * Wire a mock ClickHouse that records every query with its params, so
+         * a test can check that each one carries the country filter.
+         *
+         * @returns The captured queries in issue order.
+         */
+        function captureQueries(): { queries: Array<{ sql: string; params: Record<string, unknown> }> } {
+            const captured = { queries: [] as Array<{ sql: string; params: Record<string, unknown> }> };
+            const ch = createMockClickHouse();
+            ch.query = async <T>(sql: string, params?: unknown): Promise<T[]> => {
+                captured.queries.push({ sql, params: (params ?? {}) as Record<string, unknown> });
+                return [] as T[];
+            };
+            TrafficService.setDependencies(ch, createMockLogger());
+            return captured;
+        }
+
+        it('binds the country as a parameter on a row-level read', async () => {
+            // Bound rather than spliced, so the value cannot alter the SQL.
+            const captured = captureQueries();
+
+            await TrafficService.getInstance().getDeviceBreakdown(
+                { since: new Date('2026-06-01T00:00:00.000Z'), country: 'KR' }
+            );
+
+            expect(captured.queries[0]!.sql).toContain(COUNTRY_FILTER);
+            expect(captured.queries[0]!.params.country).toBe('KR');
+        });
+
+        it('adds no filter when no country is requested', async () => {
+            const captured = captureQueries();
+
+            await TrafficService.getInstance().getDeviceBreakdown({ since: new Date('2026-06-01T00:00:00.000Z') });
+
+            expect(captured.queries[0]!.sql).not.toContain(COUNTRY_FILTER);
+            expect(captured.queries[0]!.params.country).toBeUndefined();
+        });
+
+        it('narrows the derived-session scan behind the source read', async () => {
+            // Sources are built from derived sessions, which assemble their own
+            // window in sessionRangeParams rather than reusing rangeParams'
+            // clause, so the filter has to be applied there separately.
+            const captured = captureQueries();
+
+            await TrafficService.getInstance().getTrafficSources(
+                { since: new Date('2026-06-01T00:00:00.000Z'), country: 'KR' }
+            );
+
+            const sourceQuery = captured.queries.find(query => query.sql.includes('AS source'));
+            expect(sourceQuery?.sql).toContain(COUNTRY_FILTER);
+            expect(sourceQuery?.params.country).toBe('KR');
+        });
+
+        it('scopes the previous comparison window of the overview too', async () => {
+            // A country-scoped current window compared against an all-country
+            // previous window would report a collapse that never happened.
+            const captured = captureQueries();
+
+            await TrafficService.getInstance().getOverviewTrend({
+                since: new Date('2026-06-01T00:00:00.000Z'),
+                until: new Date('2026-06-08T00:00:00.000Z'),
+                country: 'KR'
+            });
+
+            expect(captured.queries.length).toBeGreaterThan(0);
+            for (const query of captured.queries) {
+                expect(query.sql).toContain(COUNTRY_FILTER);
+                expect(query.params.country).toBe('KR');
+            }
+        });
+    });
+
     describe('isIgnored()', () => {
         const IGNORED = ['665f00000000000000000001'];
 
