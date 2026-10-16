@@ -96,21 +96,27 @@
 }
 
 /*
- * Translation table column shares. Without them the translation column took
- * the whole width and the key and English columns collapsed to a few
- * characters, because identifiers may break between any two letters. The
- * actions column keeps its own shrink width.
+ * Translation table column shares. Without them the text column took the
+ * whole width and the key column collapsed to a few characters, because
+ * identifiers may break between any two letters. The actions column keeps
+ * its own shrink width.
  */
 .col_key {
     width: 24%;
 }
 
-.col_source {
-    width: 34%;
+.col_text {
+    width: 76%;
 }
 
-.col_translation {
-    width: 42%;
+/* The English source above its editor in one cell. Stacking them gives each
+   the column's full width, so long descriptions wrap onto fewer lines than
+   they did in two side-by-side columns. */
+.text_stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-xs);
+    min-width: 0;
 }
 
 /* Rows hold text of different heights, so every cell starts at the top
@@ -119,7 +125,7 @@
     vertical-align: top;
 }
 
-/* The English source, at the editor's text size so the two read side by side. */
+/* The English source, at the editor's text size so the two read as a pair. */
 .source_text {
     font-size: var(--font-size-body-sm);
     line-height: var(--line-height-normal);

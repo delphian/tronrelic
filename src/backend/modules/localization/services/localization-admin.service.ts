@@ -38,6 +38,12 @@ const MAX_NAME_LENGTH = 80;
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 200;
 
+/**
+ * Most translations one batch save accepts. Matches the largest listing page,
+ * since the Translations tab saves at most the page it shows.
+ */
+const MAX_BATCH_SAVE = MAX_PAGE_SIZE;
+
 /** How many conflicting paths an enable refusal names before summarising. */
 const MAX_CONFLICTS_REPORTED = 5;
 
@@ -101,6 +107,14 @@ export interface ITranslationInput {
     language: string;
     /** Translated text. */
     text: string;
+}
+
+/** Fields for saving several translations into one language at once. */
+export interface ITranslationBatchInput {
+    /** Target language shared by every entry. */
+    language: string;
+    /** The keys to save and the text for each. */
+    translations: Array<{ namespace: string; key: string; text: string }>;
 }
 
 /** Fields for adding a key by hand. */
@@ -474,6 +488,58 @@ export class LocalizationAdminService {
      */
     async saveTranslation(input: ITranslationInput, actor: string): Promise<ITranslation> {
         const language = await this.requireExistingLanguage(input.language);
+        const document = await this.buildTranslationDocument(input, language, actor);
+        await this.writeTranslation(document);
+
+        this.onChange();
+        this.logger.info({ namespace: document.namespace, key: document.key, language, actor }, 'Translation saved');
+        return this.toTranslation(document);
+    }
+
+    /**
+     * Save several translations into one language in a single request.
+     *
+     * The Translations tab can hold a page of unsaved editors at once, often
+     * filled by one AI suggestion run. Saving them one request at a time would
+     * spend a slot of the admin rate limit per row and run out partway through
+     * a page. Every entry is validated before anything is written, so a bad
+     * entry rejects the whole batch instead of leaving half of it saved.
+     *
+     * @param input - The shared language and the entries to save.
+     * @param actor - Who made the change, recorded on each translation and in the log.
+     * @returns The stored translations, in the order they were given.
+     */
+    async saveTranslations(input: ITranslationBatchInput, actor: string): Promise<ITranslation[]> {
+        const language = await this.requireExistingLanguage(input.language);
+        const entries = Array.isArray(input.translations) ? input.translations : [];
+        if (entries.length === 0 || entries.length > MAX_BATCH_SAVE) {
+            throw new LocalizationValidationError(`Invalid batch: send 1–${MAX_BATCH_SAVE} translations`);
+        }
+
+        const documents: ITranslationDocument[] = [];
+        for (const entry of entries) {
+            documents.push(await this.buildTranslationDocument({ ...entry, language }, language, actor));
+        }
+        for (const document of documents) {
+            await this.writeTranslation(document);
+        }
+
+        this.onChange();
+        this.logger.info({ language, count: documents.length, keys: documents.map(document => joinKeyId(document.namespace, document.key)), actor }, 'Translations saved');
+        return documents.map(document => this.toTranslation(document));
+    }
+
+    /**
+     * Check one translation against its key and the text rules, and build the
+     * document to store. Shared by the single and batch saves so both apply
+     * exactly the same rules.
+     *
+     * @param input - Key and text supplied by the caller.
+     * @param language - The language code, already confirmed to exist.
+     * @param actor - Who made the change, recorded on the document.
+     * @returns The document ready to upsert.
+     */
+    private async buildTranslationDocument(input: ITranslationInput, language: string, actor: string): Promise<ITranslationDocument> {
         // Both values go straight into a query filter, so reject anything that
         // is not a plain string first. A JSON body can carry an object such as
         // `{ "$ne": "" }`, which Mongo would read as an operator and match a
@@ -486,10 +552,10 @@ export class LocalizationAdminService {
         }
         const text = typeof input.text === 'string' ? input.text : '';
         if (text.trim() === '' || text.length > MAX_TRANSLATION_LENGTH) {
-            throw new LocalizationValidationError(`Invalid translation: text must be 1–${MAX_TRANSLATION_LENGTH} characters`);
+            throw new LocalizationValidationError(`Invalid translation for "${namespace}:${keyName}": text must be 1–${MAX_TRANSLATION_LENGTH} characters`);
         }
 
-        const document: ITranslationDocument = {
+        return {
             namespace: key.namespace,
             key: key.key,
             language,
@@ -497,15 +563,20 @@ export class LocalizationAdminService {
             updatedAt: new Date(),
             updatedBy: actor
         };
+    }
+
+    /**
+     * Store one translation, replacing any earlier text for the same key and
+     * language.
+     *
+     * @param document - The validated document from `buildTranslationDocument`.
+     */
+    private async writeTranslation(document: ITranslationDocument): Promise<void> {
         await this.translations().updateOne(
-            { namespace: document.namespace, key: document.key, language },
+            { namespace: document.namespace, key: document.key, language: document.language },
             { $set: document },
             { upsert: true }
         );
-
-        this.onChange();
-        this.logger.info({ namespace: document.namespace, key: document.key, language, actor }, 'Translation saved');
-        return this.toTranslation(document);
     }
 
     /**

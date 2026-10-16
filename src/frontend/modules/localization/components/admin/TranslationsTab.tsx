@@ -13,11 +13,14 @@
  * Saving a translation affects visitors only on routes published in that
  * language, so translating ahead of publishing is the intended workflow.
  *
- * Each row is laid out to be about as tall as its English text: the status
- * sits under the key, the editor grows with the text it holds, and the row's
- * buttons sit in their own column instead of a bar under every editor.
- * Ctrl+Enter (Cmd+Enter on a Mac) saves the row being edited, so a translator
- * can work down the page from the keyboard.
+ * Each row puts the English text and its editor in one column, the English on
+ * top and the editor under it, so both get most of the table's width instead
+ * of sharing it side by side. The status sits under the key, the editor grows
+ * with the text it holds, and the row's buttons sit in their own column
+ * instead of a bar under every editor. Ctrl+Enter (Cmd+Enter on a Mac) saves
+ * the row being edited, so a translator can work down the page from the
+ * keyboard. When more than one editor holds unsaved text, Save all in the
+ * panel header saves them together in one request.
  *
  * The Suggest buttons ask the AI model chosen on the Settings tab for a
  * translation and place it in the editor, one row at a time or every missing
@@ -62,6 +65,7 @@ import {
     listRoutes,
     listTranslations,
     saveTranslation,
+    saveTranslations,
     suggestTranslations
 } from '../../api/client';
 import { InlineAddForm } from './InlineAddForm';
@@ -75,10 +79,10 @@ const PAGE_SIZE = 50;
 const ADD_FORM_ID = 'localization-add-key';
 
 /**
- * Characters an editor line holds at the translation column's usual width.
+ * Characters an editor line holds at the text column's usual width.
  * Only an estimate for sizing the editor; the text still wraps on its own.
  */
-const EDITOR_CHARS_PER_LINE = 60;
+const EDITOR_CHARS_PER_LINE = 100;
 
 /** Tallest an editor starts out; longer text scrolls inside it. */
 const EDITOR_MAX_ROWS = 4;
@@ -136,6 +140,19 @@ function editorRows(source: string, draft: string): number {
 }
 
 /**
+ * Decide whether a row's editor holds text worth saving. The row's Save
+ * button, Ctrl+Enter, and Save all use the same test, so Save all never sends
+ * a row whose own button would be disabled.
+ *
+ * @param row - A listing row.
+ * @param draft - The text currently in the row's editor.
+ * @returns True when the text is non-empty and differs from what is stored.
+ */
+function hasSavableDraft(row: ITranslationRow, draft: string): boolean {
+    return draft.trim() !== '' && draft !== (row.translation?.text ?? '');
+}
+
+/**
  * The Translations tab: filters, the paged key table with inline editing, and
  * the add-key form.
  *
@@ -158,6 +175,9 @@ export function TranslationsTab({ initialRoute }: ITranslationsTabProps) {
     const [loading, setLoading] = useState(true);
     const [drafts, setDrafts] = useState<Record<string, string>>({});
     const [busyId, setBusyId] = useState<string | null>(null);
+    // True while Save all runs. Every editor is locked meanwhile, so text typed
+    // during the request cannot be dropped along with the drafts it saved.
+    const [savingAll, setSavingAll] = useState(false);
     const [newKey, setNewKey] = useState({ namespace: 'core', key: '', source: '' });
     const [adding, setAdding] = useState(false);
     const [creating, setCreating] = useState(false);
@@ -318,6 +338,37 @@ export function TranslationsTab({ initialRoute }: ITranslationsTabProps) {
     }, [drafts, dropDraft, language, loadRows, notify]);
 
     /**
+     * Save every row on the page whose editor holds unsaved text, in one
+     * request. The backend checks every entry before writing any, so a failure
+     * leaves all the drafts in place for the administrator to fix and retry.
+     *
+     * @param pendingRows - The rows with savable drafts, as listed now.
+     */
+    const handleSaveAll = useCallback(async (pendingRows: ITranslationRow[]) => {
+        setSavingAll(true);
+        try {
+            await saveTranslations({
+                language,
+                translations: pendingRows.map(row => ({
+                    namespace: row.namespace,
+                    key: row.key,
+                    text: drafts[rowId(row)] ?? ''
+                }))
+            });
+            notify('success', `Saved ${pendingRows.length} translations`);
+            const savedIds = new Set(pendingRows.map(rowId));
+            setDrafts(current => Object.fromEntries(
+                Object.entries(current).filter(([id]) => !savedIds.has(id))
+            ));
+            await loadRows({ keepDrafts: true });
+        } catch (error) {
+            notify('danger', 'Could not save translations', error);
+        } finally {
+            setSavingAll(false);
+        }
+    }, [drafts, language, loadRows, notify]);
+
+    /**
      * Save the row from the keyboard. Ctrl+Enter, or Cmd+Enter on a Mac, saves
      * the row whose editor has focus when it holds a change worth saving; a
      * plain Enter still adds a line break, since translations may need one.
@@ -462,6 +513,10 @@ export function TranslationsTab({ initialRoute }: ITranslationsTabProps) {
     const pageSuggestionRows = rows
         .filter(row => needsSuggestion(row, drafts[rowId(row)]))
         .slice(0, MAX_TRANSLATION_SUGGESTION_KEYS);
+    const pendingSaveRows = rows.filter(row => {
+        const draft = drafts[rowId(row)];
+        return draft !== undefined && hasSavableDraft(row, draft);
+    });
     // The pager renders nothing for a single page. Only then is the table the
     // last thing in the panel and free to run to its edges.
     const paged = total > PAGE_SIZE;
@@ -472,6 +527,19 @@ export function TranslationsTab({ initialRoute }: ITranslationsTabProps) {
             meta={languages.length > 0 ? `${total} keys match. Ctrl+Enter saves a row.` : undefined}
             actions={(
                 <>
+                    {pendingSaveRows.length > 1 && (
+                        <Button
+                            size="sm"
+                            variant="primary"
+                            loading={savingAll}
+                            disabled={savingAll || busyId !== null || suggesting !== null}
+                            onClick={() => void handleSaveAll(pendingSaveRows)}
+                            icon={<Save size={16} />}
+                            title="Save every row on this page with unsaved text"
+                        >
+                            Save all ({pendingSaveRows.length})
+                        </Button>
+                    )}
                     <Button
                         size="sm"
                         variant="secondary"
@@ -488,7 +556,7 @@ export function TranslationsTab({ initialRoute }: ITranslationsTabProps) {
                             size="sm"
                             variant="secondary"
                             loading={suggesting === 'page'}
-                            disabled={suggesting !== null || loading || pageSuggestionRows.length === 0}
+                            disabled={suggesting !== null || savingAll || loading || pageSuggestionRows.length === 0}
                             onClick={() => void runSuggestion('page', pageSuggestionRows)}
                             icon={<Sparkles size={16} />}
                             title="Fill every missing and stale row on this page that has no unsaved text"
@@ -612,8 +680,7 @@ export function TranslationsTab({ initialRoute }: ITranslationsTabProps) {
                             <Thead>
                                 <Tr>
                                     <Th className={styles.col_key}>Key</Th>
-                                    <Th className={styles.col_source}>English</Th>
-                                    <Th className={styles.col_translation}>{languageName}</Th>
+                                    <Th className={styles.col_text}>English / {languageName}</Th>
                                     <Th width="shrink"><span className={styles.visually_hidden}>Actions</span></Th>
                                 </Tr>
                             </Thead>
@@ -622,8 +689,8 @@ export function TranslationsTab({ initialRoute }: ITranslationsTabProps) {
                                     const id = rowId(row);
                                     const saved = row.translation?.text ?? '';
                                     const draft = drafts[id] ?? saved;
-                                    const busy = busyId === id;
-                                    const canSave = !busy && draft.trim() !== '' && draft !== saved;
+                                    const busy = busyId === id || savingAll;
+                                    const canSave = !busy && hasSavableDraft(row, draft);
                                     return (
                                         <Tr key={id}>
                                             <Td data-label="Key">
@@ -638,28 +705,28 @@ export function TranslationsTab({ initialRoute }: ITranslationsTabProps) {
                                                     </span>
                                                 </div>
                                             </Td>
-                                            <Td data-label="English">
-                                                <div className={styles.source_text}>{row.source}</div>
-                                            </Td>
-                                            <Td data-label={languageName}>
-                                                <Textarea
-                                                    size="sm"
-                                                    rows={editorRows(row.source, draft)}
-                                                    value={draft}
-                                                    disabled={busy}
-                                                    lang={language}
-                                                    dir={currentLanguage?.direction}
-                                                    onChange={event => setDrafts(current => ({ ...current, [id]: event.target.value }))}
-                                                    onKeyDown={event => handleEditorKeyDown(event, row, canSave)}
-                                                    aria-label={`${languageName} text for ${row.key}`}
-                                                />
+                                            <Td data-label={`English / ${languageName}`}>
+                                                <div className={styles.text_stack}>
+                                                    <div className={styles.source_text} lang="en">{row.source}</div>
+                                                    <Textarea
+                                                        size="sm"
+                                                        rows={editorRows(row.source, draft)}
+                                                        value={draft}
+                                                        disabled={busy}
+                                                        lang={language}
+                                                        dir={currentLanguage?.direction}
+                                                        onChange={event => setDrafts(current => ({ ...current, [id]: event.target.value }))}
+                                                        onKeyDown={event => handleEditorKeyDown(event, row, canSave)}
+                                                        aria-label={`${languageName} text for ${row.key}`}
+                                                    />
+                                                </div>
                                             </Td>
                                             <Td data-label="Actions">
                                                 <div className={styles.actions}>
                                                     <Button
                                                         size="xs"
                                                         variant="primary"
-                                                        loading={busy}
+                                                        loading={busyId === id}
                                                         disabled={!canSave}
                                                         onClick={() => void handleSave(row)}
                                                         icon={<Save size={14} />}

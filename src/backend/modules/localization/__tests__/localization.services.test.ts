@@ -204,6 +204,36 @@ describe('LocalizationAdminService', () => {
         expect(onChange).toHaveBeenCalledTimes(1);
     });
 
+    it('saves a batch of translations together, or none of them when one entry is invalid', async () => {
+        seedLanguage(db, 'zh', true);
+        seedKey(db, 'title', new Date());
+        seedKey(db, 'subtitle', new Date());
+
+        await expect(admin.saveTranslations({
+            language: 'zh',
+            translations: [
+                { namespace: 'core', key: 'title', text: '标题' },
+                { namespace: 'core', key: 'missing', text: 'x' }
+            ]
+        }, 'admin')).rejects.toBeInstanceOf(LocalizationNotFoundError);
+        expect(db.getCollectionData(TRANSLATIONS_COLLECTION)).toHaveLength(0);
+
+        await expect(admin.saveTranslations({ language: 'zh', translations: [] }, 'admin'))
+            .rejects.toBeInstanceOf(LocalizationValidationError);
+        expect(onChange).not.toHaveBeenCalled();
+
+        const saved = await admin.saveTranslations({
+            language: 'zh',
+            translations: [
+                { namespace: 'core', key: 'title', text: '标题' },
+                { namespace: 'core', key: 'subtitle', text: '副标题' }
+            ]
+        }, 'admin');
+        expect(saved.map(translation => translation.key)).toEqual(['title', 'subtitle']);
+        expect(db.getCollectionData(TRANSLATIONS_COLLECTION)).toHaveLength(2);
+        expect(onChange).toHaveBeenCalledTimes(1);
+    });
+
     it('reports each key as missing, stale, or translated for a language', async () => {
         seedLanguage(db, 'zh', true);
         const earlier = new Date('2026-01-01T00:00:00Z');
