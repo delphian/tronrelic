@@ -22,18 +22,6 @@ interface ILanguageParams {
 }
 
 /**
- * Turn a language code into the `og:locale` form, which uses an underscore.
- *
- * English keeps the `en_US` the site has always declared.
- *
- * @param language - BCP 47 code, e.g. `pt-BR`.
- * @returns The Open Graph locale, e.g. `pt_BR`.
- */
-function toOpenGraphLocale(language: string): string {
-  return language === DEFAULT_LANGUAGE ? 'en_US' : language.replace(/-/g, '_');
-}
-
-/**
  * Head fragment shape served by the backend `ssr.headFragments` hook.
  *
  * Mirrors `IHeadFragment` from `@/types` without importing the backend
@@ -126,10 +114,6 @@ export async function generateMetadata({ params }: { params: Promise<ILanguagePa
     applicationName: SITE_NAME,
     manifest: '/images/favicon/manifest.json',
     category: 'Technology',
-    openGraph: {
-      ...rootMetadata.openGraph,
-      locale: toOpenGraphLocale(language)
-    },
     twitter: {
       ...rootMetadata.twitter,
       creator: '@TronRelic'

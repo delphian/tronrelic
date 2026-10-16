@@ -66,6 +66,41 @@ export function localizedAbsoluteUrl(siteUrl: string, path: string = '/', langua
   return url;
 }
 
+/**
+ * Open Graph locales for language codes that carry no region of their own.
+ *
+ * `og:locale` must be `language_TERRITORY`, and consumers such as Facebook
+ * recognise only codes in that form, so a bare `zh` would be ignored and the
+ * page read as the default `en_US`. Codes listed here are the ones the site
+ * can serve without a region; `zh` is Simplified Chinese as used in China.
+ */
+const OPEN_GRAPH_LOCALES: Record<string, string> = {
+  en: 'en_US',
+  zh: 'zh_CN',
+  'zh-hans': 'zh_CN',
+  'zh-hant': 'zh_TW'
+};
+
+/**
+ * Turn a page language into its `og:locale` value.
+ *
+ * Link-preview tools read `og:locale` to tell which language a shared page is
+ * in. A code that already names a region, such as `pt-BR`, converts directly
+ * to `pt_BR`. A code with no region is looked up in the table above. Anything
+ * else returns `undefined` so the tag is left out, because a value outside the
+ * `language_TERRITORY` form is ignored and would only suggest the page is English.
+ *
+ * @param language - Language the page is rendered in, as a BCP 47 code.
+ * @returns The `og:locale` value, or `undefined` when none can be formed.
+ */
+export function toOpenGraphLocale(language: string): string | undefined {
+  const parts = language.split('-');
+  const region = parts.length === 2 && /^[A-Za-z]{2}$/.test(parts[1]) ? parts[1] : undefined;
+  return region
+    ? `${parts[0].toLowerCase()}_${region.toUpperCase()}`
+    : OPEN_GRAPH_LOCALES[language.toLowerCase()];
+}
+
 interface BuildMetadataOptions {
   /** Public site URL from runtime config (e.g., "https://tronrelic.com") */
   siteUrl: string;
@@ -127,6 +162,7 @@ export function buildMetadata(options: BuildMetadataOptions): Metadata {
   // absolute pass through, gaining a prefix only when they are on this site.
   const url = localizedAbsoluteUrl(siteUrl, canonical ?? path, language);
   const ogImage = image ?? `${siteUrl}${DEFAULT_OG_IMAGE_PATH}`;
+  const ogLocale = toOpenGraphLocale(language);
 
   // Dimensions are emitted only when they are known to match the bytes: the
   // platform default is a fixed asset we measure at build time, and a caller
@@ -150,6 +186,7 @@ export function buildMetadata(options: BuildMetadataOptions): Metadata {
       type,
       url,
       siteName: SITE_NAME,
+      ...(ogLocale ? { locale: ogLocale } : {}),
       images: [
         {
           url: ogImage,
