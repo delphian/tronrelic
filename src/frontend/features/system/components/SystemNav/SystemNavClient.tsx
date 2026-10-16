@@ -9,8 +9,8 @@
  * menu items to be dynamically managed through the IMenuService without requiring
  * client-side fetching or hardcoded navigation arrays.
  *
- * Responsive behavior uses Priority+ navigation pattern with IntersectionObserver
- * to automatically show as many items as fit, moving overflow items to a "More"
+ * Responsive behavior uses the Priority+ navigation pattern (PriorityNav) to
+ * automatically show as many items as fit, moving overflow items to a "More"
  * dropdown based on the namespace configuration from the backend.
  *
  * @example
@@ -87,9 +87,9 @@ interface ISystemNavClientProps {
  * Active state uses startsWith matching to highlight tabs for nested routes
  * (e.g., /system/pages/edit shows "Pages" tab as active).
  *
- * Responsive behavior uses Priority+ navigation with IntersectionObserver to
- * automatically detect overflow and move items to a "More" dropdown based on
- * available space and the namespace configuration.
+ * Responsive behavior uses Priority+ navigation (PriorityNav) to measure
+ * overflow and move items to a "More" dropdown based on available space and
+ * the namespace configuration.
  *
  * @param props - Component props
  * @param props.items - Menu items from server
@@ -148,8 +148,8 @@ export function SystemNavClient({ items }: ISystemNavClientProps) {
     /**
      * Wraps navigation in PriorityNav if overflow handling is enabled.
      *
-     * Uses IntersectionObserver to detect which items fit and moves overflow
-     * to a "More" dropdown automatically.
+     * PriorityNav measures which items fit and moves overflow to a "More"
+     * dropdown automatically.
      */
     const overflowEnabled = menuConfig.overflow?.enabled ?? true;
 

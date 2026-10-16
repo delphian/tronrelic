@@ -1,9 +1,9 @@
 /**
  * PriorityNav Component Styles
  *
- * Styles for Priority+ navigation pattern with IntersectionObserver-based
- * overflow detection. Items that don't fit are visually hidden and moved
- * to the "More" dropdown.
+ * Styles for the Priority+ navigation pattern. The component measures which
+ * items fit and moves the rest into the "More" dropdown; items that don't fit
+ * are visually hidden here.
  */
 
 @use '../../../../app/breakpoints' as *;
@@ -11,11 +11,11 @@
 /**
  * Root container.
  *
- * Uses flexbox for horizontal layout with overflow-x: clip to enable
- * IntersectionObserver to detect clipped items while allowing vertical
- * content to render without clipping. The horizontal clip is critical -
- * it constrains the container to its parent's width and allows
- * IntersectionObserver to detect when items extend beyond the boundary.
+ * Uses flexbox for horizontal layout. `min-width: 0` and `overflow-x: clip`
+ * keep the container at its parent's width no matter how wide the items are,
+ * which is what the overflow measurement depends on: if the container grew to
+ * fit its content, every item would always appear to fit. Vertical overflow
+ * stays visible so focus rings and tab borders are not cut off.
  */
 .container {
     display: flex;
@@ -30,8 +30,8 @@
 /**
  * Primary navigation area.
  *
- * Contains all menu items. Horizontal overflow is clipped so IntersectionObserver
- * can detect items that extend beyond the boundary; vertical overflow is visible
+ * Contains all menu items. Horizontal overflow is clipped so an item never
+ * spills past the edge while the layout settles; vertical overflow is visible
  * to prevent clipping of tab borders and button content.
  *
  * This area stretches to the full width, so it is the only layer where the
@@ -55,8 +55,8 @@
 /**
  * Individual navigation item wrapper.
  *
- * Each item is wrapped to enable IntersectionObserver tracking.
- * Items are always in the DOM but visually hidden when in overflow.
+ * Each item is wrapped so the component can find and measure it. Items are
+ * always in the DOM but visually hidden when in overflow.
  */
 .item {
     flex-shrink: 0;
@@ -66,13 +66,41 @@
 /**
  * Hidden state for overflow items.
  *
- * Uses visibility instead of display:none so IntersectionObserver
- * can still track the element position.
+ * `position: absolute` takes the item out of the row, so the visible items
+ * can use the freed space (to center, or to stretch if the host CSS asks them
+ * to). `visibility: hidden` keeps it from being seen or focused. The item stays
+ * in the DOM so the measuring pass below can still read its width.
  */
 .item_hidden {
     visibility: hidden;
     position: absolute;
     pointer-events: none;
+}
+
+/**
+ * Measuring state, applied only for the moment the component reads widths.
+ *
+ * The component adds this class, reads every width, and removes it again in
+ * one synchronous step, so the browser never paints it. While it is applied,
+ * every item, hidden or not, sits in the row at its narrowest unclipped width
+ * (`min-content`, which with `white-space: nowrap` is the full label), and the
+ * "More" button is shown so its width can be read too.
+ *
+ * The declarations are `!important` because host CSS, such as custom CSS on a
+ * widget placement, can stretch or shrink the items. Measurement has to mean
+ * the same thing whatever the host does, or which items fit would depend on it.
+ * Because the state is never painted, this cannot override a theme.
+ */
+.measuring .item {
+    position: static !important;
+    flex: none !important;
+    width: min-content !important;
+    min-width: 0 !important;
+    max-width: none !important;
+}
+
+.measuring .more_button {
+    display: inline-flex !important;
 }
 
 /**
