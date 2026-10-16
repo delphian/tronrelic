@@ -3,9 +3,10 @@ import type { ISitemapEntry } from '@/types';
 import { getServerConfig } from '../lib/serverConfig';
 import { getServerSideApiUrlWithPath } from '../lib/api-url';
 import { absoluteUrl } from '../lib/seo';
-import type { ILocalizationPublicConfig } from '@/types';
-import { DEFAULT_LANGUAGE, findPublishedLanguages, localizePath } from '@/types';
 import { fetchLocalizationConfig } from '../modules/localization/server';
+// Imported from the file rather than the module barrel, which also exports
+// components with stylesheets.
+import { withLanguageVersions } from '../modules/localization/lib/withLanguageVersions';
 
 /** Response shape from GET /api/sitemap-data. */
 interface SitemapData {
@@ -63,36 +64,6 @@ async function fetchDynamicData(): Promise<SitemapData> {
 }
 
 /**
- * List the language versions of a path for its sitemap entry.
- *
- * A sitemap entry with `alternates.languages` is the sitemap form of the
- * `hreflang` links the page itself carries, and it is how search engines find
- * the translated addresses. A path that exists only in English gets no
- * alternates, so its entry is exactly what it was before localization existed.
- *
- * @param config - The public localization snapshot.
- * @param siteUrl - Public site origin.
- * @param path - Unprefixed path of the entry.
- * @returns The `alternates` field to spread into the entry, or an empty object.
- */
-function languageAlternates(
-  config: ILocalizationPublicConfig,
-  siteUrl: string,
-  path: string
-): Pick<MetadataRoute.Sitemap[number], 'alternates'> {
-  const published = findPublishedLanguages(config, path);
-  let alternates: Pick<MetadataRoute.Sitemap[number], 'alternates'> = {};
-  if (published.length > 0) {
-    const languages: Record<string, string> = { [DEFAULT_LANGUAGE]: absoluteUrl(siteUrl, path) };
-    for (const code of published) {
-      languages[code] = absoluteUrl(siteUrl, localizePath(path, code));
-    }
-    alternates = { alternates: { languages } };
-  }
-  return alternates;
-}
-
-/**
  * Generates sitemap with both static and dynamic entries.
  *
  * Combines hardcoded core routes with dynamically discovered content:
@@ -116,40 +87,44 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Track all paths to prevent duplicates across static, CMS, and plugin sources
   const seenPaths = new Set<string>(staticPathSet);
 
-  // Static routes (always present)
-  const entries: MetadataRoute.Sitemap = staticRoutes.map(route => ({
-    url: absoluteUrl(siteUrl, route.path),
-    lastModified: now,
-    changeFrequency: route.changeFrequency,
-    priority: route.priority,
-    ...languageAlternates(localizationConfig, siteUrl, route.path)
-  }));
+  // Static routes (always present). Each translated route also gets one entry
+  // per published language; see withLanguageVersions.
+  const entries: MetadataRoute.Sitemap = staticRoutes.flatMap(route => withLanguageVersions(
+    localizationConfig,
+    siteUrl,
+    route.path,
+    {
+      url: absoluteUrl(siteUrl, route.path),
+      lastModified: now,
+      changeFrequency: route.changeFrequency,
+      priority: route.priority
+    },
+    seenPaths
+  ));
 
   // CMS pages (published articles, documentation, etc.)
   for (const page of dynamicData.pages) {
     if (!seenPaths.has(page.slug)) {
-      entries.push({
+      seenPaths.add(page.slug);
+      entries.push(...withLanguageVersions(localizationConfig, siteUrl, page.slug, {
         url: absoluteUrl(siteUrl, page.slug),
         lastModified: page.updatedAt,
         changeFrequency: 'weekly',
-        priority: 0.7,
-        ...languageAlternates(localizationConfig, siteUrl, page.slug)
-      });
-      seenPaths.add(page.slug);
+        priority: 0.7
+      }, seenPaths));
     }
   }
 
   // Plugin pages (active frontend plugins)
   for (const path of dynamicData.pluginPages) {
     if (!seenPaths.has(path)) {
-      entries.push({
+      seenPaths.add(path);
+      entries.push(...withLanguageVersions(localizationConfig, siteUrl, path, {
         url: absoluteUrl(siteUrl, path),
         lastModified: now,
         changeFrequency: 'daily',
-        priority: 0.7,
-        ...languageAlternates(localizationConfig, siteUrl, path)
-      });
-      seenPaths.add(path);
+        priority: 0.7
+      }, seenPaths));
     }
   }
 
@@ -166,14 +141,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     if (!entry || !entry.path || seenPaths.has(entry.path)) {
       continue;
     }
-    entries.push({
+    seenPaths.add(entry.path);
+    entries.push(...withLanguageVersions(localizationConfig, siteUrl, entry.path, {
       url: absoluteUrl(siteUrl, entry.path),
       lastModified: entry.lastModified ?? now,
       changeFrequency: entry.changeFrequency ?? 'weekly',
-      priority: entry.priority !== undefined ? Math.max(0, Math.min(1, entry.priority)) : 0.7,
-      ...languageAlternates(localizationConfig, siteUrl, entry.path)
-    });
-    seenPaths.add(entry.path);
+      priority: entry.priority !== undefined ? Math.max(0, Math.min(1, entry.priority)) : 0.7
+    }, seenPaths));
   }
 
   return entries;

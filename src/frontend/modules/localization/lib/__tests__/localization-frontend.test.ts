@@ -1,7 +1,8 @@
 /**
  * @fileoverview Tests for the frontend localization helpers whose output
  * search engines and visitors see directly: the translator, the hreflang list,
- * and the localized canonical URL.
+ * the localized canonical URL, the og:locale value, and the per-language
+ * sitemap entries.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -14,7 +15,8 @@ vi.mock('../observationReporter', () => ({
 import { reportTranslationObservation } from '../observationReporter';
 import { createTranslator } from '../createTranslator';
 import { buildLanguageAlternates } from '../buildLanguageAlternates';
-import { localizedAbsoluteUrl } from '../../../../lib/seo';
+import { localizedAbsoluteUrl, toOpenGraphLocale } from '../../../../lib/seo';
+import { withLanguageVersions } from '../withLanguageVersions';
 import type { ILocalizationSeed } from '../../types';
 
 const SITE = 'https://tronrelic.com';
@@ -91,5 +93,52 @@ describe('localizedAbsoluteUrl', () => {
     it('leaves other hosts alone', () => {
         expect(localizedAbsoluteUrl(SITE, 'https://example.com/x', 'zh')).toBe('https://example.com/x');
         expect(localizedAbsoluteUrl(SITE, 'https://tronrelic.com.evil.test/x', 'zh')).toBe('https://tronrelic.com.evil.test/x');
+    });
+});
+
+describe('toOpenGraphLocale', () => {
+    it('keeps en_US for English and maps bare Chinese to its region', () => {
+        expect(toOpenGraphLocale('en')).toBe('en_US');
+        expect(toOpenGraphLocale('zh')).toBe('zh_CN');
+        expect(toOpenGraphLocale('zh-Hant')).toBe('zh_TW');
+    });
+
+    it('converts a code that names its region', () => {
+        expect(toOpenGraphLocale('pt-BR')).toBe('pt_BR');
+        expect(toOpenGraphLocale('zh-tw')).toBe('zh_TW');
+    });
+
+    it('omits the tag rather than emit a value outside language_TERRITORY', () => {
+        expect(toOpenGraphLocale('ja')).toBeUndefined();
+    });
+});
+
+describe('withLanguageVersions', () => {
+    /** The English entry every case starts from. */
+    const entry = { url: `${SITE}/markets`, priority: 0.9 };
+
+    it('gives each language version its own entry carrying the full alternate set', () => {
+        const entries = withLanguageVersions(CONFIG, SITE, '/markets', entry, new Set(['/markets']));
+        const languages = { en: `${SITE}/markets`, zh: `${SITE}/zh/markets`, 'x-default': `${SITE}/markets` };
+        expect(entries).toEqual([
+            { ...entry, alternates: { languages } },
+            { ...entry, url: `${SITE}/zh/markets`, alternates: { languages } }
+        ]);
+    });
+
+    it('returns an English-only entry unchanged', () => {
+        expect(withLanguageVersions(CONFIG, SITE, '/about', entry, new Set())).toEqual([entry]);
+    });
+
+    it('skips a translated address another source already listed', () => {
+        const seen = new Set(['/markets', '/zh/markets']);
+        const entries = withLanguageVersions(CONFIG, SITE, '/markets', entry, seen);
+        expect(entries.map(item => item.url)).toEqual([`${SITE}/markets`]);
+    });
+
+    it('records the translated address so a later source cannot repeat it', () => {
+        const seen = new Set(['/markets']);
+        withLanguageVersions(CONFIG, SITE, '/markets', entry, seen);
+        expect(seen.has('/zh/markets')).toBe(true);
     });
 });

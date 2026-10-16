@@ -6,7 +6,7 @@ import { Page } from '../../../../components/layout';
 import { PluginPageWithZones } from '../../../../components/PluginPageWithZones';
 import { CategoryLandingPage } from '../../../../modules/menu';
 import { getServerSideApiUrlWithPath } from '../../../../lib/api-url';
-import { buildMetadata, buildArticleStructuredData, localizedAbsoluteUrl } from '../../../../lib/seo';
+import { buildMetadata, buildArticleStructuredData, localizedAbsoluteUrl, toOpenGraphLocale } from '../../../../lib/seo';
 import { localizePath } from '@/types';
 import { resolveMetadataLanguage } from '../../../../modules/localization/server';
 import { getServerConfig } from '../../../../lib/serverConfig';
@@ -223,6 +223,9 @@ export async function generateMetadata({ params }: { params: Promise<IPageParams
                 openGraph: {
                     title: page.title,
                     description: page.description,
+                    // Set here as well as in buildMetadata: this openGraph
+                    // replaces the layout's, so without it the tag is lost.
+                    locale: toOpenGraphLocale(language),
                     images: page.ogImage ? [page.ogImage] : undefined
                 },
                 twitter: {
@@ -322,8 +325,12 @@ export async function generateMetadata({ params }: { params: Promise<IPageParams
             // present, so we don't synthesize an empty default OG block for
             // pages that explicitly opted out by omitting all SEO fields.
             if (seo.title || seo.description || seo.ogImage || seo.ogType) {
+                const ogLocale = toOpenGraphLocale(language);
                 metadata.openGraph = {
                     type: seo.ogType ?? 'website',
+                    // Mirror buildMetadata: this openGraph replaces the
+                    // layout's, so the locale has to be set here too.
+                    ...(ogLocale ? { locale: ogLocale } : {}),
                     ...(seo.title ? { title: seo.title } : {}),
                     ...(seo.description ? { description: seo.description } : {}),
                     ...(canonicalUrl ? { url: canonicalUrl } : {}),
