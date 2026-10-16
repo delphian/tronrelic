@@ -6,11 +6,18 @@
  * in MenuNavClient then folds items that do not fit into "More". The minimum
  * width keeps room for the collapsed hamburger button, which is an icon
  * button at the large size.
+ *
+ * The operator's alignment is handed down to PriorityNav as
+ * `--priority-nav-justify` rather than applied here. The nav inside this
+ * wrapper stretches to the full width, so a `justify-content` on the wrapper
+ * has no free space to distribute and the choice would have no effect. The
+ * `safe` keyword makes an overflowing row fall back to the start edge, so the
+ * trailing items are the ones moved into "More".
  */
 
 .menu {
+    --priority-nav-justify: safe var(--menu-widget-justify, flex-end);
     display: flex;
-    justify-content: var(--menu-widget-justify, flex-end);
     width: 100%;
     min-width: var(--icon-button-size-lg);
 }

@@ -33,10 +33,18 @@
  * Contains all menu items. Horizontal overflow is clipped so IntersectionObserver
  * can detect items that extend beyond the boundary; vertical overflow is visible
  * to prevent clipping of tab borders and button content.
+ *
+ * This area stretches to the full width, so it is the only layer where the
+ * items can be aligned. A host such as the menu widget sets
+ * `--priority-nav-justify` on an ancestor to align them. The host should use a
+ * `safe` value such as `safe center`, so that when the items overflow they fall
+ * back to the start edge and the trailing items are the ones clipped into
+ * "More", rather than items spilling off both edges.
  */
 .primary {
     display: flex;
     align-items: center;
+    justify-content: var(--priority-nav-justify, flex-start);
     gap: var(--gap-xs);
     flex: 1;
     min-width: 0;
