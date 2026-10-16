@@ -1,5 +1,6 @@
 import type { ComponentType } from 'react';
 import type { IFrontendPluginContext } from './IFrontendPluginContext.js';
+import type { ITranslator } from '../localization/ITranslator.js';
 
 /**
  * Server-side context provided to a plugin page's `serverDataFetcher` during SSR.
@@ -33,6 +34,21 @@ export interface IServerDataContext {
      * supply it) still typecheck; current core always populates it.
      */
     path?: string;
+
+    /**
+     * Translator for the language the request was routed to, with keys scoped
+     * to the plugin that owns the page.
+     *
+     * A fetcher runs outside any React component, so it cannot call
+     * `context.useTranslation()`. Without this, a page published in another
+     * language would still send search engines an English title, description,
+     * and structured data. `translator.t` uses the same namespace and catalog
+     * as the hook, so a key the page body renders and the same key used here
+     * return the same text, and keys used only here are still reported to
+     * `/system/localization`. `translator.language` is the routed language,
+     * such as `en` or `zh`.
+     */
+    translator: ITranslator;
 }
 
 /**
@@ -205,6 +221,11 @@ export interface IPageConfig {
      * Throw on transient failures instead — thrown errors are caught and the
      * route falls back to the static fields, so a brief backend outage never
      * serves 404s to crawlers.
+     *
+     * The static `title`, `description`, and `structuredData` are not
+     * translated. A page that is published in other languages returns those
+     * fields from here, built with `ctx.translator.t`, so a translated page
+     * describes itself in its own language.
      */
     serverMetadataFetcher?: (ctx: IServerDataContext) => Promise<IPluginPageMetadata | null>;
 

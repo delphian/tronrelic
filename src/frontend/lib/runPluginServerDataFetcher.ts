@@ -8,9 +8,8 @@
  */
 
 import 'server-only';
-import type { IPageConfig } from '@/types';
-import { getServerSideApiUrlWithPath } from './api-url';
-import { getServerConfig } from './serverConfig';
+import type { IRegisteredPageConfig } from './IRegisteredPageConfig';
+import { buildServerDataContext } from './buildServerDataContext';
 
 /**
  * Run the page's serverDataFetcher, if it declares one, and return its result
@@ -35,19 +34,20 @@ import { getServerConfig } from './serverConfig';
  *
  * @param pageConfig Resolved plugin page whose fetcher should run.
  * @param slug Requested URL path, passed to the fetcher as `ctx.path` so a wildcard page knows which resource was asked for.
+ * @param lang The request's `[lang]` route parameter, which sets the language of the fetcher's `ctx.translator`.
  * @returns The fetched data, or undefined when the page declares no fetcher or the fetch failed.
  */
-export async function runPluginServerDataFetcher(pageConfig: IPageConfig, slug: string): Promise<unknown> {
+export async function runPluginServerDataFetcher(
+    pageConfig: IRegisteredPageConfig,
+    slug: string,
+    lang: string
+): Promise<unknown> {
     let initialData: unknown = undefined;
 
     if (pageConfig.serverDataFetcher) {
         try {
-            const { siteUrl } = await getServerConfig();
-            const raw = await pageConfig.serverDataFetcher({
-                apiBaseUrl: getServerSideApiUrlWithPath(),
-                siteUrl,
-                path: slug
-            });
+            const ctx = await buildServerDataContext(pageConfig.pluginId, slug, lang);
+            const raw = await pageConfig.serverDataFetcher(ctx);
             initialData = raw === undefined ? undefined : JSON.parse(JSON.stringify(raw));
         } catch (error) {
             console.error(`[plugin-page] serverDataFetcher failed for ${slug}:`, error);

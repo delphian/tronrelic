@@ -29,8 +29,8 @@
 
 import 'server-only';
 import { cache } from 'react';
-import type { IPageConfig } from '@/types';
 import { frontendPlugins } from '../components/plugins/plugins.generated';
+import type { IRegisteredPageConfig } from './IRegisteredPageConfig';
 import { getServerSideApiUrlWithPath } from './api-url';
 import {
     isWildcardPath,
@@ -46,7 +46,7 @@ import {
  */
 interface IResolvedPluginPage {
     pluginId: string;
-    config: IPageConfig;
+    config: IRegisteredPageConfig;
 }
 
 /**
@@ -215,7 +215,7 @@ const fetchEnabledPluginIds = cache(async (): Promise<Set<string>> => {
  */
 export async function getEnabledPluginPageConfig(
     slug: string
-): Promise<IPageConfig | null> {
+): Promise<IRegisteredPageConfig | null> {
     const index = getPermanentIndex();
     const resolved = matchPluginPagePath(index.exact, index.wildcards, slug);
     if (!resolved) {
