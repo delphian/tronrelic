@@ -24,7 +24,7 @@
 
 import { useCallback, useState } from 'react';
 import type { MenuNodeSerialized } from '@/shared';
-import { Page, PageHeader } from '../../../../../../components/layout';
+import { Page, PageHeader, Stack } from '../../../../../../components/layout';
 import { MenuNavClient } from '../../../../../../components/layout/MenuNav/MenuNavClient';
 import { CollectionBrowser } from '../../../../../../modules/database';
 import { SchedulerMonitor, type SchedulerJob } from '../../../../../../modules/scheduler';
@@ -151,12 +151,14 @@ export function AddressTagsAdminClient({ submenuTree, submenuGeneratedAt, initia
 
     return (
         <Page>
-            <PageHeader
-                title="Address Tags"
-                subtitle="Create, rename, and remove text tags attached to TRON wallet addresses, and manage the machine sources that assert sanctions and freeze tags."
-            />
+            {/* One Stack holds the header, tab row, and active panel so they
+                sit one stack gap apart instead of the page's wider gap. */}
+            <Stack gap="md">
+                <PageHeader
+                    title="Address Tags"
+                    subtitle="Create, rename, and remove text tags attached to TRON wallet addresses, and manage the machine sources that assert sanctions and freeze tags."
+                />
 
-            <div className={styles.submenu}>
                 <MenuNavClient
                     namespace={SUBMENU_NAMESPACE}
                     items={submenuTree}
@@ -165,9 +167,7 @@ export function AddressTagsAdminClient({ submenuTree, submenuGeneratedAt, initia
                     activeUrl={`/system/address-tags?tab=${activeTab}`}
                     onItemSelect={handleTabSelect}
                 />
-            </div>
 
-            <div className={styles.content}>
                 {activeTab === 'tags' && <AddressTagsManager />}
                 {activeTab === 'sources' && <SourcesTab />}
                 {activeTab === 'settings' && <SettingsTab />}
@@ -194,7 +194,7 @@ export function AddressTagsAdminClient({ submenuTree, submenuGeneratedAt, initia
                         title="Address Tags Collections"
                     />
                 )}
-            </div>
+            </Stack>
         </Page>
     );
 }

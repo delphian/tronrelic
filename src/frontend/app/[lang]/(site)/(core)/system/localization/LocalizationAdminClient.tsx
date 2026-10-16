@@ -17,12 +17,11 @@
 
 import { useCallback, useState } from 'react';
 import type { MenuNodeSerialized } from '@/shared';
-import { Page, PageHeader } from '../../../../../../components/layout';
+import { Page, PageHeader, Stack } from '../../../../../../components/layout';
 import { MenuNavClient } from '../../../../../../components/layout/MenuNav/MenuNavClient';
 import { CollectionBrowser } from '../../../../../../modules/database';
 import { SystemLogsMonitor } from '../../../../../../modules/logs';
 import { LanguagesTab, RoutesTab, TranslationsTab } from '../../../../../../modules/localization';
-import styles from './page.module.scss';
 
 /** The page's tab ids; the `?tab=` value carried by each submenu node. */
 type TabId = 'languages' | 'routes' | 'translations' | 'database' | 'logs';
@@ -109,12 +108,14 @@ export function LocalizationAdminClient({ submenuTree, submenuGeneratedAt, initi
 
     return (
         <Page>
-            <PageHeader
-                title="Localization"
-                subtitle="Languages, the routes published in each, and the translations visitors see. English is the default and needs no setup."
-            />
+            {/* One Stack holds the header, the tab row, and the active panel so
+                they sit one stack gap apart instead of the page's wider gap. */}
+            <Stack gap="md">
+                <PageHeader
+                    title="Localization"
+                    subtitle="Languages, the routes published in each, and the translations visitors see. English is the default and needs no setup."
+                />
 
-            <div className={styles.submenu}>
                 <MenuNavClient
                     namespace={SUBMENU_NAMESPACE}
                     items={submenuTree}
@@ -123,9 +124,7 @@ export function LocalizationAdminClient({ submenuTree, submenuGeneratedAt, initi
                     activeUrl={`/system/localization?tab=${activeTab}`}
                     onItemSelect={handleTabSelect}
                 />
-            </div>
 
-            <div className={styles.content}>
                 {activeTab === 'languages' && <LanguagesTab />}
                 {activeTab === 'routes' && <RoutesTab onShowKeys={handleShowKeys} />}
                 {activeTab === 'translations' && <TranslationsTab initialRoute={routeFilter} />}
@@ -133,7 +132,7 @@ export function LocalizationAdminClient({ submenuTree, submenuGeneratedAt, initi
                     <CollectionBrowser prefix={COLLECTION_PREFIX} title="Localization Collections" />
                 )}
                 {activeTab === 'logs' && <SystemLogsMonitor service={LOG_SERVICE} />}
-            </div>
+            </Stack>
         </Page>
     );
 }
