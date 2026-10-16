@@ -39,10 +39,18 @@
  *
  * Restores flex-wrap behavior so items wrap naturally instead of being
  * clipped. Used when overflow handling is disabled or during loading.
+ *
+ * This nav grows to the full width of its host (`flex: 1` above), so when
+ * PriorityNav is not rendered it is the only layer where the items can be
+ * aligned. It reads the same `--priority-nav-justify` a host sets for the
+ * PriorityNav path, so the menu widget's left, center, or right choice works
+ * in both configurations. The `flex-start` default keeps every other caller,
+ * such as the admin submenu rows, left-aligned.
  */
 .nav--wrap {
     flex-wrap: wrap;
     overflow: visible;
+    justify-content: var(--priority-nav-justify, flex-start);
 }
 
 /**
