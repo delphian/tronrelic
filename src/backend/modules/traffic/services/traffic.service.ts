@@ -174,7 +174,162 @@ export interface ITrafficEvent {
      * back to classifying the referrer domain. Additive column (016).
      */
     channel: TrafficChannel | null;
+
+    /**
+     * Autonomous system number of the network the request came from, as
+     * Cloudflare reported it in the {@link ASN_HEADER} header, else `null`.
+     * Names the operator behind a source (a cloud provider, a carrier) that
+     * the address hashes alone cannot, since the address is never stored.
+     * Trusted only alongside `CF-Ray`, like `cf_ipcountry`. Additive column
+     * (migration 019).
+     */
+    asn: number | null;
 }
+
+/**
+ * Request header carrying the client's autonomous system number.
+ *
+ * Cloudflare does not send the ASN by default, so a zone Transform Rule sets
+ * this header to `to_string(ip.src.asnum)` on every request. The name cannot
+ * start with `cf-` or `x-cf-`, because Cloudflare refuses rules that write
+ * headers under its own prefixes. Exported so the README, the migration, and
+ * the tests all refer to one spelling.
+ */
+export const ASN_HEADER = 'x-client-asn';
+
+/**
+ * Narrowing filters for the per-event diagnostic reads
+ * ({@link TrafficService.listTrafficEvents} and
+ * {@link TrafficService.getTrafficEventSources}).
+ *
+ * Every field is optional and they combine with AND. The caller validates
+ * the values; the service binds each one as a query parameter, so none is
+ * ever spliced into the SQL.
+ */
+export interface ITrafficEventFilter {
+    /** Keep only `bootstrap` (first touch) or only `page` (beacon) rows. */
+    eventType?: 'bootstrap' | 'page';
+    /** Keep rows from one client, by its 16-hex-character `ip_hash`. */
+    ipHash?: string;
+    /** Keep rows from one /24 (IPv4) or /48 (IPv6) network, by `subnet_hash`. */
+    subnetHash?: string;
+    /** Keep rows from one autonomous system number. */
+    asn?: number;
+    /**
+     * Keep rows of one bot class. `'unclassified'` matches rows whose
+     * `bot_class` is NULL, the same folding the Crawlers tab uses.
+     */
+    botClass?: string;
+    /** Keep rows from one browser, by its `tronrelic_tid` (`candidate_uid`). */
+    tid?: string;
+    /** Keep rows whose path starts with this prefix, such as `/blog/`. */
+    pathPrefix?: string;
+}
+
+/**
+ * One `traffic_events` row as the per-event read returns it.
+ *
+ * Reshaped from the stored row rather than passed through: the account id is
+ * reduced to `loggedIn`, the raw `CF-Ray` value to `viaCloudflare`, and the
+ * stored referrer URLs to a domain, so the read carries what a diagnosis
+ * needs without the identifiers that would tie a row to a named account.
+ */
+export interface ITrafficEventListRow {
+    /** ISO-8601 UTC time the event was recorded. */
+    timestamp: string;
+    /** `bootstrap` (server-recorded first touch) or `page` (client beacon). */
+    eventType: string;
+    /** The page path the event recorded. */
+    path: string;
+    /** The browser's `tronrelic_tid`, the key a Visitor is counted by. */
+    tid: string;
+    /** Whether the row carried a Better Auth account id. The id itself is not returned. */
+    loggedIn: boolean;
+    /** Stored country: Cloudflare's when present, else the local GeoIP lookup. */
+    country: string | null;
+    /** Cloudflare's country on its own, so a disagreement with `country` is visible. */
+    cfIpCountry: string | null;
+    /** Whether the request carried `CF-Ray`, meaning it reached the origin through Cloudflare. */
+    viaCloudflare: boolean;
+    /** Autonomous system number of the source network, or `null` when not recorded. */
+    asn: number | null;
+    /** Bot class from the classifier, or `null` on rows that predate it. */
+    botClass: string | null;
+    /** Device category derived from the User-Agent. */
+    device: string;
+    /** User-Agent, trimmed to 240 characters. Client-supplied text. */
+    userAgent: string | null;
+    /**
+     * Domain the visitor arrived from. Read from `original_referrer` on
+     * `page` rows, because their `referer` is the beacon's own page, and from
+     * `referer` on every other row.
+     */
+    referrerDomain: string | null;
+    /** Acquisition channel. Stored on `bootstrap` rows only, `null` elsewhere. */
+    channel: string | null;
+    /** Keyed hash of the client address. */
+    ipHash: string | null;
+    /** Keyed hash of the client's /24 or /48 network. */
+    subnetHash: string | null;
+}
+
+/** A page of {@link ITrafficEventListRow} rows, newest or oldest first. */
+export interface ITrafficEventListPage {
+    rows: ITrafficEventListRow[];
+    /** True when at least one more row matched beyond this page. */
+    hasMore: boolean;
+}
+
+/** Which column {@link TrafficService.getTrafficEventSources} groups events by. */
+export type TrafficSourceKey = 'ip' | 'subnet' | 'asn';
+
+/**
+ * One source's activity over a window, as
+ * {@link TrafficService.getTrafficEventSources} returns it.
+ *
+ * Shaped to answer "is this one machine, one network, or one operator, and
+ * what did it do" in a single row: the counts show volume and spread, and the
+ * sampled arrays show where it claimed to be and how it was classified.
+ */
+export interface ITrafficEventSource {
+    /** The grouped value: an `ip_hash`, a `subnet_hash`, or an ASN as a decimal string. */
+    key: string;
+    /** Every event row from the source. */
+    events: number;
+    /** Of those, `page` rows, meaning a client that ran JavaScript. */
+    pageEvents: number;
+    /** Distinct `tronrelic_tid` values, meaning distinct browsers. */
+    distinctTids: number;
+    /** Distinct `ip_hash` values inside the source. */
+    distinctIps: number;
+    /** Distinct `subnet_hash` values inside the source. */
+    distinctSubnets: number;
+    /** Distinct paths requested. */
+    distinctPaths: number;
+    /** ISO-8601 UTC time of the first event in the window. */
+    firstSeen: string;
+    /** ISO-8601 UTC time of the last event in the window. */
+    lastSeen: string;
+    /** Up to five distinct stored countries. */
+    countries: string[];
+    /** Up to five distinct ASNs. */
+    asns: number[];
+    /** Up to five distinct bot classes, with NULL shown as `unclassified`. */
+    botClasses: string[];
+    /** The most frequent User-Agent, trimmed to 240 characters, or `null`. */
+    topUserAgent: string | null;
+}
+
+/**
+ * Column each {@link TrafficSourceKey} groups on. A fixed map rather than
+ * caller input, because a column name cannot be a bound parameter and so is
+ * the one part of these queries that is interpolated.
+ */
+const SOURCE_KEY_COLUMNS: Readonly<Record<TrafficSourceKey, string>> = {
+    ip: 'ip_hash',
+    subnet: 'subnet_hash',
+    asn: 'asn'
+};
 
 /**
  * Options for `getEventsForUser`.
@@ -1134,7 +1289,8 @@ export class TrafficService {
                 cf_ipcountry,
                 ip_hash,
                 subnet_hash,
-                channel
+                channel,
+                asn
             FROM ${TABLE_NAME}
             WHERE candidate_uid = {candidateUid:UUID}
             ${eventFilter}
@@ -1154,6 +1310,313 @@ export class TrafficService {
             this.logger.warn({ error, candidateUid }, 'Failed to read traffic events');
             return [];
         }
+    }
+
+    /**
+     * List individual `traffic_events` rows over a window, filtered and paged.
+     *
+     * The aggregate reads answer "how much" but hide the pattern a diagnosis
+     * needs: two browsers arriving together, or one source walking the newest
+     * posts every few hours, only shows up row by row. This read returns those
+     * rows directly, which previously took an SSH session and hand-written
+     * ClickHouse queries.
+     *
+     * It goes through {@link rangeParams}, so the operator ignore list and the
+     * optional country scope apply exactly as they do on the dashboard. No bot
+     * filter is applied by default, because automated traffic is usually what
+     * the caller is looking for; pass `filter.botClass` to narrow.
+     *
+     * Returns an empty page when ClickHouse is unavailable or the query fails,
+     * including before migration 019 has added the `asn` column.
+     *
+     * @param range - Inclusive window, plus an optional country.
+     * @param filter - Narrowing filters, already validated by the caller.
+     * @param limit - Rows to return; the caller caps it.
+     * @param offset - Rows to skip, for paging past the first page.
+     * @param order - `newest` (the default) or `oldest` first.
+     * @returns The page of rows and whether more matched.
+     */
+    async listTrafficEvents(
+        range: IAnalyticsDateRange,
+        filter: ITrafficEventFilter,
+        limit: number,
+        offset: number,
+        order: 'newest' | 'oldest' = 'newest'
+    ): Promise<ITrafficEventListPage> {
+        let page: ITrafficEventListPage = { rows: [], hasMore: false };
+        const clickhouse = this.clickhouse;
+        if (clickhouse) {
+            page = await this.queryTrafficEventPage(clickhouse, range, filter, limit, offset, order);
+        }
+        return page;
+    }
+
+    /**
+     * Run the query behind {@link listTrafficEvents} and reshape its rows.
+     *
+     * Split out so the public method stays a single-exit guard on ClickHouse
+     * being configured, while this one owns the SQL and the row mapping.
+     *
+     * @param clickhouse - The configured ClickHouse connection.
+     * @param range - Inclusive window, plus an optional country.
+     * @param filter - Narrowing filters, already validated by the caller.
+     * @param limit - Rows to return.
+     * @param offset - Rows to skip.
+     * @param order - `newest` or `oldest` first.
+     * @returns The page, or an empty page when the query fails.
+     */
+    private async queryTrafficEventPage(
+        clickhouse: IClickHouseService,
+        range: IAnalyticsDateRange,
+        filter: ITrafficEventFilter,
+        limit: number,
+        offset: number,
+        order: 'newest' | 'oldest'
+    ): Promise<ITrafficEventListPage> {
+        let page: ITrafficEventListPage = { rows: [], hasMore: false };
+        const { clause, params } = this.rangeParams(range);
+        const filters = this.eventFilterClause(filter);
+        // One extra row tells us whether another page exists without a second
+        // COUNT query over the same scan.
+        const sql = `
+            SELECT
+                timestamp,
+                event_type,
+                path,
+                candidate_uid,
+                user_id IS NOT NULL AS logged_in,
+                country,
+                cf_ipcountry,
+                cf_ray IS NOT NULL AS via_cloudflare,
+                asn,
+                bot_class,
+                device,
+                substring(user_agent, 1, 240) AS user_agent_trimmed,
+                referer,
+                original_referrer,
+                channel,
+                ip_hash,
+                subnet_hash
+            FROM ${TABLE_NAME}
+            WHERE ${clause}${filters.fragment}
+            ORDER BY timestamp ${order === 'oldest' ? 'ASC' : 'DESC'}
+            LIMIT {pageLimit:UInt32} OFFSET {pageOffset:UInt32}
+        `;
+
+        try {
+            const rows = await clickhouse.query<{
+                timestamp: string;
+                event_type: string;
+                path: string;
+                candidate_uid: string;
+                logged_in: number | boolean;
+                country: string | null;
+                cf_ipcountry: string | null;
+                via_cloudflare: number | boolean;
+                asn: number | null;
+                bot_class: string | null;
+                device: string;
+                user_agent_trimmed: string | null;
+                referer: string | null;
+                original_referrer: string | null;
+                channel: string | null;
+                ip_hash: string | null;
+                subnet_hash: string | null;
+            }>(sql, { ...params, ...filters.params, pageLimit: limit + 1, pageOffset: offset });
+
+            page = {
+                rows: rows.slice(0, limit).map(row => ({
+                    timestamp: clickHouseDateToIso(row.timestamp),
+                    eventType: row.event_type,
+                    path: row.path,
+                    tid: row.candidate_uid,
+                    loggedIn: Boolean(Number(row.logged_in)),
+                    country: row.country,
+                    cfIpCountry: row.cf_ipcountry,
+                    viaCloudflare: Boolean(Number(row.via_cloudflare)),
+                    asn: row.asn === null ? null : Number(row.asn),
+                    botClass: row.bot_class,
+                    device: row.device,
+                    userAgent: row.user_agent_trimmed,
+                    referrerDomain: refererDomainFromUrl(
+                        row.event_type === 'page' ? row.original_referrer : row.referer
+                    ),
+                    channel: row.channel,
+                    ipHash: row.ip_hash,
+                    subnetHash: row.subnet_hash
+                })),
+                hasMore: rows.length > limit
+            };
+        } catch (error) {
+            this.logger.warn({ error, filter, limit, offset }, 'Failed to list traffic events');
+        }
+        return page;
+    }
+
+    /**
+     * Group `traffic_events` rows over a window by source: one client
+     * (`ip`), one network (`subnet`), or one network operator (`asn`).
+     *
+     * This is the first question of any automated-traffic diagnosis, "who is
+     * sending the most, and what does it look like", answered without
+     * reading addresses. Each row carries enough spread (distinct browsers,
+     * addresses, networks, paths) and enough sampled detail (countries, ASNs,
+     * bot classes, the commonest User-Agent) to tell a single noisy client
+     * from a fleet. Rows whose grouping column is NULL are left out, since
+     * NULL is not a source.
+     *
+     * Goes through {@link rangeParams} like {@link listTrafficEvents}, so the
+     * ignore list and country scope apply.
+     *
+     * @param range - Inclusive window, plus an optional country.
+     * @param filter - Narrowing filters, already validated by the caller.
+     * @param groupBy - Which source column to group on.
+     * @param limit - Sources to return, busiest first; the caller caps it.
+     * @returns The busiest sources, or `[]` when ClickHouse is unavailable or
+     *          the query fails.
+     */
+    async getTrafficEventSources(
+        range: IAnalyticsDateRange,
+        filter: ITrafficEventFilter,
+        groupBy: TrafficSourceKey,
+        limit: number
+    ): Promise<ITrafficEventSource[]> {
+        let sources: ITrafficEventSource[] = [];
+        const clickhouse = this.clickhouse;
+        if (clickhouse) {
+            sources = await this.queryTrafficEventSources(clickhouse, range, filter, groupBy, limit);
+        }
+        return sources;
+    }
+
+    /**
+     * Run the grouping query behind {@link getTrafficEventSources} and reshape
+     * its rows.
+     *
+     * Split out for the same reason as {@link queryTrafficEventPage}: the
+     * public method is only the guard on ClickHouse being configured.
+     *
+     * @param clickhouse - The configured ClickHouse connection.
+     * @param range - Inclusive window, plus an optional country.
+     * @param filter - Narrowing filters, already validated by the caller.
+     * @param groupBy - Which source column to group on.
+     * @param limit - Sources to return, busiest first.
+     * @returns The busiest sources, or `[]` when the query fails.
+     */
+    private async queryTrafficEventSources(
+        clickhouse: IClickHouseService,
+        range: IAnalyticsDateRange,
+        filter: ITrafficEventFilter,
+        groupBy: TrafficSourceKey,
+        limit: number
+    ): Promise<ITrafficEventSource[]> {
+        let sources: ITrafficEventSource[] = [];
+        const column = SOURCE_KEY_COLUMNS[groupBy];
+        const { clause, params } = this.rangeParams(range);
+        const filters = this.eventFilterClause(filter);
+        const sql = `
+            SELECT
+                toString(${column}) AS key,
+                count() AS events,
+                countIf(event_type = 'page') AS page_events,
+                uniqExact(candidate_uid) AS distinct_tids,
+                uniqExact(ip_hash) AS distinct_ips,
+                uniqExact(subnet_hash) AS distinct_subnets,
+                uniqExact(path) AS distinct_paths,
+                min(timestamp) AS first_seen,
+                max(timestamp) AS last_seen,
+                groupUniqArray(5)(country) AS countries,
+                groupUniqArray(5)(asn) AS asns,
+                groupUniqArray(5)(coalesce(bot_class, 'unclassified')) AS bot_classes,
+                topK(1)(substring(user_agent, 1, 240)) AS top_user_agent
+            FROM ${TABLE_NAME}
+            WHERE ${clause}${filters.fragment} AND ${column} IS NOT NULL
+            GROUP BY key
+            ORDER BY events DESC
+            LIMIT {sourceLimit:UInt32}
+        `;
+
+        try {
+            const rows = await clickhouse.query<{
+                key: string;
+                events: string | number;
+                page_events: string | number;
+                distinct_tids: string | number;
+                distinct_ips: string | number;
+                distinct_subnets: string | number;
+                distinct_paths: string | number;
+                first_seen: string;
+                last_seen: string;
+                countries: string[];
+                asns: Array<string | number>;
+                bot_classes: string[];
+                top_user_agent: Array<string | null>;
+            }>(sql, { ...params, ...filters.params, sourceLimit: limit });
+
+            sources = rows.map(row => ({
+                key: row.key,
+                events: Number(row.events),
+                pageEvents: Number(row.page_events),
+                distinctTids: Number(row.distinct_tids),
+                distinctIps: Number(row.distinct_ips),
+                distinctSubnets: Number(row.distinct_subnets),
+                distinctPaths: Number(row.distinct_paths),
+                firstSeen: clickHouseDateToIso(row.first_seen),
+                lastSeen: clickHouseDateToIso(row.last_seen),
+                countries: row.countries,
+                asns: row.asns.map(Number),
+                botClasses: row.bot_classes,
+                topUserAgent: row.top_user_agent[0] ?? null
+            }));
+        } catch (error) {
+            this.logger.warn({ error, filter, groupBy, limit }, 'Failed to read traffic event sources');
+        }
+        return sources;
+    }
+
+    /**
+     * Build the AND-ed WHERE fragment for an {@link ITrafficEventFilter}.
+     *
+     * Shared by both per-event reads so a filter means the same rows in the
+     * list and in the grouping. Every value is bound as a parameter. The
+     * parameter names carry an `f` prefix so they cannot collide with the
+     * `since`, `until`, and `country` names {@link rangeParams} binds.
+     *
+     * @param filter - Validated filters; absent fields add nothing.
+     * @returns A fragment starting with ` AND` (or empty) and its params.
+     */
+    private eventFilterClause(filter: ITrafficEventFilter): { fragment: string; params: Record<string, unknown> } {
+        let fragment = '';
+        const params: Record<string, unknown> = {};
+        if (filter.eventType) {
+            fragment += ' AND event_type = {fEventType:String}';
+            params.fEventType = filter.eventType;
+        }
+        if (filter.ipHash) {
+            fragment += ' AND ip_hash = {fIpHash:String}';
+            params.fIpHash = filter.ipHash;
+        }
+        if (filter.subnetHash) {
+            fragment += ' AND subnet_hash = {fSubnetHash:String}';
+            params.fSubnetHash = filter.subnetHash;
+        }
+        if (filter.asn !== undefined) {
+            fragment += ' AND asn = {fAsn:UInt32}';
+            params.fAsn = filter.asn;
+        }
+        if (filter.botClass) {
+            fragment += " AND coalesce(bot_class, 'unclassified') = {fBotClass:String}";
+            params.fBotClass = filter.botClass;
+        }
+        if (filter.tid) {
+            fragment += ' AND candidate_uid = {fTid:UUID}';
+            params.fTid = filter.tid;
+        }
+        if (filter.pathPrefix) {
+            fragment += ' AND startsWith(path, {fPathPrefix:String})';
+            params.fPathPrefix = filter.pathPrefix;
+        }
+        return { fragment, params };
     }
 
     /**
@@ -3231,6 +3694,10 @@ export function buildTrafficEvent(
     // consistency (cf columns populate as a set), not a security boundary —
     // the real enforcement is the origin firewall allow-listing Cloudflare.
     const cfIpCountry = cfRay ? normalizeCfCountry(readSingleHeader(headers['cf-ipcountry'])) : null;
+    // The ASN header follows the same rule for the same reason: Cloudflare
+    // overwrites any client-sent value, so it is only meaningful on a hop
+    // Cloudflare attested.
+    const asn = cfRay ? parseAsn(readSingleHeader(headers[ASN_HEADER])) : null;
 
     const utm = inputs.utm ?? {};
     const path = inputs.landingPath ?? (typeof req.path === 'string' ? req.path : '/');
@@ -3292,8 +3759,43 @@ export function buildTrafficEvent(
                 utmSource: utm.source ?? null,
                 clickId: inputs.clickId ?? null
             })
-            : null
+            : null,
+
+        asn
     };
+}
+
+/**
+ * Largest value an autonomous system number can take. ASNs are 32-bit
+ * unsigned integers (RFC 6793), which is also the `UInt32` column's range.
+ */
+const MAX_ASN = 4_294_967_295;
+
+/**
+ * Parse text into a storable autonomous system number.
+ *
+ * Used on the {@link ASN_HEADER} value at ingestion and on the per-event AI
+ * tool's `asn` filter, so both accept exactly the same values. The header is
+ * text on the wire, and a request that bypassed Cloudflare can carry anything
+ * in it, so only a plain decimal integer inside the 32-bit range is accepted.
+ * Zero is rejected too: AS0 is reserved (RFC 7607) and is what a lookup
+ * returns for an address it could not place, so storing it would present
+ * "unknown network" as a real one.
+ *
+ * @param value - Raw text, or undefined when there is none.
+ * @returns The ASN as a number, or `null` for absent, malformed, zero, or
+ *          out-of-range input.
+ */
+export function parseAsn(value: string | undefined): number | null {
+    let asn: number | null = null;
+    const trimmed = value?.trim();
+    if (trimmed && /^\d{1,10}$/.test(trimmed)) {
+        const parsed = Number(trimmed);
+        if (parsed > 0 && parsed <= MAX_ASN) {
+            asn = parsed;
+        }
+    }
+    return asn;
 }
 
 /**

@@ -91,7 +91,13 @@ const FORWARDED_HEADERS = [
     // ranges is authoritative.
     'cf-ray',
     'cf-ipcountry',
-    'cf-connecting-ip'
+    'cf-connecting-ip',
+    // The client's autonomous system number, set by a Cloudflare Transform
+    // Rule because Cloudflare sends no ASN header of its own. Mirror of
+    // `ASN_HEADER` in the traffic module's `traffic.service.ts` (frontend
+    // cannot import backend modules) — keep the two names in sync. Trusted
+    // by the backend only alongside `cf-ray`, like `cf-ipcountry`.
+    'x-client-asn'
 ] as const;
 
 /** UTM keys we accept from the URL. Anything else is dropped. */
