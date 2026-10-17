@@ -2,7 +2,8 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { IClickHouseService, ISystemLogService } from '@/types';
-import { TrafficService, type ITrafficEvent } from '../services/traffic.service.js';
+import type { Request } from 'express';
+import { TrafficService, buildTrafficEvent, parseAsn, ASN_HEADER, type ITrafficEvent } from '../services/traffic.service.js';
 
 /**
  * Minimal logger double — every call is a vi.fn so tests can assert on
@@ -88,7 +89,8 @@ const sampleEvent: ITrafficEvent = {
     cf_ipcountry: null,
     ip_hash: null,
     subnet_hash: null,
-    channel: 'referral'
+    channel: 'referral',
+    asn: null
 };
 
 describe('TrafficService', () => {
@@ -200,6 +202,219 @@ describe('TrafficService', () => {
 
             expect(events).toEqual([]);
             expect(logger.warn).toHaveBeenCalled();
+        });
+    });
+
+    describe('ASN recording', () => {
+        /**
+         * Build the minimal Express request `buildTrafficEvent` reads, so a
+         * test only has to state the headers it cares about.
+         *
+         * @param headers - Request headers, lower-cased as Express delivers them.
+         * @returns A request stub carrying those headers.
+         */
+        function requestWith(headers: Record<string, string>): Request {
+            return { headers, ip: '203.0.113.7', path: '/' } as unknown as Request;
+        }
+
+        it('stores the ASN from the Cloudflare header when CF-Ray attests the hop', () => {
+            const event = buildTrafficEvent('page', sampleEvent.candidate_uid, requestWith({
+                'cf-ray': '8f1a2b3c4d5e6f70-SIN',
+                [ASN_HEADER]: '139341'
+            }));
+            expect(event.asn).toBe(139341);
+        });
+
+        it('ignores the header on a request that did not come through Cloudflare', () => {
+            // Without CF-Ray the header is whatever the client chose to send,
+            // the same reason cf_ipcountry is dropped in that case.
+            const event = buildTrafficEvent('page', sampleEvent.candidate_uid, requestWith({
+                [ASN_HEADER]: '139341'
+            }));
+            expect(event.asn).toBeNull();
+        });
+
+        it('stores null when the Transform Rule is not yet in place', () => {
+            const event = buildTrafficEvent('bootstrap', sampleEvent.candidate_uid, requestWith({
+                'cf-ray': '8f1a2b3c4d5e6f70-SIN'
+            }));
+            expect(event.asn).toBeNull();
+        });
+
+        it('accepts only a positive 32-bit decimal integer', () => {
+            expect(parseAsn('13335')).toBe(13335);
+            expect(parseAsn(' 4294967295 ')).toBe(4294967295);
+            // AS0 is reserved and means "could not be placed", not a network.
+            expect(parseAsn('0')).toBeNull();
+            expect(parseAsn('4294967296')).toBeNull();
+            expect(parseAsn('AS13335')).toBeNull();
+            expect(parseAsn('1e5')).toBeNull();
+            expect(parseAsn('-5')).toBeNull();
+            expect(parseAsn(undefined)).toBeNull();
+        });
+    });
+
+    describe('per-event reads', () => {
+        /**
+         * Wire a mock ClickHouse that records each query and answers with the
+         * staged rows, so a test can check both the bound filters and the
+         * reshaping of what comes back.
+         *
+         * @param rows - Rows every query returns.
+         * @returns The captured queries in issue order.
+         */
+        function captureWith(rows: unknown[]): Array<{ sql: string; params: Record<string, unknown> }> {
+            const queries: Array<{ sql: string; params: Record<string, unknown> }> = [];
+            const ch = createMockClickHouse();
+            ch.query = async <T>(sql: string, params?: unknown): Promise<T[]> => {
+                queries.push({ sql, params: (params ?? {}) as Record<string, unknown> });
+                return rows as T[];
+            };
+            TrafficService.setDependencies(ch, createMockLogger());
+            return queries;
+        }
+
+        const storedRow = {
+            timestamp: '2026-10-17 05:38:56.123',
+            event_type: 'page',
+            path: '/blog/some-post',
+            candidate_uid: '550e8400-e29b-41d4-a716-446655440000',
+            logged_in: 0,
+            country: 'TR',
+            cf_ipcountry: 'TR',
+            via_cloudflare: 1,
+            asn: 139341,
+            bot_class: 'human',
+            device: 'desktop',
+            user_agent_trimmed: 'Mozilla/5.0 Chrome/144',
+            referer: 'https://tronrelic.com/blog',
+            original_referrer: 'https://www.google.com/',
+            channel: null,
+            ip_hash: 'e0d716babf000000',
+            subnet_hash: '239b22c643000000'
+        };
+
+        it('returns an empty page when ClickHouse is unavailable', async () => {
+            TrafficService.setDependencies(undefined, createMockLogger());
+            const page = await TrafficService.getInstance().listTrafficEvents(
+                { since: new Date('2026-10-16T00:00:00.000Z') }, {}, 20, 0
+            );
+            expect(page).toEqual({ rows: [], hasMore: false });
+        });
+
+        it('binds every filter as a parameter instead of splicing it into the SQL', async () => {
+            const queries = captureWith([]);
+
+            await TrafficService.getInstance().listTrafficEvents(
+                { since: new Date('2026-10-16T00:00:00.000Z') },
+                { ipHash: 'e0d716babf000000', asn: 139341, botClass: 'unclassified', pathPrefix: "/blog/' OR 1=1" },
+                20,
+                0
+            );
+
+            const [query] = queries;
+            expect(query!.sql).toContain('ip_hash = {fIpHash:String}');
+            expect(query!.sql).toContain('asn = {fAsn:UInt32}');
+            expect(query!.sql).toContain("coalesce(bot_class, 'unclassified') = {fBotClass:String}");
+            expect(query!.sql).not.toContain('OR 1=1');
+            expect(query!.params).toMatchObject({ fIpHash: 'e0d716babf000000', fAsn: 139341, fPathPrefix: "/blog/' OR 1=1" });
+        });
+
+        it('reshapes a row without exposing the account id or the raw referrer URL', async () => {
+            captureWith([storedRow]);
+
+            const page = await TrafficService.getInstance().listTrafficEvents(
+                { since: new Date('2026-10-16T00:00:00.000Z') }, {}, 20, 0
+            );
+
+            expect(page.rows[0]).toEqual({
+                timestamp: '2026-10-17T05:38:56.123Z',
+                eventType: 'page',
+                path: '/blog/some-post',
+                tid: '550e8400-e29b-41d4-a716-446655440000',
+                loggedIn: false,
+                country: 'TR',
+                cfIpCountry: 'TR',
+                viaCloudflare: true,
+                asn: 139341,
+                botClass: 'human',
+                device: 'desktop',
+                userAgent: 'Mozilla/5.0 Chrome/144',
+                // A page row's own referer is the beacon's page, so the
+                // visitor's real referrer comes from original_referrer.
+                referrerDomain: 'www.google.com',
+                channel: null,
+                ipHash: 'e0d716babf000000',
+                subnetHash: '239b22c643000000'
+            });
+        });
+
+        it('fetches one extra row to report whether another page exists', async () => {
+            const queries = captureWith([storedRow, storedRow, storedRow]);
+
+            const page = await TrafficService.getInstance().listTrafficEvents(
+                { since: new Date('2026-10-16T00:00:00.000Z') }, {}, 2, 40
+            );
+
+            expect(queries[0]!.params).toMatchObject({ pageLimit: 3, pageOffset: 40 });
+            expect(page.rows).toHaveLength(2);
+            expect(page.hasMore).toBe(true);
+        });
+
+        it('groups sources on the requested column and drops rows where it is NULL', async () => {
+            const queries = captureWith([{
+                key: '139341',
+                events: '577',
+                page_events: '301',
+                distinct_tids: '54',
+                distinct_ips: '27',
+                distinct_subnets: '9',
+                distinct_paths: '31',
+                first_seen: '2026-10-15 18:00:00.000',
+                last_seen: '2026-10-17 06:00:00.000',
+                countries: ['TR', 'FI'],
+                asns: [139341],
+                bot_classes: ['human'],
+                top_user_agent: ['Mozilla/5.0 Chrome/144']
+            }]);
+
+            const sources = await TrafficService.getInstance().getTrafficEventSources(
+                { since: new Date('2026-10-15T00:00:00.000Z') }, {}, 'asn', 10
+            );
+
+            expect(queries[0]!.sql).toContain('toString(asn) AS key');
+            expect(queries[0]!.sql).toContain('AND asn IS NOT NULL');
+            expect(sources[0]).toMatchObject({
+                key: '139341',
+                events: 577,
+                pageEvents: 301,
+                distinctTids: 54,
+                distinctSubnets: 9,
+                firstSeen: '2026-10-15T18:00:00.000Z',
+                asns: [139341],
+                topUserAgent: 'Mozilla/5.0 Chrome/144'
+            });
+        });
+
+        it('applies the operator ignore list like every other analytics read', async () => {
+            const ch = createMockClickHouse();
+            const queries: Array<{ sql: string; params: Record<string, unknown> }> = [];
+            ch.query = async <T>(sql: string, params?: unknown): Promise<T[]> => {
+                queries.push({ sql, params: (params ?? {}) as Record<string, unknown> });
+                // The first query is the ignore-list resolution; answer it
+                // with one tid so the exclusion has something to apply.
+                return (queries.length === 1 ? [{ candidate_uid: 'tid-ignored' }] : []) as T[];
+            };
+            TrafficService.setDependencies(ch, createMockLogger());
+            await TrafficService.getInstance().setIgnoredUserIds(['665f00000000000000000001']);
+
+            await TrafficService.getInstance().getTrafficEventSources(
+                { since: new Date('2026-10-15T00:00:00.000Z') }, {}, 'ip', 10
+            );
+
+            const read = queries[queries.length - 1]!;
+            expect(read.sql).toContain('candidate_uid NOT IN ({ignoredCandidateUids:Array(String)})');
+            expect(read.params.ignoredCandidateUids).toEqual(['tid-ignored']);
         });
     });
 

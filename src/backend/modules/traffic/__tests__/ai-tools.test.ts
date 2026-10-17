@@ -46,6 +46,15 @@ function createTrafficServiceStub() {
         getTopPaths: vi.fn(async () => [{ key: '/markets', count: 41 }]),
         getTopCountries: vi.fn(async () => [{ key: 'US', count: 33 }]),
         getRedirectAnalytics: vi.fn(async () => ({ total: 7, patterns: [] })),
+        // Params declared so the per-event tests can assert on the filter,
+        // window, and paging the handler passes through.
+        listTrafficEvents: vi.fn(async (_range: unknown, _filter: unknown, _limit: number, _offset: number, _order?: string) => ({
+            rows: [{ timestamp: '2026-10-17T05:38:56.000Z', eventType: 'page', ipHash: 'e0d716babf000000' }],
+            hasMore: false
+        })),
+        getTrafficEventSources: vi.fn(async (_range: unknown, _filter: unknown, _groupBy: string, _limit: number) => [
+            { key: 'e0d716babf000000', events: 12, pageEvents: 6, distinctTids: 2 }
+        ]),
         getNewVisitors: vi.fn(async () => ({
             total: 1,
             visitors: [{
@@ -177,7 +186,7 @@ describe('traffic AI tools', () => {
     });
 
     describe('registration', () => {
-        it('registers all seven tools under the traffic provider id', () => {
+        it('registers all eight tools under the traffic provider id', () => {
             expect([...tools.keys()].sort()).toEqual(Object.values(AI_TOOL_NAMES).sort());
         });
 
@@ -687,6 +696,99 @@ describe('traffic AI tools', () => {
             expect(days).toBe(30);
             expect(days * topN).toBeLessThanOrEqual(50);
             expect(topN).toBeGreaterThanOrEqual(1);
+        });
+    });
+
+    describe('per-event tool', () => {
+        let trafficStub: ReturnType<typeof createTrafficServiceStub>;
+        let built: Map<string, IAiTool>;
+
+        beforeEach(() => {
+            trafficStub = createTrafficServiceStub();
+            ({ tools: built } = registerAndCapture(createGscServiceStub(), {}, trafficStub));
+        });
+
+        it('is declared secret so MCP keeps it off the general mcp-users group', () => {
+            // Every row carries the correlation keys the other traffic tools
+            // strip. An under-declared sensitivity would pass the MCP safety
+            // floor and reach every MCP user.
+            const capability = built.get(AI_TOOL_NAMES.events)!.capability;
+            expect(capability?.sensitivity).toBe('secret');
+            expect(capability?.surfacesUntrustedContent).toBe(true);
+        });
+
+        it('defaults to the events view over 24 hours and labels the rows as raw', async () => {
+            const result = await built.get(AI_TOOL_NAMES.events)!.handler({}) as {
+                view: string; period: string; measure: string; order: string; offset: number;
+            };
+
+            expect(result.view).toBe('events');
+            expect(result.period).toBe('24h');
+            expect(result.order).toBe('newest');
+            expect(result.offset).toBe(0);
+            expect(result.measure).toMatch(/not visitors/);
+        });
+
+        it('passes validated filters through, normalizing the forms a model copies', async () => {
+            await built.get(AI_TOOL_NAMES.events)!.handler({
+                ipHash: 'E0D716BABF000000',
+                asn: 'AS139341',
+                tid: '550E8400-E29B-41D4-A716-446655440000',
+                botClass: 'unclassified',
+                pathPrefix: '/blog/',
+                country: 'tr',
+                order: 'oldest',
+                limit: 5,
+                offset: 10
+            });
+
+            const [range, filter, limit, offset, order] = trafficStub.listTrafficEvents.mock.calls[0]!;
+            expect(range).toMatchObject({ country: 'TR' });
+            expect(filter).toEqual({
+                ipHash: 'e0d716babf000000',
+                asn: 139341,
+                tid: '550e8400-e29b-41d4-a716-446655440000',
+                botClass: 'unclassified',
+                pathPrefix: '/blog/'
+            });
+            expect(limit).toBe(5);
+            expect(offset).toBe(10);
+            expect(order).toBe('oldest');
+        });
+
+        it('groups sources by ip unless told otherwise', async () => {
+            await built.get(AI_TOOL_NAMES.events)!.handler({ view: 'sources' });
+            await built.get(AI_TOOL_NAMES.events)!.handler({ view: 'sources', groupBy: 'asn' });
+
+            expect(trafficStub.getTrafficEventSources.mock.calls[0]![2]).toBe('ip');
+            expect(trafficStub.getTrafficEventSources.mock.calls[1]![2]).toBe('asn');
+        });
+
+        it('rejects malformed filters instead of running a query that can only match nothing', async () => {
+            const events = built.get(AI_TOOL_NAMES.events)!;
+            await expect(events.handler({ ipHash: '203.0.113.7' })).rejects.toThrow(/16-character hex/);
+            await expect(events.handler({ asn: 0 })).rejects.toThrow(/autonomous system number/);
+            await expect(events.handler({ tid: 'not-a-uuid' })).rejects.toThrow(/UUID v4/);
+            await expect(events.handler({ pathPrefix: 'blog' })).rejects.toThrow(/must start with "\/"/);
+            await expect(events.handler({ botClass: 'robot' })).rejects.toThrow(/must be one of/);
+            await expect(events.handler({ view: 'sources', groupBy: 'country' })).rejects.toThrow(/must be one of/);
+            expect(trafficStub.listTrafficEvents).not.toHaveBeenCalled();
+        });
+
+        it('holds the window to 30 days, like the other raw-row reads', async () => {
+            const events = built.get(AI_TOOL_NAMES.events)!;
+            await expect(events.handler({ period: '90d' })).rejects.toThrow(/must be one of/);
+            await expect(events.handler({
+                startDate: '2026-08-01T00:00:00Z',
+                endDate: '2026-10-01T00:00:00Z'
+            })).rejects.toThrow(/at most 30 days/);
+        });
+
+        it('refuses to page past the offset ceiling', async () => {
+            // Deep pages mean the filters are too loose, and each one is a longer
+            // sorted read, so the model is told to narrow instead.
+            await expect(built.get(AI_TOOL_NAMES.events)!.handler({ offset: 5001 }))
+                .rejects.toThrow(/narrow the window or add filters/);
         });
     });
 
