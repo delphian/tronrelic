@@ -179,7 +179,7 @@ describe('prompt run AI tools', () => {
         for (const input of [{ limit: 0 }, { limit: 101 }, { offset: -1 }, { limit: 2.5 }]) {
             expect(await tools[AI_TOOL_NAMES.listRuns].handler(input)).toEqual({ success: false, error: expect.any(String), errorKind: 'input' });
         }
-        for (const id of [undefined, '', 'has space', { $ne: null }]) {
+        for (const id of [undefined, '', '   ', 'x'.repeat(257), { $ne: null }]) {
             expect(await tools[AI_TOOL_NAMES.getRun].handler({ id })).toEqual({ success: false, error: expect.any(String), errorKind: 'input' });
         }
     });

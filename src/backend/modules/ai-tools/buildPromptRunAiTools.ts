@@ -102,8 +102,14 @@ const MAX_FIELD_CHARS = 20_000;
  */
 const MAX_TOTAL_CHARS = 120_000;
 
-/** Characters a run or conversation id may contain. */
-const ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
+/**
+ * Longest id `ai-get-prompt-run` accepts. There is no character rule, because
+ * there is none on the write side: `POST /query` stores the streaming `queryId`
+ * and whatever `conversationId` the caller sent verbatim, so a character rule
+ * applied only here would let the listing show a run this tool then refuses to
+ * open. The cap keeps the argument bounded.
+ */
+const MAX_ID_CHARS = 256;
 
 /** The sentence both descriptions end with, stating what the two tools share. */
 const SHARED_DESCRIPTION =
@@ -181,8 +187,8 @@ function readInteger(value: unknown, field: string, fallback: number, min: numbe
  */
 function readId(value: unknown): string {
     const id = typeof value === 'string' ? value.trim() : '';
-    if (!ID_PATTERN.test(id)) {
-        throw new AiToolInputError(`id must be a run id or conversation id from ${AI_TOOL_NAMES.listRuns}: 1 to 128 letters, digits, or . _ : - characters.`);
+    if (id.length === 0 || id.length > MAX_ID_CHARS) {
+        throw new AiToolInputError(`id must be a run id or conversation id from ${AI_TOOL_NAMES.listRuns}: 1 to ${MAX_ID_CHARS} characters.`);
     }
     return id;
 }
