@@ -4,7 +4,7 @@
  * Mirrors the IWidgetData interface from @/types but without
  * the fetchData function (which only exists on the backend).
  */
-import type { WidgetTitleSize } from '@/types';
+import type { WidgetShowOn, WidgetTitleSize } from '@/types';
 
 export interface WidgetData {
     /**
@@ -35,6 +35,13 @@ export interface WidgetData {
      * behaviour.
      */
     layoutWeight?: number;
+
+    /**
+     * Screen class this item is limited to (`mobile` or `desktop`), carried
+     * from the resolved placement. The renderer hides the item on the other
+     * class of screen with CSS; absent means every screen.
+     */
+    showOn?: WidgetShowOn;
 
     /**
      * Optional display title.

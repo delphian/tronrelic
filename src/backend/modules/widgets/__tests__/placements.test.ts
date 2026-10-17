@@ -399,6 +399,23 @@ describe('PlacementService CRUD', () => {
         expect(cleared?.title).toBe('Operator Title');
     });
 
+    it('persists showOn on create and clears it back to every screen with showOn: null', async () => {
+        const placement = await service.create({
+            typeId: 't',
+            zoneId: 'main-after',
+            routes: ['/'],
+            showOn: 'desktop'
+        });
+        expect(placement.showOn).toBe('desktop');
+
+        const updated = await service.update(placement.id, { showOn: 'mobile' });
+        expect(updated?.showOn).toBe('mobile');
+
+        const cleared = await service.update(placement.id, { showOn: null });
+        // Absent means every screen, which is how rows written before the field read.
+        expect(cleared?.showOn).toBeUndefined();
+    });
+
     it('persists customCss on create, replaces it on update, and clears it with customCss: null', async () => {
         const placement = await service.create({
             typeId: 't',

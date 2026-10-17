@@ -1,0 +1,77 @@
+/**
+ * Tab bar: a row of equal-width tabs, each an icon above a short label.
+ *
+ * The bar draws its own background and top border so it reads as site chrome
+ * wherever the Mobile tab bar zone fixes it. Its bottom padding takes the
+ * phone's safe-area inset, so on a phone with a home indicator the background
+ * runs to the screen edge while the tabs stay above the indicator. The root
+ * layout reserves the same height plus inset at the bottom of the page.
+ */
+
+.bar {
+    background: var(--tab-bar-background);
+    border-top: var(--tab-bar-border);
+    backdrop-filter: var(--tab-bar-backdrop-filter);
+    padding-bottom: env(safe-area-inset-bottom);
+}
+
+.list {
+    display: flex;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+// Equal shares of the row, with a zero basis so a long label cannot widen
+// its tab at the expense of the others.
+.item {
+    display: flex;
+    flex: 1 1 0;
+    min-width: 0;
+}
+
+.tab {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--gap-2xs);
+    min-width: 0;
+    min-height: var(--tab-bar-height);
+    padding: var(--padding-2xs) var(--padding-xs);
+    background: transparent;
+    border: none;
+    color: var(--tab-bar-color);
+    font: inherit;
+    font-size: var(--tab-bar-font-size);
+    cursor: pointer;
+    transition: color var(--transition-base);
+
+    &:hover {
+        color: var(--tab-bar-color-active);
+    }
+}
+
+.tab_active {
+    color: var(--tab-bar-color-active);
+    font-weight: var(--font-weight-semibold);
+}
+
+// Fixed size so the label does not move when the icon arrives after
+// hydration; the icon component renders nothing during server rendering.
+.icon_slot {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--icon-size-md);
+    height: var(--icon-size-md);
+}
+
+.label {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    line-height: var(--line-height-tight);
+}

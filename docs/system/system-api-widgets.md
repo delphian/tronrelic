@@ -61,6 +61,7 @@ The placements controller refuses input on any of:
 - `routes` entry that doesn't start with `/`, contains whitespace, or carries a glob marker outside the trailing segment.
 - `order` outside `[0, 10000]`, non-integer, or non-finite.
 - `layoutWeight` outside `[1, 12]`, non-integer, or non-finite. Sets the row's relative width (a `flex-grow` weight) when its container lays out in a row; pass `layoutWeight: null` on PATCH to clear it back to auto width (`$unset`).
+- `showOn` other than `mobile` or `desktop`. Limits the row to pages 768px wide or narrower (`mobile`) or wider (`desktop`); pass `showOn: null` on PATCH to show it on every screen again (`$unset`).
 - `title` empty after trim, or longer than 80 characters. Pass `title: null` on PATCH to clear an existing override (`$unset`).
 - `titleUrl` not a root-relative internal path (must start with a single `/`; protocol-relative, absolute, or scheme URLs are rejected), or longer than 512 characters. Pass `titleUrl: null` on PATCH to clear the heading link (`$unset`).
 - `instanceConfig` not a plain object.

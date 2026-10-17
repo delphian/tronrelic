@@ -11,6 +11,7 @@
  */
 
 export { WidgetZone } from './WidgetZone';
+export { MobileTabBarZone } from './MobileTabBarZone';
 export { fetchWidgetsForRoute } from './fetchWidgetsForRoute';
 export { collectMenuNamespaces } from './collectMenuNamespaces';
 export type { IWidgetBundle } from './fetchWidgetsForRoute';

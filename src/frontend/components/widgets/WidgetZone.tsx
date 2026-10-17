@@ -47,6 +47,17 @@ const TITLE_SIZE_CLASS: Record<NonNullable<WidgetData['titleSize']>, string> = {
 };
 
 /**
+ * Placement `showOn` value → the class that hides the item on the other
+ * class of screen. Keyed by the `WidgetShowOn` literals so a validated value
+ * always resolves to a class; an absent value applies no class and the item
+ * renders on every screen, as every placement did before the setting existed.
+ */
+const SHOW_ON_CLASS: Record<NonNullable<WidgetData['showOn']>, string> = {
+    mobile: styles.show_on_mobile,
+    desktop: styles.show_on_desktop
+};
+
+/**
  * Shape of a placement id: a stringified Mongo ObjectId. The id is written
  * into a CSS selector, so anything else is refused rather than trusted.
  */
@@ -308,7 +319,7 @@ function WidgetItem({ widget, route, params }: WidgetRendererProps) {
 
     return (
         <div
-            className={cn(styles.item, weightStyle && styles.item_weighted)}
+            className={cn(styles.item, weightStyle && styles.item_weighted, widget.showOn && SHOW_ON_CLASS[widget.showOn])}
             style={weightStyle}
             data-widget-id={widget.id}
             data-plugin-id={widget.pluginId}

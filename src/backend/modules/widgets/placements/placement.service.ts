@@ -302,6 +302,7 @@ export class PlacementService implements IPlacementService {
             doc.parentId = new ObjectId(input.parentId);
         }
         if (input.layoutWeight !== undefined) doc.layoutWeight = input.layoutWeight;
+        if (input.showOn !== undefined) doc.showOn = input.showOn;
         if (input.title !== undefined) doc.title = input.title;
         if (input.titleUrl !== undefined) doc.titleUrl = input.titleUrl;
         if (input.titleSize !== undefined) doc.titleSize = input.titleSize;
@@ -342,6 +343,13 @@ export class PlacementService implements IPlacementService {
             unsetOps.layoutWeight = '';
         } else if (patch.layoutWeight !== undefined) {
             setOps.layoutWeight = patch.layoutWeight;
+        }
+        if (patch.showOn === null) {
+            // Explicit clear — drop the limit so the placement renders on
+            // every screen again.
+            unsetOps.showOn = '';
+        } else if (patch.showOn !== undefined) {
+            setOps.showOn = patch.showOn;
         }
         if (patch.title === null) {
             // Explicit unset signal — drop the title field so the
@@ -545,6 +553,7 @@ function toPublic(doc: IWidgetPlacementDocument): IWidgetPlacement {
         routes: doc.routes,
         order: doc.order,
         layoutWeight: doc.layoutWeight,
+        showOn: doc.showOn,
         title: doc.title,
         titleUrl: doc.titleUrl,
         titleSize: doc.titleSize,

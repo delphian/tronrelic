@@ -221,6 +221,9 @@ export class PlacementResolver {
                 // renderer so it can size this flex item; absent leaves it
                 // auto-width as before.
                 layoutWeight: placement.layoutWeight,
+                // Which class of screen the item renders on; the renderer
+                // hides it on the other with CSS.
+                showOn: placement.showOn,
                 title: placement.title,
                 titleUrl: placement.titleUrl,
                 titleSize: placement.titleSize,

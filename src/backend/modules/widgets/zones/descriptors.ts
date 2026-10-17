@@ -53,6 +53,15 @@ export const CORE_ZONE_DESCRIPTORS: ReadonlyArray<IRegisterZoneInput> = [
         order: 90
     },
     {
+        id: 'mobile-tab-bar',
+        label: 'Mobile tab bar',
+        description:
+            'Fixed to the bottom of the screen on phone-sized screens only (768px wide and narrower), across every route the root layout serves. The home for the Tab bar widget. Leave it empty to keep the current header-only navigation; once it holds a widget, the page reserves space at the bottom so the bar never covers content. Set the header Menu placement to "Desktop only" so phones do not show the same links twice.',
+        host: 'site',
+        layout: 'vertical',
+        order: 95
+    },
+    {
         id: 'main-before',
         label: 'Above main content',
         description:

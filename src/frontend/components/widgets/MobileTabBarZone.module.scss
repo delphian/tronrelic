@@ -1,0 +1,35 @@
+/**
+ * Mobile tab bar zone: fixed to the bottom of the screen on phones only.
+ *
+ * Both rules query the `body` container that globals.scss declares rather
+ * than the viewport, and a placement's "Mobile only" / "Desktop only"
+ * setting in WidgetZone.module.scss uses the same query at the same width.
+ * Keeping all three on one measurement is what guarantees the header menu
+ * hides at exactly the width the tab bar appears, with no window width left
+ * showing neither.
+ */
+
+@use '../../app/breakpoints' as *;
+
+.dock {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: var(--tab-bar-z-index);
+}
+
+// Reserves the bar's height at the end of the page so the footer and the
+// last of the content can scroll clear of the fixed bar. The safe-area inset
+// matches the padding the tab bar adds above a phone's home indicator.
+.spacer {
+    flex-shrink: 0;
+    height: calc(var(--tab-bar-height) + env(safe-area-inset-bottom));
+}
+
+.dock,
+.spacer {
+    @container body (min-width: #{$breakpoint-mobile + 1px}) {
+        display: none;
+    }
+}

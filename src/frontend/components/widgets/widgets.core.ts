@@ -25,6 +25,7 @@ import { AuthButtonWidget } from './AuthButtonWidget';
 import { SiteLogoWidget } from './SiteLogoWidget';
 import { MenuWidget } from './MenuWidget';
 import { LanguageSwitcherWidget } from './LanguageSwitcherWidget';
+import { TabBarWidget } from './TabBarWidget';
 
 /**
  * Core widget components keyed by backend widget-type id. Mirrors the
@@ -42,5 +43,6 @@ export const coreWidgetComponents: Record<string, WidgetComponent> = {
     // The menu widget; the id predates its namespace setting and is kept so
     // existing placements keep rendering.
     'core:main-menu': MenuWidget,
-    'core:language-switcher': LanguageSwitcherWidget
+    'core:language-switcher': LanguageSwitcherWidget,
+    'core:tab-bar': TabBarWidget
 };

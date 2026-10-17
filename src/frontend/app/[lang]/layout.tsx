@@ -6,7 +6,7 @@ import { getServerSideApiUrl } from '../../lib/api-url';
 import { buildMetadata, SITE_NAME } from '../../lib/seo';
 import '../globals.scss';
 import { Providers } from '../providers';
-import { WidgetZone, collectMenuNamespaces, fetchWidgetsForRoute } from '../../components/widgets';
+import { MobileTabBarZone, WidgetZone, collectMenuNamespaces, fetchWidgetsForRoute } from '../../components/widgets';
 import { fetchMenuNamespace } from '../../modules/menu/server';
 import type { IMenuSeed } from '../../modules/menu/types';
 import { getServerSession, type ISSRSession } from '../../modules/user/lib/session-server';
@@ -416,6 +416,11 @@ export default async function RootLayout({ children, params }: { children: React
           <footer>
             <WidgetZone name="footer" widgets={widgetBundle.widgets} layout={widgetBundle.zones['footer']} route={pathname} params={{}} />
           </footer>
+          {/* Phone navigation fixed to the bottom of the screen. Renders
+              nothing until an operator places a widget in the zone, and only
+              shows on phone-sized screens; it reserves its own height after
+              the footer so the end of the page scrolls clear of it. */}
+          <MobileTabBarZone widgets={widgetBundle.widgets} layout={widgetBundle.zones['mobile-tab-bar']} route={pathname} />
         </Providers>
       </body>
     </html>

@@ -26,14 +26,12 @@
  * @module frontend/components/widgets/MenuWidget
  */
 
-import { useEffect, type CSSProperties } from 'react';
+import type { CSSProperties } from 'react';
 import type { IWidgetComponentProps } from '@/types';
 // Imported from the file rather than the MenuNav barrel, which also exports
 // the server-only MenuNavSSR and would pull `next/headers` into this client file.
 import { MenuNavClient } from '../layout/MenuNav/MenuNavClient';
-import { refetchMenuTree, useMenuSeed } from '../../modules/menu';
-import type { IMenuSeed } from '../../modules/menu/types';
-import { useAppDispatch, useAppSelector } from '../../store/hooks';
+import { useMenuTree } from '../../modules/menu';
 // Imported from the hook file rather than the localization barrel, which also
 // exports components with stylesheets.
 import { useTranslation } from '../../modules/localization/hooks/useTranslation';
@@ -41,12 +39,6 @@ import styles from './MenuWidget.module.scss';
 
 /** Namespace rendered when the payload names none, matching the backend fetcher's default. */
 const DEFAULT_MENU_NAMESPACE = 'main';
-
-/**
- * Seed used when the root layout did not fetch this namespace. Module-level
- * so its identity is stable across renders.
- */
-const EMPTY_SEED: IMenuSeed = { roots: [], generatedAt: new Date(0).toISOString() };
 
 /**
  * SSR payload shape produced by the menu widget's data fetcher. Mirrors
@@ -69,28 +61,10 @@ interface IMenuWidgetData {
  */
 export function MenuWidget({ data }: IWidgetComponentProps) {
     const { namespace = DEFAULT_MENU_NAMESPACE, align = 'flex-end' } = (data ?? {}) as IMenuWidgetData;
-    const seed = useMenuSeed(namespace);
-    const { roots, generatedAt } = seed ?? EMPTY_SEED;
-    const dispatch = useAppDispatch();
+    // Seed first, live Redux copy once loaded, and a browser fetch when the
+    // root layout never seeded this namespace; see useMenuTree.
+    const { roots, generatedAt } = useMenuTree(namespace);
     const { t } = useTranslation();
-    const loadedInRedux = useAppSelector(state => state.menu.namespaces[namespace]?.lastUpdated !== undefined);
-
-    /**
-     * Fetch the tree in the browser when the root layout did not seed it.
-     *
-     * The root layout seeds every namespace placed on the page it rendered,
-     * but Next.js does not render the root layout again on a client-side
-     * navigation. A menu placed only on the page navigated to therefore has
-     * no seed, and would otherwise stay empty until the next `menu:update`.
-     * The check uses the values from the render that scheduled the effect,
-     * so the empty tree `MenuNavClient` writes to Redux on mount does not
-     * count as loaded; once the fetched tree arrives, a re-run does nothing.
-     */
-    useEffect(() => {
-        if (seed === null && !loadedInRedux) {
-            void dispatch(refetchMenuTree({ namespace, timestamp: new Date().toISOString() }));
-        }
-    }, [seed, loadedInRedux, namespace, dispatch]);
 
     // The alignment is operator-chosen, so it rides as a custom property the
     // stylesheet reads rather than as a class per value.
