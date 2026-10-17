@@ -23,6 +23,7 @@ import type {
     IWidgetTypeSnapshot,
     IZoneLayoutConfig,
     IZoneSnapshot,
+    WidgetShowOn,
     WidgetTitleSize
 } from '@/types';
 import { Button } from '../../../../components/ui/Button';
@@ -49,6 +50,9 @@ import styles from './PlacementEditor.module.scss';
 
 /** Which pages a placement shows on. */
 type RouteScope = 'all' | 'some';
+
+/** Which screens a placement shows on; `all` stores no `showOn` at all. */
+type ScreenScope = 'all' | WidgetShowOn;
 
 /**
  * Props for the editor form.
@@ -126,6 +130,7 @@ export function PlacementEditor({
     const [title, setTitle] = useState<string>(initial?.title ?? '');
     const [titleUrl, setTitleUrl] = useState<string>(initial?.titleUrl ?? '');
     const [titleSize, setTitleSize] = useState<WidgetTitleSize>(initial?.titleSize ?? 'heading-md');
+    const [screenScope, setScreenScope] = useState<ScreenScope>(initial?.showOn ?? 'all');
     const [customCss, setCustomCss] = useState<string>(initial?.customCss ?? '');
     const [enabled, setEnabled] = useState<boolean>(initial?.enabled ?? true);
     const [saving, setSaving] = useState(false);
@@ -327,6 +332,7 @@ export function PlacementEditor({
                     zoneId,
                     parentId: !isLayoutGroup && parentId.length > 0 ? parentId : undefined,
                     routes: effectiveRoutes,
+                    showOn: screenScope === 'all' ? undefined : screenScope,
                     title: trimmedTitle.length > 0 ? trimmedTitle : undefined,
                     titleUrl: trimmedTitleUrl.length > 0 ? trimmedTitleUrl : undefined,
                     titleSize: titleSize !== 'heading-md' ? titleSize : undefined,
@@ -342,10 +348,12 @@ export function PlacementEditor({
                 const hadParent = typeof initial.parentId === 'string';
                 const hadCustomCss = typeof initial.customCss === 'string' && initial.customCss.length > 0;
                 const initialTitleSize: WidgetTitleSize = initial.titleSize ?? 'heading-md';
+                const initialScreenScope: ScreenScope = initial.showOn ?? 'all';
                 await onSave(initial.id, {
                     zoneId,
                     parentId: isLayoutGroup ? undefined : parentId.length > 0 ? parentId : hadParent ? null : undefined,
                     routes: effectiveRoutes,
+                    showOn: screenScope === initialScreenScope ? undefined : screenScope === 'all' ? null : screenScope,
                     title: trimmedTitle.length > 0 ? trimmedTitle : hadTitle ? null : undefined,
                     titleUrl: trimmedTitleUrl.length > 0 ? trimmedTitleUrl : hadTitleUrl ? null : undefined,
                     titleSize: titleSize === initialTitleSize ? undefined : titleSize === 'heading-md' ? null : titleSize,
@@ -590,6 +598,24 @@ export function PlacementEditor({
                         )}
                     </div>
                 )}
+
+                <div className={styles.field_group}>
+                    <span className={styles.label}>Screens</span>
+                    <SegmentedControl<ScreenScope>
+                        label="Which screens"
+                        value={screenScope}
+                        disabled={saving}
+                        onChange={setScreenScope}
+                        options={[
+                            { id: 'all', label: 'All screens' },
+                            { id: 'desktop', label: 'Desktop only' },
+                            { id: 'mobile', label: 'Mobile only' }
+                        ]}
+                    />
+                    <span className={styles.hint}>
+                        Mobile means 768px wide or narrower. Set the header menu to Desktop only when the Mobile tab bar zone holds a tab bar, so phones do not show the same links twice.
+                    </span>
+                </div>
             </FormSection>
 
             <FormSection title="Heading">

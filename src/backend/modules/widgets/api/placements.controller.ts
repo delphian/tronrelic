@@ -23,6 +23,7 @@ import type {
     ISystemLogService,
     IWidgetsService,
     PlacementSource,
+    WidgetShowOn,
     WidgetTitleSize,
     IPlacementInput,
     IPlacementListFilter,
@@ -115,6 +116,13 @@ const WIDGET_TITLE_SIZES: readonly WidgetTitleSize[] = [
     'heading-lg',
     'heading-xl'
 ];
+
+/**
+ * Allowed screen classes for a placement's `showOn`. The `WidgetShowOn`
+ * union keeps this array honest, as with {@link WIDGET_TITLE_SIZES}. A
+ * placement omitting the field renders on every screen.
+ */
+const WIDGET_SHOW_ON_VALUES: readonly WidgetShowOn[] = ['mobile', 'desktop'];
 
 /**
  * Format gate for zone ids. Lowercase-dotted (letters, digits,
@@ -483,6 +491,9 @@ export class PlacementsController {
         const layoutWeightResult = this.parseLayoutWeight(b.layoutWeight);
         if ('error' in layoutWeightResult) return layoutWeightResult;
 
+        const showOnResult = this.parseShowOn(b.showOn);
+        if ('error' in showOnResult) return showOnResult;
+
         const titleResult = this.parseTitle(b.title);
         if ('error' in titleResult) return titleResult;
 
@@ -508,6 +519,7 @@ export class PlacementsController {
                 routes: routesResult.routes,
                 order: orderResult.order,
                 layoutWeight: layoutWeightResult.layoutWeight,
+                showOn: showOnResult.showOn,
                 title: titleResult.title,
                 titleUrl: titleUrlResult.titleUrl,
                 titleSize: titleSizeResult.titleSize,
@@ -572,6 +584,17 @@ export class PlacementsController {
                 const result = this.parseLayoutWeight(b.layoutWeight);
                 if ('error' in result) return result;
                 if (result.layoutWeight !== undefined) patch.layoutWeight = result.layoutWeight;
+            }
+        }
+
+        if (b.showOn !== undefined) {
+            if (b.showOn === null) {
+                // Explicit clear — the placement renders on every screen again.
+                patch.showOn = null;
+            } else {
+                const result = this.parseShowOn(b.showOn);
+                if ('error' in result) return result;
+                patch.showOn = result.showOn;
             }
         }
 
@@ -762,6 +785,26 @@ export class PlacementsController {
             return { error: `titleSize must be one of: ${WIDGET_TITLE_SIZES.join(', ')}` };
         }
         return { titleSize: value as WidgetTitleSize };
+    }
+
+    /**
+     * Validate an optional screen-class limit against
+     * {@link WIDGET_SHOW_ON_VALUES}, so a typo cannot store a value the
+     * renderer would not recognise and silently show the widget everywhere.
+     * `null` is the patch caller's explicit-clear signal and never reaches
+     * here.
+     *
+     * @param value - Raw `showOn` from the request body.
+     * @returns The validated value (or undefined when absent), or an error the caller maps to a 400.
+     */
+    private parseShowOn(value: unknown): { showOn?: WidgetShowOn } | { error: string } {
+        let result: { showOn?: WidgetShowOn } | { error: string } = { showOn: undefined };
+        if (value !== undefined) {
+            result = typeof value === 'string' && WIDGET_SHOW_ON_VALUES.includes(value as WidgetShowOn)
+                ? { showOn: value as WidgetShowOn }
+                : { error: `showOn must be one of: ${WIDGET_SHOW_ON_VALUES.join(', ')}` };
+        }
+        return result;
     }
 
     /**

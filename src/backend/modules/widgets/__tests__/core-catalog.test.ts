@@ -34,7 +34,8 @@ import {
     LANGUAGE_SWITCHER_TYPE_ID,
     MENU_TYPE_ID,
     RAW_HTML_TYPE_ID,
-    SITE_LOGO_TYPE_ID
+    SITE_LOGO_TYPE_ID,
+    TAB_BAR_TYPE_ID
 } from '../widget-types/core-widget-types.js';
 
 /**
@@ -154,7 +155,16 @@ describe('Core zone catalog', () => {
             widgets.registerZone(descriptor, 'core');
         }
         const siteTrack = widgets.listZones().tracks.find(track => track.id === 'site');
-        expect(siteTrack?.zones.map(zone => zone.id)).toEqual(['site-top', 'ticker-after', 'footer']);
+        expect(siteTrack?.zones.map(zone => zone.id)).toEqual(['site-top', 'ticker-after', 'footer', 'mobile-tab-bar']);
+    });
+
+    it('declares a site-host mobile tab bar zone after the footer', () => {
+        // The root layout renders this zone fixed to the bottom of the
+        // screen; listing it last in the site track matches where it sits.
+        const tabBar = CORE_ZONE_DESCRIPTORS.find(z => z.id === 'mobile-tab-bar');
+        expect(tabBar).toBeDefined();
+        expect(tabBar?.host).toBe('site');
+        expect(tabBar?.order).toBeGreaterThan(CORE_ZONE_DESCRIPTORS.find(z => z.id === 'footer')!.order!);
     });
 });
 
@@ -361,5 +371,42 @@ describe('Core widget-type catalog (site-logo, menu)', () => {
         // navigation, so the component works them out itself.
         await expect(resolveCoreWidget(LANGUAGE_SWITCHER_TYPE_ID)).resolves.toEqual({ display: 'native' });
         await expect(resolveCoreWidget(LANGUAGE_SWITCHER_TYPE_ID, { display: 'code' })).resolves.toEqual({ display: 'code' });
+    });
+
+    it('carries only the tab bar namespaces and settings, with defaults when none are set', async () => {
+        // Like the menu widget, the tab items are per visitor and must not
+        // ride in this route-cached payload.
+        await expect(resolveCoreWidget(TAB_BAR_TYPE_ID)).resolves.toEqual({
+            namespace: 'main',
+            maxTabs: 4,
+            menuTab: true,
+            panelNamespace: 'main',
+            languageSwitcher: true
+        });
+        await expect(resolveCoreWidget(TAB_BAR_TYPE_ID, {
+            namespace: 'mobile',
+            maxTabs: 3,
+            menuTab: false,
+            panelNamespace: 'footer',
+            languageSwitcher: false
+        })).resolves.toEqual({
+            namespace: 'mobile',
+            maxTabs: 3,
+            menuTab: false,
+            panelNamespace: 'footer',
+            languageSwitcher: false
+        });
+    });
+
+    it('replaces a stored tab count or namespace the tab bar cannot use', async () => {
+        // The API refuses these on write; the fetcher refuses them again
+        // because a row edited by hand never went through the API, and both
+        // namespaces end up in a menu API URL.
+        for (const maxTabs of [1, 6, 2.5, '3']) {
+            await expect(resolveCoreWidget(TAB_BAR_TYPE_ID, { maxTabs }))
+                .resolves.toMatchObject({ maxTabs: 4 });
+        }
+        await expect(resolveCoreWidget(TAB_BAR_TYPE_ID, { namespace: '../admin', panelNamespace: 'a b' }))
+            .resolves.toMatchObject({ namespace: 'main', panelNamespace: 'main' });
     });
 });

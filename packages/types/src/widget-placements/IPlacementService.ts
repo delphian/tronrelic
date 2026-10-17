@@ -22,6 +22,7 @@ import type {
     IPluginPlacementInput,
     WidgetTitleSize
 } from './IWidgetPlacement.js';
+import type { WidgetShowOn } from './WidgetShowOn.js';
 
 /**
  * Filter accepted by `list`. Future admin UI will narrow listings by
@@ -67,6 +68,13 @@ export interface IPlacementPatch {
      * `title`/`titleUrl`. See {@link IWidgetPlacement.layoutWeight}.
      */
     layoutWeight?: number | null;
+    /**
+     * Limit the placement to phone-sized or larger screens, or clear the
+     * limit with `null` (`$unset`) so it renders on every screen. Omission
+     * leaves it unchanged — the same three-state convention as
+     * `title`/`titleUrl`. See {@link IWidgetPlacement.showOn}.
+     */
+    showOn?: WidgetShowOn | null;
     title?: string | null;
     titleUrl?: string | null;
     /**

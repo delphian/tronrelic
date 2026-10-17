@@ -32,9 +32,11 @@ export { PriorityNav } from './components';
 export type { IPriorityNavProps, IPriorityNavItem } from './components';
 export { CategoryLandingPage } from './components';
 export { MenuSeedProvider, useMenuSeed } from './components';
+export { TabBar } from './components';
+export type { ITabBarProps } from './components';
 
 // Hooks
-export { useMenuConfig, useBodyScrollLock } from './hooks';
+export { useMenuConfig, useBodyScrollLock, useMenuTree } from './hooks';
 
 // Redux slice
 export { default as menuReducer, menuTreeSeeded, refetchMenuTree } from './slice';

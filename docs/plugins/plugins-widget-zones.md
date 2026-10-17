@@ -8,7 +8,7 @@ Plugins ship pages and background jobs, but inline UI on someone else's page use
 
 ## Three Concepts
 
-**Zones** are named slots a layout exposes. Core declares seven built-in zones (see [Core Zone Catalog](#core-zone-catalog) below); plugins declare additional zones through the unified widgets service. The zone registry is in-memory, rebuilt from registrations on plugin enable, and lost on restart.
+**Zones** are named slots a layout exposes. Core declares eight built-in zones (see [Core Zone Catalog](#core-zone-catalog) below); plugins declare additional zones through the unified widgets service. The zone registry is in-memory, rebuilt from registrations on plugin enable, and lost on restart.
 
 **Widget types** are the renderable units. They are plugin-owned — core ships zero — and register through the unified widgets service. Each type carries the data-fetching function the SSR resolver calls and the component the frontend renders. The widget-type registry is also in-memory.
 
@@ -23,6 +23,7 @@ Every operation — register, list, mutate, resolve — flows through one named 
 | `site-top` | `site` | Root layout, the first element inside `<body>`, wrapped in the page's `<header>` | The site header itself: the core Site logo, Menu (set to the `main` namespace), and Sign-in button widgets, plus announcement bars |
 | `ticker-after` | `site` | Root layout, directly below `site-top` | Reaches every route the root layout serves — scope with route filters |
 | `footer` | `site` | Root layout, below `<main>` inside a semantic `<footer>` | Site-wide links, legal text, attribution |
+| `mobile-tab-bar` | `site` | Root layout, fixed to the bottom of the screen on pages 768px wide or narrower; renders nothing, and reserves no space, while empty | The core Tab bar widget, for phone navigation |
 | `main-before` | `core` | Above page content inside the `(core)` route group | Banners, alerts on front-of-house pages |
 | `main-after` | `core` | Below page content inside the `(core)` route group | Feeds, summaries on front-of-house pages |
 | `plugin-content:before` | `plugin` | Above each plugin page via `PluginPageWithZones` | Cross-plugin injection above plugin pages |

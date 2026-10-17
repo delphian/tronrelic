@@ -1136,13 +1136,27 @@ export const MENU_CONFIG_SCHEMA: JSONSchema7 = {
 };
 
 /**
+ * Check a stored menu namespace and fall back to `main` when it is unusable.
+ *
+ * The placement API already checks namespace settings against the
+ * {@link WIDGET_MENU_NAMESPACE_FORMAT} format, but a row saved before a
+ * setting existed has no value, and a row edited in the database by hand may
+ * hold anything. The root layout puts every namespace a widget names into a
+ * menu API URL, so each fetcher that reads one checks it again here.
+ *
+ * @param raw - The namespace value read from the placement's instance config.
+ * @returns The stored namespace when it is a valid namespace name, otherwise `main`.
+ */
+function normalizeMenuNamespace(raw: unknown): string {
+    return typeof raw === 'string' && MENU_NAMESPACE_PATTERN.test(raw) ? raw : MENU_DEFAULT_NAMESPACE;
+}
+
+/**
  * Resolve the menu SSR payload from the placement's instance config.
  *
- * The placement API already checked `namespace` against
- * {@link MENU_CONFIG_SCHEMA}, but a row saved before the setting existed has
- * none, and a row edited in the database by hand may hold anything. The root
- * layout passes this value to the menu API in a URL, so it is checked again
- * here and replaced with `main` when it is missing or malformed.
+ * The namespace is checked again by {@link normalizeMenuNamespace}, because
+ * a row saved before the setting existed has none and a row edited by hand
+ * may hold anything.
  *
  * @param _route - Unused; the active item is worked out on the client from the pathname.
  * @param _params - Unused.
@@ -1154,11 +1168,7 @@ async function fetchMenuData(
     _params: Record<string, string>,
     placement?: IWidgetPlacementContext
 ): Promise<IMenuWidgetData> {
-    const configuredNamespace = placement?.instanceConfig?.namespace;
-    const namespace = typeof configuredNamespace === 'string'
-        && MENU_NAMESPACE_PATTERN.test(configuredNamespace)
-        ? configuredNamespace
-        : MENU_DEFAULT_NAMESPACE;
+    const namespace = normalizeMenuNamespace(placement?.instanceConfig?.namespace);
     const configuredAlign = placement?.instanceConfig?.align;
     const align = configuredAlign === 'flex-start' || configuredAlign === 'center' ? configuredAlign : 'flex-end';
 
@@ -1221,6 +1231,134 @@ async function fetchLanguageSwitcherData(
     const display = placement?.instanceConfig?.display === 'code' ? 'code' : 'native';
 
     return { display };
+}
+
+/**
+ * Widget-type id for the mobile tab bar. Namespaced under `core:` so it never
+ * collides with a plugin-declared id; the frontend component registry
+ * (`widgets.core.ts`) keys its renderer on this string.
+ */
+export const TAB_BAR_TYPE_ID = 'core:tab-bar';
+
+/** Fewest link tabs an operator may ask for; one tab is not a navigation bar. */
+const TAB_BAR_MIN_TABS = 2;
+
+/**
+ * Most link tabs an operator may ask for. Five is the usual ceiling for a
+ * phone tab bar, because each tab needs a thumb-sized target across a screen
+ * about 360px wide.
+ */
+const TAB_BAR_MAX_TABS = 5;
+
+/** Link tabs shown when the placement sets none, leaving room for the Menu tab within five. */
+const TAB_BAR_DEFAULT_TABS = 4;
+
+/**
+ * SSR payload the tab-bar data fetcher returns and the frontend
+ * `TabBarWidget` consumes.
+ *
+ * Like the menu widget, the tab bar carries namespace names and display
+ * settings only. The menu items themselves are filtered per visitor, so the
+ * root layout reads both namespaces out of this payload and seeds each
+ * visitor's own trees through `MenuSeedProvider`.
+ */
+export interface ITabBarWidgetData {
+    /** The menu namespace whose first items become the tabs. */
+    namespace: string;
+    /** How many link tabs to show, between 2 and 5. */
+    maxTabs: number;
+    /** Whether a final Menu tab opens a panel listing the full menu. */
+    menuTab: boolean;
+    /** The menu namespace the Menu tab's panel lists. */
+    panelNamespace: string;
+    /** Whether the panel ends with the language switcher on pages published in other languages. */
+    languageSwitcher: boolean;
+}
+
+/**
+ * JSON Schema (Draft 7) for the tab-bar placement's `instanceConfig`.
+ *
+ * Both namespace settings declare {@link WIDGET_MENU_NAMESPACE_FORMAT}, so the
+ * placement form offers a dropdown of namespaces and the API rejects a value
+ * that cannot be a namespace name.
+ */
+export const TAB_BAR_CONFIG_SCHEMA: JSONSchema7 = {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+        namespace: {
+            type: 'string',
+            format: WIDGET_MENU_NAMESPACE_FORMAT.name,
+            default: MENU_DEFAULT_NAMESPACE,
+            title: 'Tabs menu',
+            description:
+                'The menu namespace whose first items become the tabs, in their menu order. Items without a URL are skipped. Create a dedicated namespace at /system/menu to choose the tabs by hand, and give each item an icon.'
+        },
+        maxTabs: {
+            type: 'integer',
+            minimum: TAB_BAR_MIN_TABS,
+            maximum: TAB_BAR_MAX_TABS,
+            default: TAB_BAR_DEFAULT_TABS,
+            title: 'Tabs shown',
+            description:
+                'How many link tabs to show, not counting the Menu tab. Four plus the Menu tab fits a 360px-wide phone comfortably.'
+        },
+        menuTab: {
+            type: 'boolean',
+            default: true,
+            title: 'Menu tab',
+            description: 'Add a final Menu tab that opens a panel listing the full menu.'
+        },
+        panelNamespace: {
+            type: 'string',
+            format: WIDGET_MENU_NAMESPACE_FORMAT.name,
+            default: MENU_DEFAULT_NAMESPACE,
+            title: 'Panel menu',
+            description: 'The menu namespace the Menu tab\'s panel lists, with each item\'s children beneath it.'
+        },
+        languageSwitcher: {
+            type: 'boolean',
+            default: true,
+            title: 'Language switcher in panel',
+            description:
+                'End the panel with links to the current page in its other published languages. Shows nothing on a page that exists only in English.'
+        }
+    }
+};
+
+/**
+ * Resolve the tab-bar SSR payload from the placement's instance config.
+ *
+ * Every value is checked again rather than trusted, for the same reason as
+ * the menu widget: a row edited by hand never went through the API, and both
+ * namespaces end up in a menu API URL.
+ *
+ * @param _route - Unused; the active tab is worked out on the client from the pathname.
+ * @param _params - Unused.
+ * @param placement - Placement context carrying the operator config.
+ * @returns The namespaces and display settings for the frontend component.
+ */
+async function fetchTabBarData(
+    _route: string,
+    _params: Record<string, string>,
+    placement?: IWidgetPlacementContext
+): Promise<ITabBarWidgetData> {
+    const config = placement?.instanceConfig ?? {};
+    const configuredTabs = config.maxTabs;
+    const maxTabs = typeof configuredTabs === 'number'
+        && Number.isInteger(configuredTabs)
+        && configuredTabs >= TAB_BAR_MIN_TABS
+        && configuredTabs <= TAB_BAR_MAX_TABS
+        ? configuredTabs
+        : TAB_BAR_DEFAULT_TABS;
+
+    return {
+        namespace: normalizeMenuNamespace(config.namespace),
+        maxTabs,
+        menuTab: config.menuTab !== false,
+        panelNamespace: normalizeMenuNamespace(config.panelNamespace),
+        languageSwitcher: config.languageSwitcher !== false
+    };
 }
 
 /**
@@ -1318,6 +1456,15 @@ export function buildCoreWidgetTypeDescriptors(
             category: 'Navigation',
             defaultDataFetcher: fetchLanguageSwitcherData,
             configSchema: LANGUAGE_SWITCHER_CONFIG_SCHEMA
+        },
+        {
+            id: TAB_BAR_TYPE_ID,
+            label: 'Tab bar',
+            description:
+                'Phone navigation fixed to the bottom of the screen: the first items of a menu namespace as icon tabs, plus an optional Menu tab that opens the full menu and the language switcher. Place it in the Mobile tab bar zone, which only appears on phone-sized screens.',
+            category: 'Navigation',
+            defaultDataFetcher: fetchTabBarData,
+            configSchema: TAB_BAR_CONFIG_SCHEMA
         }
     ];
 }

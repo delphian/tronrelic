@@ -16,6 +16,8 @@
  * @module types/widget-placements/IWidgetPlacement
  */
 
+import type { WidgetShowOn } from './WidgetShowOn.js';
+
 /**
  * Discriminator distinguishing plugin-seeded placements from
  * operator-created placements. Disable behaviour and admin-UI
@@ -76,6 +78,14 @@ export interface IWidgetPlacement {
      * reads). Bounded to a small integer at the admin boundary.
      */
     readonly layoutWeight?: number;
+    /**
+     * Limits the placement to phone-sized (`mobile`) or larger (`desktop`)
+     * screens. Absent means every screen. Like `layoutWeight`, it describes
+     * where the placement appears rather than what the widget shows, so it
+     * is a placement field and not part of `instanceConfig`. See
+     * {@link WidgetShowOn} for the threshold and why it is the viewport's.
+     */
+    readonly showOn?: WidgetShowOn;
     /** Optional heading rendered above the widget. */
     readonly title?: string;
     /**
@@ -143,6 +153,8 @@ export interface IPlacementInput {
      * {@link IWidgetPlacement.layoutWeight}. Omitted means auto width.
      */
     layoutWeight?: number;
+    /** Optional screen-class limit. See {@link IWidgetPlacement.showOn}. Omitted means every screen. */
+    showOn?: WidgetShowOn;
     title?: string;
     /** Optional root-relative link target for the heading. See {@link IWidgetPlacement.titleUrl}. */
     titleUrl?: string;

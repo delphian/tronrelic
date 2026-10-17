@@ -1,0 +1,67 @@
+/**
+ * Full-menu panel opened by the tab bar's Menu tab.
+ *
+ * Top-level entries are separated by a rule, and each entry's children are
+ * indented beneath it. Links get generous vertical padding because this list
+ * is tapped with a thumb, not clicked with a pointer.
+ */
+
+.list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.sublist {
+    margin: 0;
+    padding: 0 0 var(--padding-xs) var(--padding-md);
+    list-style: none;
+}
+
+.root_entry + .root_entry {
+    border-top: var(--border-width-thin) solid var(--color-border);
+}
+
+.link {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
+    padding: var(--padding-sm) var(--padding-xs);
+    border-radius: var(--radius-sm);
+    color: var(--color-text);
+    font-size: var(--font-size-body);
+    transition: background-color var(--transition-base);
+
+    &:hover {
+        background: var(--color-primary-alpha-10);
+        color: var(--color-text);
+    }
+}
+
+.link_active {
+    background: var(--color-primary-alpha-15);
+    font-weight: var(--font-weight-semibold);
+}
+
+// A category with no page of its own, shown as a heading over its children.
+.group_label {
+    display: block;
+    padding: var(--padding-sm) var(--padding-xs) var(--padding-2xs);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: var(--letter-spacing-wide);
+    text-transform: uppercase;
+}
+
+.languages {
+    margin-top: var(--gap-md);
+    padding-top: var(--padding-md);
+    border-top: var(--border-width-thin) solid var(--color-border);
+
+    // The switcher renders nothing on an English-only page; drop the rule and
+    // spacing with it rather than leave a stray divider at the bottom.
+    &:empty {
+        display: none;
+    }
+}

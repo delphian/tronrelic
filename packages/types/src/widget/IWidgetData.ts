@@ -6,6 +6,7 @@
  * and as the API response format for SSR widget fetching.
  */
 import type { WidgetTitleSize } from '../widget-placements/IWidgetPlacement.js';
+import type { WidgetShowOn } from '../widget-placements/WidgetShowOn.js';
 
 export interface IWidgetData {
     /**
@@ -39,6 +40,14 @@ export interface IWidgetData {
      * every placement created before the field existed.
      */
     layoutWeight?: number;
+
+    /**
+     * Screen class this item is limited to, carried verbatim from the
+     * resolved placement's `showOn`. The `WidgetZone` renderer hides the
+     * item on the other class of screen with CSS, so the server sends the
+     * same HTML to every device. Absent means every screen.
+     */
+    showOn?: WidgetShowOn;
 
     /**
      * Optional display title.

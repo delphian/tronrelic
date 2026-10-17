@@ -15,7 +15,7 @@
  */
 
 import type { ObjectId } from 'mongodb';
-import type { PlacementSource, WidgetTitleSize } from '@/types';
+import type { PlacementSource, WidgetShowOn, WidgetTitleSize } from '@/types';
 
 /**
  * Widget placement document as stored in MongoDB.
@@ -51,6 +51,12 @@ export interface IWidgetPlacementDocument {
      * migration since unset rows simply omit it.
      */
     layoutWeight?: number;
+    /**
+     * Screen class the placement is limited to (see
+     * `IWidgetPlacement.showOn`). Absent means every screen, which is how
+     * rows written before the field existed read, so it needs no migration.
+     */
+    showOn?: WidgetShowOn;
     /** Optional heading rendered above the widget. */
     title?: string;
     /** Optional root-relative URL linking the heading. Operator-only. */

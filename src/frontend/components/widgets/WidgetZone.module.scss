@@ -158,6 +158,25 @@
     @include collapse-to-column($breakpoint-desktop);
 }
 
+// Screen-class limits from a placement's `showOn`. These query the `body`
+// container that globals.scss declares, not the nearest `widget-layout`
+// container. The setting exists to pair the header menu with the mobile tab
+// bar zone, and the root layout shows that zone with the same `body` query.
+// Measuring the zone's own width instead would hide the header menu at a
+// slightly different point from where the tab bar appears, leaving a band of
+// window widths with no navigation at all.
+.show_on_mobile {
+    @container body (min-width: #{$breakpoint-mobile + 1px}) {
+        display: none;
+    }
+}
+
+.show_on_desktop {
+    @container body (max-width: #{$breakpoint-mobile}) {
+        display: none;
+    }
+}
+
 .item_title {
     margin: 0 0 var(--gap-sm);
     font-weight: var(--font-weight-semibold);

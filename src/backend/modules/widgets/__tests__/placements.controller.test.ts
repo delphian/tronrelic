@@ -446,6 +446,66 @@ describe('PlacementsController titleSize validation', () => {
     });
 });
 
+describe('PlacementsController showOn validation', () => {
+    let widgets: IWidgetsService;
+    let controller: PlacementsController;
+    let logger: ISystemLogService;
+    let res: ReturnType<typeof buildResponseStub>;
+
+    beforeEach(() => {
+        logger = buildLoggerStub();
+        res = buildResponseStub();
+    });
+
+    it('rejects an unknown showOn with 400 and never reaches the service', async () => {
+        // An unrecognised value would match neither renderer class and
+        // silently show the widget on every screen.
+        widgets = buildWidgetsServiceStub({ createPlacement: vi.fn() });
+        controller = buildController(widgets, logger);
+
+        const req = { body: { ...validCreateBody, showOn: 'tablet' } } as Request;
+        await controller.createPlacement(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(res.json.mock.calls[0][0].error).toMatch(/showOn/);
+        expect(widgets.createPlacement).not.toHaveBeenCalled();
+    });
+
+    it('accepts a valid showOn and forwards it to the service', async () => {
+        widgets = buildWidgetsServiceStub({
+            createPlacement: vi.fn(async () => ({ id: 'new-id' } as IWidgetPlacement))
+        });
+        controller = buildController(widgets, logger);
+
+        const req = { body: { ...validCreateBody, showOn: 'desktop' } } as Request;
+        await controller.createPlacement(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(201);
+        expect(widgets.createPlacement).toHaveBeenCalledWith(
+            expect.objectContaining({ showOn: 'desktop' })
+        );
+    });
+
+    it('forwards showOn: null on patch as an explicit every-screen signal', async () => {
+        widgets = buildWidgetsServiceStub({
+            updatePlacement: vi.fn(async () => ({ id: 'p1' } as IWidgetPlacement))
+        });
+        controller = buildController(widgets, logger);
+
+        const req = {
+            params: { id: 'p1' },
+            body: { showOn: null }
+        } as unknown as Request;
+
+        await controller.updatePlacement(req, res);
+
+        expect(widgets.updatePlacement).toHaveBeenCalledWith(
+            'p1',
+            expect.objectContaining({ showOn: null })
+        );
+    });
+});
+
 describe('PlacementsController layoutWeight validation', () => {
     let widgets: IWidgetsService;
     let logger: ISystemLogService;

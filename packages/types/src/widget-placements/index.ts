@@ -15,6 +15,8 @@ export type {
     WidgetTitleSize
 } from './IWidgetPlacement.js';
 
+export type { WidgetShowOn } from './WidgetShowOn.js';
+
 export type {
     IPlacementService,
     IPlacementListFilter,
