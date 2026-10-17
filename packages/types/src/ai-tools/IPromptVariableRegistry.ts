@@ -22,6 +22,7 @@ import type {
     IPromptVariableInfo,
     IStaticPromptVariable
 } from './IPromptVariable.js';
+import type { IPromptVariableSummary } from './IPromptVariableSummary.js';
 
 /** Fields an admin supplies when creating a `static` variable. */
 export interface IStaticPromptVariableInput {
@@ -133,6 +134,17 @@ export interface IPromptVariableRegistry {
      * @returns Info for each variable, with effective sensitivity and size.
      */
     listInfo(): Promise<IPromptVariableInfo[]>;
+
+    /**
+     * The describing fields of every variable (both kinds), without resolving
+     * any of them. Use this instead of {@link listInfo} when the caller needs to
+     * know which variables exist and how each is classified, because
+     * `listInfo` runs every dynamic resolver to measure its size and carries
+     * each static variable's stored text.
+     *
+     * @returns One summary per variable, sorted by category and then name.
+     */
+    listSummaries(): IPromptVariableSummary[];
 
     /**
      * Create an admin-authored `static` variable.

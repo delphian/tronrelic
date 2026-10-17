@@ -22,6 +22,7 @@
  */
 
 import type { AiToolSensitivity } from './IAiToolCapability.js';
+import type { IPromptVariableSummary } from './IPromptVariableSummary.js';
 
 /** Whether a variable is a code-registered resolver or an admin-authored constant. */
 export type PromptVariableKind = 'dynamic' | 'static';
@@ -86,28 +87,10 @@ export interface IStaticPromptVariable {
 
 /**
  * Serializable metadata for one variable in the admin panel — unifies both kinds
- * behind a single view. The resolver/content is not included; size is measured
- * by resolving once.
+ * behind a single view. Adds to {@link IPromptVariableSummary} the fields only
+ * the Registry tab needs; size is measured by resolving once.
  */
-export interface IPromptVariableInfo {
-    /** Kebab-case identifier. */
-    name: string;
-
-    /** The `{%name%}` reference pattern, precomputed for the UI. */
-    pattern: string;
-
-    /** Human-readable description. */
-    description: string;
-
-    /** Grouping category. */
-    category: string;
-
-    /** Whether the variable is a code resolver (`dynamic`) or admin constant (`static`). */
-    kind: PromptVariableKind;
-
-    /** Effective sensitivity after applying any admin override. */
-    sensitivity: AiToolSensitivity;
-
+export interface IPromptVariableInfo extends IPromptVariableSummary {
     /**
      * Whether the effective sensitivity comes from an admin `override`, the
      * variable's `declared` default, or the registry `default`. Lets the UI show

@@ -30,6 +30,7 @@ import type {
     IPromptVariableDefinition,
     IPromptVariableInfo,
     IPromptVariableRegistry,
+    IPromptVariableSummary,
     IStaticPromptVariable,
     IStaticPromptVariableInput,
     IStaticPromptVariableUpdate,
@@ -238,8 +239,56 @@ export class PromptVariableRegistry implements IPromptVariableRegistry {
         const staticInfos = [...this.statics.values()].map(stat => this.buildStaticInfo(stat));
 
         const infos = [...dynamicInfos, ...staticInfos];
-        infos.sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
+        infos.sort(compareByCategoryThenName);
         return infos;
+    }
+
+    /** @inheritdoc */
+    listSummaries(): IPromptVariableSummary[] {
+        const summaries = [
+            ...[...this.dynamic.entries()].map(([name, entry]) => this.summarizeDynamic(name, entry)),
+            ...[...this.statics.values()].map(stat => this.summarizeStatic(stat))
+        ];
+        summaries.sort(compareByCategoryThenName);
+        return summaries;
+    }
+
+    /**
+     * Build the describing fields of one static variable. Shared by
+     * {@link listSummaries} and {@link buildStaticInfo} so the two views of a
+     * variable cannot disagree on its name, category, or sensitivity.
+     *
+     * @param stat - The static variable.
+     * @returns Its summary, without the stored text.
+     */
+    private summarizeStatic(stat: IStaticPromptVariable): IPromptVariableSummary {
+        return {
+            name: stat.name,
+            pattern: `{%${stat.name}%}`,
+            description: stat.description,
+            category: stat.category,
+            kind: 'static',
+            sensitivity: stat.sensitivity
+        };
+    }
+
+    /**
+     * Build the describing fields of one dynamic variable without running its
+     * resolver. Shared by {@link listSummaries} and {@link buildDynamicInfo}.
+     *
+     * @param name - Variable name.
+     * @param entry - The registered dynamic entry.
+     * @returns Its summary, carrying the effective sensitivity.
+     */
+    private summarizeDynamic(name: string, entry: DynamicEntry): IPromptVariableSummary {
+        return {
+            name,
+            pattern: `{%${name}%}`,
+            description: entry.definition.description,
+            category: entry.definition.category,
+            kind: 'dynamic',
+            sensitivity: this.dynamicSensitivity(name, entry.definition).sensitivity
+        };
     }
 
     /**
@@ -251,12 +300,7 @@ export class PromptVariableRegistry implements IPromptVariableRegistry {
      */
     private buildStaticInfo(stat: IStaticPromptVariable): IPromptVariableInfo {
         return {
-            name: stat.name,
-            pattern: `{%${stat.name}%}`,
-            description: stat.description,
-            category: stat.category,
-            kind: 'static',
-            sensitivity: stat.sensitivity,
+            ...this.summarizeStatic(stat),
             sensitivitySource: 'override',
             editable: true,
             sizeBytes: Buffer.byteLength(stat.content, 'utf-8'),
@@ -272,15 +316,9 @@ export class PromptVariableRegistry implements IPromptVariableRegistry {
      * @returns Its serializable info.
      */
     private async buildDynamicInfo(name: string, entry: DynamicEntry): Promise<IPromptVariableInfo> {
-        const { sensitivity, source } = this.dynamicSensitivity(name, entry.definition);
         return {
-            name,
-            pattern: `{%${name}%}`,
-            description: entry.definition.description,
-            category: entry.definition.category,
-            kind: 'dynamic',
-            sensitivity,
-            sensitivitySource: source,
+            ...this.summarizeDynamic(name, entry),
+            sensitivitySource: this.dynamicSensitivity(name, entry.definition).source,
             editable: false,
             sizeBytes: await this.safeSize(name)
         };
@@ -482,6 +520,18 @@ function stripMongoId<T extends Record<string, unknown>>(doc: T): IStaticPromptV
     const cleaned = { ...doc };
     delete (cleaned as Record<string, unknown>)._id;
     return cleaned as unknown as IStaticPromptVariable;
+}
+
+/**
+ * Sort order shared by both variable listings, so the Registry tab and the
+ * `ai-list-prompt-variables` tool show variables in the same order.
+ *
+ * @param a - First variable.
+ * @param b - Second variable.
+ * @returns Negative, zero, or positive, as `Array.prototype.sort` expects.
+ */
+function compareByCategoryThenName(a: IPromptVariableSummary, b: IPromptVariableSummary): number {
+    return a.category.localeCompare(b.category) || a.name.localeCompare(b.name);
 }
 
 /**
