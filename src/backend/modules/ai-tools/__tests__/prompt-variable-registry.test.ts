@@ -99,6 +99,20 @@ describe('PromptVariableRegistry', () => {
             expect(info?.kind).toBe('static');
         });
 
+        it('listSummaries describes both kinds without resolving or carrying static content', async () => {
+            const resolve = vi.fn(async () => 'LIVE');
+            registry.registerVariable({ name: 'live', description: 'd', category: 'b', sensitivity: 'public', resolve });
+            await registry.createStatic({ name: 'note', description: 'd', category: 'a', content: 'BODY' });
+
+            const summaries = registry.listSummaries();
+
+            expect(resolve).not.toHaveBeenCalled();
+            expect(summaries).toEqual([
+                { name: 'note', pattern: '{%note%}', description: 'd', category: 'a', kind: 'static', sensitivity: 'secret' },
+                { name: 'live', pattern: '{%live%}', description: 'd', category: 'b', kind: 'dynamic', sensitivity: 'public' }
+            ]);
+        });
+
         it('rejects a static name that shadows a registered dynamic variable', async () => {
             registry.registerVariable({ name: 'system-status', description: 'd', category: 'c', resolve: async () => 'x' });
 

@@ -42,6 +42,7 @@ export type {
     IExpandedPromptVariable,
     PromptVariableKind
 } from './IPromptVariable.js';
+export type { IPromptVariableSummary } from './IPromptVariableSummary.js';
 export type {
     IPromptExpansionOptions,
     IPromptVariableRegistry,

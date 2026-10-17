@@ -234,6 +234,20 @@ export class AiQueryHistoryService {
     }
 
     /**
+     * Fetch one query record by its own id, so a caller holding the id of a
+     * single turn can read it without loading the whole conversation.
+     *
+     * @param id - The record id.
+     * @returns The record, or `null` when none has that id.
+     */
+    async get(id: string): Promise<IAiQueryRecord | null> {
+        const collection = this.database.getCollection<IAiQueryRecord>(COLLECTION);
+        // Coerce to a primitive string so the filter can never carry a Mongo
+        // operator object, even if a caller passes model-supplied input through.
+        return collection.findOne({ id: String(id) });
+    }
+
+    /**
      * Fetch every record of one conversation, oldest first, so the Query tab can
      * reopen a multi-turn chat in the order it was spoken.
      *
