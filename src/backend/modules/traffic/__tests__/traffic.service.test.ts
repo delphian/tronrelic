@@ -361,6 +361,22 @@ describe('TrafficService', () => {
             expect(page.hasMore).toBe(true);
         });
 
+        it('breaks timestamp ties on the sort key so OFFSET pages cannot skip or repeat a row', async () => {
+            // Rows sharing a millisecond have no defined order under a
+            // timestamp-only sort, so two paged queries could disagree.
+            const queries = captureWith([]);
+
+            await TrafficService.getInstance().listTrafficEvents(
+                { since: new Date('2026-10-16T00:00:00.000Z') }, {}, 20, 0
+            );
+            await TrafficService.getInstance().listTrafficEvents(
+                { since: new Date('2026-10-16T00:00:00.000Z') }, {}, 20, 0, 'oldest'
+            );
+
+            expect(queries[0]!.sql).toContain('ORDER BY timestamp DESC, candidate_uid DESC');
+            expect(queries[1]!.sql).toContain('ORDER BY timestamp ASC, candidate_uid ASC');
+        });
+
         it('groups sources on the requested column and drops rows where it is NULL', async () => {
             const queries = captureWith([{
                 key: '139341',
