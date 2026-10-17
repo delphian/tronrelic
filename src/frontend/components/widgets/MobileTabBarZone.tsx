@@ -1,14 +1,13 @@
 /**
  * @fileoverview Render site for the Mobile tab bar zone.
  *
- * The zone holds phone navigation fixed to the bottom of the screen. Fixing
- * it takes it out of the page flow, so the last lines of every page would sit
- * underneath it; this component therefore also renders a spacer at the end of
- * the page with the bar's height. Both show only on phone-sized screens.
+ * The zone holds phone navigation stuck to the bottom of the screen. The bar
+ * stays in the page flow, so it reserves exactly the height it renders at and
+ * the last lines of a page scroll clear of it however tall the bar gets. It
+ * shows only on phone-sized screens.
  *
- * When no widget is placed in the zone, nothing renders at all, neither the
- * bar nor the spacer, so the site looks exactly as it did before the zone
- * existed. That is what makes the tab bar opt-in: an operator turns it on by
+ * When no widget is placed in the zone, nothing renders at all, so the site
+ * looks exactly as it did before the zone existed. That is what makes the tab bar opt-in: an operator turns it on by
  * placing the Tab bar widget here from `/system/widgets`.
  *
  * @module frontend/components/widgets/MobileTabBarZone
@@ -35,21 +34,21 @@ interface IMobileTabBarZoneProps {
 }
 
 /**
- * Render the Mobile tab bar zone fixed to the bottom of the screen, plus the
- * spacer that keeps page content clear of it.
+ * Render the Mobile tab bar zone stuck to the bottom of the screen.
+ *
+ * The bar is the last element in the page flow, which lets one box both hold
+ * the bar against the bottom of the viewport and reserve the space the bar
+ * occupies, so no separate spacer has to guess its height.
  *
  * @param props - The route's widgets, the zone layout, and the current path.
- * @returns The spacer and the fixed bar, or nothing when the zone is empty.
+ * @returns The bar, or nothing when the zone is empty.
  */
 export function MobileTabBarZone({ widgets, layout, route }: IMobileTabBarZoneProps) {
     const hasWidgets = widgets.some(widget => widget.zone === MOBILE_TAB_BAR_ZONE_ID);
 
     return hasWidgets ? (
-        <>
-            <div className={styles.spacer} aria-hidden="true" />
-            <div className={styles.dock}>
-                <WidgetZone name={MOBILE_TAB_BAR_ZONE_ID} widgets={widgets} layout={layout} route={route} params={{}} />
-            </div>
-        </>
+        <div className={styles.dock}>
+            <WidgetZone name={MOBILE_TAB_BAR_ZONE_ID} widgets={widgets} layout={layout} route={route} params={{}} />
+        </div>
     ) : null;
 }

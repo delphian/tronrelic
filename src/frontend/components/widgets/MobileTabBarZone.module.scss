@@ -1,34 +1,31 @@
 /**
- * Mobile tab bar zone: fixed to the bottom of the screen on phones only.
+ * Mobile tab bar zone: stuck to the bottom of the screen on phones only.
  *
- * Both rules query the `body` container that globals.scss declares rather
+ * The rule queries the `body` container that globals.scss declares rather
  * than the viewport, and a placement's "Mobile only" / "Desktop only"
  * setting in WidgetZone.module.scss uses the same query at the same width.
- * Keeping all three on one measurement is what guarantees the header menu
- * hides at exactly the width the tab bar appears, with no window width left
+ * Keeping both on one measurement is what guarantees the header menu hides
+ * at exactly the width the tab bar appears, with no window width left
  * showing neither.
  */
 
 @use '../../app/breakpoints' as *;
 
+// The bar sticks to the bottom of the screen without leaving the page flow.
+// It is the last child of the `body` flex column, so `bottom: 0` holds it
+// against the bottom of the viewport for the whole scroll, and because it
+// still takes part in the flow it reserves its own rendered height at the end
+// of the page. A spacer of a fixed height could not do that: an operator may
+// give the placement a heading, put a second widget in the zone, or change
+// the zone's gap, and the tab bar itself pads its underside by the phone's
+// safe-area inset. Each of those makes the bar taller, and the reserved space
+// grows with it because it is the same box.
 .dock {
-    position: fixed;
-    right: 0;
+    position: sticky;
     bottom: 0;
-    left: 0;
-    z-index: var(--tab-bar-z-index);
-}
-
-// Reserves the bar's height at the end of the page so the footer and the
-// last of the content can scroll clear of the fixed bar. The safe-area inset
-// matches the padding the tab bar adds above a phone's home indicator.
-.spacer {
     flex-shrink: 0;
-    height: calc(var(--tab-bar-height) + env(safe-area-inset-bottom));
-}
+    z-index: var(--tab-bar-z-index);
 
-.dock,
-.spacer {
     @container body (min-width: #{$breakpoint-mobile + 1px}) {
         display: none;
     }
