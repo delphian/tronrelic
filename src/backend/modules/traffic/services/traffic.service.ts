@@ -1376,6 +1376,11 @@ export class TrafficService {
         let page: ITrafficEventListPage = { rows: [], hasMore: false };
         const { clause, params } = this.rangeParams(range);
         const filters = this.eventFilterClause(filter);
+        // Sort on the table's full sort key rather than on `timestamp` alone.
+        // Rows sharing a millisecond have no defined order under a
+        // timestamp-only sort, so a second query at a higher OFFSET could
+        // return them in a different order and skip or repeat a tied row.
+        const direction = order === 'oldest' ? 'ASC' : 'DESC';
         // One extra row tells us whether another page exists without a second
         // COUNT query over the same scan.
         const sql = `
@@ -1399,7 +1404,7 @@ export class TrafficService {
                 subnet_hash
             FROM ${TABLE_NAME}
             WHERE ${clause}${filters.fragment}
-            ORDER BY timestamp ${order === 'oldest' ? 'ASC' : 'DESC'}
+            ORDER BY timestamp ${direction}, candidate_uid ${direction}
             LIMIT {pageLimit:UInt32} OFFSET {pageOffset:UInt32}
         `;
 
