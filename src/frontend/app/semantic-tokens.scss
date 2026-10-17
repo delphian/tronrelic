@@ -987,12 +987,12 @@
     /* ========================================================================
      * TAB BAR TOKENS
      *
-     * The phone navigation fixed to the bottom of the screen by the Mobile tab
-     * bar zone. The height is a fixed control size rather than a density-scaled
-     * gap: each tab is a touch target, and the page reserves exactly this much
-     * space at the bottom so the bar never covers content, so the two must not
-     * drift apart under a density setting. 56px matches the common phone tab
-     * bar height and keeps every tab well above the WCAG 2.5.8 minimum target.
+     * The phone navigation stuck to the bottom of the screen by the Mobile tab
+     * bar zone. The height is the minimum height of each tab, a fixed control
+     * size rather than a density-scaled gap, because each tab is a touch target
+     * and must not shrink under a compact density. 56px matches the common
+     * phone tab bar height and keeps every tab well above the WCAG 2.5.8
+     * minimum target.
      *
      * The background leans slightly toward primary like the account tray, so
      * the bar reads as site chrome rather than as a card floating over the page.
