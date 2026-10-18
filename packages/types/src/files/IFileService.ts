@@ -172,6 +172,25 @@ export interface IFileVariant {
  */
 export interface IFileListFilter {
     source?: IFileSource;
+
+    /**
+     * Restrict results to files whose source has this kind, whatever the
+     * source id. Exists because `source` matches one exact `{ kind, id }`
+     * pair and so cannot express "every file any plugin stored", which is the
+     * scope the AI file tools authorize. Ignored when `source` is set, since
+     * `source` already names a kind.
+     */
+    sourceKind?: IFileSource['kind'];
+
+    /**
+     * Restrict results to files whose `uploadedBy` equals this value exactly.
+     * Exists so a feature can show a user their own uploads: pass the Better
+     * Auth user id from a trusted session or tool principal, never a value
+     * the caller typed. The field also holds `plugin:<id>` tags for files a
+     * plugin generated, so those match only their tag, never a user id.
+     */
+    uploadedBy?: string;
+
     mimeType?: string;
 
     /**
@@ -343,6 +362,8 @@ export interface IFileService {
 
     /**
      * Enumerate records matching the filter, sorted by `uploadedAt` desc.
+     * Implementations must honour `sourceKind` and `uploadedBy` as well as
+     * `source`.
      */
     list(filter?: IFileListFilter): Promise<IFileRecord[]>;
 
