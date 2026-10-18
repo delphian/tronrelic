@@ -6,7 +6,8 @@
  * answer, transcript, or error text. The transcript read is classified
  * `secret`, finds a run by its own id or by conversation id, keeps the
  * allowlist's "unknown" state apart from "unrestricted", does not return the
- * answer twice, and holds every text field to the per-field and total budgets.
+ * answer twice, cuts each text field to the per-field limit, and pages a long
+ * run so every segment is reachable and none is cut by the page total.
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -153,7 +154,7 @@ describe('prompt run AI tools', () => {
         expect(result).toMatchObject({ success: true, found: false, matchedBy: null, turns: [] });
     });
 
-    it('cuts long fields and stops at the total budget', async () => {
+    it('cuts long fields, ends the page before an item that would not fit, and resumes there', async () => {
         const huge = 'y'.repeat(30_000);
         const long = run({
             id: 'r-9',
@@ -161,16 +162,61 @@ describe('prompt run AI tools', () => {
             transcript: Array.from({ length: 8 }, () => ({ type: 'tool_result' as const, toolUseId: 'x', content: huge }))
         });
         const { tools } = buildTools([long]);
+        const tool = tools[AI_TOOL_NAMES.getRun];
+        type Page = { next: number | null; truncatedFields: number; turns: Array<Record<string, unknown> & { transcript: Array<{ content: string; truncated?: boolean }> }> };
 
-        const result = await tools[AI_TOOL_NAMES.getRun].handler({ id: 'r-9' }) as { turns: Array<{ prompt: string; cutFields: string[]; transcript: Array<{ content: string; truncated?: boolean }> }>; truncatedFields: number };
-        const turn = result.turns[0];
-        const totalChars = turn.prompt.length + turn.transcript.reduce((sum, segment) => sum + segment.content.length, 0);
+        const first = await tool.handler({ id: 'r-9' }) as Page;
+        const second = await tool.handler({ id: 'r-9', start: first.next }) as Page;
+        const firstTurn = first.turns[0];
+        const firstChars = (firstTurn.prompt as string).length + firstTurn.transcript.reduce((sum, segment) => sum + segment.content.length, 0);
 
-        expect(turn.prompt.length).toBe(20_000);
-        expect(turn.cutFields).toEqual(['prompt']);
-        expect(turn.transcript.every(segment => segment.truncated)).toBe(true);
-        expect(totalChars).toBeLessThanOrEqual(120_000);
-        expect(result.truncatedFields).toBe(9);
+        expect(firstTurn).toMatchObject({ continued: false, cutFields: ['prompt'], segmentStart: 0, segmentCount: 8 });
+        expect((firstTurn.prompt as string).length).toBe(20_000);
+        expect(firstTurn.transcript).toHaveLength(5);
+        expect(firstTurn.transcript.every(segment => segment.content.length === 20_000 && segment.truncated)).toBe(true);
+        expect(firstChars).toBeLessThanOrEqual(120_000);
+        expect(first).toMatchObject({ next: 6, truncatedFields: 6 });
+
+        expect(second.turns).toHaveLength(1);
+        expect(second.turns[0]).toMatchObject({ id: 'r-9', continued: true, segmentStart: 5, segmentCount: 8 });
+        expect(second.turns[0]).not.toHaveProperty('prompt');
+        expect(second.turns[0].transcript).toHaveLength(3);
+        expect(second).toMatchObject({ start: 6, next: null, truncatedFields: 3 });
+    });
+
+    it('pages a conversation across turns, returning each turn\'s text fields once and before its transcript', async () => {
+        const big = 'z'.repeat(30_000);
+        const segments = Array.from({ length: 6 }, () => ({ type: 'tool_result' as const, toolUseId: 'x', content: big }));
+        const turnA = run({ id: 'r-a', conversationId: 'c-9', createdAt: '2026-10-15T06:00:00.000Z', transcript: segments });
+        const turnB = run({ id: 'r-b', conversationId: 'c-9', createdAt: '2026-10-15T07:00:00.000Z', expandedPrompt: 'Summarise fee 420', transcript: segments });
+        const { tools } = buildTools([turnB, turnA]);
+        const tool = tools[AI_TOOL_NAMES.getRun];
+        type Page = { next: number | null; turns: Array<Record<string, unknown> & { transcript: unknown[] }> };
+
+        const first = await tool.handler({ id: 'c-9' }) as Page;
+        const second = await tool.handler({ id: 'c-9', start: first.next }) as Page;
+        const third = await tool.handler({ id: 'c-9', start: second.next }) as Page;
+        const pages = [first, second, third];
+
+        expect(first.turns.map(turn => turn.id)).toEqual(['r-a']);
+        expect(first.next).toBe(6);
+        expect(second.turns.map(turn => turn.id)).toEqual(['r-a', 'r-b']);
+        expect(second.turns[0]).toMatchObject({ continued: true, segmentStart: 5 });
+        expect(second.turns[0]).not.toHaveProperty('prompt');
+        expect(second.turns[1]).toMatchObject({ continued: false, prompt: 'Summarise {%chain-params%}', expandedPrompt: 'Summarise fee 420', segmentStart: 0 });
+        expect(second.next).toBe(12);
+        expect(third.turns.map(turn => turn.id)).toEqual(['r-b']);
+        expect(third.turns[0]).toMatchObject({ continued: true, segmentStart: 4 });
+        expect(third.next).toBeNull();
+        expect(pages.flatMap(page => page.turns).reduce((sum, turn) => sum + turn.transcript.length, 0)).toBe(12);
+    });
+
+    it('returns no turns and no next position when start is past the end', async () => {
+        const { tools } = buildTools([WITH_TRANSCRIPT]);
+
+        const result = await tools[AI_TOOL_NAMES.getRun].handler({ id: 'r-2', start: 50 }) as Record<string, unknown>;
+
+        expect(result).toMatchObject({ success: true, found: true, start: 50, next: null, turns: [] });
     });
 
     it('refuses bad arguments as input errors', async () => {
@@ -181,6 +227,9 @@ describe('prompt run AI tools', () => {
         }
         for (const id of [undefined, '', '   ', 'x'.repeat(257), { $ne: null }]) {
             expect(await tools[AI_TOOL_NAMES.getRun].handler({ id })).toEqual({ success: false, error: expect.any(String), errorKind: 'input' });
+        }
+        for (const start of [-1, 1.5, '6', 1_000_001]) {
+            expect(await tools[AI_TOOL_NAMES.getRun].handler({ id: 'r-1', start })).toEqual({ success: false, error: expect.any(String), errorKind: 'input' });
         }
     });
 });

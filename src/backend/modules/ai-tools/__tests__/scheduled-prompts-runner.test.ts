@@ -135,7 +135,7 @@ describe('runScheduledPrompts', () => {
 
     it('is a no-op when no scheduled prompts exist', async () => {
         const savedPrompts = createMockSavedPrompts([]);
-        await runScheduledPrompts(savedPrompts as any, logger as any, () => provider);
+        await runScheduledPrompts({ savedPrompts: savedPrompts as any, logger: logger as any, resolveProvider: () => provider });
         expect(provider.query).not.toHaveBeenCalled();
         expect(savedPrompts.recordRunResult).not.toHaveBeenCalled();
     });
@@ -144,7 +144,7 @@ describe('runScheduledPrompts', () => {
         const savedPrompts = createMockSavedPrompts([
             makePrompt({ id: 'bad', cron: 'not-a-cron', lastRunAt: minutesAgo(10) })
         ]);
-        await runScheduledPrompts(savedPrompts as any, logger as any, () => provider);
+        await runScheduledPrompts({ savedPrompts: savedPrompts as any, logger: logger as any, resolveProvider: () => provider });
         expect(provider.query).not.toHaveBeenCalled();
         expect(savedPrompts.recordRunResult).not.toHaveBeenCalled();
         expect(logger.warn).toHaveBeenCalledWith(
@@ -163,7 +163,7 @@ describe('runScheduledPrompts', () => {
                 prompt: 'run me'
             })
         ]);
-        await runScheduledPrompts(savedPrompts as any, logger as any, () => provider);
+        await runScheduledPrompts({ savedPrompts: savedPrompts as any, logger: logger as any, resolveProvider: () => provider });
 
         expect(provider.query).toHaveBeenCalledTimes(1);
         // Autonomous → programmatic mode, so the governor's external-tool
@@ -190,7 +190,7 @@ describe('runScheduledPrompts', () => {
             }
         ]);
 
-        await runScheduledPrompts(savedPrompts as any, logger as any, () => provider);
+        await runScheduledPrompts({ savedPrompts: savedPrompts as any, logger: logger as any, resolveProvider: () => provider });
 
         expect(provider.query).toHaveBeenCalledTimes(1);
         expect(savedPrompts.recordRunResult).toHaveBeenCalledTimes(1);
@@ -208,7 +208,7 @@ describe('runScheduledPrompts', () => {
             }
         ]);
 
-        await runScheduledPrompts(savedPrompts as any, logger as any, () => provider);
+        await runScheduledPrompts({ savedPrompts: savedPrompts as any, logger: logger as any, resolveProvider: () => provider });
 
         // Only the cron element fires on the tick; the hook binding waits for
         // its hook.
@@ -229,7 +229,7 @@ describe('runScheduledPrompts', () => {
         // No owner on the prompt → composed against a null principal (master-only).
         const composeSystemPrompt = vi.fn(async () => 'INJECTED');
 
-        await runScheduledPrompts(savedPrompts as any, logger as any, () => provider, undefined, composeSystemPrompt);
+        await runScheduledPrompts({ savedPrompts: savedPrompts as any, logger: logger as any, resolveProvider: () => provider, composeSystemPrompt });
 
         expect(composeSystemPrompt).toHaveBeenCalledTimes(1);
         expect(provider.query).toHaveBeenCalledWith(
@@ -248,7 +248,7 @@ describe('runScheduledPrompts', () => {
             })
         ]);
 
-        await runScheduledPrompts(savedPrompts as any, logger as any, () => provider);
+        await runScheduledPrompts({ savedPrompts: savedPrompts as any, logger: logger as any, resolveProvider: () => provider });
 
         // The least-privilege selector rides the programmatic query so the
         // governor enforces it (undefined would mean "all enabled tools").
@@ -262,7 +262,7 @@ describe('runScheduledPrompts', () => {
             makePrompt({ id: 'toolless', cron: '* * * * *', lastRunAt: minutesAgo(5), prompt: 'run', toolAllowlist: [] })
         ]);
 
-        await runScheduledPrompts(savedPrompts as any, logger as any, () => provider);
+        await runScheduledPrompts({ savedPrompts: savedPrompts as any, logger: logger as any, resolveProvider: () => provider });
 
         expect(provider.query).toHaveBeenCalledWith(
             expect.objectContaining({ prompt: 'run', toolAllowlist: [] })
@@ -280,7 +280,7 @@ describe('runScheduledPrompts', () => {
             makePrompt({ id: 'bad-tool', cron: '* * * * *', lastRunAt: minutesAgo(5), toolAllowlist: ['gone'] })
         ]);
 
-        await runScheduledPrompts(savedPrompts as any, logger as any, () => provider);
+        await runScheduledPrompts({ savedPrompts: savedPrompts as any, logger: logger as any, resolveProvider: () => provider });
 
         expect(savedPrompts.recordRunFailure).toHaveBeenCalledTimes(1);
         const [, , , reason] = savedPrompts.recordRunFailure.mock.calls[0];
@@ -293,7 +293,7 @@ describe('runScheduledPrompts', () => {
             makePrompt({ id: 'not-due', cron: '0 0 * * *', lastRunAt: tenSecondsAgo })
         ]);
 
-        await runScheduledPrompts(savedPrompts as any, logger as any, () => provider);
+        await runScheduledPrompts({ savedPrompts: savedPrompts as any, logger: logger as any, resolveProvider: () => provider });
         expect(provider.query).not.toHaveBeenCalled();
         expect(savedPrompts.recordRunResult).not.toHaveBeenCalled();
     });
@@ -303,7 +303,7 @@ describe('runScheduledPrompts', () => {
             makePrompt({ id: 'first-run', cron: '* * * * *', createdAt: minutesAgo(10) })
         ]);
 
-        await runScheduledPrompts(savedPrompts as any, logger as any, () => provider);
+        await runScheduledPrompts({ savedPrompts: savedPrompts as any, logger: logger as any, resolveProvider: () => provider });
         expect(provider.query).toHaveBeenCalledTimes(1);
         expect(savedPrompts.recordRunResult).toHaveBeenCalledTimes(1);
     });
@@ -319,7 +319,7 @@ describe('runScheduledPrompts', () => {
             })
         ]);
 
-        await runScheduledPrompts(savedPrompts as any, logger as any, () => provider);
+        await runScheduledPrompts({ savedPrompts: savedPrompts as any, logger: logger as any, resolveProvider: () => provider });
         // The next every-minute occurrence after the just-now anchor is ~1 minute
         // out, so the prompt waits this tick rather than firing on the stale
         // lastRunAt / createdAt.
@@ -333,7 +333,7 @@ describe('runScheduledPrompts', () => {
             makePrompt({ id: 'fails', cron: '* * * * *', lastRunAt: minutesAgo(5) })
         ]);
 
-        await runScheduledPrompts(savedPrompts as any, logger as any, () => provider);
+        await runScheduledPrompts({ savedPrompts: savedPrompts as any, logger: logger as any, resolveProvider: () => provider });
 
         expect(provider.query).toHaveBeenCalledTimes(1);
         // Claim-first: recordRunResult claims with a null error, then
@@ -353,7 +353,7 @@ describe('runScheduledPrompts', () => {
             makePrompt({ id: 'ok', cron: '* * * * *', lastRunAt: minutesAgo(5) })
         ]);
 
-        await runScheduledPrompts(savedPrompts as any, logger as any, () => provider);
+        await runScheduledPrompts({ savedPrompts: savedPrompts as any, logger: logger as any, resolveProvider: () => provider });
         expect(savedPrompts.resetRunFailures).toHaveBeenCalledWith('ok', 't1');
     });
 
@@ -364,7 +364,7 @@ describe('runScheduledPrompts', () => {
         ]);
         savedPrompts.recordRunFailure.mockResolvedValueOnce({ disabled: true });
 
-        await runScheduledPrompts(savedPrompts as any, logger as any, () => provider);
+        await runScheduledPrompts({ savedPrompts: savedPrompts as any, logger: logger as any, resolveProvider: () => provider });
 
         expect(logger.error).toHaveBeenCalledWith(
             expect.objectContaining({ promptId: 'broken' }),
@@ -382,7 +382,7 @@ describe('runScheduledPrompts', () => {
             makePrompt({ id: 'second', cron: '* * * * *', lastRunAt: minutesAgo(5), prompt: 'b' })
         ]);
 
-        await runScheduledPrompts(savedPrompts as any, logger as any, () => provider);
+        await runScheduledPrompts({ savedPrompts: savedPrompts as any, logger: logger as any, resolveProvider: () => provider });
 
         expect(provider.query).toHaveBeenCalledTimes(2);
         expect(savedPrompts.recordRunResult).toHaveBeenCalledTimes(2);
@@ -406,11 +406,11 @@ describe('runScheduledPrompts', () => {
         ]);
 
         // Resolver returns the pinned provider for its id, the active one otherwise.
-        await runScheduledPrompts(
-            savedPrompts as any,
-            logger as any,
-            (providerId) => (providerId === 'other-provider' ? pinned : active)
-        );
+        await runScheduledPrompts({
+            savedPrompts: savedPrompts as any,
+            logger: logger as any,
+            resolveProvider: (providerId) => (providerId === 'other-provider' ? pinned : active)
+        });
 
         expect(active.query).not.toHaveBeenCalled();
         expect(pinned.query).toHaveBeenCalledWith({ prompt: 'run me', model: 'some-model', mode: 'programmatic', conversationId: expect.any(String) });
@@ -427,7 +427,7 @@ describe('runScheduledPrompts', () => {
         ]);
 
         // Resolver returns null → provider not available.
-        await runScheduledPrompts(savedPrompts as any, logger as any, () => null);
+        await runScheduledPrompts({ savedPrompts: savedPrompts as any, logger: logger as any, resolveProvider: () => null });
 
         // The run is claimed, then recorded as failed with a descriptive reason.
         expect(savedPrompts.recordRunResult).toHaveBeenCalledTimes(1);
@@ -444,7 +444,7 @@ describe('runScheduledPrompts', () => {
             makePrompt({ id: 'bad', cron: 'not-a-cron', lastRunAt: minutesAgo(5) })
         ]);
 
-        await runScheduledPrompts(savedPrompts as any, logger as any, () => provider);
+        await runScheduledPrompts({ savedPrompts: savedPrompts as any, logger: logger as any, resolveProvider: () => provider });
 
         expect(provider.query).toHaveBeenCalledTimes(1);
         expect(provider.query).toHaveBeenCalledWith({ prompt: 'run', mode: 'programmatic', conversationId: expect.any(String) });
@@ -459,7 +459,7 @@ describe('runScheduledPrompts', () => {
         ]);
         const resolveEndUser = vi.fn(async (userId: string) => ({ userId, groups: ['admin'], email: 'a@b.co' }));
 
-        await runScheduledPrompts(savedPrompts as any, logger as any, () => provider, resolveEndUser);
+        await runScheduledPrompts({ savedPrompts: savedPrompts as any, logger: logger as any, resolveProvider: () => provider, resolveEndUser });
 
         expect(resolveEndUser).toHaveBeenCalledWith('u1');
         // The run executes on the owner's behalf — endUser carries the live
@@ -480,7 +480,7 @@ describe('runScheduledPrompts', () => {
         // Deleted / unresolvable owner.
         const resolveEndUser = vi.fn(async () => null);
 
-        await runScheduledPrompts(savedPrompts as any, logger as any, () => provider, resolveEndUser);
+        await runScheduledPrompts({ savedPrompts: savedPrompts as any, logger: logger as any, resolveProvider: () => provider, resolveEndUser });
 
         // Never executes under no/stale authority; records the failed run instead.
         expect(provider.query).not.toHaveBeenCalled();
@@ -497,7 +497,7 @@ describe('runScheduledPrompts', () => {
         // Transient identity/DB failure surfaces as a rejection, not a null.
         const resolveEndUser = vi.fn(async () => { throw new Error('identity service unavailable'); });
 
-        await runScheduledPrompts(savedPrompts as any, logger as any, () => provider, resolveEndUser);
+        await runScheduledPrompts({ savedPrompts: savedPrompts as any, logger: logger as any, resolveProvider: () => provider, resolveEndUser });
 
         // The throwing prompt is recorded as a failed run, treated exactly like a
         // null principal — never executed under no/stale authority.
@@ -513,7 +513,7 @@ describe('runScheduledPrompts', () => {
             makePrompt({ id: 'owned-no-resolver', cron: '* * * * *', lastRunAt: minutesAgo(5), ownerUserId: 'u1' })
         ]);
 
-        await runScheduledPrompts(savedPrompts as any, logger as any, () => provider);
+        await runScheduledPrompts({ savedPrompts: savedPrompts as any, logger: logger as any, resolveProvider: () => provider });
 
         expect(provider.query).not.toHaveBeenCalled();
         expect(savedPrompts.recordRunFailure).toHaveBeenCalledTimes(1);
@@ -525,7 +525,7 @@ describe('runScheduledPrompts', () => {
         ]);
         const resolveEndUser = vi.fn(async () => ({ userId: 'x', groups: [] }));
 
-        await runScheduledPrompts(savedPrompts as any, logger as any, () => provider, resolveEndUser);
+        await runScheduledPrompts({ savedPrompts: savedPrompts as any, logger: logger as any, resolveProvider: () => provider, resolveEndUser });
 
         expect(resolveEndUser).not.toHaveBeenCalled();
         // No ownerUserId → endUser stays undefined (omitted by the matcher).
@@ -539,7 +539,7 @@ describe('runScheduledPrompts', () => {
         ]);
         const recordQuery = vi.fn(async (_record: IAiQueryRecord) => {});
 
-        await runScheduledPrompts(savedPrompts as any, logger as any, () => provider, undefined, undefined, undefined, recordQuery);
+        await runScheduledPrompts({ savedPrompts: savedPrompts as any, logger: logger as any, resolveProvider: () => provider, recordQuery });
 
         expect(recordQuery).toHaveBeenCalledTimes(1);
         const record = recordQuery.mock.calls[0]?.[0];
@@ -554,6 +554,26 @@ describe('runScheduledPrompts', () => {
             status: 'completed',
             errorMessage: null,
             conversationId: expect.any(String)
+        });
+    });
+
+    it('records the expanded prompt for a cron-fired run while handing the provider the raw template', async () => {
+        // The cron path used to build its own collaborator bundle and leave out
+        // the expander, so every cron-fired run was stored without the text it
+        // was actually asked.
+        const savedPrompts = createMockSavedPrompts([
+            makePrompt({ id: 'expanded', cron: '* * * * *', lastRunAt: minutesAgo(5), prompt: 'Window: {%run-window-24%}' })
+        ]);
+        const recordQuery = vi.fn(async (_record: IAiQueryRecord) => {});
+        const expandPrompt = vi.fn(async (text: string) => text.replace('{%run-window-24%}', '2026-10-16T23:46:00Z'));
+
+        await runScheduledPrompts({ savedPrompts: savedPrompts as any, logger: logger as any, resolveProvider: () => provider, expandPrompt, recordQuery });
+
+        expect(expandPrompt).toHaveBeenCalledWith('Window: {%run-window-24%}');
+        expect(provider.query).toHaveBeenCalledWith(expect.objectContaining({ prompt: 'Window: {%run-window-24%}' }));
+        expect(recordQuery.mock.calls[0]?.[0]).toMatchObject({
+            prompt: 'Window: {%run-window-24%}',
+            expandedPrompt: 'Window: 2026-10-16T23:46:00Z'
         });
     });
 
@@ -573,7 +593,7 @@ describe('runScheduledPrompts', () => {
         ]);
         const recordQuery = vi.fn(async (_record: IAiQueryRecord) => {});
 
-        await runScheduledPrompts(savedPrompts as any, logger as any, () => provider, undefined, undefined, undefined, recordQuery);
+        await runScheduledPrompts({ savedPrompts: savedPrompts as any, logger: logger as any, resolveProvider: () => provider, recordQuery });
 
         const record = recordQuery.mock.calls[0]?.[0];
         expect(record).toMatchObject({
@@ -604,7 +624,7 @@ describe('runScheduledPrompts', () => {
             makePrompt({ id: 'clean', cron: '* * * * *', lastRunAt: minutesAgo(5), prompt: 'analyze' })
         ]);
 
-        await runScheduledPrompts(savedPrompts as any, logger as any, () => provider);
+        await runScheduledPrompts({ savedPrompts: savedPrompts as any, logger: logger as any, resolveProvider: () => provider });
 
         expect(logger.info).toHaveBeenCalledWith(
             expect.objectContaining({ promptId: 'clean', outcome: 'answered' }),
@@ -619,7 +639,7 @@ describe('runScheduledPrompts', () => {
         ]);
         const recordQuery = vi.fn(async (_record: IAiQueryRecord) => {});
 
-        await runScheduledPrompts(savedPrompts as any, logger as any, () => provider, undefined, undefined, undefined, recordQuery);
+        await runScheduledPrompts({ savedPrompts: savedPrompts as any, logger: logger as any, resolveProvider: () => provider, recordQuery });
 
         expect(recordQuery).toHaveBeenCalledTimes(1);
         const record = recordQuery.mock.calls[0]?.[0];
@@ -641,7 +661,7 @@ describe('runScheduledPrompts', () => {
         ]);
         const recordQuery = vi.fn(async () => { throw new Error('history db down'); });
 
-        await runScheduledPrompts(savedPrompts as any, logger as any, () => provider, undefined, undefined, undefined, recordQuery);
+        await runScheduledPrompts({ savedPrompts: savedPrompts as any, logger: logger as any, resolveProvider: () => provider, recordQuery });
 
         // The query still ran and its success was committed; the recorder throw
         // was swallowed and logged, never surfaced to the run loop.

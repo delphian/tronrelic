@@ -618,8 +618,10 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
 
     /**
      * Assemble the collaborator bundle every autonomous saved-prompt run shares,
-     * so the firing paths — the hook-queue worker and the manual "run now"
-     * endpoint — build identical dependencies from one place and can never drift.
+     * so the firing paths — the cron runner, the hook-queue worker, and the
+     * manual "run now" endpoint — build identical dependencies from one place
+     * and can never drift. The cron runner once built its own copy and left out
+     * `expandPrompt`, so no cron-fired run recorded its expanded prompt.
      * `notify` is passed in because the admin run-notification callback is a
      * closure local to {@link run}; a manual run passes none.
      *
@@ -813,6 +815,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
             // their schedules) wait, untouched, until one is enabled.
             let promptTickInFlight = false;
             let promptTickStartedAt = 0;
+            const cronExecDeps = this.buildSavedPromptExecutionDeps(notifyScheduledRun);
             this.scheduler.register(SCHEDULED_PROMPTS_JOB, SCHEDULED_PROMPTS_SCHEDULE, async () => {
                 // Skip overlapping ticks: a streaming provider query can take
                 // minutes, and re-entering with the same saved-prompts snapshot
@@ -835,17 +838,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
                 promptTickInFlight = true;
                 promptTickStartedAt = Date.now();
                 try {
-                    await runScheduledPrompts(
-                        this.savedPrompts,
-                        this.logger,
-                        (providerId) => providerId
-                            ? this.providerRegistry.getProvider(providerId)
-                            : this.providerRegistry.getActive(),
-                        this.resolveEndUser,
-                        (principal) => this.systemPrompts.compose(principal),
-                        notifyScheduledRun,
-                        (record) => this.queryHistory.append(record)
-                    );
+                    await runScheduledPrompts(cronExecDeps);
                 } catch (error) {
                     this.logger.error({ error, job: SCHEDULED_PROMPTS_JOB }, 'Scheduled prompts job failed');
                     throw error;

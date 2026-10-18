@@ -13,7 +13,8 @@
  *   outcome, model, cost, and a short preview of the prompt. No answers, no
  *   transcripts, no error text.
  * - `ai-get-prompt-run`: the full transcript of one run, by record id (one
- *   turn) or conversation id (every turn, oldest first).
+ *   turn) or conversation id (every turn, oldest first), returned in pages so
+ *   a long agentic run stays readable to the end.
  *
  * The two are classified differently on purpose. The listing returns only what
  * an admin typed and figures the service computed, so it is `internal`. The
@@ -80,7 +81,10 @@ const GET_CAPABILITY: IAiToolCapability = {
 const DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 100;
 
-/** Largest offset accepted, so a nonsense argument is refused rather than sent to the database. */
+/**
+ * Largest listing offset or transcript page position accepted, so a nonsense
+ * argument is refused rather than sent to the database or walked.
+ */
 const MAX_OFFSET = 1_000_000;
 
 /** Characters of the prompt template shown in each listing row. */
@@ -96,9 +100,10 @@ const MAX_TURNS = 50;
 const MAX_FIELD_CHARS = 20_000;
 
 /**
- * Most characters of text one `ai-get-prompt-run` call returns across every
- * field, so a long agentic run cannot fill the caller's context window. Once it
- * is spent, later fields come back empty and marked `truncated`.
+ * Most characters of text one `ai-get-prompt-run` page returns across every
+ * field, so a long agentic run cannot fill the caller's context window. When
+ * the next item would not fit, the page ends and `next` tells the caller where
+ * to resume, so no item is cut by this limit — only by {@link MAX_FIELD_CHARS}.
  */
 const MAX_TOTAL_CHARS = 120_000;
 
@@ -122,8 +127,12 @@ const FAILURE_MESSAGE = 'The prompt run lookup failed.';
 
 /**
  * Cuts text fields against a per-field limit and a shared total, and counts
- * how many it had to cut. One cutter serves one tool call, so every field in
- * the response draws from the same total.
+ * how many it had to cut. One cutter serves one page, so every field in the
+ * response draws from the same total.
+ *
+ * The page builder asks {@link fits} before taking an item and ends the page
+ * when the answer is no, so in practice only the per-field limit ever cuts
+ * text. The total still caps {@link take} as a backstop.
  */
 class TextBudget {
     private remaining: number;
@@ -132,11 +141,33 @@ class TextBudget {
     truncatedFields = 0;
 
     /**
-     * @param total - Characters the whole response may spend on text.
+     * @param total - Characters the whole page may spend on text.
      * @param perField - Characters any single field may use.
      */
     constructor(total: number, private readonly perField: number) {
         this.remaining = total;
+    }
+
+    /**
+     * Work out what a field would spend once the per-field limit is applied,
+     * so the page builder can decide whether it fits before taking it.
+     *
+     * @param text - The full field.
+     * @returns The number of characters taking it would use.
+     */
+    cost(text: string): number {
+        return Math.min(this.perField, text.length);
+    }
+
+    /**
+     * Say whether a given number of characters still fits in this page, so an
+     * item that does not fit is left for the next page instead of being cut.
+     *
+     * @param chars - Characters the next item would spend, from {@link cost}.
+     * @returns True when the page has room for them.
+     */
+    fits(chars: number): boolean {
+        return chars <= this.remaining;
     }
 
     /**
@@ -234,22 +265,41 @@ function toListEntry(record: IAiQueryRecord): Record<string, unknown> {
 }
 
 /**
+ * Give the text a segment charges against the page budget, so the fit check
+ * and the segment view measure the same string.
+ *
+ * @param segment - The stored segment.
+ * @returns A tool call's arguments as JSON, a tool result's content, or the
+ *          text of a thinking or answer segment.
+ */
+function segmentText(segment: IAiTranscriptSegment): string {
+    let text: string;
+    if (segment.type === 'tool_use') {
+        text = JSON.stringify(segment.input ?? null);
+    } else if (segment.type === 'tool_result') {
+        text = segment.content;
+    } else {
+        text = segment.text;
+    }
+    return text;
+}
+
+/**
  * Turn one transcript segment into what the transcript tool returns, cutting
- * its text against the call's budget.
+ * its text against the page's budget.
  *
  * A tool call's arguments are returned as the original object when they fit,
  * and as a cut JSON string when they do not, so the model can always tell
  * which it has.
  *
  * @param segment - The stored segment.
- * @param budget - The call's shared text budget.
+ * @param budget - The page's shared text budget.
  * @returns The segment as the tool returns it.
  */
 function toSegmentView(segment: IAiTranscriptSegment, budget: TextBudget): Record<string, unknown> {
     let view: Record<string, unknown>;
     if (segment.type === 'tool_use') {
-        const json = JSON.stringify(segment.input ?? null);
-        const cut = budget.take(json);
+        const cut = budget.take(segmentText(segment));
         view = {
             type: 'tool_use',
             id: segment.id,
@@ -275,61 +325,126 @@ function toSegmentView(segment: IAiTranscriptSegment, budget: TextBudget): Recor
     return view;
 }
 
+/** What one turn contributes to a page, and where the page stopped if it filled up there. */
+interface ITurnPage {
+    /** The turn as this page returns it, or null when nothing of it fit. */
+    view: Record<string, unknown> | null;
+    /** Position to resume from when the page filled up at this turn; null when the turn finished. */
+    next: number | null;
+}
+
 /**
- * Turn one stored turn into its full transcript view.
+ * Give the turn's text fields in the order the response lists them.
+ *
+ * `responseText` is included only when the turn has no transcript. The answer
+ * text is already in the transcript's text segments, and returning it twice
+ * would spend the page's text budget on a copy. The Query tab makes the same
+ * choice when it replays a turn.
+ *
+ * @param record - The stored turn.
+ * @returns Each field's response name and its full text, or null when absent.
+ */
+function turnTextFields(record: IAiQueryRecord): Array<[string, string | null | undefined]> {
+    const hasTranscript = (record.transcript ?? []).length > 0;
+    return [
+        ['prompt', record.prompt],
+        ['expandedPrompt', record.expandedPrompt],
+        ['responseText', hasTranscript ? null : record.responseText],
+        ['errorMessage', record.errorMessage]
+    ];
+}
+
+/**
+ * Build the part of one stored turn that belongs on the current page.
+ *
+ * A transcript can be far larger than one response may carry, so the tool
+ * reads it in pages. Every turn takes one position for its text fields and one
+ * per transcript segment, numbered across the whole response, and `start`
+ * says which position this page begins at. The text fields come first, so the
+ * prompt and its expansion always arrive before the transcript spends the
+ * budget. A turn whose text fields were returned on an earlier page is marked
+ * `continued` and leaves them out.
+ *
+ * Before taking each item the builder checks it fits in what is left of the
+ * page. When it does not, the page ends there and `next` is that item's
+ * position, so an item is never cut by the page total and the next call
+ * returns it whole. The first item on a page is always taken, which keeps a
+ * caller from looping on a page that can never fill.
  *
  * `toolAllowlist` keeps the record's three states (`null` unrestricted, `[]`
  * none, a list) and reports an absent field as `toolAllowlistKnown: false`,
  * because an old record without it does not mean unrestricted.
  *
- * `responseText` is returned only when the turn has no transcript. The answer
- * text is already in the transcript's text segments, and returning it twice
- * would spend the call's text budget on a copy. The Query tab makes the same
- * choice when it replays a turn.
- *
  * @param record - The stored turn.
- * @param budget - The call's shared text budget.
- * @returns The turn with its prompt, answer, and transcript.
+ * @param firstPosition - Position of this turn's text fields across the response.
+ * @param start - Position the page begins at, from the caller's `start`.
+ * @param budget - The page's shared text budget.
+ * @param pageEmpty - True when nothing is on the page yet, so the first item is taken regardless of size.
+ * @returns The turn's view for this page, and where to resume if the page filled up here.
  */
-function toTurnView(record: IAiQueryRecord, budget: TextBudget): Record<string, unknown> {
+function toTurnPage(
+    record: IAiQueryRecord,
+    firstPosition: number,
+    start: number,
+    budget: TextBudget,
+    pageEmpty: boolean
+): ITurnPage {
     const transcript = record.transcript ?? [];
-    const cutFields: string[] = [];
+    let mustTake = pageEmpty;
+    let next: number | null = null;
+    let textView: Record<string, unknown> | null = null;
 
-    /**
-     * Take one optional top-level field from the budget, noting its name when
-     * it was cut so the model knows which field is incomplete.
-     *
-     * @param name - The field's name in the response.
-     * @param text - The field's full text, or null/undefined when absent.
-     * @returns The kept text, or null when the field is absent.
-     */
-    const takeField = (name: string, text: string | null | undefined): string | null => {
-        let kept: string | null = null;
-        if (text !== null && text !== undefined) {
-            const cut = budget.take(text);
-            if (cut.truncated) {
-                cutFields.push(name);
+    if (start <= firstPosition) {
+        const fields = turnTextFields(record);
+        const cost = fields.reduce((sum, [, text]) => sum + (typeof text === 'string' ? budget.cost(text) : 0), 0);
+        if (mustTake || budget.fits(cost)) {
+            const cutFields: string[] = [];
+            textView = {};
+            for (const [name, text] of fields) {
+                let kept: string | null = null;
+                if (typeof text === 'string') {
+                    const cut = budget.take(text);
+                    if (cut.truncated) {
+                        cutFields.push(name);
+                    }
+                    kept = cut.text;
+                }
+                textView[name] = kept;
             }
-            kept = cut.text;
+            textView.cutFields = cutFields;
+            mustTake = false;
+        } else {
+            next = firstPosition;
         }
-        return kept;
-    };
+    }
 
-    const prompt = takeField('prompt', record.prompt);
-    const expandedPrompt = takeField('expandedPrompt', record.expandedPrompt);
-    const responseText = transcript.length === 0 ? takeField('responseText', record.responseText) : null;
-    const errorMessage = takeField('errorMessage', record.errorMessage);
-    return {
-        ...toRunMetadata(record),
-        toolAllowlistKnown: record.toolAllowlist !== undefined,
-        toolAllowlist: record.toolAllowlist ?? null,
-        prompt,
-        expandedPrompt,
-        responseText,
-        errorMessage,
-        transcript: transcript.map(segment => toSegmentView(segment, budget)),
-        cutFields
-    };
+    const segmentStart = Math.max(0, start - firstPosition - 1);
+    const segments: Array<Record<string, unknown>> = [];
+    if (next === null) {
+        for (let index = segmentStart; index < transcript.length; index++) {
+            const segment = transcript[index];
+            if (!mustTake && !budget.fits(budget.cost(segmentText(segment)))) {
+                next = firstPosition + 1 + index;
+                break;
+            }
+            segments.push(toSegmentView(segment, budget));
+            mustTake = false;
+        }
+    }
+
+    const view = textView !== null || segments.length > 0
+        ? {
+            ...toRunMetadata(record),
+            toolAllowlistKnown: record.toolAllowlist !== undefined,
+            toolAllowlist: record.toolAllowlist ?? null,
+            continued: textView === null,
+            ...(textView ?? {}),
+            segmentStart,
+            segmentCount: transcript.length,
+            transcript: segments
+        }
+        : null;
+    return { view, next };
 }
 
 /**
@@ -389,28 +504,55 @@ export function buildPromptRunAiTools(
             'Get the full transcript of one prompt run: the prompt as typed, the prompt with its variables expanded (secret variables stay as {%name%} tokens), any error message, the tool allowlist it ran with, and the ordered transcript of thinking, answer text, tool calls with their arguments, and tool results. ' +
             'The answer is in the transcript\'s text segments; responseText is filled only for an old run that has no transcript. ' +
             `Pass a run id to read that one turn, or a conversation id to read every turn of the chat, oldest first (at most ${MAX_TURNS} turns). Ids come from ${AI_TOOL_NAMES.listRuns}. ` +
-            `Each text field is cut to ${MAX_FIELD_CHARS} characters and the whole response to ${MAX_TOTAL_CHARS}; a cut segment is marked truncated, each turn's cutFields names its cut top-level fields, and truncatedFields counts every cut. ` +
-            'Parameters: id (required, a run id or conversation id). Returns found, matchedBy (run or conversation), turns[], turnsTruncated, and truncatedFields; found is false when nothing has that id. ' +
+            `A long run comes back in pages of about ${MAX_TOTAL_CHARS} characters. When next is not null, call again with the same id and start set to next to read the rest; repeat until next is null. ` +
+            'Each turn takes one position for its text fields (prompt, expandedPrompt, responseText, errorMessage), which always come first, plus one position per transcript segment. ' +
+            'A turn whose text fields arrived on an earlier page is marked continued and leaves them out; segmentStart is the index of its first segment on this page and segmentCount its total. ' +
+            `Each text field is cut to ${MAX_FIELD_CHARS} characters; a cut segment is marked truncated, a turn's cutFields names its cut text fields, and truncatedFields counts every cut on the page. ` +
+            'Parameters: id (required, a run id or conversation id); start (optional, the next value from the previous page, default 0). Returns found, matchedBy (run or conversation), start, next, turns[], turnsTruncated, and truncatedFields; found is false when nothing has that id. ' +
             SHARED_DESCRIPTION,
         capability: GET_CAPABILITY,
         inputSchema: {
             type: 'object',
-            description: 'The run or conversation to read.',
+            description: 'The run or conversation to read, and where to resume.',
             properties: {
-                id: { type: 'string', description: `A run id or a conversation id from ${AI_TOOL_NAMES.listRuns}.` }
+                id: { type: 'string', description: `A run id or a conversation id from ${AI_TOOL_NAMES.listRuns}.` },
+                start: { type: 'integer', minimum: 0, maximum: MAX_OFFSET, description: 'Position to resume from. Pass the previous page\'s next value; omit for the first page.' }
             },
             required: ['id'],
             additionalProperties: false
         },
+        inputExamples: [
+            { id: '3f2b8c1e-6a4d-4e9b-9c7a-1d5e0f8a2b6c' },
+            { id: '3f2b8c1e-6a4d-4e9b-9c7a-1d5e0f8a2b6c', start: 24 }
+        ],
         handler: async (input) => runAiToolCall(logger, AI_TOOL_NAMES.getRun, FAILURE_MESSAGE, async () => {
             const id = readId(input.id);
+            const start = readInteger(input.start, 'start', 0, 0, MAX_OFFSET);
             const single = await history.get(id);
             const records = single ? [single] : await history.getConversation(id);
             const budget = new TextBudget(MAX_TOTAL_CHARS, MAX_FIELD_CHARS);
-            const turns = records.slice(0, MAX_TURNS).map(record => toTurnView(record, budget));
+            const turns: Array<Record<string, unknown>> = [];
+            let position = 0;
+            let next: number | null = null;
+            for (const record of records.slice(0, MAX_TURNS)) {
+                const end = position + 1 + (record.transcript ?? []).length;
+                if (end > start) {
+                    const page = toTurnPage(record, position, start, budget, turns.length === 0);
+                    if (page.view) {
+                        turns.push(page.view);
+                    }
+                    next = page.next;
+                }
+                if (next !== null) {
+                    break;
+                }
+                position = end;
+            }
             return {
                 found: records.length > 0,
                 matchedBy: single ? 'run' : records.length > 0 ? 'conversation' : null,
+                start,
+                next,
                 turns,
                 turnsTruncated: records.length > MAX_TURNS,
                 truncatedFields: budget.truncatedFields
