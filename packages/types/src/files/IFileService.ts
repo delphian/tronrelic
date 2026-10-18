@@ -168,7 +168,10 @@ export interface IFileVariant {
 
 /**
  * Filter shape for `list()`. All fields are optional and combine as AND
- * predicates.
+ * predicates, with one exception: when a caller sets both `source` and
+ * `sourceKind`, `source` wins and `sourceKind` is ignored. The exact
+ * `{ kind, id }` pair already names a kind, so ANDing a second, conflicting
+ * kind would silently match nothing.
  */
 export interface IFileListFilter {
     source?: IFileSource;
