@@ -25,16 +25,7 @@
 // recommends and is portable across cron-parser versions.
 import cronParser from 'cron-parser';
 const { parseExpression } = cronParser;
-import type { ISystemLogService } from '@/types';
-import type { SavedPromptsService } from './saved-prompts.service.js';
-import type { EndUserResolver } from './end-user-resolver.js';
-import {
-    executeSavedPrompt,
-    type ScheduledPromptProviderResolver,
-    type ScheduledPromptSystemComposer,
-    type ScheduledPromptNotifier,
-    type ScheduledPromptQueryRecorder
-} from './execute-saved-prompt.js';
+import { executeSavedPrompt, type ISavedPromptExecutionDeps } from './execute-saved-prompt.js';
 
 // Re-exported so existing consumers (the module, tests) keep one import site
 // for the runner's collaborator types even though they now live beside the
@@ -60,34 +51,19 @@ export type {
  * concurrent admin edits to other fields on the same document survive
  * unaltered.
  *
- * @param savedPrompts - Service owning the prompts collection.
- * @param logger - Logger for warnings and error context.
- * @param resolveProvider - Maps a prompt's optional `providerId` to the provider
- *        that should run it (pinned provider, or the active one when unpinned).
- * @param resolveEndUser - Maps a prompt's recorded `ownerUserId` to a live
- *        end-user principal at fire time. Omitted (or returning null) means the
- *        run carries no principal; a prompt that records an owner the resolver
- *        cannot resolve is failed closed rather than run under ambient authority.
- * @param composeSystemPrompt - Composes the core-injected system prompt for the
- *        run's principal (master + audience-scoped prompts, variable-expanded).
- *        Omitted means no core system prompt is injected; the provider still
- *        applies its own configured system prompt.
- * @param notify - Optional callback fired after a prompt actually runs (success
- *        or failure), so the module can dispatch a run notification to admins.
- *        Best-effort and isolated from the run loop.
- * @param recordQuery - Optional callback that persists one query-history record
- *        per run, so an autonomous prompt appears in the Query tab alongside
- *        interactive queries. Best-effort and isolated from the run loop.
+ * Takes the same collaborator bundle the hook worker and run-now hand to
+ * {@link executeSavedPrompt}, and passes it through unchanged. The runner used
+ * to take each collaborator as its own positional argument and rebuild the
+ * bundle itself, which is how the cron path came to omit `expandPrompt` and
+ * record no expanded prompt for any cron-fired run. Accepting the bundle whole
+ * means a collaborator added for one firing path reaches all of them.
+ *
+ * @param deps - The shared execution collaborators, built by the module's
+ *        `buildSavedPromptExecutionDeps()`. The runner itself reads only
+ *        `savedPrompts` (to list due prompts and claim each run) and `logger`.
  */
-export async function runScheduledPrompts(
-    savedPrompts: SavedPromptsService,
-    logger: ISystemLogService,
-    resolveProvider: ScheduledPromptProviderResolver,
-    resolveEndUser?: EndUserResolver,
-    composeSystemPrompt?: ScheduledPromptSystemComposer,
-    notify?: ScheduledPromptNotifier,
-    recordQuery?: ScheduledPromptQueryRecorder
-): Promise<void> {
+export async function runScheduledPrompts(deps: ISavedPromptExecutionDeps): Promise<void> {
+    const { savedPrompts, logger } = deps;
     const scheduled = await savedPrompts.listScheduled();
 
     if (scheduled.length === 0) {
@@ -163,11 +139,7 @@ export async function runScheduledPrompts(
                 continue;
             }
 
-            await executeSavedPrompt(
-                p,
-                { savedPrompts, logger, resolveProvider, resolveEndUser, composeSystemPrompt, notify, recordQuery },
-                { triggerId: trigger.id, claimedAt }
-            );
+            await executeSavedPrompt(p, deps, { triggerId: trigger.id, claimedAt });
         }
     }
 }
