@@ -26,12 +26,15 @@ import { GscService } from './services/gsc.service.js';
 import { TrafficService } from './services/traffic.service.js';
 import { IgnoredUsersService } from './services/ignored-users.service.js';
 import { TrafficIgnoreList } from './services/TrafficIgnoreList.js';
+import { BotNetworksService } from './services/bot-networks.service.js';
 import { RedirectService } from './services/redirect.service.js';
 import { initGeoIP } from './services/geo.service.js';
 import { TrafficController } from './api/traffic.controller.js';
 import { BootstrapController } from './api/bootstrap.controller.js';
 import { RedirectsController } from './api/redirects.controller.js';
+import { BotNetworksController } from './api/bot-networks.controller.js';
 import { createAdminTrafficRouter, createAdminAnalyticsRouter } from './api/traffic.routes.js';
+import { createAdminBotNetworksRouter } from './api/bot-networks.routes.js';
 import { createBootstrapRouter, createPageEventRouter } from './api/bootstrap.routes.js';
 import { createPublicRedirectsRouter, createAdminRedirectsRouter } from './api/redirects.routes.js';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
@@ -126,10 +129,12 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
     private trafficService!: TrafficService;
     private ignoredUsersService!: IgnoredUsersService;
     private trafficIgnoreList!: TrafficIgnoreList;
+    private botNetworksService!: BotNetworksService;
     private redirectService!: RedirectService;
     private trafficController!: TrafficController;
     private bootstrapController!: BootstrapController;
     private redirectsController!: RedirectsController;
+    private botNetworksController!: BotNetworksController;
 
     private readonly logger = logger.child({ module: 'traffic' });
 
@@ -171,6 +176,13 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
         // Read-only view of that cache for other components; published in run().
         this.trafficIgnoreList = new TrafficIgnoreList(this.trafficService);
 
+        // Automated-network list — ASNs whose traffic is labeled bot_other at
+        // write time. Loaded now so classification uses it from the first event.
+        BotNetworksService.setDependencies(dependencies.database, this.logger);
+        this.botNetworksService = BotNetworksService.getInstance();
+        await this.botNetworksService.createIndexes();
+        await this.botNetworksService.load();
+
         // RedirectService — admin-managed legacy-URL 301/302 map. Rules live in
         // Mongo and are served to the edge middleware, so operators add
         // redirects without a deploy. Migration 017 seeds the initial legacy
@@ -190,13 +202,22 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
             this.logger
         );
 
-        // Slim first-touch analytics bootstrap (no identity, no Mongo).
-        this.bootstrapController = new BootstrapController(this.trafficService, this.logger);
+        // Slim first-touch analytics bootstrap (no identity, no Mongo). Reads the
+        // automated-network list from memory to classify each event.
+        this.bootstrapController = new BootstrapController(this.trafficService, this.botNetworksService, this.logger);
+
+        // Admin management of the automated-network list.
+        this.botNetworksController = new BotNetworksController(this.botNetworksService, this.logger);
 
         // Admin redirect management + the public feed the edge middleware polls,
         // plus redirect-hit ingestion and windowed analytics (redirect_events via
         // TrafficService).
-        this.redirectsController = new RedirectsController(this.redirectService, this.trafficService, this.logger);
+        this.redirectsController = new RedirectsController(
+            this.redirectService,
+            this.trafficService,
+            this.botNetworksService,
+            this.logger
+        );
 
         this.logger.info('Traffic module initialized');
     }
@@ -286,6 +307,12 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
         const adminRedirectsRouter: Router = createAdminRedirectsRouter(this.redirectsController);
         this.app.use('/api/admin/redirects', requireAdmin, adminRedirectsRouter);
         this.logger.info('Admin redirects router mounted at /api/admin/redirects');
+
+        // Automated-network list management. Its own prefix, outside
+        // /api/admin/users, so identity's catch-all ordering does not apply.
+        const adminBotNetworksRouter: Router = createAdminBotNetworksRouter(this.botNetworksController);
+        this.app.use('/api/admin/traffic/bot-networks', requireAdmin, adminBotNetworksRouter);
+        this.logger.info('Admin bot-networks router mounted at /api/admin/traffic/bot-networks');
 
         // Publish the ignore-list check so plugins that count visitor activity
         // (such as resource-markets' affiliate clicks) exclude the same people

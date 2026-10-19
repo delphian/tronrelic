@@ -9,6 +9,7 @@ export {
     AnalyticsDashboard,
     GscSettings,
     IgnoredUsers,
+    BotNetworks,
     GscKeywords,
     RedirectsManager,
     RedirectAnalytics,

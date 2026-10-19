@@ -13,6 +13,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Request, Response } from 'express';
 import type { ISystemLogService } from '@/types';
 import type { TrafficService } from '../services/traffic.service.js';
+import type { IBotNetworkLookup } from '../services/bot-networks.service.js';
 import { BootstrapController } from '../api/bootstrap.controller.js';
 import { TID_COOKIE_NAME, REF_COOKIE_NAME } from '../api/traffic-cookies.js';
 
@@ -47,14 +48,17 @@ function buildRes(): { res: Response; cookies: SetCookie[]; json: ReturnType<typ
 describe('BootstrapController', () => {
     let recordEvent: ReturnType<typeof vi.fn>;
     let trafficService: TrafficService;
+    let botNetworks: IBotNetworkLookup;
     let logger: ISystemLogService;
     let controller: BootstrapController;
 
     beforeEach(() => {
         recordEvent = vi.fn();
         trafficService = { recordEvent } as unknown as TrafficService;
+        // AS139341 stands in for a network the operator has listed.
+        botNetworks = { isBotNetwork: vi.fn((asn: number) => asn === 139341) };
         logger = { error: vi.fn() } as unknown as ISystemLogService;
-        controller = new BootstrapController(trafficService, logger);
+        controller = new BootstrapController(trafficService, botNetworks, logger);
     });
 
     it('mints a fresh tid, emits a bootstrap event, and returns success', async () => {
@@ -168,6 +172,55 @@ describe('BootstrapController', () => {
             await controller.page(req, res);
 
             expect(recordEvent.mock.calls[0][0].bot_class).toBe('human');
+        });
+    });
+
+    describe('automated-network list', () => {
+        const CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36';
+
+        /**
+         * Build a page-beacon request that arrived through Cloudflare from a
+         * given network, since the ASN is only trusted when CF-Ray is present.
+         *
+         * @param headers - Extra headers layered over the browser UA.
+         * @returns A request carrying a stock Chrome UA and the given headers.
+         */
+        function networkReq(headers: Record<string, string>): Request {
+            return buildReq({
+                cookies: { [TID_COOKIE_NAME]: EXISTING_TID },
+                headers: { 'user-agent': CHROME_UA, ...headers },
+                body: { landingPath: '/blog' }
+            } as unknown as Partial<Request>);
+        }
+
+        it('labels a browser-UA event from a listed network as bot_other', async () => {
+            const { res } = buildRes();
+
+            await controller.page(networkReq({ 'cf-ray': 'abc123-SIN', 'x-client-asn': '139341' }), res);
+
+            const event = recordEvent.mock.calls[0][0];
+            expect(event.asn).toBe(139341);
+            expect(event.bot_class).toBe('bot_other');
+        });
+
+        it('keeps a browser-UA event from an unlisted network human', async () => {
+            const { res } = buildRes();
+
+            await controller.page(networkReq({ 'cf-ray': 'abc123-SIN', 'x-client-asn': '9808' }), res);
+
+            expect(recordEvent.mock.calls[0][0].bot_class).toBe('human');
+        });
+
+        it('ignores a listed ASN header that did not arrive through Cloudflare', async () => {
+            // Without CF-Ray the ASN is not stored, so a direct-to-origin caller
+            // cannot mislabel itself or anyone else by sending the header.
+            const { res } = buildRes();
+
+            await controller.page(networkReq({ 'x-client-asn': '139341' }), res);
+
+            const event = recordEvent.mock.calls[0][0];
+            expect(event.asn).toBeNull();
+            expect(event.bot_class).toBe('human');
         });
     });
 });

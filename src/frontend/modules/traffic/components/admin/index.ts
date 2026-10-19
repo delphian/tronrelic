@@ -10,6 +10,7 @@ export { VisitorsExplorer } from './VisitorsExplorer';
 export { AnalyticsDashboard } from './AnalyticsDashboard';
 export { GscSettings } from './GscSettings';
 export { IgnoredUsers } from './IgnoredUsers';
+export { BotNetworks } from './BotNetworks';
 export { GscKeywords } from './GscKeywords';
 export { RedirectsManager } from './RedirectsManager';
 export { RedirectAnalytics } from './RedirectAnalytics';
