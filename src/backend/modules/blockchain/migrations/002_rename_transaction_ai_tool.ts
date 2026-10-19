@@ -22,6 +22,10 @@
  * backend after running this, before changing any tool on `/system/ai-tools`,
  * or that write puts the old name back and drops the new one.
  *
+ * It depends on the MCP module's `001_tool_approvals_group_id`, which adds
+ * `groupId` to every grant and replaces the unique `{ toolName }` index, so
+ * the grant rename below cannot run against the older schema.
+ *
  * Collection, key, and tool names are written as literals on purpose: a
  * migration is a frozen record of an operation, so it must not drift if a
  * constant is later renamed.
@@ -126,7 +130,13 @@ export const migration: IMigration = {
     description:
         `Move stored references to the AI tool ${OLD_NAME} to its new name, ${NEW_NAME}: enabled state, ` +
         'policy overrides, saved-prompt tool allowlists, and MCP group grants. Restart the backend afterwards.',
-    dependencies: [],
+    dependencies: [
+        // Renaming a grant needs `groupId` present on every approval and the
+        // retired unique `{ toolName }` index gone. Run this before the MCP
+        // schema migration and the final `updateMany` in `renameInMcpGrants`
+        // hits a duplicate key against an existing grant of the new name.
+        'module:mcp:001_tool_approvals_group_id'
+    ],
 
     /**
      * Rewrite each store that records the tool by name.
