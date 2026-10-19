@@ -75,6 +75,26 @@
     min-width: 0;
 }
 
+// Give a size-contained widget a width to report. A widget whose root sets
+// `container-type: inline-size` (to run its own container queries) tells the
+// browser to ignore its contents when measuring its width, so it measures
+// zero. An unweighted item sizes to its content, so in a row it collapses to
+// zero wide and the widget's content spills past the zone's edge; in a column
+// that is not stretched it does the same. `contain-intrinsic-inline-size`
+// supplies the width such an element reports in place of its contents, and it
+// has no effect on an element without size containment, so the rule is safe
+// on every child. The same applies to a layout group's `.group_container`,
+// which is size-contained for its collapse query.
+//
+// The `:where()` keeps the selector at zero specificity, so a widget that
+// knows its own natural width can set the property on its root and win
+// without a specificity fight. The value is a starting width rather than a
+// cap: `.item` keeps `min-width: 0`, so the item still shrinks in a narrower
+// zone, and a weighted or stretched item ignores it.
+:where(.item) > * {
+    contain-intrinsic-inline-size: var(--widget-intrinsic-width);
+}
+
 // A weighted item takes a relative share of a row. The weight rides in the
 // `--item-grow` custom property (set inline by the renderer) and feeds
 // `flex-grow`; the zero basis makes sibling weights pure ratios (a `2` and
