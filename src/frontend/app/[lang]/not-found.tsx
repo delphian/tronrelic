@@ -44,9 +44,6 @@ export default function NotFound() {
             <Link href="/resource-markets" className="link">
               Energy Markets
             </Link>
-            <Link href="/about" className="link">
-              About
-            </Link>
           </div>
         </nav>
       </Card>
