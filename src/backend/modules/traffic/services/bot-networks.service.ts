@@ -154,12 +154,30 @@ export class BotNetworksService implements IBotNetworkLookup {
     }
 
     /**
+     * Number of the most recent load() call to have started. Two overlapping
+     * admin mutations each reload the list, and their queries can finish in
+     * either order, so without this counter an older query's result can
+     * replace a newer one's and leave a just-removed ASN in the cached set
+     * until the next change or a restart. Each load() takes the next number
+     * and writes the set only while it still holds the latest one.
+     */
+    private loadGeneration = 0;
+
+    /**
      * Load the listed ASNs into memory. Called during init(), so classification
      * uses the list from the first event, and again after every change.
+     *
+     * The generation check discards the result of an earlier reload that
+     * finishes late. Every reload starts only after its own write has been
+     * acknowledged, so the reload that started last saw every write that
+     * completed before it, and its snapshot is the one the cache should keep.
      */
     async load(): Promise<void> {
+        const generation = ++this.loadGeneration;
         const rows = await this.collection.find({}, { projection: { _id: 0, asn: 1 } }).toArray();
-        this.asnSet = new Set(rows.map(row => row.asn));
+        if (generation === this.loadGeneration) {
+            this.asnSet = new Set(rows.map(row => row.asn));
+        }
     }
 
     /**
