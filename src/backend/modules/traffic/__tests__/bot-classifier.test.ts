@@ -298,4 +298,46 @@ describe('classifyTrafficRequest', () => {
             })).toBe('bot_other');
         });
     });
+
+    describe('automation flag (navigator.webdriver)', () => {
+        it('downgrades a human verdict to bot_other', () => {
+            expect(classifyTrafficRequest({
+                userAgent: CHROME_UA,
+                path: '/blog',
+                referer: null,
+                secFetchSite: null,
+                automated: true
+            })).toBe('bot_other');
+        });
+
+        it('leaves a human verdict alone when the flag is false', () => {
+            expect(classifyTrafficRequest({
+                userAgent: CHROME_UA,
+                path: '/blog',
+                referer: null,
+                secFetchSite: null,
+                automated: false
+            })).toBe('human');
+        });
+
+        it('keeps a named UA family rather than collapsing it to bot_other', () => {
+            expect(classifyTrafficRequest({
+                userAgent: 'Mozilla/5.0 (compatible; GPTBot/1.2; +https://openai.com/gptbot)',
+                path: '/blog',
+                referer: null,
+                secFetchSite: null,
+                automated: true
+            })).toBe('ai_crawler');
+        });
+
+        it('lets the scanner verdict win over the flag', () => {
+            expect(classifyTrafficRequest({
+                userAgent: CHROME_UA,
+                path: '/.env',
+                referer: null,
+                secFetchSite: null,
+                automated: true
+            })).toBe('scanner');
+        });
+    });
 });

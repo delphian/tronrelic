@@ -136,4 +136,38 @@ describe('BootstrapController', () => {
 
         expect(recordEvent.mock.calls[0][0].user_id).toBe('ba_user_42');
     });
+
+    describe('automation flag from the page beacon', () => {
+        const CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36';
+
+        it('classifies a browser-UA page event as bot_other when the beacon reports automated: true', async () => {
+            const req = buildReq({
+                cookies: { [TID_COOKIE_NAME]: EXISTING_TID },
+                headers: { 'user-agent': CHROME_UA },
+                body: { landingPath: '/blog', automated: true }
+            } as unknown as Partial<Request>);
+            const { res } = buildRes();
+
+            await controller.page(req, res);
+
+            expect(recordEvent.mock.calls[0][0].bot_class).toBe('bot_other');
+        });
+
+        it.each([
+            ['absent', undefined],
+            ['false', false],
+            ['a truthy non-boolean', 'true']
+        ])('keeps a browser-UA page event human when the flag is %s', async (_label, automated) => {
+            const req = buildReq({
+                cookies: { [TID_COOKIE_NAME]: EXISTING_TID },
+                headers: { 'user-agent': CHROME_UA },
+                body: { landingPath: '/blog', automated }
+            } as unknown as Partial<Request>);
+            const { res } = buildRes();
+
+            await controller.page(req, res);
+
+            expect(recordEvent.mock.calls[0][0].bot_class).toBe('human');
+        });
+    });
 });
