@@ -204,6 +204,18 @@
        for the use case so a theme can resize the logo on its own. */
     --site-logo-image-height: var(--avatar-size-md);
 
+    /* Widget Intrinsic Width — the width a widget zone reports for a widget
+       that sets `container-type: inline-size` on its root. That containment
+       makes the browser ignore the widget's contents when measuring it, so
+       without a stand-in the widget measures zero wide and an unweighted row
+       item collapses to nothing while its content spills out of the zone.
+       WidgetZone.module.scss applies this through
+       `contain-intrinsic-inline-size`; it is a starting width, not a cap, so
+       the item still shrinks to fit a narrower zone. A widget can declare its
+       own value on its root, and an operator can set this property in a
+       zone's or placement's custom CSS. */
+    --widget-intrinsic-width: var(--max-width-md);
+
     /* ========================================================================
      * BUTTON COMPONENT TOKENS
      * ======================================================================== */
