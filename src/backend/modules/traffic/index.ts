@@ -9,7 +9,7 @@ export { TrafficModule, TRAFFIC_IGNORE_LIST_SERVICE } from './TrafficModule.js';
 export type { ITrafficModuleDependencies } from './TrafficModule.js';
 export { TrafficIgnoreList } from './services/TrafficIgnoreList.js';
 
-export { TrafficService, buildTrafficEvent, ASN_HEADER } from './services/traffic.service.js';
+export { TrafficService, buildTrafficEvent, readCloudflareAsn, ASN_HEADER } from './services/traffic.service.js';
 export type {
     ITrafficEvent,
     ITrafficEventFilter,
@@ -36,6 +36,8 @@ export { GscService } from './services/gsc.service.js';
 export type { IGscStatus, IGscKeyword, IGscQueryDocument } from './services/gsc.service.js';
 export { IgnoredUsersService } from './services/ignored-users.service.js';
 export type { IIgnoredUserDocument } from './services/ignored-users.service.js';
+export { BotNetworksService, BotNetworkValidationError } from './services/bot-networks.service.js';
+export type { IBotNetworkDocument, IBotNetworkLookup } from './services/bot-networks.service.js';
 export { RedirectService, RedirectValidationError, RedirectNotFoundError } from './services/redirect.service.js';
 export type {
     IRedirectRule,
@@ -60,5 +62,7 @@ export { TrafficController } from './api/traffic.controller.js';
 export { createAdminTrafficRouter, createAdminAnalyticsRouter } from './api/traffic.routes.js';
 export { RedirectsController } from './api/redirects.controller.js';
 export { createPublicRedirectsRouter, createAdminRedirectsRouter } from './api/redirects.routes.js';
+export { BotNetworksController } from './api/bot-networks.controller.js';
+export { createAdminBotNetworksRouter } from './api/bot-networks.routes.js';
 export { resolveAnalyticsRange } from './services/traffic.service.js';
 export type { IAnalyticsRangeQuery } from './services/traffic.service.js';

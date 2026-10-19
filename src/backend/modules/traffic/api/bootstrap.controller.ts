@@ -23,6 +23,7 @@ import type { Request, Response } from 'express';
 import { randomUUID } from 'node:crypto';
 import type { ISystemLogService } from '@/types';
 import { TrafficService, buildTrafficEvent, type TrafficEventType } from '../services/traffic.service.js';
+import type { IBotNetworkLookup } from '../services/bot-networks.service.js';
 import { PAID_CLICK_IDS } from '../services/channel-classifier.js';
 import {
     UUID_V4_REGEX,
@@ -127,10 +128,13 @@ function sanitizePath(raw: unknown): string | undefined {
 export class BootstrapController {
     /**
      * @param trafficService - Sink for the emitted `traffic_events` row.
+     * @param botNetworks - The operator's automated-network list, passed to
+     *   every event so a request from a listed network is labeled a bot.
      * @param logger - Traffic-module child logger.
      */
     constructor(
         private readonly trafficService: TrafficService,
+        private readonly botNetworks: IBotNetworkLookup,
         private readonly logger: ISystemLogService
     ) {}
 
@@ -185,7 +189,8 @@ export class BootstrapController {
                 buildTrafficEvent(eventType, tid, req, {
                     ...this.extractEventInputs(req),
                     userId: req.authSession?.user?.id ?? null,
-                    referralCode
+                    referralCode,
+                    botNetworks: this.botNetworks
                 })
             );
 

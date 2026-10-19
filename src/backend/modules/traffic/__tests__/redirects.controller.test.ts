@@ -16,6 +16,7 @@ import type { Request, Response } from 'express';
 import type { ISystemLogService } from '@/types';
 import type { RedirectService } from '../services/redirect.service.js';
 import type { TrafficService } from '../services/traffic.service.js';
+import type { IBotNetworkLookup } from '../services/bot-networks.service.js';
 import { RedirectsController } from '../api/redirects.controller.js';
 
 /**
@@ -56,8 +57,10 @@ describe('RedirectsController redirect analytics', () => {
         ]);
         const redirectService = { getActiveRules } as unknown as RedirectService;
         const trafficService = { recordRedirectHit, getRedirectAnalytics } as unknown as TrafficService;
+        // AS139341 stands in for a network the operator has listed.
+        const botNetworks: IBotNetworkLookup = { isBotNetwork: vi.fn((asn: number) => asn === 139341) };
         const logger = { error: vi.fn() } as unknown as ISystemLogService;
-        controller = new RedirectsController(redirectService, trafficService, logger);
+        controller = new RedirectsController(redirectService, trafficService, botNetworks, logger);
     });
 
     describe('recordHit()', () => {
@@ -127,6 +130,34 @@ describe('RedirectsController redirect analytics', () => {
             await controller.recordHit(req, res);
 
             expect(recordRedirectHit.mock.calls[0][0].country).toBeNull();
+        });
+
+        describe('automated-network list', () => {
+            const CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36';
+
+            it('labels a hit from a listed network as bot_other', async () => {
+                const req = buildReq({
+                    body: { pattern: '/tron-forum' },
+                    headers: { 'user-agent': CHROME_UA, 'cf-ray': 'abc123-SIN', 'x-client-asn': '139341' }
+                });
+                const { res } = buildRes();
+
+                await controller.recordHit(req, res);
+
+                expect(recordRedirectHit.mock.calls[0][0].botClass).toBe('bot_other');
+            });
+
+            it('ignores a listed ASN header that did not arrive through Cloudflare', async () => {
+                const req = buildReq({
+                    body: { pattern: '/tron-forum' },
+                    headers: { 'user-agent': CHROME_UA, 'x-client-asn': '139341' }
+                });
+                const { res } = buildRes();
+
+                await controller.recordHit(req, res);
+
+                expect(recordRedirectHit.mock.calls[0][0].botClass).toBe('human');
+            });
         });
     });
 

@@ -35,6 +35,7 @@ import {
     GscKeywords,
     GscSettings,
     IgnoredUsers,
+    BotNetworks,
     RedirectsManager,
     RedirectAnalytics,
     AiToolsPanel,
@@ -290,11 +291,12 @@ export function TrafficDashboardClient({ submenuTree, submenuGeneratedAt, initia
                     </div>
                 )}
                 {activeTab === 'ai' && <AiToolsPanel />}
-                {/* Two short, independent settings panels: side by side when
-                    the page is wide enough, stacked otherwise. */}
+                {/* Short, independent settings panels: side by side when the
+                    page is wide enough, stacked otherwise. */}
                 {activeTab === 'settings' && (
                     <div className={styles.settings_band}>
                         <IgnoredUsers />
+                        <BotNetworks />
                         <GscSettings />
                     </div>
                 )}

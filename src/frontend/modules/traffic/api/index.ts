@@ -31,6 +31,10 @@ export {
     adminAddIgnoredUser,
     adminRemoveIgnoredUser,
     adminSearchAccounts,
+    // Automated-network list functions
+    adminGetBotNetworks,
+    adminAddBotNetwork,
+    adminRemoveBotNetwork,
     // Redirect management functions
     adminListRedirects,
     adminCreateRedirect,
@@ -82,6 +86,7 @@ export type {
     IOverviewTrend,
     IIgnoredUser,
     IAccountMatch,
+    IBotNetwork,
     IGscStatus,
     IGscKeyword,
     IGscKeywordsResult,

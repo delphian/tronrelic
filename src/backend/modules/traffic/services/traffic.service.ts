@@ -43,6 +43,7 @@ import type { IAccountDirectoryService, IClickHouseService, ISystemLogService, I
 import { getClientIP, getCountryFromIP, getDeviceCategory } from './geo.service.js';
 import { getIpHash, getSubnetHash } from './ip-hash.js';
 import { classifyTrafficRequest, type BotClass } from './bot-classifier.js';
+import type { IBotNetworkLookup } from './bot-networks.service.js';
 import { classifyChannel, refererDomainFromUrl, type TrafficChannel } from './channel-classifier.js';
 import { UUID_V4_REGEX } from '../api/traffic-cookies.js';
 import { SystemConfigService } from '../../../services/system-config/system-config.service.js';
@@ -3606,7 +3607,8 @@ export class TrafficService {
  * backend has real visitor context (landing path, UTM params, original
  * referrer captured by the legacy-redirect middleware) on the bootstrap
  * call. The `startSession` payload supplies the same shape from the
- * frontend session-start fetch.
+ * frontend session-start fetch. One field, `botNetworks`, is not request
+ * data at all but the lookup the classifier needs; see its own comment.
  */
 export interface ITrafficEventBuilderInputs {
     /** Sanitized landing path; falls back to `req.path` when omitted. */
@@ -3649,6 +3651,13 @@ export interface ITrafficEventBuilderInputs {
      * otherwise human verdict into `bot_other`. See `classifyTrafficRequest`.
      */
     automated?: boolean;
+    /**
+     * The operator's automated-network list. Not request data like the fields
+     * above: the controller passes it so the builder can check the ASN it reads
+     * from the headers. When the request's network is listed, an otherwise
+     * human verdict becomes `bot_other`. Omitted means no network is listed.
+     */
+    botNetworks?: IBotNetworkLookup;
 }
 
 /**
@@ -3705,10 +3714,7 @@ export function buildTrafficEvent(
     // consistency (cf columns populate as a set), not a security boundary —
     // the real enforcement is the origin firewall allow-listing Cloudflare.
     const cfIpCountry = cfRay ? normalizeCfCountry(readSingleHeader(headers['cf-ipcountry'])) : null;
-    // The ASN header follows the same rule for the same reason: Cloudflare
-    // overwrites any client-sent value, so it is only meaningful on a hop
-    // Cloudflare attested.
-    const asn = cfRay ? parseAsn(readSingleHeader(headers[ASN_HEADER])) : null;
+    const asn = readCloudflareAsn(headers);
 
     const utm = inputs.utm ?? {};
     const path = inputs.landingPath ?? (typeof req.path === 'string' ? req.path : '/');
@@ -3741,7 +3747,8 @@ export function buildTrafficEvent(
             path,
             referer,
             secFetchSite,
-            automated: inputs.automated === true
+            automated: inputs.automated === true,
+            botNetwork: asn !== null && inputs.botNetworks?.isBotNetwork(asn) === true
         }),
 
         utm_source: utm.source ?? null,
@@ -3813,6 +3820,22 @@ export function parseAsn(value: string | undefined): number | null {
         }
     }
     return asn;
+}
+
+/**
+ * Read the request's ASN from the {@link ASN_HEADER} header, but only when the
+ * request carries `CF-Ray`. Cloudflare overwrites any client-sent value of the
+ * header, so it means something only on a hop Cloudflare attested; without
+ * `CF-Ray` a direct-to-origin caller could send any number. Shared by event
+ * ingestion and redirect-hit ingestion so both apply the same rule, including
+ * the automated-network check that depends on it.
+ *
+ * @param headers - The request headers, as Express exposes them.
+ * @returns The ASN, or `null` when the hop is not attested or the value is unusable.
+ */
+export function readCloudflareAsn(headers: Request['headers']): number | null {
+    const cfRay = readSingleHeader(headers['cf-ray']);
+    return cfRay ? parseAsn(readSingleHeader(headers[ASN_HEADER])) : null;
 }
 
 /**

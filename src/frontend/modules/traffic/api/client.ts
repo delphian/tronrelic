@@ -890,6 +890,48 @@ export async function adminSearchAccounts(q: string): Promise<IAccountMatch[]> {
     return (response.data as { accounts?: IAccountMatch[] }).accounts ?? [];
 }
 
+/** One network on the automated-network list, whose traffic is labeled a bot. */
+export interface IBotNetwork {
+    /** Autonomous system number — the key matched against each request. */
+    asn: number;
+    /** Operator's note on why the network was listed; null when none was given. */
+    note: string | null;
+    /** ISO timestamp the network was added. */
+    addedAt: string;
+}
+
+/**
+ * List the networks whose traffic is labeled `bot_other`.
+ * @returns The automated-network list, newest addition first.
+ */
+export async function adminGetBotNetworks(): Promise<IBotNetwork[]> {
+    const response = await apiClient.get('/admin/traffic/bot-networks');
+    return (response.data as { networks?: IBotNetwork[] }).networks ?? [];
+}
+
+/**
+ * Add a network to the automated-network list, or replace its note. Applies
+ * to traffic recorded from now on; rows already recorded keep their label.
+ * @param asn - The autonomous system number, as typed by the operator.
+ * @param note - Optional reason for listing it, such as the network's owner.
+ * @returns The updated list.
+ */
+export async function adminAddBotNetwork(asn: string, note: string): Promise<IBotNetwork[]> {
+    const response = await apiClient.post('/admin/traffic/bot-networks', { asn, note });
+    return (response.data as { networks?: IBotNetwork[] }).networks ?? [];
+}
+
+/**
+ * Remove a network from the automated-network list. Traffic recorded from now
+ * on is classified normally again.
+ * @param asn - The autonomous system number to remove.
+ * @returns The updated list.
+ */
+export async function adminRemoveBotNetwork(asn: number): Promise<IBotNetwork[]> {
+    const response = await apiClient.delete(`/admin/traffic/bot-networks/${asn}`);
+    return (response.data as { networks?: IBotNetwork[] }).networks ?? [];
+}
+
 export async function adminGetGscStatus(): Promise<IGscStatus> {
     const response = await apiClient.get('/admin/users/analytics/gsc/status');
     return response.data as IGscStatus;
