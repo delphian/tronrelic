@@ -21,8 +21,13 @@ import type { LocalizationAdminController } from './localization-admin.controlle
  * generous: every request from the frontend shares one bucket, and a fresh
  * deploy reports every key the site renders within the first few minutes.
  *
+ * The switch route is limited per visitor address rather than per process. A
+ * person clicks the switcher a handful of times a visit, so thirty a minute
+ * leaves room for anyone browsing and stops one client from inflating the
+ * counts.
+ *
  * @param controller - Public handlers.
- * @returns Router exposing `GET /config`, `GET /catalog/:language`, and `POST /observations`.
+ * @returns Router exposing `GET /config`, `GET /catalog/:language`, `POST /observations`, and `POST /switches`.
  */
 export function createLocalizationPublicRouter(controller: LocalizationPublicController): Router {
     const router = Router();
@@ -33,6 +38,11 @@ export function createLocalizationPublicRouter(controller: LocalizationPublicCon
         createRateLimiter({ windowSeconds: 60, maxRequests: 600, keyPrefix: 'localization-observations' }),
         controller.postObservations
     );
+    router.post(
+        '/switches',
+        createRateLimiter({ windowSeconds: 60, maxRequests: 30, keyPrefix: 'localization-switches' }),
+        controller.postSwitch
+    );
     return router;
 }
 
@@ -40,7 +50,7 @@ export function createLocalizationPublicRouter(controller: LocalizationPublicCon
  * Build the admin router.
  *
  * @param controller - Admin handlers.
- * @returns Router exposing the language, route, key, translation, settings, and suggestion endpoints.
+ * @returns Router exposing the language, route, key, translation, settings, suggestion, and switch-stats endpoints.
  */
 export function createLocalizationAdminRouter(controller: LocalizationAdminController): Router {
     const router = Router();
@@ -61,6 +71,7 @@ export function createLocalizationAdminRouter(controller: LocalizationAdminContr
     router.delete('/keys', controller.deleteKey);
     router.get('/settings', controller.getSettings);
     router.patch('/settings', controller.updateSettings);
+    router.get('/switches', controller.getSwitchStats);
     // Each suggestion is a paid model call, so it carries its own ceiling on
     // top of the admin limiter. Twenty a minute is far more than anyone
     // clicking through rows needs, and stops a stuck script running up a bill.

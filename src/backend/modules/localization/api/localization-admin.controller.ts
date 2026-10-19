@@ -13,6 +13,8 @@ import { actorFromAdminRequest } from '../../../services/content-actor.js';
 import type { LocalizationAdminService } from '../services/localization-admin.service.js';
 import type { LocalizationSettingsService } from '../services/localization-settings.service.js';
 import type { TranslationSuggestionService } from '../services/translation-suggestion.service.js';
+import type { LanguageSwitchService } from '../services/language-switch.service.js';
+import { DEFAULT_SWITCH_STATS_DAYS } from '../services/language-switch.service.js';
 import {
     LocalizationConflictError,
     LocalizationNotFoundError,
@@ -46,20 +48,22 @@ function queryNumber(value: unknown): number | undefined {
 }
 
 /**
- * Handlers for languages, routes, keys, translations, settings, and AI
- * translation suggestions.
+ * Handlers for languages, routes, keys, translations, settings, AI
+ * translation suggestions, and language switcher usage.
  */
 export class LocalizationAdminController {
     /**
      * @param service - Write side of the module.
      * @param settings - Storage for the system prompt, provider, and model.
      * @param suggestions - Runs AI translation requests for the Translations tab.
+     * @param switches - Summarises language switcher clicks for the Switches tab.
      * @param logger - Module-scoped logger for unexpected failures.
      */
     constructor(
         private readonly service: LocalizationAdminService,
         private readonly settings: LocalizationSettingsService,
         private readonly suggestions: TranslationSuggestionService,
+        private readonly switches: LanguageSwitchService,
         private readonly logger: ISystemLogService
     ) {}
 
@@ -217,6 +221,13 @@ export class LocalizationAdminController {
     suggestTranslations = async (req: Request, res: Response): Promise<void> => {
         await this.handle(res, 'Failed to suggest translations', async () => {
             res.json(await this.suggestions.suggest(req.body ?? {}, actorFromAdminRequest(req).id));
+        });
+    };
+
+    /** GET /switches — language switcher usage over `?days=` whole UTC days (default 30, at most 365). */
+    getSwitchStats = async (req: Request, res: Response): Promise<void> => {
+        await this.handle(res, 'Failed to load language switch stats', async () => {
+            res.json(await this.switches.getStats(queryNumber(req.query.days) ?? DEFAULT_SWITCH_STATS_DAYS));
         });
     };
 

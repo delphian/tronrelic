@@ -174,6 +174,14 @@ Memoize the subscription object — passing a fresh identity each render re-regi
 
 **Use the runtime-config APIs.** SSR (server components, `generateMetadata`) calls `getServerConfig()` from `@/lib/serverConfig`; client code calls `getRuntimeConfig()` from `@/lib/runtimeConfig`. The legacy `@/lib/config` module and `getApiUrl()` are deprecated. Never read `process.env.*` directly in components. See [frontend-architecture-runtime-config.md](../frontend-architecture-runtime-config.md).
 
+## Inline Scripts and the Content-Security-Policy
+
+Every page carries a Content-Security-Policy whose `script-src` allows only scripts with a nonce generated fresh for that request. That stops a script injected into page markup from running. The middleware builds the policy in `lib/buildContentSecurityPolicy.ts` and passes the nonce to server rendering in the `CSP_NONCE_HEADER` request header. It is sent as `Content-Security-Policy-Report-Only` while it is rolled out, so for now a violation is reported in the browser console rather than blocked.
+
+Next.js stamps the nonce on its own scripts. A script you write inline must carry it too: in a server component, read `(await headers()).get(CSP_NONCE_HEADER)` and pass it as `nonce={nonce}`, as the root layout does for `window.__RUNTIME_CONFIG__`. A script a plugin or module contributes through the `ssr.headFragments` hook gets the nonce from the layout automatically. JSON-LD blocks (`type="application/ld+json"`) are data, not code, so they need no nonce.
+
+Never use an inline event handler attribute such as `onclick="..."` in markup that reaches the browser as HTML. A nonce cannot cover it, so the policy blocks it.
+
 ## Pre-Ship Checklist
 
 - [ ] Server component fetches initial data via `getServerConfig()`; client receives it as prop
@@ -183,6 +191,7 @@ Memoize the subscription object — passing a fresh identity each render re-regi
 - [ ] No `window`/`document` in render body — only in `useEffect`
 - [ ] Dates rendered via `<ClientTime>`, not `toLocaleString`
 - [ ] `process.env.*` never read directly — `getServerConfig()` (SSR) or `getRuntimeConfig()` (client)
+- [ ] Any inline executable `<script>` carries the request's CSP nonce
 - [ ] New hooks live in `modules/<name>/hooks/` or `lib/hooks/`, not `features/`
 - [ ] All `useEffect`/`useCallback`/`useMemo` dependencies listed; cleanup returned where needed
 - [ ] Plugin components consume `IFrontendPluginContext` (no cross-workspace imports)

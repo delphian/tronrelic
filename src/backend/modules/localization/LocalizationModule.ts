@@ -9,7 +9,15 @@
  */
 
 import type { Express, Router } from 'express';
-import type { IAiProviderRegistry, IDatabaseService, IMenuService, IModule, IModuleMetadata, IServiceRegistry } from '@/types';
+import type {
+    IAiProviderRegistry,
+    IDatabaseService,
+    IMenuService,
+    IModule,
+    IModuleMetadata,
+    IServiceRegistry,
+    ITrafficIgnoreList
+} from '@/types';
 import { logger } from '../../lib/logger.js';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
 import { createGroupedAdminRateLimiter } from '../../api/middleware/rate-limit.js';
@@ -20,6 +28,7 @@ import { LocalizationAdminService } from './services/localization-admin.service.
 import { LocalizationSettingsService } from './services/localization-settings.service.js';
 import { TranslationObservationService } from './services/translation-observation.service.js';
 import { TranslationSuggestionService } from './services/translation-suggestion.service.js';
+import { LanguageSwitchService } from './services/language-switch.service.js';
 import { LocalizationPublicController } from './api/localization-public.controller.js';
 import { LocalizationAdminController } from './api/localization-admin.controller.js';
 import { createLocalizationAdminRouter, createLocalizationPublicRouter } from './api/localization.routes.js';
@@ -36,6 +45,14 @@ export const LOCALIZATION_SERVICE_NAME = 'localization';
 const AI_PROVIDERS_SERVICE_NAME = 'ai-providers';
 
 /**
+ * Registry name of the traffic module's read-only ignore list, which the
+ * traffic module exports as `TRAFFIC_IGNORE_LIST_SERVICE`. Written out for the
+ * same reason as the name above: the traffic barrel would load that module's
+ * ClickHouse and Search Console code into this one.
+ */
+const TRAFFIC_IGNORE_LIST_SERVICE_NAME = 'traffic-ignore-list';
+
+/**
  * Menu namespace holding the page's in-page tab row. Kept out of `main` so the
  * tabs never appear in the site navigation; only the page's own
  * `MenuNavClient` reads it (the menu module's Submenu Pattern).
@@ -45,18 +62,19 @@ const SUBMENU_NAMESPACE = 'localization';
 /**
  * The page's tab row, declared as menu nodes so it inherits per-user gating,
  * ordering, and live refresh. Languages comes first because nothing else can
- * be configured until a language exists. Settings holds the AI translation
- * assist's prompt and model. Database and Logs are the tabs every module owning
- * storage and an admin page carries, built from the core browsers scoped to
- * this module.
+ * be configured until a language exists. Switches shows how often visitors use
+ * the language switcher. Settings holds the AI translation assist's prompt and
+ * model. Database and Logs are the tabs every module owning storage and an
+ * admin page carries, built from the core browsers scoped to this module.
  */
 const SUBMENU_TABS: ReadonlyArray<{ label: string; tab: string; icon: string; order: number }> = [
     { label: 'Languages', tab: 'languages', icon: 'Languages', order: 0 },
     { label: 'Routes', tab: 'routes', icon: 'Route', order: 1 },
     { label: 'Translations', tab: 'translations', icon: 'FileText', order: 2 },
-    { label: 'Settings', tab: 'settings', icon: 'Settings', order: 3 },
-    { label: 'Database', tab: 'database', icon: 'Database', order: 4 },
-    { label: 'Logs', tab: 'logs', icon: 'ScrollText', order: 5 }
+    { label: 'Switches', tab: 'switches', icon: 'MousePointerClick', order: 3 },
+    { label: 'Settings', tab: 'settings', icon: 'Settings', order: 4 },
+    { label: 'Database', tab: 'database', icon: 'Database', order: 5 },
+    { label: 'Logs', tab: 'logs', icon: 'ScrollText', order: 6 }
 ];
 
 /** Dependencies the localization module needs at bootstrap. */
@@ -103,6 +121,7 @@ export class LocalizationModule implements IModule<ILocalizationModuleDependenci
     private settingsService!: LocalizationSettingsService;
     private suggestionService!: TranslationSuggestionService;
     private observationService!: TranslationObservationService;
+    private switchService!: LanguageSwitchService;
     private initialized = false;
     private readonly logger = logger.child({ module: 'localization' });
 
@@ -136,6 +155,8 @@ export class LocalizationModule implements IModule<ILocalizationModuleDependenci
 
         this.settingsService = new LocalizationSettingsService({ database: deps.database, logger: this.logger });
 
+        this.switchService = new LanguageSwitchService({ database: deps.database, localization: this.service });
+
         // The provider registry is looked up per request rather than captured
         // here: the ai-tools module publishes it in its own run(), and provider
         // plugins register and unregister on it at runtime.
@@ -161,7 +182,16 @@ export class LocalizationModule implements IModule<ILocalizationModuleDependenci
 
         this.serviceRegistry.register(LOCALIZATION_SERVICE_NAME, this.service);
 
-        const publicController = new LocalizationPublicController(this.service, this.observationService, this.logger);
+        // The ignore list is looked up per click rather than captured here, so
+        // switch counting keeps working, unfiltered, if the traffic module has
+        // not published it.
+        const publicController = new LocalizationPublicController(
+            this.service,
+            this.observationService,
+            this.switchService,
+            () => this.serviceRegistry.get<ITrafficIgnoreList>(TRAFFIC_IGNORE_LIST_SERVICE_NAME) ?? null,
+            this.logger
+        );
         const publicRouter: Router = createLocalizationPublicRouter(publicController);
         this.app.use('/api/localization', publicRouter);
 
@@ -174,6 +204,7 @@ export class LocalizationModule implements IModule<ILocalizationModuleDependenci
             this.adminService,
             this.settingsService,
             this.suggestionService,
+            this.switchService,
             this.logger
         );
         const adminRouter: Router = createLocalizationAdminRouter(adminController);

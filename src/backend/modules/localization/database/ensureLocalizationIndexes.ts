@@ -9,7 +9,14 @@
  */
 
 import type { IDatabaseService } from '@/types';
-import { KEYS_COLLECTION, LANGUAGES_COLLECTION, ROUTES_COLLECTION, SETTINGS_COLLECTION, TRANSLATIONS_COLLECTION } from './localization-collections.js';
+import {
+    KEYS_COLLECTION,
+    LANGUAGES_COLLECTION,
+    ROUTES_COLLECTION,
+    SETTINGS_COLLECTION,
+    SWITCH_DAILY_COLLECTION,
+    TRANSLATIONS_COLLECTION
+} from './localization-collections.js';
 
 /**
  * Create every index the localization module relies on.
@@ -25,4 +32,7 @@ export async function ensureLocalizationIndexes(database: IDatabaseService): Pro
     await database.createIndex(TRANSLATIONS_COLLECTION, { language: 1 }, {});
     // Two first saves racing each other land on one settings document.
     await database.createIndex(SETTINGS_COLLECTION, { key: 1 }, { unique: true });
+    // Two clicks racing on a new day's counter land on one document. The
+    // leading `day` also serves the stats read, which selects a range of days.
+    await database.createIndex(SWITCH_DAILY_COLLECTION, { day: 1, from: 1, to: 1, pattern: 1 }, { unique: true });
 }

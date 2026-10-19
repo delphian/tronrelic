@@ -12,6 +12,7 @@ import type {
     IPluginUserState,
     ITranslator
 } from '@/types';
+import { ADMIN_GROUP_ID } from '@/types';
 import { Card } from '../components/ui/Card';
 import { Panel } from '../components/ui/Panel';
 import { FigureList } from '../components/ui/FigureList';
@@ -330,14 +331,16 @@ class WebSocketClient implements IWebSocketClient {
  * Hook providing user state to frontend plugins.
  *
  * Mirrors the backend authorization surface: `isLoggedIn` is the primary
- * gate (any authenticated Better Auth account), `hasPrimaryWallet` is the
- * single wallet check, and `primaryWallet` is the proven primary address.
- * A present `primaryWallet` is always signature-verified — the wallet store
- * only holds wallets proven by signature — so there is no separate
- * verified/unverified distinction. Sourced from the Better Auth session
- * (SSR-seeded via SessionProvider), not the legacy UUID identity slice.
+ * gate (any authenticated Better Auth account), `isAdmin` is membership in
+ * the `admin` group, `hasPrimaryWallet` is the single wallet check, and
+ * `primaryWallet` is the proven primary address. A present `primaryWallet`
+ * is always signature-verified — the wallet store only holds wallets proven
+ * by signature — so there is no separate verified/unverified distinction.
+ * Sourced from the Better Auth session (SSR-seeded via SessionProvider), not
+ * the legacy UUID identity slice. `isAdmin` reads the same `groups` array
+ * the backend `isAdmin(req)` predicate checks, so the two sides agree.
  *
- * @returns Plugin-safe user state: login flag, primary-wallet flag + address
+ * @returns Plugin-safe user state: login and admin flags, primary-wallet flag + address
  */
 function usePluginUser(): IPluginUserState {
     const { session, isLoggedIn, isPending } = useAuthSession();
@@ -346,6 +349,7 @@ function usePluginUser(): IPluginUserState {
     return {
         userId: session?.user?.id ?? null,
         isLoggedIn,
+        isAdmin: session?.user?.groups?.includes(ADMIN_GROUP_ID) ?? false,
         hasPrimaryWallet: primaryWallet !== null,
         primaryWallet,
         initialized: !isPending

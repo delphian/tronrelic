@@ -24,8 +24,7 @@ const staticRoutes: Array<{ path: string; priority: number; changeFrequency: Met
   { path: '/resource-markets', priority: 0.9, changeFrequency: 'hourly' },
   { path: '/forum', priority: 0.8, changeFrequency: 'daily' },
   { path: '/articles', priority: 0.8, changeFrequency: 'daily' },
-  { path: '/tools', priority: 0.8, changeFrequency: 'weekly' },
-  { path: '/about', priority: 0.6, changeFrequency: 'monthly' }
+  { path: '/tools', priority: 0.8, changeFrequency: 'weekly' }
 ];
 
 /**

@@ -94,9 +94,33 @@ function resolveInternalApiOrigin() {
     return process.env.SITE_BACKEND.replace(/\/$/, '');
 }
 
+/**
+ * Content-Security-Policy directives sent on every page.
+ *
+ * These close the attacks that need no script allowance to stop: `object-src
+ * 'none'` blocks plugin content such as Flash or Java applets, `base-uri 'self'`
+ * stops injected markup from adding a `<base>` tag that silently points every
+ * relative URL at another host, and `frame-ancestors 'self'` is the modern form
+ * of the `X-Frame-Options: SAMEORIGIN` header nginx already sends. The site uses
+ * none of the blocked features.
+ *
+ * The script policy is not here. It needs a fresh nonce on every request, so
+ * the middleware builds it (`lib/buildContentSecurityPolicy.ts`) and sends it as
+ * a separate report-only header while it is rolled out. `form-action` is left
+ * out of both: the OAuth consent form redirects to the connecting app's
+ * callback address, which Chrome checks against `form-action`.
+ */
+const BASE_CSP_DIRECTIVES = [
+    "object-src 'none'",
+    "base-uri 'self'"
+];
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
     output: 'standalone',
+    // Drop the `X-Powered-By: Next.js` response header. It tells scanners which
+    // framework to target and gives visitors nothing.
+    poweredByHeader: false,
     // `charset: false` is load-bearing rather than cosmetic. When a compiled
     // stylesheet contains any non-ASCII character — a `content: '·'` separator,
     // a `\2212` written literally — Dart Sass marks the encoding for the reader:
@@ -260,6 +284,18 @@ const nextConfig = {
     },
     async headers() {
         return [
+            // Baseline policy for every response. It must stay first: when two
+            // entries set the same header, Next.js keeps the later one, which
+            // is how the /oauth entry below tightens frame-ancestors.
+            {
+                source: '/:path*',
+                headers: [
+                    {
+                        key: 'Content-Security-Policy',
+                        value: [...BASE_CSP_DIRECTIVES, "frame-ancestors 'self'"].join('; '),
+                    },
+                ],
+            },
             {
                 source: '/images/:path*',
                 headers: [
@@ -272,12 +308,16 @@ const nextConfig = {
             // The OAuth consent page must never render inside another site's
             // frame, or that site could overlay it and trick a user into
             // clicking Allow (clickjacking). Both headers are sent because
-            // older browsers honour only X-Frame-Options.
+            // older browsers honour only X-Frame-Options. The policy repeats the
+            // baseline directives because this entry replaces the one above.
             {
                 source: '/oauth/:path*',
                 headers: [
                     { key: 'X-Frame-Options', value: 'DENY' },
-                    { key: 'Content-Security-Policy', value: "frame-ancestors 'none'" },
+                    {
+                        key: 'Content-Security-Policy',
+                        value: [...BASE_CSP_DIRECTIVES, "frame-ancestors 'none'"].join('; '),
+                    },
                     { key: 'Cache-Control', value: 'no-store' },
                 ],
             },

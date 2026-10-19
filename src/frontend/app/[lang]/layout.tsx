@@ -15,6 +15,7 @@ import { fetchLocalizationSeed, resolveMetadataLanguage } from '../../modules/lo
 // Imported from the files rather than the module barrel, which also exports
 // components with stylesheets and would pull their CSS into the layout bundle.
 import { buildLanguageAlternates } from '../../modules/localization/lib/buildLanguageAlternates';
+import { CSP_NONCE_HEADER } from '../../lib/CSP_NONCE_HEADER';
 
 /** Route params of the `[lang]` segment. */
 interface ILanguageParams {
@@ -223,10 +224,16 @@ async function fetchHtmlAttributes(
  * rendered structurally — attributes spread, inner content set via
  * `dangerouslySetInnerHTML` for elements that have one.
  *
+ * Scripts get the page's CSP nonce, set after the contributed attributes so a
+ * contributor cannot replace it. A script from a hook handler is code the
+ * deployment chose to run, so it is trusted the same as the layout's own.
+ *
  * @param fragment - Head fragment from the backend.
+ * @param nonce - This request's CSP nonce, or undefined when the middleware
+ *   did not set one.
  * @returns React element for this fragment.
  */
-function renderHeadFragment(fragment: IHeadFragmentResponse): ReactElement {
+function renderHeadFragment(fragment: IHeadFragmentResponse, nonce: string | undefined): ReactElement {
     const attrs = fragment.attributes ?? {};
     if (fragment.tag === 'style') {
         return (
@@ -242,6 +249,7 @@ function renderHeadFragment(fragment: IHeadFragmentResponse): ReactElement {
             <script
                 key={fragment.id}
                 {...attrs}
+                nonce={nonce}
                 dangerouslySetInnerHTML={{ __html: fragment.content ?? '' }}
             />
         );
@@ -310,6 +318,9 @@ export default async function RootLayout({ children, params }: { children: React
   // language prefix, so widgets placed on /markets also appear on /zh/markets.
   const headersList = await headers();
   const pathname = headersList.get('x-pathname') || '/';
+  // The CSP nonce the middleware generated for this request. Inline scripts
+  // this layout writes carry it so the Content-Security-Policy allows them.
+  const nonce = headersList.get(CSP_NONCE_HEADER) ?? undefined;
 
   const { lang } = await params;
 
@@ -381,6 +392,7 @@ export default async function RootLayout({ children, params }: { children: React
       <head>
         {/* Inject runtime configuration before any client scripts */}
         <script
+          nonce={nonce}
           dangerouslySetInnerHTML={{
             __html: `window.__RUNTIME_CONFIG__=${JSON.stringify(runtimeConfig)};`
           }}
@@ -395,7 +407,7 @@ export default async function RootLayout({ children, params }: { children: React
         {/* Inject every hook-driven head fragment unfiltered — the
             backend hook handlers already scope their contributions
             (theme handler emits only active themes, etc.). */}
-        {headFragments.map(renderHeadFragment)}
+        {headFragments.map(fragment => renderHeadFragment(fragment, nonce))}
         {languageAlternates.map(alternate => (
           <link key={alternate.hrefLang} rel="alternate" hrefLang={alternate.hrefLang} href={alternate.href} />
         ))}

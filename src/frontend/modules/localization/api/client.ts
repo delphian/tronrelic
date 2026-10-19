@@ -14,6 +14,7 @@
 import type {
     ILanguage,
     ILanguageSummary,
+    ILanguageSwitchStats,
     ILocalizationSettings,
     ILocalizedRoute,
     ILocalizedRouteSummary,
@@ -288,4 +289,15 @@ export async function updateLocalizationSettings(
  */
 export async function suggestTranslations(request: ITranslationSuggestionRequest): Promise<ITranslationSuggestionResult> {
     return send<ITranslationSuggestionResult>('POST', '/translation-suggestions', 'suggest translations', request);
+}
+
+/**
+ * Read how often visitors used the language switcher, for the Switches tab.
+ *
+ * @param days - Trailing window in whole UTC days, today included. The
+ *   backend clamps it to between 1 and 365.
+ * @returns Totals for the window by day, by direction, and by route.
+ */
+export async function getLanguageSwitchStats(days: number): Promise<ILanguageSwitchStats> {
+    return send<ILanguageSwitchStats>('GET', `/switches?days=${encodeURIComponent(String(days))}`, 'load language switches');
 }

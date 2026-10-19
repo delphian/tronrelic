@@ -443,6 +443,20 @@ export function createMockDatabaseService(): IDatabaseService & {
                             if (!Array.isArray(obj[lastKey])) obj[lastKey] = [];
                             obj[lastKey].push(deepClone(value));
                         }
+                        // Apply $inc on insert: MongoDB sets each incremented
+                        // path to the increment when the document is created,
+                        // which is how an "add one or start the counter" upsert
+                        // works. Without this a counter's first hit vanished.
+                        for (const [key, amount] of Object.entries((update as any).$inc || {})) {
+                            const parts = key.split('.');
+                            let obj = newDoc;
+                            for (let i = 0; i < parts.length - 1; i++) {
+                                if (obj[parts[i]] === undefined) obj[parts[i]] = {};
+                                obj = obj[parts[i]];
+                            }
+                            const lastKey = parts[parts.length - 1];
+                            obj[lastKey] = (obj[lastKey] || 0) + (amount as number);
+                        }
                         data.push(newDoc);
                         return { modifiedCount: 0, matchedCount: 0, acknowledged: true, upsertedCount: 1, upsertedId: id };
                     }

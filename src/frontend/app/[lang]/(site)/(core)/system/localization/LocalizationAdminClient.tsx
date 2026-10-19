@@ -3,9 +3,9 @@
 /**
  * @fileoverview Client shell for /system/localization.
  *
- * Holds the in-page tab row and its six panels: languages, published routes,
- * translations, the AI translation settings, this module's MongoDB storage,
- * and this module's log entries.
+ * Holds the in-page tab row and its seven panels: languages, published routes,
+ * translations, language switcher usage, the AI translation settings, this
+ * module's MongoDB storage, and this module's log entries.
  * The tab row is the menu module's Submenu Pattern — a namespaced menu rendered
  * with `MenuNavClient` — and clicking a tab drives local state rather than
  * navigating, with the address bar kept as a real deep link.
@@ -22,10 +22,13 @@ import { Page, PageHeader, Stack } from '../../../../../../components/layout';
 import { MenuNavClient } from '../../../../../../components/layout/MenuNav/MenuNavClient';
 import { CollectionBrowser } from '../../../../../../modules/database';
 import { SystemLogsMonitor } from '../../../../../../modules/logs';
-import { LanguagesTab, RoutesTab, SettingsTab, TranslationsTab } from '../../../../../../modules/localization';
+import { LanguagesTab, RoutesTab, SettingsTab, SwitchesTab, TranslationsTab } from '../../../../../../modules/localization';
 
 /** The page's tab ids; the `?tab=` value carried by each submenu node. */
-type TabId = 'languages' | 'routes' | 'translations' | 'settings' | 'database' | 'logs';
+type TabId = 'languages' | 'routes' | 'translations' | 'switches' | 'settings' | 'database' | 'logs';
+
+/** Every tab id, so the deep link and the click handler share one list. */
+const TAB_IDS: ReadonlyArray<TabId> = ['languages', 'routes', 'translations', 'switches', 'settings', 'database', 'logs'];
 
 /** The menu namespace the module registers the tab nodes under. */
 const SUBMENU_NAMESPACE = 'localization';
@@ -47,7 +50,7 @@ const LOG_SERVICE = 'tronrelic:localization';
  * @returns True when the value names a real tab.
  */
 function isTabId(tab: string | undefined): tab is TabId {
-    return tab === 'languages' || tab === 'routes' || tab === 'translations' || tab === 'settings' || tab === 'database' || tab === 'logs';
+    return TAB_IDS.includes(tab as TabId);
 }
 
 /**
@@ -129,6 +132,7 @@ export function LocalizationAdminClient({ submenuTree, submenuGeneratedAt, initi
                 {activeTab === 'languages' && <LanguagesTab />}
                 {activeTab === 'routes' && <RoutesTab onShowKeys={handleShowKeys} />}
                 {activeTab === 'translations' && <TranslationsTab initialRoute={routeFilter} />}
+                {activeTab === 'switches' && <SwitchesTab />}
                 {activeTab === 'settings' && <SettingsTab />}
                 {activeTab === 'database' && (
                     <CollectionBrowser prefix={COLLECTION_PREFIX} title="Localization Collections" />

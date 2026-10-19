@@ -16,11 +16,15 @@ import type { ITranslator } from '../localization/ITranslator.js';
  *
  * Mirrors the backend authorization surface so plugin gating reads the
  * same way on both sides: `isLoggedIn` is the primary gate (any
- * authenticated Better Auth account), `hasPrimaryWallet` is the single
- * wallet check, and `primaryWallet` is the proven primary address. A
- * present wallet is always signature-verified — the wallet store only
- * holds wallets proven by signature — so there is no separate
- * verified/unverified distinction.
+ * authenticated Better Auth account), `isAdmin` is the role check,
+ * `hasPrimaryWallet` is the single wallet check, and `primaryWallet` is
+ * the proven primary address. A present wallet is always
+ * signature-verified — the wallet store only holds wallets proven by
+ * signature — so there is no separate verified/unverified distinction.
+ *
+ * These flags decide what the UI shows and which requests it bothers to
+ * send. They are not access control: the backend gates (`requiresAdmin`,
+ * the `isAdmin(req)` predicate) still decide every request.
  *
  * @example
  * ```typescript
@@ -50,6 +54,15 @@ export interface IPluginUserState {
      * `isLoggedIn(req)` predicate. Use this for login-only gating.
      */
     isLoggedIn: boolean;
+
+    /**
+     * True when the signed-in account is in the `admin` group. Mirrors the
+     * backend `isAdmin(req)` predicate. Check it before calling an admin-only
+     * endpoint (`/api/plugins/<id>/system/**`) from a component that renders
+     * for every visitor, so non-admins never send a request that can only
+     * fail. False for anonymous visitors and before the session resolves.
+     */
+    isAdmin: boolean;
 
     /**
      * True when the account has a signature-proven primary wallet.
@@ -1784,8 +1797,9 @@ export interface IFrontendPluginContext {
      * User state hook for accessing current user identity and wallet information.
      *
      * Returns reactive user state that mirrors the Better Auth session.
-     * `isLoggedIn` is the primary gate; `hasPrimaryWallet` and `primaryWallet`
-     * are the wallet-specific signals. Must be called within a component
+     * `isLoggedIn` is the primary gate; `isAdmin` is the role check;
+     * `hasPrimaryWallet` and `primaryWallet` are the wallet-specific
+     * signals. Must be called within a component
      * context (similar to React hooks pattern).
      *
      * @example
