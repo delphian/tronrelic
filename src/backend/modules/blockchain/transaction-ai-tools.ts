@@ -17,12 +17,19 @@ import type {
     ServiceWatchDisposer
 } from '@/types';
 import { logger } from '../../lib/logger.js';
+import { CHAIN_DATA_RETENTION_DAYS } from './chain-data/buildChainDataSchema.js';
+import { AI_TOOL_NAMES } from './chain-query/tools/chainQueryToolShared.js';
 
-/** Provider id passed to `registerTool` so the admin UI groups the tool under core. */
-const PROVIDER_ID = 'core-blockchain';
+/**
+ * Provider id passed to `registerTool`. The admin UI groups tools by it, and
+ * this one is kept apart from the ClickHouse-backed `core-blockchain` tools
+ * because a cache miss is answered by the block provider's node API rather
+ * than by stored chain data.
+ */
+const PROVIDER_ID = 'blockchain-node';
 
-/** Tool name. The `tronrelic-` prefix marks a platform-default tool. */
-export const TRANSACTION_TOOL_NAME = 'tronrelic-get-transaction';
+/** Tool name, led by the owning module's id like the other `blockchain-*` tools. */
+export const TRANSACTION_TOOL_NAME = 'blockchain-get-transaction';
 
 /** A TRON transaction id is a 64-character hex hash. */
 const TXID_PATTERN = /^[0-9a-fA-F]{64}$/;
@@ -46,7 +53,11 @@ export function buildTransactionTool(detailService: ITransactionDetailService): 
             '64-character hexadecimal transaction hash. Returns one transaction object, ' +
             'or a null transaction when the id cannot be resolved on-chain (which is not ' +
             'an error). Returns factual blockchain data only. This tool is read-only and ' +
-            'rate-limited: it never submits, modifies, or broadcasts anything.',
+            'rate-limited: it never submits, modifies, or broadcasts anything. ' +
+            `It resolves a transaction of any age, unlike ${AI_TOOL_NAMES.transactionTrace}, which ` +
+            `covers only the last ${CHAIN_DATA_RETENTION_DAYS} days but also returns signers, internal ` +
+            'calls, token movements, and event logs. Use this tool when that one reports found: false, ' +
+            'or when the summary above is all you need.',
         // Capability: read / internal — strictly read-only on-chain lookup. The
         // governor applies the read-class rate cap and writes the audit record.
         // surfacesUntrustedContent: the returned transaction includes on-chain

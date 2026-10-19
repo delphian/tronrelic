@@ -28,22 +28,22 @@ describe('tool allowlist vocabulary', () => {
     describe('isHostedToolEntry', () => {
         it('separates a hosted grant from a registry tool name', () => {
             expect(isHostedToolEntry('hosted:web_search')).toBe(true);
-            expect(isHostedToolEntry('tronrelic-get-transaction')).toBe(false);
+            expect(isHostedToolEntry('blockchain-get-transaction')).toBe(false);
         });
     });
 
     describe('splitToolAllowlist', () => {
         it('partitions a mixed list into its two halves', () => {
-            const split = splitToolAllowlist(['tronrelic-get-transaction', 'hosted:web_search', 'blog-propose-post']);
+            const split = splitToolAllowlist(['blockchain-get-transaction', 'hosted:web_search', 'blog-propose-post']);
 
-            expect(split.registry).toEqual(['tronrelic-get-transaction', 'blog-propose-post']);
+            expect(split.registry).toEqual(['blockchain-get-transaction', 'blog-propose-post']);
             expect(split.hosted).toEqual(['web_search']);
         });
 
         it('reads a pre-prefix allowlist as granting no hosted tools', () => {
             // The deployment-safety property: every allowlist stored before the
             // prefix existed lands here, and none of them grants a hosted tool.
-            const split = splitToolAllowlist(['tronrelic-get-transaction']);
+            const split = splitToolAllowlist(['blockchain-get-transaction']);
 
             expect(split.hosted).toEqual([]);
         });
