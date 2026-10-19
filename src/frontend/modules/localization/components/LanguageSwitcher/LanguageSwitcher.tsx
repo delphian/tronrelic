@@ -15,6 +15,11 @@
  * is what guarantees the `<html lang>` attribute, the catalog, and the
  * surrounding navigation all switch together.
  *
+ * Clicking a language other than the current one reports the switch with a
+ * beacon before the browser leaves the page, which is what the Switches tab of
+ * `/system/localization` counts. The link itself is never delayed or blocked
+ * by the report.
+ *
  * @module modules/localization/components/LanguageSwitcher
  */
 
@@ -23,6 +28,7 @@ import { usePathname } from 'next/navigation';
 import { Languages } from 'lucide-react';
 import { DEFAULT_LANGUAGE, findPublishedLanguages, localizePath, resolveLocalizedPath } from '@/types';
 import { useLocalization } from '../../hooks/useLocalization';
+import { sendLanguageSwitch } from '../../lib/sendLanguageSwitch';
 import styles from './LanguageSwitcher.module.scss';
 
 /** The default language is never in the snapshot, so its labels live here. */
@@ -58,6 +64,16 @@ export function LanguageSwitcher({ display = 'native' }: ILanguageSwitcherProps)
                 <ul className={styles.list}>
                     {options.map(option => {
                         const isCurrent = option.code === language;
+                        /**
+                         * Report the switch as the visitor leaves the page. A
+                         * click on the current language reloads the same page
+                         * and is not a switch, so it is not reported.
+                         */
+                        const handleClick = () => {
+                            if (!isCurrent) {
+                                sendLanguageSwitch({ path, from: language, to: option.code });
+                            }
+                        };
                         return (
                             <li key={option.code}>
                                 <a
@@ -67,6 +83,7 @@ export function LanguageSwitcher({ display = 'native' }: ILanguageSwitcherProps)
                                     title={option.name}
                                     aria-current={isCurrent ? 'page' : undefined}
                                     className={isCurrent ? `${styles.link} ${styles.link_current}` : styles.link}
+                                    onClick={handleClick}
                                 >
                                     {display === 'code' ? option.code.toUpperCase() : option.nativeName}
                                 </a>

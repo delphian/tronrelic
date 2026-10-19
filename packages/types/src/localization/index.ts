@@ -29,6 +29,11 @@ export type { ILocalizationSettings } from './ILocalizationSettings.js';
 export type { ITranslationSuggestion } from './ITranslationSuggestion.js';
 export type { ITranslationSuggestionRequest } from './ITranslationSuggestionRequest.js';
 export type { ITranslationSuggestionResult } from './ITranslationSuggestionResult.js';
+export type { ILanguageSwitch } from './ILanguageSwitch.js';
+export type { ILanguageSwitchDay } from './ILanguageSwitchDay.js';
+export type { ILanguageSwitchPair } from './ILanguageSwitchPair.js';
+export type { ILanguageSwitchRoute } from './ILanguageSwitchRoute.js';
+export type { ILanguageSwitchStats } from './ILanguageSwitchStats.js';
 
 export { DEFAULT_LANGUAGE } from './DEFAULT_LANGUAGE.js';
 export { MAX_TRANSLATION_SUGGESTION_KEYS } from './MAX_TRANSLATION_SUGGESTION_KEYS.js';

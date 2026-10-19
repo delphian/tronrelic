@@ -2,8 +2,9 @@
  * @fileoverview Client-side page-view beacon.
  *
  * Fires a fire-and-forget `page` traffic event to `POST /api/user/track` on
- * every navigation. Prefers `navigator.sendBeacon` (which survives page unload)
- * and falls back to a `keepalive` fetch.
+ * every navigation, through `sendJsonBeacon`, which prefers
+ * `navigator.sendBeacon` (it survives page unload) and falls back to a
+ * `keepalive` fetch.
  *
  * The analytics tid cookie is `httpOnly`, so it is deliberately never read here.
  * The request is same-origin, so the browser attaches the cookie automatically
@@ -15,6 +16,8 @@
  */
 
 import { getRuntimeConfig } from '../../../lib/runtimeConfig';
+import { sendJsonBeacon } from '../../../lib/sendJsonBeacon';
+import { isAutomatedBrowser } from '../../../lib/isAutomatedBrowser';
 
 /**
  * Per-tab record of the last URL this tab reported, used to derive a
@@ -65,22 +68,6 @@ function resolveNavigationReferrer(): string | null {
 }
 
 /**
- * Report whether the browser says it is under automation control.
- *
- * Headless browser fleets run JavaScript and send a stock browser
- * User-Agent, so the server cannot tell them from a visitor and they get
- * counted in the visitor figures. Browsers set `navigator.webdriver` to true
- * while WebDriver, Puppeteer, or Playwright drives them, which gives the
- * backend's bot classifier a signal the request headers do not carry.
- *
- * @returns True only when the flag is exactly `true`; false when it is
- *   absent or the navigator object is unavailable.
- */
-function isAutomatedBrowser(): boolean {
-    return typeof navigator !== 'undefined' && navigator.webdriver === true;
-}
-
-/**
  * Send one page-view beacon for the given path. Best-effort: any failure is
  * swallowed so analytics never interferes with navigation.
  *
@@ -94,31 +81,10 @@ export function sendPageView(path: string): void {
     }
 
     try {
-        const url = `${getRuntimeConfig().apiUrl}/user/track`;
-        const body = JSON.stringify({
+        sendJsonBeacon(`${getRuntimeConfig().apiUrl}/user/track`, {
             landingPath: path,
             originalReferrer: resolveNavigationReferrer(),
             automated: isAutomatedBrowser()
-        });
-
-        // sendBeacon survives an unload that would abort a normal fetch. The
-        // Blob carries the JSON content type so the backend body parser reads it.
-        if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
-            const blob = new Blob([body], { type: 'application/json' });
-            if (navigator.sendBeacon(url, blob)) {
-                return;
-            }
-        }
-
-        // Fallback for browsers without sendBeacon (or a queue rejection).
-        void fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body,
-            credentials: 'include',
-            keepalive: true
-        }).catch(() => {
-            /* analytics is best-effort — never surface a navigation error */
         });
     } catch {
         /* never throw into the navigation path */

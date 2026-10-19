@@ -24,3 +24,6 @@ export const TRANSLATIONS_COLLECTION = `${LOCALIZATION_COLLECTION_PREFIX}transla
 
 /** The module's settings, one document keyed `settings`. */
 export const SETTINGS_COLLECTION = `${LOCALIZATION_COLLECTION_PREFIX}settings`;
+
+/** Language switcher clicks, one counter per day, direction, and route pattern. */
+export const SWITCH_DAILY_COLLECTION = `${LOCALIZATION_COLLECTION_PREFIX}switch_daily`;

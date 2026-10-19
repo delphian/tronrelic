@@ -1,0 +1,13 @@
+# TronRelic security contact (RFC 9116)
+#
+# Report security vulnerabilities to the address below. Please include the
+# affected URL, steps to reproduce, and the impact you observed.
+#
+# Expires must be renewed before the date below. RFC 9116 recommends keeping
+# it less than one year in the future, and a client treats an expired file as
+# stale. There is no Canonical field because one Docker image serves several
+# domains, and this file must stay correct on each of them.
+
+Contact: mailto:admin@tronrelic.com
+Expires: 2027-10-18T00:00:00.000Z
+Preferred-Languages: en

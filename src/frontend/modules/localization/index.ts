@@ -9,7 +9,7 @@
 
 export { LocalizationProvider, ENGLISH_SEED } from './components/LocalizationProvider';
 export { LanguageSwitcher } from './components/LanguageSwitcher';
-export { LanguagesTab, RoutesTab, TranslationsTab, SettingsTab } from './components/admin';
+export { LanguagesTab, RoutesTab, TranslationsTab, SettingsTab, SwitchesTab } from './components/admin';
 export { useTranslation } from './hooks/useTranslation';
 export { CORE_TRANSLATION_NAMESPACE } from './lib/CORE_TRANSLATION_NAMESPACE';
 export { useLocalization } from './hooks/useLocalization';

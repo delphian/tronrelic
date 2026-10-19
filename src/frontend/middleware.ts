@@ -22,6 +22,8 @@ import { DEFAULT_LANGUAGE, resolveLocalizedPath } from '@/types';
 import { getServerSideApiUrl } from './lib/api-url';
 import { createCachedBackendFeed } from './lib/cachedBackendFeed';
 import { LANGUAGE_REQUEST_HEADER } from './modules/localization/lib/LANGUAGE_REQUEST_HEADER';
+import { CSP_NONCE_HEADER } from './lib/CSP_NONCE_HEADER';
+import { buildContentSecurityPolicy } from './lib/buildContentSecurityPolicy';
 
 /** Cookie name for preserved external referrer */
 export const ORIGINAL_REFERRER_COOKIE = '_original_ref';
@@ -500,6 +502,19 @@ export async function middleware(request: NextRequest, event: NextFetchEvent) {
     const requestHeaders = new Headers(request.headers);
     requestHeaders.delete(LANGUAGE_REQUEST_HEADER);
 
+    // A fresh nonce per request for the Content-Security-Policy. Next.js reads
+    // the nonce from the request's CSP header and stamps it on its own inline
+    // scripts; the root layout reads CSP_NONCE_HEADER for the scripts it
+    // writes. Next.js checks the enforcing header before the report-only one,
+    // so any CSP header a visitor sent is dropped rather than left to supply a
+    // nonce of their choosing. The policy is report-only while it is rolled
+    // out: browsers report what it would block without blocking anything.
+    const nonce = btoa(crypto.randomUUID());
+    const contentSecurityPolicy = buildContentSecurityPolicy(nonce, process.env.NODE_ENV === 'development');
+    requestHeaders.set(CSP_NONCE_HEADER, nonce);
+    requestHeaders.delete('content-security-policy');
+    requestHeaders.set('content-security-policy-report-only', contentSecurityPolicy);
+
     // The path pages and widgets see. For a translated page it drops the
     // language prefix, so widgets and head fragments placed on /markets also
     // apply on /zh/markets.
@@ -553,6 +568,7 @@ export async function middleware(request: NextRequest, event: NextFetchEvent) {
 
     // Set pathname header for widget zone routing
     response.headers.set('x-pathname', routedPath);
+    response.headers.set('Content-Security-Policy-Report-Only', contentSecurityPolicy);
 
     return response;
 }
@@ -563,7 +579,10 @@ export async function middleware(request: NextRequest, event: NextFetchEvent) {
  * Excludes API routes, static files, and Next.js internals. Also excludes the
  * MCP endpoint and the OAuth discovery documents under `/.well-known/oauth-`,
  * which are rewritten to the backend and are machine-to-machine traffic rather
- * than page views. Other `/.well-known/` paths still pass through middleware.
+ * than page views. `/.well-known/security.txt` is excluded too: it is a static
+ * file in `public/`, so the `[lang]` rewrite would turn it into a 404, and the
+ * scanners that fetch it would otherwise be recorded as visits. Other
+ * `/.well-known/` paths still pass through middleware.
  *
  * `images/` covers the static assets in `public/images/`, including the web
  * app manifest at `/images/favicon/manifest.json`. Browsers fetch the manifest
@@ -572,5 +591,5 @@ export async function middleware(request: NextRequest, event: NextFetchEvent) {
  * The trailing slash keeps a page slug that merely starts with "images" routed.
  */
 export const config = {
-    matcher: ['/((?!api|mcp$|\\.well-known/oauth-|_next/static|_next/image|uploads|images/|favicon.ico|robots.txt|sitemap.xml|llms.txt).*)']
+    matcher: ['/((?!api|mcp$|\\.well-known/oauth-|\\.well-known/security\\.txt$|_next/static|_next/image|uploads|images/|favicon.ico|robots.txt|sitemap.xml|llms.txt).*)']
 };

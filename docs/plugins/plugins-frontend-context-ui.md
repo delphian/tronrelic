@@ -171,6 +171,7 @@ Reactive identity hook. Avoids Redux coupling and inline freshness recomputation
 interface IPluginUserState {
     userId: string | null;        // Better Auth account id; null when anonymous
     isLoggedIn: boolean;          // authenticated Better Auth session — primary gate
+    isAdmin: boolean;             // account is in the `admin` group
     hasPrimaryWallet: boolean;    // account has a signature-proven primary wallet
     primaryWallet: string | null; // the proven primary wallet address, or null
     initialized: boolean;         // false until the session resolves
@@ -178,6 +179,8 @@ interface IPluginUserState {
 ```
 
 `isLoggedIn` mirrors the backend `isLoggedIn(req)` predicate — use it for login-only gates. `hasPrimaryWallet` mirrors `hasPrimaryWallet(req)`; use it for wallet-gated features, since a Better Auth account can be email/OAuth/passkey-only with no wallet. A present `primaryWallet` is always signature-proven — there is no separate verified/unverified distinction. See [system-auth.md](../system/system-auth.md).
+
+`isAdmin` mirrors the backend `isAdmin(req)` predicate and reads the same `groups` array. Check it before calling an admin-only route (`/plugins/<id>/system/...`) from a component that renders for every visitor, such as a side-effect component, so anonymous visitors and ordinary users never send a request that can only return 401. These flags decide what the UI shows and which requests it sends. They are not access control: the backend `requiresAdmin` gate still decides every request.
 
 ## Modal (`context.useModal`)
 
