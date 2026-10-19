@@ -35,8 +35,10 @@
  *   `/.env` / `/wp-login.php` / encoded path traversal, or a spoofed
  *   search-engine `Referer` with no `Sec-Fetch-Site` header. Assigned
  *   by `classifyTrafficRequest`, never by the UA-only classifier.
- * - `bot_other` — `isbot` returned true but no explicit rule matched.
- *   Captures the long tail without forcing it into a misleading family.
+ * - `bot_other` — `isbot` returned true but no explicit rule matched, or
+ *   the page beacon reported `navigator.webdriver` on an otherwise human-
+ *   looking request (headless fleets with stock browser UAs). Captures the
+ *   long tail without forcing it into a misleading family.
  *
  * Keep the enum small. Industry consensus across analytics platforms
  * (Plausible, Fathom, Cloudflare Web Analytics) lands in this 5-6
@@ -241,6 +243,13 @@ export interface ITrafficRequestSignals {
     referer: string | null | undefined;
     /** Raw `Sec-Fetch-Site` header value, or null/undefined. */
     secFetchSite: string | null | undefined;
+    /**
+     * True when the page beacon reported `navigator.webdriver === true`, the
+     * flag a browser sets while WebDriver, Puppeteer, or Playwright controls
+     * it. Absent on `bootstrap` rows, which are recorded server-side before
+     * any script runs.
+     */
+    automated?: boolean;
 }
 
 /**
@@ -384,7 +393,15 @@ function isSpoofedSearchReferrer(
  * heuristics (probe paths, spoofed search referrers) run first because
  * scanners deliberately defeat UA-based classification with fake browser
  * UAs; everything that isn't a scanner falls through to the UA-only
- * {@link classifyUserAgent} pipeline unchanged.
+ * {@link classifyUserAgent} pipeline.
+ *
+ * A headless browser fleet runs JavaScript and sends a stock browser UA, so
+ * it passes both checks above and would be counted as a visitor. When the
+ * beacon reports the automation flag, a `human` verdict is downgraded to
+ * `bot_other`. A UA that already matched a named family keeps that family,
+ * since it is the more specific label. The flag comes from the request body
+ * and anyone can leave it out, so it only ever moves a row toward "bot";
+ * its absence proves nothing.
  *
  * @param signals - Request-level signals collected at the write site.
  * @returns One of the seven `BotClass` enum values. Never null.
@@ -395,6 +412,9 @@ export function classifyTrafficRequest(signals: ITrafficRequestSignals): BotClas
         result = 'scanner';
     } else {
         result = classifyUserAgent(signals.userAgent);
+        if (result === 'human' && signals.automated === true) {
+            result = 'bot_other';
+        }
     }
     return result;
 }

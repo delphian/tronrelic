@@ -202,9 +202,10 @@ export class BootstrapController {
     }
 
     /**
-     * Pull `landingPath`, `utm`, and `originalReferrer` from the request body
-     * and apply storage caps so a hand-rolled direct caller cannot inflate the
-     * ClickHouse row. Shared by the bootstrap and page-event paths.
+     * Pull `landingPath`, `utm`, `originalReferrer`, `clickId`, and the
+     * `automated` flag from the request body and apply storage caps so a
+     * hand-rolled direct caller cannot inflate the ClickHouse row. Shared by
+     * the bootstrap and page-event paths.
      *
      * @param req - Express request carrying the (optionally middleware-forwarded) body.
      * @returns The capped, sanitized event-builder inputs.
@@ -214,6 +215,7 @@ export class BootstrapController {
         utm?: NonNullable<ReturnType<typeof clampUtm>>;
         originalReferrer?: string | null;
         clickId?: string | null;
+        automated?: boolean;
     } {
         const body = (req.body ?? {}) as Record<string, unknown>;
         const result: {
@@ -221,6 +223,7 @@ export class BootstrapController {
             utm?: NonNullable<ReturnType<typeof clampUtm>>;
             originalReferrer?: string | null;
             clickId?: string | null;
+            automated?: boolean;
         } = {};
 
         const landingPath = sanitizePath(body.landingPath);
@@ -240,6 +243,11 @@ export class BootstrapController {
         // to persist arbitrary strings.
         if (typeof body.clickId === 'string' && PAID_CLICK_IDS.has(body.clickId.toLowerCase())) {
             result.clickId = body.clickId.toLowerCase();
+        }
+        // `navigator.webdriver` as reported by the page beacon. Only a strict
+        // boolean true counts, so a malformed body cannot mislabel a row.
+        if (body.automated === true) {
+            result.automated = true;
         }
         return result;
     }

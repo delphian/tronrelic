@@ -564,7 +564,13 @@ export async function middleware(request: NextRequest, event: NextFetchEvent) {
  * MCP endpoint and the OAuth discovery documents under `/.well-known/oauth-`,
  * which are rewritten to the backend and are machine-to-machine traffic rather
  * than page views. Other `/.well-known/` paths still pass through middleware.
+ *
+ * `images/` covers the static assets in `public/images/`, including the web
+ * app manifest at `/images/favicon/manifest.json`. Browsers fetch the manifest
+ * without cookies, so letting it through recorded a `bootstrap` row under a
+ * freshly minted tid on every page load, one phantom first touch per visit.
+ * The trailing slash keeps a page slug that merely starts with "images" routed.
  */
 export const config = {
-    matcher: ['/((?!api|mcp$|\\.well-known/oauth-|_next/static|_next/image|uploads|favicon.ico|robots.txt|sitemap.xml|llms.txt).*)']
+    matcher: ['/((?!api|mcp$|\\.well-known/oauth-|_next/static|_next/image|uploads|images/|favicon.ico|robots.txt|sitemap.xml|llms.txt).*)']
 };

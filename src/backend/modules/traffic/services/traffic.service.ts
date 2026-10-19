@@ -3643,6 +3643,12 @@ export interface ITrafficEventBuilderInputs {
      * param's value is never forwarded or stored — only which param appeared.
      */
     clickId?: string | null;
+    /**
+     * True when the page beacon reported `navigator.webdriver === true`.
+     * Not stored in its own column; it feeds `bot_class` only, turning an
+     * otherwise human verdict into `bot_other`. See `classifyTrafficRequest`.
+     */
+    automated?: boolean;
 }
 
 /**
@@ -3730,7 +3736,13 @@ export function buildTrafficEvent(
         // the local GeoIP lookup covers direct-to-origin and dev traffic.
         country: cfIpCountry ?? getCountryFromIP(clientIP),
         device: getDeviceCategory(userAgent),
-        bot_class: classifyTrafficRequest({ userAgent, path, referer, secFetchSite }),
+        bot_class: classifyTrafficRequest({
+            userAgent,
+            path,
+            referer,
+            secFetchSite,
+            automated: inputs.automated === true
+        }),
 
         utm_source: utm.source ?? null,
         utm_medium: utm.medium ?? null,

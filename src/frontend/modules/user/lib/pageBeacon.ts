@@ -65,6 +65,22 @@ function resolveNavigationReferrer(): string | null {
 }
 
 /**
+ * Report whether the browser says it is under automation control.
+ *
+ * Headless browser fleets run JavaScript and send a stock browser
+ * User-Agent, so the server cannot tell them from a visitor and they get
+ * counted in the visitor figures. Browsers set `navigator.webdriver` to true
+ * while WebDriver, Puppeteer, or Playwright drives them, which gives the
+ * backend's bot classifier a signal the request headers do not carry.
+ *
+ * @returns True only when the flag is exactly `true`; false when it is
+ *   absent or the navigator object is unavailable.
+ */
+function isAutomatedBrowser(): boolean {
+    return typeof navigator !== 'undefined' && navigator.webdriver === true;
+}
+
+/**
  * Send one page-view beacon for the given path. Best-effort: any failure is
  * swallowed so analytics never interferes with navigation.
  *
@@ -81,7 +97,8 @@ export function sendPageView(path: string): void {
         const url = `${getRuntimeConfig().apiUrl}/user/track`;
         const body = JSON.stringify({
             landingPath: path,
-            originalReferrer: resolveNavigationReferrer()
+            originalReferrer: resolveNavigationReferrer(),
+            automated: isAutomatedBrowser()
         });
 
         // sendBeacon survives an unload that would abort a normal fetch. The
