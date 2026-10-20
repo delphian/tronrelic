@@ -127,7 +127,11 @@ export function ConsentBanner() {
                     <Button variant="secondary" size="sm" onClick={() => save({ analytics: false, ads: false })}>
                         {t('consent.action.reject', 'Reject all')}
                     </Button>
-                    <Button variant="secondary" size="sm" onClick={() => save({ analytics: true, ads: true })}>
+                    {/* "Accept all" grants only the categories the banner showed. With no
+                        Google Ads id the advertising choice is hidden, so storing ads: true
+                        would record consent the visitor never gave, and the tag would start
+                        loading for them as soon as an administrator adds an id. */}
+                    <Button variant="secondary" size="sm" onClick={() => save({ analytics: true, ads: offersAds })}>
                         {t('consent.action.accept', 'Accept all')}
                     </Button>
                     {detailed ? (

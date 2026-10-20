@@ -32,6 +32,15 @@ const FUTURE_TOLERANCE_SECONDS = 24 * 60 * 60;
  * the same way. A choice counts only when it was made under the current
  * `policyVersion` and within the last twelve months.
  *
+ * When a choice stops counting, a refusal in it is not simply dropped.
+ * Outside a consent region nothing would ever ask the visitor again, so
+ * raising the policy version or passing twelve months would silently turn
+ * their refusal back into permission. A stale refusal therefore sets
+ * `required`, which allows nothing and shows the banner until the visitor
+ * answers again. Declining advertising counts as a refusal only while an Ads
+ * id is configured, because without one the banner never offers it and
+ * stores `ads: false` for every visitor.
+ *
  * @param config - The consent settings currently in force.
  * @param country - The request's `cf-ipcountry` value, or nothing when absent.
  * @param cookieValue - The raw `tronrelic_consent` cookie, or nothing when absent.
@@ -57,14 +66,21 @@ export function resolveConsentState(
             && nowSeconds - choice.decidedAt < CONSENT_COOKIE_MAX_AGE_SECONDS
             ? choice
             : null;
-        // Without a current choice, a consent region allows nothing and
-        // anywhere else allows everything.
+        // A stale choice that withheld something still has to be asked about
+        // again. Outside a consent region no banner would appear, so falling
+        // back to the permissive default would undo the refusal.
+        const staleRefusal = current === null
+            && choice !== null
+            && (!choice.analytics || (config.googleAdsId !== null && !choice.ads));
+        const mustAsk = required || staleRefusal;
+        // Without a current choice, a visitor who must be asked allows
+        // nothing and anyone else allows everything.
         state = {
             enabled: true,
-            required,
+            required: mustAsk,
             decided: current !== null,
-            analytics: current ? current.analytics : !required,
-            ads: current ? current.ads : !required
+            analytics: current ? current.analytics : !mustAsk,
+            ads: current ? current.ads : !mustAsk
         };
     }
     return state;

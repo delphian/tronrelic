@@ -13,9 +13,11 @@ export interface IConsentState {
     enabled: boolean;
 
     /**
-     * Whether this visitor must give consent before non-essential cookies are
+     * Whether this visitor must be asked before non-essential cookies are
      * set: true for the EEA, the UK, Switzerland, and any visitor whose
-     * country is unknown, and only while the main switch is on.
+     * country is unknown, and also for a visitor anywhere whose saved refusal
+     * has gone stale, since no banner would otherwise ask them again. Only
+     * ever true while the main switch is on.
      */
     required: boolean;
 
