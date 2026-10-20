@@ -177,7 +177,11 @@ export class PageContentType implements IManagedContentType<IPageContent, IPageW
             createdAt: now,
             updatedAt: now
         };
-        await this.pages.insertOne(doc);
+        try {
+            await this.pages.insertOne(doc);
+        } catch (error) {
+            throw this.toSlugConflictError(error, doc.slug);
+        }
         this.logger.info({ contentId: id, slug: doc.slug }, `Created page: ${doc.title}`);
 
         return;
@@ -246,10 +250,14 @@ export class PageContentType implements IManagedContentType<IPageContent, IPageW
         const oldSlugs = slugChanged && !fields.oldSlugs.includes(doc.slug)
             ? [...fields.oldSlugs, doc.slug]
             : fields.oldSlugs;
-        await this.pages.updateOne(
-            { _id: doc._id },
-            { $set: { ...fields, oldSlugs, content, updatedAt: new Date() } }
-        );
+        try {
+            await this.pages.updateOne(
+                { _id: doc._id },
+                { $set: { ...fields, oldSlugs, content, updatedAt: new Date() } }
+            );
+        } catch (error) {
+            throw this.toSlugConflictError(error, fields.slug);
+        }
         await this.invalidate(doc.slug, fields.slug, doc.approved?.slug);
         this.logger.info({ contentId: id, slug: fields.slug }, `Updated page: ${fields.title}`);
 
@@ -406,6 +414,27 @@ export class PageContentType implements IManagedContentType<IPageContent, IPageW
             published: frontmatter.published || false,
             ogImage: frontmatter.ogImage || null
         };
+    }
+
+    /**
+     * Give a duplicate-slug refusal from the database the same message the
+     * slug check gives.
+     *
+     * `assertSlugsAvailable` checks before it writes, so two saves of one slug
+     * arriving together can both pass it. The unique `slug_1` index (migration
+     * 009) then refuses the second write with MongoDB's `E11000` error, whose
+     * text names collections and indexes an editor has no use for. Only a
+     * conflict on the `slug` key is translated; any other error passes through
+     * unchanged.
+     *
+     * @param error - What the write threw.
+     * @param slug - The slug the write tried to store, named in the message.
+     * @returns The error to throw: a plain slug conflict, or the original.
+     */
+    private toSlugConflictError(error: unknown, slug: string): unknown {
+        const duplicate = error as { code?: number; keyPattern?: Record<string, unknown> } | null;
+        const slugConflict = duplicate?.code === 11000 && duplicate.keyPattern?.slug !== undefined;
+        return slugConflict ? new Error(`A page with slug "${slug}" already exists`) : error;
     }
 
     /**

@@ -158,7 +158,9 @@ interface IPageDocument {
 
 `IPageVersionDocument` holds the same page fields as the latest edit plus `approvedAt`. The review state and audit fields live on the page's row in the core `content_items` collection, not here.
 
-**Indexes:** `slug` (unique), `oldSlugs`, `published`, `contentId` (unique where present), text index on `title`/`slug`/`description`.
+**Indexes:** `oldSlugs` (migration 003), `contentId` (unique where present, migration 007), `text_search`, the text index on `title`/`slug`/`description` that the admin list's `search` filter needs (migration 008), and `slug_1`, unique across every page including soft-deleted ones (migration 009). Every index here is created by a migration; the module creates none at boot. The Mongoose schema this collection had before the move to the native driver (commit 4e4c9d9a) also declared `published` and `{ published: 1, createdAt: -1 }`; those only sped up queries on a collection of a few dozen pages and were not restored.
+
+`PageContentType.assertSlugsAvailable` remains the main slug guard, because it also checks approved snapshots and redirect history, which a single index cannot. The unique index catches the one case the check cannot: two saves of the same slug arriving together. `toSlugConflictError` turns that refusal into the check's own message, "A page with slug … already exists".
 
 **Validation rules:** slug must start with `/`, must not match a blacklist pattern, must not collide with another page's `slug` or `oldSlugs`, must not appear in its own `oldSlugs` (no circular redirects). Title is required.
 
@@ -189,6 +191,8 @@ A rename held for review adds the live slug to `oldSlugs` before anyone approves
 - `module:pages:005_strip_file_fields_from_page_settings` — removed file-policy fields from `page_settings` after `module:files:001_files_settings` copied them into the new collection.
 - `module:pages:006_add_blog_route_to_blacklist` — added `^/blog(/.*)?$` to the route blacklist in existing `page_settings`, so a CMS page cannot shadow the `trp-blog` plugin's routes.
 - `module:pages:007_adopt_pages_as_managed_content` — adopted every existing page as `core:page`: assigned a `contentId`, snapshotted published pages as their approved version, and wrote a core `content_items` row per page (published pages recorded as `approved`, unpublished pages with no review state). Safe to re-run.
+- `module:pages:008_restore_pages_text_index` — restored the `text_search` text index the Mongoose schema used to build, without which the `/system/pages` search fails with "text index required for $text query". One `createIndex` call after read-only checks; a no-op when the same index exists, and refuses, without writing, when a different text index exists.
+- `module:pages:009_restore_pages_slug_unique_index` — restored the unique `slug_1` index the Mongoose schema used to build, so two pages can never be stored under one URL. One `createIndex` call after read-only checks; a no-op when the unique index exists, and refuses, without writing, when pages already share a slug (listing them) or when a non-unique `slug_1` exists.
 
 ## Related Documents
 

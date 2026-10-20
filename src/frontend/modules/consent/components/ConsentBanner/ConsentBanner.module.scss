@@ -1,0 +1,111 @@
+/**
+ * Cookie consent banner.
+ *
+ * Fixed to the bottom of the screen, above the mobile tab bar, as a card
+ * that does not cover the page above it. The outer element spans the screen
+ * but lets clicks through its empty edges, so only the card itself takes
+ * pointer input. It declares a size container, and the buttons stack at full
+ * width when the card is narrow, which keeps Reject all and Accept all the
+ * same size on a phone as on a desktop.
+ */
+
+@use '../../../../app/breakpoints' as *;
+
+.banner {
+    position: fixed;
+    inset-inline: 0;
+    bottom: 0;
+    z-index: var(--consent-banner-z-index);
+    padding: var(--padding-sm);
+    pointer-events: none;
+    container-type: inline-size;
+    container-name: consent-banner;
+}
+
+.inner {
+    pointer-events: auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+    max-width: var(--max-width-lg);
+    // Never taller than the screen, so the buttons stay reachable on a short
+    // phone with the detailed choices open; the card scrolls instead.
+    max-height: calc(100dvh - 2 * var(--padding-sm));
+    margin-inline: auto;
+    overflow-y: auto;
+    padding: var(--card-padding-md);
+    background: var(--consent-banner-background);
+    border: var(--consent-banner-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--consent-banner-shadow);
+}
+
+.header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap-sm);
+}
+
+.title {
+    font-size: var(--font-size-heading-sm);
+}
+
+.text {
+    margin: 0;
+    font-size: var(--font-size-body-sm);
+    line-height: var(--line-height-normal);
+    color: var(--color-text-muted);
+}
+
+.link {
+    color: var(--color-primary);
+    text-decoration: underline;
+}
+
+.choices {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.choice {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap-md);
+    padding-block: var(--padding-sm);
+    border-top: var(--border-width-thin) solid var(--color-border);
+}
+
+.choice_text {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+}
+
+.choice_label {
+    font-size: var(--font-size-body-sm);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text);
+}
+
+.choice_hint {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--button-gap);
+}
+
+@container consent-banner (max-width: #{$breakpoint-mobile-md}) {
+    .actions > * {
+        flex: 1 1 100%;
+    }
+}

@@ -9,6 +9,9 @@
  *   published in it. With no language enabled every path routes to English,
  *   which is how the site behaved before localization existed.
  * - Custom headers for server components (pathname for widget zone routing)
+ * - Cookie consent: a visitor in the EEA, the UK, or Switzerland who has not
+ *   allowed analytics gets no `tronrelic_tid`, `tronrelic_ref`, or
+ *   `_original_ref` cookie, and any left from before is deleted
  *
  * Referrer preservation prevents attribution loss that occurs with static
  * redirects, where the browser overwrites document.referrer with the
@@ -17,8 +20,8 @@
 
 import { NextResponse } from 'next/server';
 import type { NextRequest, NextFetchEvent } from 'next/server';
-import type { ILocalizationPublicConfig } from '@/types';
-import { DEFAULT_LANGUAGE, resolveLocalizedPath } from '@/types';
+import type { IConsentPublicConfig, IConsentState, ILocalizationPublicConfig } from '@/types';
+import { CONSENT_COOKIE_NAME, DEFAULT_LANGUAGE, resolveConsentState, resolveLocalizedPath } from '@/types';
 import { getServerSideApiUrl } from './lib/api-url';
 import { createCachedBackendFeed } from './lib/cachedBackendFeed';
 import { LANGUAGE_REQUEST_HEADER } from './modules/localization/lib/LANGUAGE_REQUEST_HEADER';
@@ -330,6 +333,74 @@ const getLocalizationConfig = createCachedBackendFeed<ILocalizationPublicConfig>
 });
 
 /**
+ * The consent settings, edited at `/system/consent`.
+ *
+ * Until the first fetch succeeds, and whenever the backend is unreachable on a
+ * cold start, the value is switched on with a policy version no saved choice
+ * can match. That is the fail-closed state: visitors in a consent region get no
+ * analytics cookie until the real settings arrive, while everyone else is
+ * unaffected. The opposite default would set cookies on EU visitors without
+ * consent whenever the backend was slow to answer.
+ */
+const getConsentConfig = createCachedBackendFeed<IConsentPublicConfig>({
+    path: '/api/consent/config',
+    ttlMs: FEED_CACHE_TTL_MS,
+    retryBackoffMs: FEED_RETRY_BACKOFF_MS,
+    timeoutMs: FEED_FETCH_TIMEOUT_MS,
+    initial: { enabled: true, policyVersion: 0, googleAdsId: null, conversionLabel: null },
+    parse: body => {
+        const config = (body ?? {}) as Partial<IConsentPublicConfig>;
+        return {
+            enabled: config.enabled === true,
+            policyVersion: typeof config.policyVersion === 'number' ? config.policyVersion : 0,
+            googleAdsId: typeof config.googleAdsId === 'string' ? config.googleAdsId : null,
+            conversionLabel: typeof config.conversionLabel === 'string' ? config.conversionLabel : null
+        };
+    }
+});
+
+/**
+ * Whether a request is a full page load rather than Next.js fetching data for
+ * a client-side navigation or a prefetch.
+ *
+ * A visitor without analytics consent has no `tronrelic_tid` to say they were
+ * already seen, so without this check every soft navigation and link prefetch
+ * would record another first-touch row.
+ *
+ * @param request - The incoming request.
+ * @returns True for a document request.
+ */
+function isDocumentRequest(request: NextRequest): boolean {
+    return request.headers.get('rsc') !== '1'
+        && !request.headers.has('next-router-prefetch')
+        && request.headers.get('purpose') !== 'prefetch';
+}
+
+/**
+ * Remove the analytics cookies from a visitor who has not allowed analytics,
+ * such as one who withdrew consent or was set a cookie before the banner was
+ * switched on. Only cookies the request actually carries are deleted, so an
+ * ordinary page view adds no Set-Cookie headers.
+ *
+ * @param request - The incoming request, read for which cookies are present.
+ * @param response - The response the deletions are written to.
+ * @param isProduction - Whether to mark the deletions `Secure`, matching how the cookies were set.
+ */
+function clearAnalyticsCookies(request: NextRequest, response: NextResponse, isProduction: boolean): void {
+    for (const name of [TID_COOKIE_NAME, REF_COOKIE_NAME, ORIGINAL_REFERRER_COOKIE]) {
+        if (request.cookies.has(name)) {
+            response.cookies.set(name, '', {
+                httpOnly: name !== ORIGINAL_REFERRER_COOKIE,
+                sameSite: 'lax',
+                secure: isProduction,
+                path: '/',
+                maxAge: 0
+            });
+        }
+    }
+}
+
+/**
  * Public files the middleware must not rewrite into the `[lang]` folder.
  *
  * Next.js checks the public directory and the root metadata files against the
@@ -434,10 +505,22 @@ async function emitRedirectHit(request: NextRequest, rule: RedirectRule): Promis
 export async function middleware(request: NextRequest, event: NextFetchEvent) {
     const pathname = request.nextUrl.pathname;
 
-    // Both feeds are cached in module scope; after start-up neither costs a
+    // The feeds are cached in module scope; after start-up none costs a
     // backend call on the request path. Fetched together so a cold start waits
-    // for one round trip rather than two.
-    const [redirectRules, localizationConfig] = await Promise.all([getRedirectRules(), getLocalizationConfig()]);
+    // for one round trip rather than three.
+    const [redirectRules, localizationConfig, consentConfig] = await Promise.all([
+        getRedirectRules(),
+        getLocalizationConfig(),
+        getConsentConfig()
+    ]);
+
+    // What this visitor allows, from their country and saved choice. Every
+    // analytics cookie below is set only when `analytics` is true.
+    const consent: IConsentState = resolveConsentState(
+        consentConfig,
+        request.headers.get('cf-ipcountry'),
+        request.cookies.get(CONSENT_COOKIE_NAME)?.value
+    );
 
     // Check for a matching admin-managed redirect rule. No rules are hardcoded
     // in this bundle.
@@ -452,8 +535,9 @@ export async function middleware(request: NextRequest, event: NextFetchEvent) {
         redirectUrl.search = request.nextUrl.search;
         const response = NextResponse.redirect(redirectUrl, rule.permanent ? 301 : 302);
 
-        // Preserve external referrer in cookie
-        if (referer && isExternalReferrer(referer, host)) {
+        // Preserve external referrer in cookie. It exists only to attribute the
+        // visit in analytics, so it needs the same consent as the tid.
+        if (consent.analytics && referer && isExternalReferrer(referer, host)) {
             response.cookies.set(ORIGINAL_REFERRER_COOKIE, referer, {
                 maxAge: COOKIE_MAX_AGE,
                 httpOnly: false,
@@ -474,25 +558,38 @@ export async function middleware(request: NextRequest, event: NextFetchEvent) {
     // capture. Better Auth owns identity now — the middleware mints only the
     // tid, which keys `traffic_events` independently of any login state. The
     // tid is minted whenever it is absent or malformed.
-    const existingTid = request.cookies.get(TID_COOKIE_NAME)?.value;
+    //
+    // Without analytics consent, an existing tid or referral cookie is not
+    // read, because reading it is itself what the consent rules restrict.
+    const existingTid = consent.analytics ? request.cookies.get(TID_COOKIE_NAME)?.value : undefined;
     const tid =
         typeof existingTid === 'string' && UUID_V4_REGEX.test(existingTid)
             ? existingTid
             : crypto.randomUUID();
     const tidMinted = tid !== existingTid;
 
-    const existingRef = request.cookies.get(REF_COOKIE_NAME)?.value;
+    const existingRef = consent.analytics ? request.cookies.get(REF_COOKIE_NAME)?.value : undefined;
     const inboundRef = request.nextUrl.searchParams.get('ref');
-    const refToSet =
-        !existingRef && inboundRef && REFERRAL_CODE_REGEX.test(inboundRef) ? inboundRef : null;
-    const referralCode = existingRef ?? refToSet ?? null;
+    const validInboundRef = inboundRef && REFERRAL_CODE_REGEX.test(inboundRef) ? inboundRef : null;
+    const refToSet = consent.analytics && !existingRef ? validInboundRef : null;
+    const referralCode = existingRef ?? validInboundRef ?? null;
 
     // Fire the first-touch bootstrap analytics event once per new visitor
     // (i.e. when the tid is freshly minted). Server-to-server, best-effort;
     // the new tid is carried in the body since it is not yet on the request's
     // cookie jar. No identity is minted — this is purely a traffic_events row.
-    if (tidMinted) {
+    //
+    // A visitor without analytics consent gets a one-off tid that is never
+    // stored in their browser, the same as a cookieless crawler, so the row
+    // still feeds bot detection without tracking them. It is sent only for
+    // full page loads, because with no cookie every soft navigation and
+    // prefetch would otherwise look like a new visitor. Nothing in the
+    // response depends on it, so it is queued on waitUntil rather than making
+    // every page load for these visitors wait on it.
+    if (tidMinted && consent.analytics) {
         await emitBootstrapEvent(request, tid, referralCode);
+    } else if (tidMinted && isDocumentRequest(request)) {
+        event.waitUntil(emitBootstrapEvent(request, tid, referralCode));
     }
 
     // No redirect - route the request to its language.
@@ -543,8 +640,11 @@ export async function middleware(request: NextRequest, event: NextFetchEvent) {
 
     // Persist the analytics tid on first sight so every subsequent request —
     // and the backend traffic_events row — keys on a stable id. Set only when
-    // freshly minted to avoid a redundant Set-Cookie on every navigation.
-    if (tidMinted) {
+    // freshly minted to avoid a redundant Set-Cookie on every navigation, and
+    // only with analytics consent; otherwise remove any left from before.
+    if (!consent.analytics) {
+        clearAnalyticsCookies(request, response, isProduction);
+    } else if (tidMinted) {
         response.cookies.set(TID_COOKIE_NAME, tid, {
             httpOnly: true,
             sameSite: 'lax',

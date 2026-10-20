@@ -21,7 +21,8 @@
 
 import type { Request, Response } from 'express';
 import { randomUUID } from 'node:crypto';
-import type { ISystemLogService } from '@/types';
+import type { IConsentService, ISystemLogService } from '@/types';
+import { CONSENT_COOKIE_NAME } from '@/types';
 import { TrafficService, buildTrafficEvent, type TrafficEventType } from '../services/traffic.service.js';
 import type { IBotNetworkLookup } from '../services/bot-networks.service.js';
 import { PAID_CLICK_IDS } from '../services/channel-classifier.js';
@@ -130,11 +131,15 @@ export class BootstrapController {
      * @param trafficService - Sink for the emitted `traffic_events` row.
      * @param botNetworks - The operator's automated-network list, passed to
      *   every event so a request from a listed network is labeled a bot.
+     * @param consent - The consent module's rule, asked on every page event so
+     *   a visitor in a consent region who has not allowed analytics never gets
+     *   a `tronrelic_tid` cookie from this endpoint.
      * @param logger - Traffic-module child logger.
      */
     constructor(
         private readonly trafficService: TrafficService,
         private readonly botNetworks: IBotNetworkLookup,
+        private readonly consent: IConsentService,
         private readonly logger: ISystemLogService
     ) {}
 
@@ -160,12 +165,36 @@ export class BootstrapController {
      * type, so the full clickstream and the first-touch row share one shape and
      * one attribution rule.
      *
+     * Unlike the bootstrap route, this one is called by the visitor's browser,
+     * and it mints the `tronrelic_tid` cookie when the browser has none. So it
+     * first asks the consent module whether the visitor allowed analytics, and
+     * when they have not it records nothing and sets no cookie. The browser
+     * normally sends those page views to the consent module's anonymous
+     * counter instead; this check covers a browser still running an older
+     * bundle. If the consent check itself fails, nothing is recorded, because
+     * setting a cookie without consent is the worse mistake.
+     *
      * @param req - Express request carrying the beaconed `landingPath` body.
      * @param res - Express response.
      * @returns Resolves once the response has been written.
      */
     async page(req: Request, res: Response): Promise<void> {
-        return this.record('page', req, res);
+        let allowed = false;
+        try {
+            const country = req.headers['cf-ipcountry'];
+            const state = await this.consent.resolveRequest(
+                Array.isArray(country) ? country[0] : country,
+                req.cookies?.[CONSENT_COOKIE_NAME]
+            );
+            allowed = state.analytics;
+        } catch (error) {
+            this.logger.error({ error }, 'Failed to resolve analytics consent; page event not recorded');
+        }
+        if (allowed) {
+            await this.record('page', req, res);
+        } else {
+            res.json({ success: true, recorded: false });
+        }
     }
 
     /**

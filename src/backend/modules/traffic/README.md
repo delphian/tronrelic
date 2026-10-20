@@ -18,7 +18,8 @@ Owns cookieless behavioral analytics: the ClickHouse `traffic_events` pipeline, 
 | Event types | `bootstrap` (cookieless first touch, incl. bots) · `page` (interactive navigation) |
 | Mongo collections | `module_user_gsc_queries` (GSC keyword cache — physical name preserved) · `module_user_gsc_daily_totals` (date-only GSC daily totals) · `module_user_gsc_page_totals` ([page, date] GSC totals, anonymization-immune) · `module_traffic_ignored_users` (operator ignore list) · `module_traffic_bot_networks` (operator-listed automated networks, by ASN) · `module_traffic_redirects` (admin-managed URL redirect rules) |
 | Analytics key | cookieless `tronrelic_tid` (`candidate_uid`), independent of identity |
-| Bootstrap order | Inits/runs **before** `IdentityModule` so its `/api/admin/users/{traffic,analytics}` routers mount ahead of the accounts `/api/admin/users` catch-all |
+| Bootstrap order | Inits/runs **before** `IdentityModule` so its `/api/admin/users/{traffic,analytics}` routers mount ahead of the accounts `/api/admin/users` catch-all. Inits **after** `ConsentModule`, whose service it receives as `consent` |
+| Cookie consent | With the consent module's switch on, a visitor without analytics consent (EEA, UK, Switzerland until they agree, or anyone who opted out) gets no `tronrelic_tid` or `tronrelic_ref`: the middleware neither sets nor reads them, and `POST /api/user/track` records nothing and sets no cookie. Their page views are counted anonymously by the consent module instead. See the [Consent README](../consent/README.md) |
 
 ## Why This Module Exists Separately
 
@@ -144,8 +145,8 @@ Redirect analytics ride the same routers. `POST /api/redirects/hit` (public, no 
 
 Two public ingestion endpoints (no auth) write rows; both resolve the tid from the unsigned `tronrelic_tid` cookie and attribute to the Better Auth account when one is present:
 
-- `POST /api/user/bootstrap` — one first-touch `bootstrap` row. Called server-to-server by the Next.js middleware, so it captures cookieless bots and crawlers; this is the noise that powers the "Anonymous First Touches" table.
-- `POST /api/user/track` — one `page` row per navigation. Called by the client-side route-change beacon (`src/frontend/modules/user/components/PageViewTracker`, via `lib/pageBeacon`), which fires on mount and every soft navigation. Bots that do not run JS never reach it, so the `page` stream is interactive-traffic-only. The body carries `landingPath`, `originalReferrer`, and `automated` (true when `navigator.webdriver` is set); only a strict boolean `true` is honoured.
+- `POST /api/user/bootstrap` — one first-touch `bootstrap` row. Called server-to-server by the Next.js middleware, so it captures cookieless bots and crawlers; this is the noise that powers the "Anonymous First Touches" table. For a visitor without analytics consent the middleware sends a one-off tid it never stores in the browser, and only for full page loads, so the row behaves like a cookieless crawler's and never becomes a Visitor.
+- `POST /api/user/track` — one `page` row per navigation. Called by the client-side route-change beacon (`src/frontend/modules/user/components/PageViewTracker`, via `lib/pageBeacon`), which fires on mount and every soft navigation. Bots that do not run JS never reach it, so the `page` stream is interactive-traffic-only. The body carries `landingPath`, `originalReferrer`, and `automated` (true when `navigator.webdriver` is set); only a strict boolean `true` is honoured. Before recording, it asks the consent service (`resolveRequest` with `cf-ipcountry` and the `tronrelic_consent` cookie); without analytics consent, or if that check fails, it answers `{ success: true, recorded: false }` and sets no cookie.
 
 The Next.js middleware matcher (`src/frontend/middleware.ts`) excludes `/images/`, so static assets such as the web app manifest never reach `/api/user/bootstrap`. Browsers fetch the manifest without cookies, and before the exclusion every page load recorded an extra `bootstrap` row under a freshly minted tid.
 

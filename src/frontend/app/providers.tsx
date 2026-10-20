@@ -18,6 +18,10 @@ import type { IMenuSeed } from '../modules/menu/types';
 import type { ISSRSession } from '../modules/user/lib/session-server';
 import { LocalizationProvider, ENGLISH_SEED } from '../modules/localization/components/LocalizationProvider';
 import type { ILocalizationSeed } from '../modules/localization/types';
+import { ConsentProvider, DISABLED_CONSENT_SEED } from '../modules/consent/components/ConsentProvider';
+import { ConsentBanner } from '../modules/consent/components/ConsentBanner';
+import { GoogleAdsTag } from '../modules/consent/components/GoogleAdsTag';
+import type { IConsentSeed } from '../modules/consent/types';
 
 // Re-export the SSR session shape for layout.tsx
 export type { ISSRSession };
@@ -47,6 +51,13 @@ interface ProvidersProps {
      * first browser render shows the same text the server rendered.
      */
     ssrLocalization?: ILocalizationSeed;
+    /**
+     * Consent settings and this visitor's resolved consent state. Seeds
+     * `ConsentProvider` so the banner, the page-view tracker, and the Google
+     * Ads tag decide the same way in the first browser render as on the
+     * server.
+     */
+    ssrConsent?: IConsentSeed;
 }
 
 /**
@@ -56,7 +67,7 @@ interface ProvidersProps {
  * @param props - The page subtree plus the session and menu trees resolved during SSR.
  * @returns The subtree wrapped in every provider.
  */
-export function Providers({ children, ssrSession, ssrMenus, ssrLocalization }: ProvidersProps) {
+export function Providers({ children, ssrSession, ssrMenus, ssrLocalization, ssrConsent }: ProvidersProps) {
     // Memoize the store so it survives re-renders. No SSR slice is preloaded
     // — identity is seeded into the SessionProvider via React context, not
     // Redux.
@@ -81,26 +92,36 @@ export function Providers({ children, ssrSession, ssrMenus, ssrLocalization }: P
             {/* Localization sits above every provider that draws text, so a
                 toast or dialog body translates the same way page content does. */}
             <LocalizationProvider seed={ssrLocalization ?? ENGLISH_SEED}>
-                <SessionProvider initialSession={ssrSession ?? null}>
-                    <ToastProvider>
-                        <ModalProvider>
-                            <FrontendPluginContextProvider>
-                                <SocketBridge />
-                                <CoreToastHandler />
-                                {/* Per-user notification toasts (identity-room targeted),
-                                    sibling to the global CoreToastHandler. */}
-                                <NotificationHandler />
-                                <PluginLoader />
-                                <PageViewTracker />
-                                <MenuSeedProvider seeds={ssrMenus ?? EMPTY_MENU_SEEDS}>
-                                    {children}
-                                </MenuSeedProvider>
-                                <ToastViewport />
-                                <ModalViewport />
-                            </FrontendPluginContextProvider>
-                        </ModalProvider>
-                    </ToastProvider>
-                </SessionProvider>
+                {/* Consent sits above everything that sets cookies or sends
+                    analytics, so the page-view tracker and the Google Ads tag
+                    read the visitor's choice from the same place the banner
+                    writes it. */}
+                <ConsentProvider seed={ssrConsent ?? DISABLED_CONSENT_SEED}>
+                    <SessionProvider initialSession={ssrSession ?? null}>
+                        <ToastProvider>
+                            <ModalProvider>
+                                <FrontendPluginContextProvider>
+                                    <SocketBridge />
+                                    <CoreToastHandler />
+                                    {/* Per-user notification toasts (identity-room targeted),
+                                        sibling to the global CoreToastHandler. */}
+                                    <NotificationHandler />
+                                    <PluginLoader />
+                                    <PageViewTracker />
+                                    <GoogleAdsTag />
+                                    <MenuSeedProvider seeds={ssrMenus ?? EMPTY_MENU_SEEDS}>
+                                        {children}
+                                    </MenuSeedProvider>
+                                    {/* Above the page, below toasts and dialogs:
+                                        the viewports after it paint over it. */}
+                                    <ConsentBanner />
+                                    <ToastViewport />
+                                    <ModalViewport />
+                                </FrontendPluginContextProvider>
+                            </ModalProvider>
+                        </ToastProvider>
+                    </SessionProvider>
+                </ConsentProvider>
             </LocalizationProvider>
         </Provider>
     );

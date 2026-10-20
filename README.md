@@ -54,6 +54,7 @@ Everything under `src/backend/`: modules, blockchain sync, the scheduler, databa
 | [Identity Module](src/backend/modules/identity/README.md) | Better Auth, user groups, the wallet store, and the account directory |
 | [Localization Module](src/backend/modules/localization/README.md) | Languages, per-route publishing, stored translations, and the `[lang]` route folder |
 | [Traffic Module](src/backend/modules/traffic/README.md) | ClickHouse `traffic_events` analytics, the tid and ref cookies, and Google Search Console data |
+| [Consent Module](src/backend/modules/consent/README.md) | The cookie banner for the EEA, the UK, and Switzerland, the rule that gates the analytics cookie, and the Google Ads tag |
 | [Runtime Configuration](docs/system/system-runtime-config.md) | Serving many domains from one Docker image, and how `SITE_URL` works |
 | [Scheduler Operations](docs/system/system-scheduler-operations.md) | Managing jobs, cron schedules, and troubleshooting |
 | [Testing Framework](docs/system/system-testing.md) | Vitest, Mongoose mocks, and keeping tests isolated |

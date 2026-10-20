@@ -121,6 +121,27 @@ describe('PageService', () => {
             ).rejects.toThrow(/already exists/);
         });
 
+        it('reports a racing duplicate refused by the unique slug index as a plain slug conflict', async () => {
+            // Two saves of one slug can both pass the slug check; the unique
+            // index from migration 009 then refuses the second write. The
+            // editor should see the same message the check gives, not E11000.
+            const duplicate = Object.assign(new Error('E11000 duplicate key error collection: tronrelic.pages index: slug_1'), {
+                code: 11000,
+                keyPattern: { slug: 1 }
+            });
+            mockDatabase.injectError('pages', 'insertOne', duplicate);
+            await expect(
+                service.createPage(makePageMarkdown({ title: 'Race', slug: '/race' }), curator)
+            ).rejects.toThrow('A page with slug "/race" already exists');
+        });
+
+        it('passes any other write failure through unchanged', async () => {
+            mockDatabase.injectError('pages', 'insertOne', new Error('connection lost'));
+            await expect(
+                service.createPage(makePageMarkdown({ title: 'Down', slug: '/down' }), curator)
+            ).rejects.toThrow('connection lost');
+        });
+
         it('throws when the slug matches a blacklist pattern', async () => {
             await expect(
                 service.createPage(makePageMarkdown({ title: 'X', slug: '/api/foo' }), curator)

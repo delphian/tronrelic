@@ -11,7 +11,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Request, Response } from 'express';
-import type { ISystemLogService } from '@/types';
+import type { IConsentService, IConsentState, ISystemLogService } from '@/types';
 import type { TrafficService } from '../services/traffic.service.js';
 import type { IBotNetworkLookup } from '../services/bot-networks.service.js';
 import { BootstrapController } from '../api/bootstrap.controller.js';
@@ -49,16 +49,24 @@ describe('BootstrapController', () => {
     let recordEvent: ReturnType<typeof vi.fn>;
     let trafficService: TrafficService;
     let botNetworks: IBotNetworkLookup;
+    let resolveRequest: ReturnType<typeof vi.fn>;
     let logger: ISystemLogService;
     let controller: BootstrapController;
+
+    /** What the consent module answers when the visitor allowed analytics. */
+    const ANALYTICS_ALLOWED: IConsentState = { enabled: true, required: false, decided: false, analytics: true, ads: true };
 
     beforeEach(() => {
         recordEvent = vi.fn();
         trafficService = { recordEvent } as unknown as TrafficService;
         // AS139341 stands in for a network the operator has listed.
         botNetworks = { isBotNetwork: vi.fn((asn: number) => asn === 139341) };
+        // Analytics allowed by default, so the tests below that predate the
+        // consent check exercise recording exactly as before.
+        resolveRequest = vi.fn(async () => ANALYTICS_ALLOWED);
+        const consent = { getPublicConfig: vi.fn(), resolveRequest } as unknown as IConsentService;
         logger = { error: vi.fn() } as unknown as ISystemLogService;
-        controller = new BootstrapController(trafficService, botNetworks, logger);
+        controller = new BootstrapController(trafficService, botNetworks, consent, logger);
     });
 
     it('mints a fresh tid, emits a bootstrap event, and returns success', async () => {
@@ -139,6 +147,45 @@ describe('BootstrapController', () => {
         await controller.page(req, res);
 
         expect(recordEvent.mock.calls[0][0].user_id).toBe('ba_user_42');
+    });
+
+    describe('analytics consent on the page beacon', () => {
+        it('asks the consent module with the request country and consent cookie', async () => {
+            const req = buildReq({
+                cookies: { [TID_COOKIE_NAME]: EXISTING_TID, tronrelic_consent: '1.10.1760000000' },
+                headers: { 'cf-ipcountry': 'DE' },
+                body: { landingPath: '/blog' }
+            } as unknown as Partial<Request>);
+            const { res } = buildRes();
+
+            await controller.page(req, res);
+
+            expect(resolveRequest).toHaveBeenCalledWith('DE', '1.10.1760000000');
+        });
+
+        it('records nothing and sets no cookie when the visitor has not allowed analytics', async () => {
+            resolveRequest.mockResolvedValue({ enabled: true, required: true, decided: false, analytics: false, ads: false });
+            const req = buildReq({ headers: { 'cf-ipcountry': 'DE' }, body: { landingPath: '/blog', ref: 'promo_2026' } } as unknown as Partial<Request>);
+            const { res, cookies, json } = buildRes();
+
+            await controller.page(req, res);
+
+            expect(recordEvent).not.toHaveBeenCalled();
+            expect(cookies).toEqual([]);
+            expect(json).toHaveBeenCalledWith({ success: true, recorded: false });
+        });
+
+        it('records nothing when the consent check fails, rather than risk an unconsented cookie', async () => {
+            resolveRequest.mockRejectedValue(new Error('database unavailable'));
+            const req = buildReq({ body: { landingPath: '/blog' } } as unknown as Partial<Request>);
+            const { res, cookies } = buildRes();
+
+            await controller.page(req, res);
+
+            expect(recordEvent).not.toHaveBeenCalled();
+            expect(cookies).toEqual([]);
+            expect(logger.error).toHaveBeenCalled();
+        });
     });
 
     describe('automation flag from the page beacon', () => {
