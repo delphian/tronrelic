@@ -2,10 +2,13 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { PagesModule } from '../index.js';
+import type { IPagesModuleDependencies } from '../index.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../../menu/index.js';
 import { PageService } from '../services/page.service.js';
-import type { ICacheService, IMenuService } from '@/types';
+import { AI_TOOL_NAMES } from '../ai-tools.js';
+import type { IAiToolRegistry, ICacheService, IMenuService, IServiceRegistry } from '@/types';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
+import { createMockServiceRegistry } from '../../../tests/vitest/mocks/service-registry.js';
 
 class MockCacheService implements ICacheService {
     async get<T = any>(_key: string): Promise<T | null> { return null; }
@@ -56,6 +59,26 @@ describe('PagesModule', () => {
     let mockMenu: MockMenuService;
     let mockApp: MockExpressApp;
     let mockContent: { registerType: ReturnType<typeof vi.fn> };
+    let serviceRegistry: IServiceRegistry;
+
+    /**
+     * The dependencies every test hands to `init()`, built fresh per test so
+     * a test that overrides one field cannot leak into the next.
+     *
+     * @param overrides - Fields that differ from the shared mocks.
+     * @returns The dependency object.
+     */
+    function deps(overrides: Partial<IPagesModuleDependencies> = {}): IPagesModuleDependencies {
+        return {
+            database: mockDatabase,
+            cacheService: mockCache,
+            menuService: mockMenu,
+            contentService: mockContent as any,
+            serviceRegistry,
+            app: mockApp as any,
+            ...overrides
+        };
+    }
 
     beforeEach(() => {
         vi.clearAllMocks();
@@ -65,6 +88,7 @@ describe('PagesModule', () => {
         mockMenu = new MockMenuService();
         mockApp = new MockExpressApp();
         mockContent = { registerType: vi.fn(() => () => undefined) };
+        serviceRegistry = createMockServiceRegistry();
     });
 
     describe('metadata', () => {
@@ -80,49 +104,33 @@ describe('PagesModule', () => {
     describe('init()', () => {
         it('initializes without error', async () => {
             const module = new PagesModule();
-            await expect(module.init({
-                database: mockDatabase,
-                cacheService: mockCache,
-                menuService: mockMenu,
-                contentService: mockContent as any,
-                app: mockApp as any
-            })).resolves.not.toThrow();
+            await expect(module.init(deps())).resolves.not.toThrow();
         });
 
         it('does not mount routes during init()', async () => {
             const module = new PagesModule();
-            await module.init({
-                database: mockDatabase,
-                cacheService: mockCache,
-                menuService: mockMenu,
-                contentService: mockContent as any,
-                app: mockApp as any
-            });
+            await module.init(deps());
             expect(mockApp.use).not.toHaveBeenCalled();
         });
 
         it('does not register the page content type during init()', async () => {
             const module = new PagesModule();
-            await module.init({
-                database: mockDatabase,
-                cacheService: mockCache,
-                menuService: mockMenu,
-                contentService: mockContent as any,
-                app: mockApp as any
-            });
+            await module.init(deps());
             expect(mockContent.registerType).not.toHaveBeenCalled();
         });
 
         it('does not register menu items during init()', async () => {
             const module = new PagesModule();
-            await module.init({
-                database: mockDatabase,
-                cacheService: mockCache,
-                menuService: mockMenu,
-                contentService: mockContent as any,
-                app: mockApp as any
-            });
+            await module.init(deps());
             expect(mockMenu.create).not.toHaveBeenCalled();
+        });
+
+        it('does not register AI tools during init()', async () => {
+            const registerTool = vi.fn();
+            serviceRegistry.register('ai-tools', { registerTool, unregisterTool: vi.fn() });
+            const module = new PagesModule();
+            await module.init(deps());
+            expect(registerTool).not.toHaveBeenCalled();
         });
     });
 
@@ -134,13 +142,7 @@ describe('PagesModule', () => {
 
         it('registers core:page as managed content', async () => {
             const module = new PagesModule();
-            await module.init({
-                database: mockDatabase,
-                cacheService: mockCache,
-                menuService: mockMenu,
-                contentService: mockContent as any,
-                app: mockApp as any
-            });
+            await module.init(deps());
             await module.run();
 
             expect(mockContent.registerType).toHaveBeenCalledWith(
@@ -151,13 +153,7 @@ describe('PagesModule', () => {
 
         it('registers the Pages menu item under the System container', async () => {
             const module = new PagesModule();
-            await module.init({
-                database: mockDatabase,
-                cacheService: mockCache,
-                menuService: mockMenu,
-                contentService: mockContent as any,
-                app: mockApp as any
-            });
+            await module.init(deps());
             await module.run();
 
             expect(mockMenu.create).toHaveBeenCalledWith({
@@ -173,13 +169,7 @@ describe('PagesModule', () => {
 
         it('mounts admin and public routers', async () => {
             const module = new PagesModule();
-            await module.init({
-                database: mockDatabase,
-                cacheService: mockCache,
-                menuService: mockMenu,
-                contentService: mockContent as any,
-                app: mockApp as any
-            });
+            await module.init(deps());
             await module.run();
 
             expect(mockApp.use).toHaveBeenCalledTimes(2);
@@ -193,16 +183,23 @@ describe('PagesModule', () => {
             expect(publicCall[0]).toBe('/api/pages');
         });
 
+        it('registers the page AI tools once the ai-tools registry appears', async () => {
+            const module = new PagesModule();
+            await module.init(deps());
+            await module.run();
+
+            // The registry is published after this module runs, as in production.
+            const registry = { registerTool: vi.fn(), unregisterTool: vi.fn() };
+            serviceRegistry.register('ai-tools', registry as unknown as IAiToolRegistry);
+
+            const registered = registry.registerTool.mock.calls.map(([tool, provider]) => [tool.name, provider]);
+            expect(registered).toEqual(Object.values(AI_TOOL_NAMES).map((name) => [name, 'pages']));
+        });
+
         it('throws when menu registration fails', async () => {
             mockMenu.create.mockRejectedValue(new Error('Menu creation failed'));
             const module = new PagesModule();
-            await module.init({
-                database: mockDatabase,
-                cacheService: mockCache,
-                menuService: mockMenu,
-                contentService: mockContent as any,
-                app: mockApp as any
-            });
+            await module.init(deps());
             await expect(module.run()).rejects.toThrow('Failed to register pages menu item');
         });
     });
@@ -210,13 +207,7 @@ describe('PagesModule', () => {
     describe('error handling', () => {
         it('propagates init() errors when database is missing', async () => {
             const module = new PagesModule();
-            await expect(module.init({
-                database: null as any,
-                cacheService: mockCache,
-                menuService: mockMenu,
-                contentService: mockContent as any,
-                app: mockApp as any
-            })).rejects.toThrow();
+            await expect(module.init(deps({ database: null as any }))).rejects.toThrow();
         });
     });
 });

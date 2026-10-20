@@ -17,6 +17,8 @@ class MockPageService implements IPageService {
     restorePage = vi.fn();
     getPageStats = vi.fn();
     listSitemapPages = vi.fn();
+    listPublicPages = vi.fn();
+    getPublicPages = vi.fn();
     renderPageHtml = vi.fn();
     invalidatePageCache = vi.fn();
     previewMarkdown = vi.fn();
@@ -251,12 +253,37 @@ describe('PagesController', () => {
             expect(res.status).toHaveBeenCalledWith(404);
         });
 
-        it('getPublicPage returns the page with a normalized slug', async () => {
-            mockService.getPublicPageBySlug.mockResolvedValue({ slug: '/x', published: true });
+        it('getPublicPage returns only the public metadata, never the markdown or review state', async () => {
+            const createdAt = new Date('2026-01-01T00:00:00Z');
+            const updatedAt = new Date('2026-02-01T00:00:00Z');
+            mockService.getPublicPageBySlug.mockResolvedValue({
+                contentId: 'c1',
+                title: 'X',
+                slug: '/x',
+                oldSlugs: ['/old-x'],
+                content: '---\ntitle: X\n---\n<!-- private note -->\nBody',
+                description: 'About X',
+                keywords: ['x'],
+                published: true,
+                ogImage: '/uploads/x.png',
+                authorId: null,
+                curation: 'pending',
+                hasApprovedVersion: true,
+                createdAt,
+                updatedAt
+            });
             const res = createMockResponse();
             await controller.getPublicPage(createMockRequest({ params: { slug: 'x' } }), res);
             expect(res.json).toHaveBeenCalledWith({
-                page: { slug: '/x', published: true },
+                page: {
+                    title: 'X',
+                    slug: '/x',
+                    description: 'About X',
+                    keywords: ['x'],
+                    ogImage: '/uploads/x.png',
+                    createdAt,
+                    updatedAt
+                },
                 requestedSlug: '/x'
             });
         });
@@ -290,6 +317,24 @@ describe('PagesController', () => {
                 currentSlug: '/y',
                 requestedSlug: '/x'
             });
+        });
+
+        it('public endpoints answer a failure with a generic 500 and log the detail', async () => {
+            const failure = new Error('connect ECONNREFUSED 10.0.0.5:27017');
+            mockService.getPublicPageBySlug.mockRejectedValue(failure);
+            mockService.renderPublicPageBySlug.mockRejectedValue(failure);
+
+            const getRes = createMockResponse();
+            await controller.getPublicPage(createMockRequest({ params: { slug: 'x' } }), getRes);
+            const renderRes = createMockResponse();
+            await controller.renderPublicPage(createMockRequest({ params: { slug: 'x' } }), renderRes);
+
+            expect(getRes.status).toHaveBeenCalledWith(500);
+            expect(getRes.json).toHaveBeenCalledWith({ error: 'Failed to get page' });
+            expect(renderRes.status).toHaveBeenCalledWith(500);
+            expect(renderRes.json).toHaveBeenCalledWith({ error: 'Failed to render page' });
+            expect(mockLogger.error).toHaveBeenCalledWith({ error: failure, slug: 'x' }, 'Failed to get public page');
+            expect(mockLogger.error).toHaveBeenCalledWith({ error: failure, slug: 'x' }, 'Failed to render public page');
         });
     });
 });

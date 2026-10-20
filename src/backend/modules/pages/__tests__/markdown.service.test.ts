@@ -264,6 +264,34 @@ function hello() {
         });
     });
 
+    describe('stripHiddenMarkup', () => {
+        it('removes block and inline HTML comments that the rendered page hides', () => {
+            const markdown = '# Title\n\n<!-- private note -->\n\nText <!-- inline --> more.\n';
+
+            const stripped = markdownService.stripHiddenMarkup(markdown);
+
+            expect(stripped).not.toContain('private note');
+            expect(stripped).not.toContain('inline');
+            expect(stripped).toContain('Text  more.');
+        });
+
+        it('removes inline and block scripts together with their text', () => {
+            const markdown = "Has <script>alert('XSS')</script> inline.\n\n<script>\nblock()\n</script>\n";
+
+            const stripped = markdownService.stripHiddenMarkup(markdown);
+
+            expect(stripped).not.toContain('alert(');
+            expect(stripped).not.toContain('block()');
+            expect(stripped).toContain('Has  inline.');
+        });
+
+        it('keeps comments shown inside code and leaves other formatting as written', () => {
+            const markdown = '* item\n\n`<!-- span -->`\n\n```html\n<!-- fenced -->\n```\n';
+
+            expect(markdownService.stripHiddenMarkup(markdown)).toBe(markdown);
+        });
+    });
+
     // ============================================================================
     // Caching Tests
     // ============================================================================

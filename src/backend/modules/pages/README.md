@@ -46,12 +46,13 @@ modules/pages/
 │   ├── page-content-type.ts  # core:page storage callbacks (IManagedContentType)
 │   └── markdown.service.ts   # Frontmatter parsing and HTML rendering
 ├── __tests__/
+├── ai-tools.ts               # Read-only AI tools: pages-list, pages-search, pages-get
 ├── PagesModule.ts            # IModule implementation
 ├── index.ts
 └── README.md
 ```
 
-**Two-phase lifecycle.** `init()` configures `PageService` with the injected `IContentService` and builds the controller. `run()` registers `core:page` on the core content service, registers the `/system/pages` menu item under the System container, mounts the admin router at `/api/admin/pages`, and the public router at `/api/pages`.
+**Two-phase lifecycle.** `init()` configures `PageService` with the injected `IContentService` and builds the controller. `run()` registers `core:page` on the core content service, registers the `/system/pages` menu item under the System container, mounts the admin router at `/api/admin/pages` and the public router at `/api/pages`, and watches the service registry for `'ai-tools'` so the page AI tools register whenever that registry is available.
 
 ## Managed Content Contract
 
@@ -78,7 +79,8 @@ Singleton implementing `IPageService`. Owns the `pages` and `page_settings` coll
 **Key responsibilities:**
 
 - Page create, update, soft delete, and restore through `IContentService`, carrying the actor
-- Public reads (`getPublicPageBySlug`, `findPublicPageByOldSlug`, `renderPublicPageBySlug`, `listSitemapPages`) resolved through `readPublic`, so a page with only a pending edit or a deleted page never reaches a visitor or the sitemap
+- Public reads (`getPublicPageBySlug`, `findPublicPageByOldSlug`, `renderPublicPageBySlug`, `listSitemapPages`, `listPublicPages`, `getPublicPages`) resolved through `readPublic`, so a page with only a pending edit or a deleted page never reaches a visitor, the sitemap, or an AI tool
+- `listPublicPages` and `getPublicPages` return `IPublicPage` from `@/types`: the served version reduced to id, slug, title, description, keywords, Open Graph image, and the markdown body with its frontmatter, HTML comments, and scripts removed. The listing loads every visible page and filters in memory, because only core knows which of a page's two stored versions a visitor is served, so a database search could match text no visitor sees
 - Admin listing decorated with review state; filtering by review state asks core for the ids first
 - Settings management (route blacklist only)
 - Markdown rendering with Redis cache, including a public-render fast path that hits cache before the database
@@ -90,6 +92,8 @@ The storage side of `core:page`, called only by the core content service. Parses
 ### MarkdownService
 
 Parses frontmatter using `gray-matter` and renders markdown to HTML through the `remark`/`rehype` pipeline with `rehype-sanitize` for XSS prevention. Caches rendered HTML in Redis with a 24-hour TTL keyed `page:html:{slug}`.
+
+`stripHiddenMarkup` removes HTML comments and `<script>` elements from markdown, the two things the sanitizer hides from visitors along with their contents. Every public read that returns markdown instead of HTML passes through it, so markdown cannot reveal a note an author left in a comment. It works on the raw HTML the parser finds, which keeps a comment written inside a code block (the page shows that one), and it edits the original text rather than re-serializing, so all other formatting stays as written.
 
 ### PagesController
 
@@ -109,8 +113,24 @@ Write failures from the core content service map to statuses by their `code`: `n
 
 Public API at `/api/pages`:
 
-- `GET /:slug` — published page metadata (returns redirect data when slug matches `oldSlugs`)
+- `GET /:slug` — published page metadata: `title`, `slug`, `description`, `keywords`, `ogImage`, `createdAt`, and `updatedAt`, plus `requestedSlug`, which differs from `page.slug` when the request matched an old slug. Nothing else leaves the server: not the markdown source, which can hold comments the rendered page hides, and not the redirect history or review state
 - `GET /:slug/render` — rendered HTML with metadata (cache-first, falls through to redirect on miss)
+
+Both public endpoints answer an unexpected failure with a 500 carrying only a generic `error` string. The caller is anonymous, so the underlying message, which can name hosts, collections, or query details, goes only to the log under the `tronrelic:pages` service.
+
+## AI Tools
+
+`ai-tools.ts` registers three read-only tools on the core `'ai-tools'` registry under provider id `pages`. They read through `listPublicPages` and `getPublicPages`, so they return only what a visitor sees: drafts, edits waiting for review, and deleted pages never reach them.
+
+| Tool | Input | Returns |
+|---|---|---|
+| `pages-list` | `page` (1-based, default 1), `limit` (default 20, at most 50) | `total`, `page`, `limit`, `hasMore`, and `pages[]` of `{ id, slug, title, description, keywords, updatedAt, excerpt }`, with no body |
+| `pages-search` | `query` (1–100 characters), `page`, `limit` | The same, filtered by a case-insensitive literal substring of the title, slug, description, keywords, or body |
+| `pages-get` | `pages`: 1–5 entries, each a content id, a slug starting with `/`, or a full URL reduced to its path | `pages[]` of `{ requested, found, page }` in the order asked. `page` carries the markdown body without frontmatter, HTML comments, or scripts, cut to 20,000 characters with `truncated` and `totalCharacters` when cut, or is null when no published page answers. An old slug resolves to the page at its current slug |
+
+All three declare `{ sideEffect: 'read', reversible: true, sensitivity: 'public' }`. That passes the MCP safety floor, so an admin can grant them to any user group on `/system/mcp`, and they may run in scheduled prompts. They do not declare `surfacesUntrustedContent`, because every served version was written or approved by a curator. A page not yet adopted by migration 007 has a null `id` and is read by slug.
+
+Blog posts are not pages. The `trp-blog` plugin has its own `list-blog-posts`, `search-blog-posts`, and `get-blog-post` tools.
 
 ## Database Schema
 

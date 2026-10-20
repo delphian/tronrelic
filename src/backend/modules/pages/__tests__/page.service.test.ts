@@ -282,6 +282,119 @@ describe('PageService', () => {
         });
     });
 
+    describe('listPublicPages', () => {
+        it('lists only published, visible pages, with the frontmatter stripped from the body', async () => {
+            await service.createPage(makePageMarkdown({ title: 'Live', slug: '/live', published: true, body: 'Live body.' }), curator);
+            await service.createPage(makePageMarkdown({ title: 'Draft', slug: '/draft' }), curator);
+            await service.createPage(makePageMarkdown({ title: 'Held', slug: '/held', published: true }), serviceToken);
+            const gone = await service.createPage(makePageMarkdown({ title: 'Gone', slug: '/gone', published: true }), curator);
+            await service.deletePage(gone.contentId!, curator);
+
+            const result = await service.listPublicPages();
+
+            expect(result.total).toBe(1);
+            expect(result.pages.map((page) => page.slug)).toEqual(['/live']);
+            expect(result.pages[0].id).toMatch(/^[0-9a-f-]{36}$/);
+            expect(result.pages[0].body).toContain('Live body.');
+            expect(result.pages[0].body).not.toContain('published: true');
+        });
+
+        it('searches the served version only, not an edit waiting for review', async () => {
+            const created = await service.createPage(
+                makePageMarkdown({ title: 'Live', slug: '/live', published: true, body: 'Approved text.' }),
+                curator
+            );
+            await service.updatePage(
+                created.contentId!,
+                makePageMarkdown({ title: 'Live', slug: '/live', published: true, body: 'Proposed secret.' }),
+                serviceToken
+            );
+
+            expect((await service.listPublicPages({ search: 'APPROVED' })).total).toBe(1);
+            expect((await service.listPublicPages({ search: 'secret' })).total).toBe(0);
+        });
+
+        it('treats search text literally and does not match frontmatter lines', async () => {
+            await service.createPage(makePageMarkdown({ title: 'Live', slug: '/live', published: true }), curator);
+
+            expect((await service.listPublicPages({ search: '.*' })).total).toBe(0);
+            expect((await service.listPublicPages({ search: 'published' })).total).toBe(0);
+        });
+
+        it('pages through results and reports the total before paging', async () => {
+            for (const name of ['a', 'b', 'c']) {
+                await service.createPage(makePageMarkdown({ title: name, slug: `/${name}`, published: true }), curator);
+            }
+
+            const first = await service.listPublicPages({ limit: 2 });
+            const second = await service.listPublicPages({ limit: 2, skip: 2 });
+
+            expect(first.total).toBe(3);
+            expect(first.pages).toHaveLength(2);
+            expect(second.pages).toHaveLength(1);
+            expect(new Set([...first.pages, ...second.pages].map((page) => page.slug)).size).toBe(3);
+        });
+    });
+
+    describe('getPublicPages', () => {
+        it('reads pages by content id, current slug, and old slug, in the order asked', async () => {
+            const byId = await service.createPage(makePageMarkdown({ title: 'By id', slug: '/by-id', published: true }), curator);
+            await service.createPage(makePageMarkdown({ title: 'By slug', slug: '/by-slug', published: true }), curator);
+            const renamed = await service.createPage(makePageMarkdown({ title: 'Renamed', slug: '/old', published: true }), curator);
+            await service.updatePage(renamed.contentId!, makePageMarkdown({ title: 'Renamed', slug: '/new', published: true }), curator);
+
+            const pages = await service.getPublicPages(['/old', byId.contentId!, '/by-slug']);
+
+            expect(pages.map((page) => page?.slug)).toEqual(['/new', '/by-id', '/by-slug']);
+        });
+
+        it('returns null for drafts, deleted pages, held-only pages, and unknown identifiers', async () => {
+            const draft = await service.createPage(makePageMarkdown({ title: 'Draft', slug: '/draft' }), curator);
+            const held = await service.createPage(makePageMarkdown({ title: 'Held', slug: '/held', published: true }), serviceToken);
+            const gone = await service.createPage(makePageMarkdown({ title: 'Gone', slug: '/gone', published: true }), curator);
+            await service.deletePage(gone.contentId!, curator);
+
+            const pages = await service.getPublicPages([
+                draft.contentId!,
+                held.contentId!,
+                '/gone',
+                '/missing',
+                '00000000-0000-4000-8000-000000000000'
+            ]);
+
+            expect(pages).toEqual([null, null, null, null, null]);
+        });
+
+        it('removes HTML comments the rendered page hides from the returned body', async () => {
+            await service.createPage(
+                makePageMarkdown({ title: 'Live', slug: '/live', published: true, body: 'Shown.\n\n<!-- private note -->' }),
+                curator
+            );
+
+            const [page] = await service.getPublicPages(['/live']);
+
+            expect(page?.body).toContain('Shown.');
+            expect(page?.body).not.toContain('private note');
+        });
+
+        it('serves the approved version while an edit waits for review', async () => {
+            const created = await service.createPage(
+                makePageMarkdown({ title: 'Live', slug: '/live', published: true, body: 'Approved body.' }),
+                curator
+            );
+            await service.updatePage(
+                created.contentId!,
+                makePageMarkdown({ title: 'Live', slug: '/live', published: true, body: 'Proposed body.' }),
+                serviceToken
+            );
+
+            const [page] = await service.getPublicPages([created.contentId!]);
+
+            expect(page?.body).toContain('Approved body.');
+            expect(page?.body).not.toContain('Proposed body.');
+        });
+    });
+
     describe('settings', () => {
         it('seeds defaults and exposes only page-level fields', async () => {
             const settings = await service.getSettings();

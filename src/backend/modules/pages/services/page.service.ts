@@ -7,6 +7,7 @@ import type {
     IPage,
     IPageContent,
     IPageSettings,
+    IPublicPage,
     ICacheService,
     IDatabaseService,
     ISystemLogService,
@@ -33,6 +34,48 @@ interface IPublicRender {
         keywords?: string[];
         ogImage?: string;
     };
+}
+
+/** Pages returned by `listPublicPages` when the caller does not say how many. */
+const PUBLIC_LIST_DEFAULT_LIMIT = 20;
+
+/** Most pages one `listPublicPages` call returns, whatever the caller asks for. */
+const PUBLIC_LIST_MAX_LIMIT = 100;
+
+/**
+ * Turn an optional paging argument into a whole number within bounds.
+ *
+ * The public listing is reached from AI tools as well as code, so a missing,
+ * fractional, or out-of-range value has to land somewhere safe rather than
+ * reach the slice as `NaN` or a negative number.
+ *
+ * @param value - The caller's value, possibly absent or not a number.
+ * @param fallback - Used when the value is absent or not a finite number.
+ * @param min - The smallest value allowed.
+ * @param max - The largest value allowed.
+ * @returns A whole number from `min` to `max`.
+ */
+function clampInteger(value: number | undefined, fallback: number, min: number, max: number): number {
+    const whole = typeof value === 'number' && Number.isFinite(value) ? Math.floor(value) : fallback;
+
+    return Math.min(Math.max(whole, min), max);
+}
+
+/**
+ * Whether a public page contains a search text anywhere a reader would see it.
+ *
+ * The match is a literal substring, so search text can never act as a regular
+ * expression, and it covers the body without its frontmatter so the text
+ * `published` does not match every page through its `published: true` line.
+ *
+ * @param page - The page to test.
+ * @param needle - The search text, already trimmed and lower-cased.
+ * @returns True when the title, slug, description, a keyword, or the body contains it.
+ */
+function publicPageContains(page: IPublicPage, needle: string): boolean {
+    const haystacks = [page.title, page.slug, page.description, page.keywords.join(' '), page.body];
+
+    return haystacks.some((text) => text.toLowerCase().includes(needle));
 }
 
 /**
@@ -308,31 +351,77 @@ export class PageService implements IPageService {
      * @returns One `{ slug, updatedAt }` per reachable page.
      */
     async listSitemapPages(): Promise<Array<{ slug: string; updatedAt: string }>> {
-        const docs = await this.pagesCollection
-            .find(
-                { deletedAt: null },
-                { projection: { contentId: 1, slug: 1, published: 1, updatedAt: 1 } }
-            )
-            .toArray();
+        const pages = await this.loadVisiblePages();
 
-        const entries: Array<{ slug: string; updatedAt: string }> = [];
-        const managedIds: string[] = [];
-        for (const doc of docs) {
-            if (doc.contentId) {
-                managedIds.push(doc.contentId);
-            } else if (doc.published) {
-                entries.push({ slug: doc.slug, updatedAt: (doc.updatedAt ?? new Date()).toISOString() });
+        return pages.map((page) => ({
+            slug: page.slug,
+            updatedAt: new Date(page.updatedAt ?? Date.now()).toISOString()
+        }));
+    }
+
+    /**
+     * List the published pages a visitor can reach, most recently changed
+     * first, optionally filtered by a literal search.
+     *
+     * Every visible page is loaded and then filtered in memory, rather than
+     * asking MongoDB to search. The collection stores two versions of each
+     * page (the latest edit and the approved snapshot), and only core knows
+     * which one a visitor is served, so a database query against either
+     * field set could match text a visitor never sees. The CMS holds tens of
+     * pages, not thousands, so the full load is cheap.
+     *
+     * @param options - `search` text, and `limit`/`skip` paging, all optional.
+     * @returns The page of results and the total number of matches.
+     */
+    async listPublicPages(
+        options: { search?: string; limit?: number; skip?: number } = {}
+    ): Promise<{ pages: IPublicPage[]; total: number }> {
+        const limit = clampInteger(options.limit, PUBLIC_LIST_DEFAULT_LIMIT, 1, PUBLIC_LIST_MAX_LIMIT);
+        const skip = clampInteger(options.skip, 0, 0, Number.MAX_SAFE_INTEGER);
+        const needle = (options.search ?? '').trim().toLowerCase();
+
+        const visible = (await this.loadVisiblePages()).map((page) => this.toPublicPage(page));
+        const matches = needle
+            ? visible.filter((page) => publicPageContains(page, needle))
+            : visible;
+        matches.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime() || a.slug.localeCompare(b.slug));
+
+        return { pages: matches.slice(skip, skip + limit), total: matches.length };
+    }
+
+    /**
+     * Read published pages in full by content id or slug.
+     *
+     * Slugs go through the same lookups the public page route uses, current
+     * slug first and redirect history second, so a caller holding an old URL
+     * reaches the page a visitor would be redirected to. Content ids are read
+     * through core in one batch. Either way the page must be published on the
+     * version core serves, which is the rule that keeps drafts and held edits
+     * out of every public read.
+     *
+     * @param identifiers - Content ids or slugs starting with `/`.
+     * @returns One entry per identifier, in order, null where nothing published answers.
+     */
+    async getPublicPages(identifiers: ReadonlyArray<string>): Promise<Array<IPublicPage | null>> {
+        const ids = identifiers.filter((identifier) => !identifier.startsWith('/'));
+        const byId = new Map<string, IPage>();
+        if (ids.length > 0) {
+            const served = await this.contentService.readPublic<IPageContent>(PAGE_CONTENT_TYPE_ID, ids);
+            for (const page of served) {
+                if (page.published) {
+                    byId.set(page.id, this.toIPageFromContent(page));
+                }
             }
         }
 
-        const visible = await this.contentService.readPublic<IPageContent>(PAGE_CONTENT_TYPE_ID, managedIds);
-        for (const page of visible) {
-            if (page.published) {
-                entries.push({ slug: page.slug, updatedAt: new Date(page.updatedAt).toISOString() });
-            }
-        }
+        const pages = await Promise.all(identifiers.map(async (identifier) => {
+            const page = identifier.startsWith('/')
+                ? (await this.getPublicPageBySlug(identifier)) ?? (await this.findPublicPageByOldSlug(identifier))
+                : byId.get(identifier) ?? null;
+            return page ? this.toPublicPage(page) : null;
+        }));
 
-        return entries;
+        return pages;
     }
 
     // ============================================================================
@@ -568,6 +657,58 @@ export class PageService implements IPageService {
         const candidates = [...served.map((page) => this.toIPageFromContent(page)), ...legacy];
 
         return candidates.find((page) => page.published && matches(page)) ?? null;
+    }
+
+    /**
+     * Load every page a visitor can reach, at the version core serves.
+     *
+     * Shared by the sitemap and the public listing so both apply the same
+     * visibility rule: managed pages are resolved through core, which drops
+     * deleted pages and pages whose only version is waiting for review, and
+     * the served version must be published. A page the adoption migration has
+     * not reached is judged by its own `published` flag.
+     *
+     * @returns The visible pages, in no particular order.
+     */
+    private async loadVisiblePages(): Promise<IPage[]> {
+        const docs = await this.pagesCollection.find({ deletedAt: null }).toArray();
+        const legacy = docs
+            .filter((doc) => !doc.contentId && doc.published)
+            .map((doc) => this.toIPage(doc));
+        const managedIds = docs.filter((doc) => doc.contentId).map((doc) => doc.contentId as string);
+        const served = await this.contentService.readPublic<IPageContent>(PAGE_CONTENT_TYPE_ID, managedIds);
+        const managed = served
+            .filter((page) => page.published)
+            .map((page) => this.toIPageFromContent(page));
+
+        return [...managed, ...legacy];
+    }
+
+    /**
+     * Reduce a visible page to what a reader of its content needs.
+     *
+     * The frontmatter is stripped from the body because every field it holds
+     * is already returned on its own, and the review and redirect fields are
+     * dropped because they describe the admin workflow, not the page. HTML
+     * comments and scripts are removed because the renderer hides them from
+     * visitors, and an author may have left a private note in a comment.
+     *
+     * @param page - A page already known to be visible and published.
+     * @returns The public view of the page.
+     */
+    private toPublicPage(page: IPage): IPublicPage {
+        const body = this.markdownService.stripHiddenMarkup(this.markdownService.parseMarkdown(page.content).body);
+
+        return {
+            id: page.contentId ?? null,
+            slug: page.slug,
+            title: page.title,
+            description: page.description ?? '',
+            keywords: page.keywords ?? [],
+            ...(page.ogImage ? { ogImage: page.ogImage } : {}),
+            body,
+            updatedAt: new Date(page.updatedAt ?? Date.now()),
+        };
     }
 
     /**
