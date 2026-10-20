@@ -4,8 +4,9 @@
  * The root layout needs them on every request, so the read uses the Next.js
  * fetch cache with a 60-second window instead of calling the backend each
  * time. That matches the backend's `Cache-Control` and the middleware's
- * refresh interval, so a change on `/system/consent` reaches every part of
- * the frontend within about a minute.
+ * refresh interval, so a change on `/system/consent` reaches the middleware
+ * and every new page render within about a minute. A tab that is already
+ * open keeps the settings from its last full page load.
  *
  * Server-only: exposed through `modules/consent/server`.
  *

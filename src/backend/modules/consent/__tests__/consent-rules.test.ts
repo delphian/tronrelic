@@ -105,4 +105,30 @@ describe('resolveConsentState', () => {
         expect(resolveConsentState(ENABLED, 'DE', stale, NOW_MS).decided).toBe(false);
         expect(resolveConsentState(ENABLED, 'DE', future, NOW_MS).decided).toBe(false);
     });
+
+    it('asks a visitor outside the consent regions again when their refusal goes stale', () => {
+        const renewed = serializeConsentCookie({ version: 2, analytics: false, ads: false, decidedAt: NOW_SECONDS - 60 });
+        expect(resolveConsentState(ENABLED, 'US', renewed, NOW_MS)).toEqual({
+            enabled: true, required: true, decided: false, analytics: false, ads: false
+        });
+        const aged = serializeConsentCookie({ version: 3, analytics: true, ads: false, decidedAt: NOW_SECONDS - CONSENT_COOKIE_MAX_AGE_SECONDS });
+        expect(resolveConsentState(ENABLED, 'US', aged, NOW_MS)).toEqual({
+            enabled: true, required: true, decided: false, analytics: false, ads: false
+        });
+    });
+
+    it('returns a visitor outside the consent regions to the default when a stale choice allowed everything', () => {
+        const cookie = serializeConsentCookie({ version: 2, analytics: true, ads: true, decidedAt: NOW_SECONDS - 60 });
+        expect(resolveConsentState(ENABLED, 'US', cookie, NOW_MS)).toEqual({
+            enabled: true, required: false, decided: false, analytics: true, ads: true
+        });
+    });
+
+    it('does not count declined advertising as a refusal while no Ads id is configured', () => {
+        const noAds: IConsentPublicConfig = { ...ENABLED, googleAdsId: null, conversionLabel: null };
+        const cookie = serializeConsentCookie({ version: 2, analytics: true, ads: false, decidedAt: NOW_SECONDS - 60 });
+        expect(resolveConsentState(noAds, 'US', cookie, NOW_MS)).toEqual({
+            enabled: true, required: false, decided: false, analytics: true, ads: true
+        });
+    });
 });

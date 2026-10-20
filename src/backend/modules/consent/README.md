@@ -30,12 +30,13 @@ EU and UK cookie law requires opt-in consent before analytics or advertising coo
 | Main switch off | false | true | false (tag never loads) |
 | Outside the consent regions, no saved choice | false | true | true |
 | Outside the consent regions, saved choice | false | the choice | the choice |
+| Outside the consent regions, stale choice that refused something | true | false | false |
 | Consent region or unknown country, no current choice | true | false | false |
 | Consent region, current choice | true | the choice | the choice |
 
 The consent regions are the EU, the rest of the EEA, the UK, and Switzerland, plus EU territories with their own country code (`CONSENT_REGION_COUNTRIES`). The list is fixed in code so a mistyped setting cannot drop a country. The country comes from Cloudflare's `cf-ipcountry` header. A missing header, `XX`, or `T1` (Tor) counts as a consent region, because showing one banner too many costs less than setting cookies on someone in the EU. In local development there is no header, so the banner shows whenever the switch is on.
 
-A choice counts only when it was made under the current `policyVersion` and less than twelve months ago. "Ask everyone again" on the Settings tab raises the version.
+A choice counts only when it was made under the current `policyVersion` and less than twelve months ago. "Ask everyone again" on the Settings tab raises the version. When a choice stops counting, a visitor outside the consent regions who had refused analytics, or refused advertising while an Ads id is configured, is shown the banner and allowed nothing until they answer again. Nothing else would ask them, so their refusal would otherwise turn back into permission.
 
 ## The Consent Cookie
 
@@ -53,6 +54,8 @@ A choice counts only when it was made under the current `policyVersion` and less
 The middleware and the layout start from a fail-closed configuration when the backend cannot be reached: switched on with policy version 0, which no saved choice matches. Visitors outside the consent regions are unaffected; visitors inside one get the banner and no cookies until the real settings load.
 
 Withdrawing a permission reloads the page. The middleware then deletes the analytics cookies, and the banner deletes the Google Ads cookies (`_gcl_*`, `_gac_*`) on the host and every parent domain before reloading, since the tag set them in the browser.
+
+A settings change reaches the backend at once, and the middleware and every new page render within about a minute. A browser tab that is already open keeps the state from its last full page load, because the root layout, and `ConsentProvider` inside it, is not re-rendered during App Router soft navigations. This is deliberate: the server stays in charge of anything stored in the visitor's browser. The middleware applies the rule to every request and deletes the analytics cookies, and `POST /api/user/track` refuses a page event the current settings forbid. What an open tab misses is the banner itself, and a Google tag already loaded in it stops only on the next full load. That is also why withdrawing a permission reloads the page instead of unloading the tag.
 
 ## Anonymous Page Views
 
