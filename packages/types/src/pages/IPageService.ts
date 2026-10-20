@@ -1,5 +1,6 @@
 import type { IPage } from './IPage';
 import type { IPageSettings } from './IPageSettings';
+import type { IPublicPage } from './IPublicPage.js';
 import type { IContentActor } from '../content/IContentActor.js';
 import type { ContentCurationState } from '../content/ContentCurationState.js';
 
@@ -108,6 +109,34 @@ export interface IPageService {
      * sitemap.
      */
     listSitemapPages(): Promise<Array<{ slug: string; updatedAt: string }>>;
+
+    /**
+     * List the published pages a visitor can reach, at the version core serves
+     * them, most recently changed first. Drafts, pages whose only version is
+     * waiting for review, and deleted pages never appear.
+     *
+     * `search` keeps only pages containing the text, matched as a
+     * case-insensitive literal substring of the title, slug, description,
+     * keywords, or markdown body. `limit` is clamped to 1–100 (default 20) and
+     * `skip` to zero or more. `total` counts every match before paging, so a
+     * caller can tell whether more pages remain.
+     */
+    listPublicPages(options?: {
+        search?: string;
+        limit?: number;
+        skip?: number;
+    }): Promise<{ pages: IPublicPage[]; total: number }>;
+
+    /**
+     * Read published pages in full by content id or slug, at the version core
+     * serves visitors. An identifier starting with `/` is a slug; a slug that
+     * a page used to have resolves to that page. Anything else is a content id.
+     *
+     * @param identifiers - Content ids or slugs, in the order the caller wants them back.
+     * @returns One entry per identifier, in the same order, null where no
+     *   published page answers to it.
+     */
+    getPublicPages(identifiers: ReadonlyArray<string>): Promise<Array<IPublicPage | null>>;
 
     // ============================================================================
     // Markdown Rendering

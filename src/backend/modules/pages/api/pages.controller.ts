@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import type { ContentCurationState, ContentErrorCode, IPageService, ISystemLogService } from '@/types';
+import type { ContentCurationState, ContentErrorCode, IPage, IPageService, ISystemLogService } from '@/types';
 import { actorFromAdminRequest } from '../../../services/content-actor.js';
 import { isContentError } from '../../../services/content-error.js';
 
@@ -20,6 +20,43 @@ const CONTENT_ERROR_STATUS: Record<ContentErrorCode, number> = {
     'curation-unavailable': 503,
     'superseded': 409
 };
+
+/**
+ * The page fields the public metadata endpoint returns to an anonymous caller.
+ *
+ * These are exactly what the site's page route reads to build the document
+ * head and the Article structured data. The full `IPage` also carries the raw
+ * markdown, which can hold comments the rendered page hides, plus redirect
+ * history and review state that describe the admin workflow, so none of
+ * those leave the server through this endpoint.
+ */
+interface IPublicPageMetadata {
+    title: string;
+    slug: string;
+    description?: string;
+    keywords?: string[];
+    ogImage?: string;
+    createdAt: Date;
+    updatedAt: Date;
+}
+
+/**
+ * Reduce a visible page to the fields the public metadata endpoint returns.
+ *
+ * @param page - A page the service already resolved as visible and published.
+ * @returns The fields an anonymous caller may see.
+ */
+function toPublicPageMetadata(page: IPage): IPublicPageMetadata {
+    return {
+        title: page.title,
+        slug: page.slug,
+        description: page.description,
+        keywords: page.keywords,
+        ogImage: page.ogImage,
+        createdAt: page.createdAt,
+        updatedAt: page.updatedAt,
+    };
+}
 
 /**
  * Controller for Pages module REST API endpoints.
@@ -71,7 +108,7 @@ export class PagesController {
 
             res.json({ pages, stats });
         } catch (error) {
-            this.logger.error('Failed to list pages', { error });
+            this.logger.error({ error }, 'Failed to list pages');
             res.status(500).json({
                 error: 'Failed to list pages',
                 message: error instanceof Error ? error.message : 'Unknown error',
@@ -97,7 +134,7 @@ export class PagesController {
 
             res.json(page);
         } catch (error) {
-            this.logger.error('Failed to get page', { error, pageId: req.params.id });
+            this.logger.error({ error, pageId: req.params.id }, 'Failed to get page');
             res.status(500).json({
                 error: 'Failed to get page',
                 message: error instanceof Error ? error.message : 'Unknown error',
@@ -123,7 +160,7 @@ export class PagesController {
             const page = await this.pageService.createPage(content, actorFromAdminRequest(req));
             res.status(201).json(page);
         } catch (error) {
-            this.logger.error('Failed to create page', { error });
+            this.logger.error({ error }, 'Failed to create page');
             this.sendWriteError(res, 'Failed to create page', error);
         }
     }
@@ -147,7 +184,7 @@ export class PagesController {
             const page = await this.pageService.updatePage(id, content, actorFromAdminRequest(req));
             res.json(page);
         } catch (error) {
-            this.logger.error('Failed to update page', { error, pageId: req.params.id });
+            this.logger.error({ error, pageId: req.params.id }, 'Failed to update page');
             this.sendWriteError(res, 'Failed to update page', error);
         }
     }
@@ -164,7 +201,7 @@ export class PagesController {
             await this.pageService.deletePage(id, actorFromAdminRequest(req));
             res.status(204).send();
         } catch (error) {
-            this.logger.error('Failed to delete page', { error, pageId: req.params.id });
+            this.logger.error({ error, pageId: req.params.id }, 'Failed to delete page');
             this.sendWriteError(res, 'Failed to delete page', error);
         }
     }
@@ -181,7 +218,7 @@ export class PagesController {
             const page = await this.pageService.restorePage(id, actorFromAdminRequest(req));
             res.json(page);
         } catch (error) {
-            this.logger.error('Failed to restore page', { error, pageId: req.params.id });
+            this.logger.error({ error, pageId: req.params.id }, 'Failed to restore page');
             this.sendWriteError(res, 'Failed to restore page', error);
         }
     }
@@ -204,7 +241,7 @@ export class PagesController {
             const rendered = await this.pageService.previewMarkdown(content);
             res.json(rendered);
         } catch (error) {
-            this.logger.error('Failed to preview markdown', { error });
+            this.logger.error({ error }, 'Failed to preview markdown');
             res.status(400).json({
                 error: 'Failed to preview markdown',
                 message: error instanceof Error ? error.message : 'Unknown error',
@@ -227,7 +264,7 @@ export class PagesController {
             const settings = await this.pageService.getSettings();
             res.json(settings);
         } catch (error) {
-            this.logger.error('Failed to get settings', { error });
+            this.logger.error({ error }, 'Failed to get settings');
             res.status(500).json({
                 error: 'Failed to get settings',
                 message: error instanceof Error ? error.message : 'Unknown error',
@@ -247,7 +284,7 @@ export class PagesController {
             const settings = await this.pageService.updateSettings(updates);
             res.json(settings);
         } catch (error) {
-            this.logger.error('Failed to update settings', { error });
+            this.logger.error({ error }, 'Failed to update settings');
             res.status(400).json({
                 error: 'Failed to update settings',
                 message: error instanceof Error ? error.message : 'Unknown error',
@@ -263,8 +300,13 @@ export class PagesController {
      * Get the page a visitor sees at a slug, or the page an old slug
      * redirects to.
      *
+     * The response carries only the metadata the page route needs, never the
+     * markdown source, because this endpoint is anonymous and the source can
+     * hold text the rendered page does not show.
+     *
      * @param req - Params: `slug`.
-     * @param res - Receives `{ page, requestedSlug }`, or 404.
+     * @param res - Receives `{ page, requestedSlug }` with `page` reduced to
+     *   `IPublicPageMetadata`, or 404.
      */
     async getPublicPage(req: Request, res: Response): Promise<void> {
         try {
@@ -279,13 +321,12 @@ export class PagesController {
                 return;
             }
 
-            res.json({ page, requestedSlug: normalizedSlug });
+            res.json({ page: toPublicPageMetadata(page), requestedSlug: normalizedSlug });
         } catch (error) {
-            this.logger.error('Failed to get public page', { error, slug: req.params.slug });
-            res.status(500).json({
-                error: 'Failed to get page',
-                message: error instanceof Error ? error.message : 'Unknown error',
-            });
+            // The caller is anonymous, so the response names no internal
+            // detail; the log keeps the error for operators.
+            this.logger.error({ error, slug: req.params.slug }, 'Failed to get public page');
+            res.status(500).json({ error: 'Failed to get page' });
         }
     }
 
@@ -323,11 +364,10 @@ export class PagesController {
                 requestedSlug: normalizedSlug,
             });
         } catch (error) {
-            this.logger.error('Failed to render public page', { error, slug: req.params.slug });
-            res.status(500).json({
-                error: 'Failed to render page',
-                message: error instanceof Error ? error.message : 'Unknown error',
-            });
+            // The caller is anonymous, so the response names no internal
+            // detail; the log keeps the error for operators.
+            this.logger.error({ error, slug: req.params.slug }, 'Failed to render public page');
+            res.status(500).json({ error: 'Failed to render page' });
         }
     }
 

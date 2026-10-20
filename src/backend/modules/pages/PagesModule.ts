@@ -14,6 +14,8 @@ import type {
     IMenuService,
     IModule,
     IModuleMetadata,
+    IServiceRegistry,
+    ServiceWatchDisposer,
 } from '@/types';
 import { logger } from '../../lib/logger.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
@@ -23,6 +25,7 @@ import { createPagesRouter } from './api/pages.routes.js';
 import { createPublicPagesRouter } from './api/pages.public-routes.js';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
 import { createAdminRateLimiter } from '../../api/middleware/rate-limit.js';
+import { registerPageAiTools } from './ai-tools.js';
 
 export interface IPagesModuleDependencies {
     database: IDatabaseService;
@@ -33,6 +36,11 @@ export interface IPagesModuleDependencies {
      * every page write and public read passes through it.
      */
     contentService: IContentService;
+    /**
+     * The service registry, watched for the core `'ai-tools'` registry so the
+     * read-only page tools are registered whenever it is available.
+     */
+    serviceRegistry: IServiceRegistry;
     app: Express;
 }
 
@@ -42,7 +50,8 @@ export interface IPagesModuleDependencies {
  * Lifecycle:
  * - `init()` — store deps, configure `PageService` singleton, build controller.
  * - `run()` — register the `core:page` managed content type, register the
- *   `/system/pages` menu item, mount admin and public routers.
+ *   `/system/pages` menu item, mount admin and public routers, and register
+ *   the read-only page AI tools.
  *
  * No file dependencies — uploads go through the Files module's
  * `/api/admin/files` admin surface, which is registered before Pages so
@@ -61,9 +70,17 @@ export class PagesModule implements IModule<IPagesModuleDependencies> {
     private cacheService!: ICacheService;
     private menuService!: IMenuService;
     private contentService!: IContentService;
+    private serviceRegistry!: IServiceRegistry;
     private app!: Express;
     private pageService!: PageService;
     private controller!: PagesController;
+
+    /**
+     * Removes the `'ai-tools'` watch that keeps the page tools registered.
+     * A module never stops, so this is kept for symmetry with plugins rather
+     * than called.
+     */
+    private unwatchAiTools: ServiceWatchDisposer | null = null;
 
     private readonly logger = logger.child({ module: 'pages' });
 
@@ -80,6 +97,7 @@ export class PagesModule implements IModule<IPagesModuleDependencies> {
         this.cacheService = dependencies.cacheService;
         this.menuService = dependencies.menuService;
         this.contentService = dependencies.contentService;
+        this.serviceRegistry = dependencies.serviceRegistry;
         this.app = dependencies.app;
 
         PageService.setDependencies(this.database, this.cacheService, this.contentService, this.logger);
@@ -128,6 +146,10 @@ export class PagesModule implements IModule<IPagesModuleDependencies> {
         const publicRouter: Router = createPublicPagesRouter(this.controller);
         this.app.use('/api/pages', publicRouter);
         this.logger.info('Public pages router mounted at /api/pages');
+
+        // After the type registration above, because the tools read through
+        // core and core refuses reads for an unregistered type.
+        this.unwatchAiTools = registerPageAiTools(this.serviceRegistry, this.pageService, this.logger);
 
         this.logger.info('Pages module running');
     }

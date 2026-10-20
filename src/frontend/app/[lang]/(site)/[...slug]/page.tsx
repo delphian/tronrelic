@@ -17,16 +17,16 @@ import { buildServerDataContext } from '../../../../lib/buildServerDataContext';
 import styles from './page.module.scss';
 
 /**
- * Page metadata response from backend.
+ * Page metadata response from backend. The public endpoint returns only these
+ * fields; the markdown source stays on the server, and the body arrives
+ * already rendered and sanitized from the `/render` endpoint.
  */
 interface IPageResponse {
     page: {
         title: string;
         slug: string;
-        content: string;
         description?: string;
         keywords?: string[];
-        published: boolean;
         ogImage?: string;
         createdAt: string;
         updatedAt: string;

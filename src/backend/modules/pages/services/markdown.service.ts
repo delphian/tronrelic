@@ -13,6 +13,82 @@ import type {
 } from '@/types';
 
 /**
+ * Raw HTML the sanitizer removes from the rendered page together with its
+ * contents: comments, and `<script>` elements. An unclosed one runs to the end
+ * of the HTML it appears in, matching how CommonMark reads it.
+ */
+const HIDDEN_HTML_PATTERN = /<!--[\s\S]*?(?:-->|$)|<script\b[\s\S]*?(?:<\/script\s*>|$)/gi;
+
+/**
+ * The few fields of a markdown syntax tree node that `stripHiddenMarkup`
+ * reads. Declared here rather than imported, because the full `mdast` types
+ * are not a declared dependency of this workspace.
+ */
+interface IMarkdownTreeNode {
+    type: string;
+    value?: string;
+    position?: {
+        start: { offset?: number };
+        end: { offset?: number };
+    };
+    children?: IMarkdownTreeNode[];
+}
+
+/**
+ * Whether a raw HTML node opens a `<script>` element without closing it.
+ *
+ * Inside a paragraph the parser splits `<script>alert(1)</script>` into an
+ * opening tag, a text node, and a closing tag. The sanitizer hides the text
+ * too, so the stripper has to treat all three as one range.
+ *
+ * @param value - The raw HTML of one node.
+ * @returns True when the node opens a script that a later node closes.
+ */
+function opensUnclosedScript(value: string): boolean {
+    return /<script\b/i.test(value) && !/<\/script\s*>/i.test(value);
+}
+
+/**
+ * Collect the source ranges of the raw HTML in a markdown syntax tree.
+ *
+ * Raw HTML is the only place a hidden comment or script can live. Walking the
+ * tree rather than searching the text is what keeps a comment shown inside a
+ * code block, because the parser reports a code block as `code`, not `html`.
+ * An inline script's range runs from its opening tag to the sibling that
+ * closes it, so the script's text is covered as well.
+ *
+ * @param node - The node whose children to search, starting from the tree root.
+ * @param ranges - Receives one `[start, end]` character range per HTML span.
+ */
+function collectHtmlRanges(node: IMarkdownTreeNode, ranges: Array<[number, number]>): void {
+    const children = node.children ?? [];
+    for (let index = 0; index < children.length; index++) {
+        const child = children[index];
+        if (child.type !== 'html') {
+            collectHtmlRanges(child, ranges);
+            continue;
+        }
+
+        let last = child;
+        if (opensUnclosedScript(child.value ?? '')) {
+            const closeIndex = children.findIndex((sibling, siblingIndex) =>
+                siblingIndex > index && sibling.type === 'html' && /<\/script\s*>/i.test(sibling.value ?? '')
+            );
+            if (closeIndex !== -1) {
+                last = children[closeIndex];
+                index = closeIndex;
+            }
+        }
+
+        const start = child.position?.start.offset;
+        const end = last.position?.end.offset;
+        if (start !== undefined && end !== undefined) {
+            ranges.push([start, end]);
+        }
+    }
+}
+
+/**
  * Service for parsing markdown frontmatter and rendering to HTML.
  *
  * Implements the IMarkdownService contract providing:
@@ -141,6 +217,35 @@ export class MarkdownService implements IMarkdownService {
                 `Failed to render markdown: ${error instanceof Error ? error.message : 'Unknown error'}`
             );
         }
+    }
+
+    /**
+     * Remove HTML comments and `<script>` elements from markdown, keeping
+     * everything else exactly as written.
+     *
+     * Public reads that return markdown rather than HTML, such as the pages AI
+     * tools, would otherwise show text the sanitizer hides from visitors. The
+     * markdown is parsed only to find where its raw HTML sits; each of those
+     * ranges is then cleaned in the original text, working from the end so
+     * earlier offsets stay valid. Re-serializing the tree instead would also
+     * rewrite list markers, emphasis, and spacing the author chose.
+     *
+     * @param markdown - Markdown body, without frontmatter.
+     * @returns The markdown with hidden comments and scripts removed.
+     */
+    stripHiddenMarkup(markdown: string): string {
+        const tree = remark().use(remarkGfm).parse(markdown) as IMarkdownTreeNode;
+        const ranges: Array<[number, number]> = [];
+        collectHtmlRanges(tree, ranges);
+        ranges.sort((a, b) => b[0] - a[0]);
+
+        let result = markdown;
+        for (const [start, end] of ranges) {
+            const cleaned = result.slice(start, end).replace(HIDDEN_HTML_PATTERN, '');
+            result = result.slice(0, start) + cleaned + result.slice(end);
+        }
+
+        return result;
     }
 
     /**

@@ -122,6 +122,21 @@ export interface IMarkdownService {
     renderMarkdown(markdown: string): Promise<string>;
 
     /**
+     * Remove markup that the rendered page never shows, so markdown handed to
+     * a reader outside the renderer cannot reveal more than the page does.
+     *
+     * The renderer's sanitizer drops HTML comments and `<script>` elements, so
+     * an author can leave a note in a comment that no visitor sees. This
+     * removes the same two things from the markdown source. Only raw HTML is
+     * touched: a comment written inside a code block is shown on the page, so
+     * it is kept. All other formatting is left exactly as written.
+     *
+     * @param markdown - Markdown body, without frontmatter
+     * @returns The same markdown with hidden comments and scripts removed
+     */
+    stripHiddenMarkup(markdown: string): string;
+
+    /**
      * Get cached HTML for a page slug.
      *
      * Checks Redis for previously rendered HTML. Returns null if not cached.
