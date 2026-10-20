@@ -14,6 +14,25 @@
  */
 
 /**
+ * Hosts the Google Ads tag sends conversion data to. The consent module loads
+ * the tag only for a visitor who allowed advertising cookies, but the policy
+ * is the same for every page so it does not depend on that visitor's choice.
+ * The list follows Google's published Content-Security-Policy guidance for the
+ * Google tag with Google Ads conversion tracking.
+ */
+const GOOGLE_ADS_CONNECT_SOURCES = [
+    'https://www.googletagmanager.com',
+    'https://www.google.com',
+    'https://google.com',
+    'https://www.googleadservices.com',
+    'https://googleads.g.doubleclick.net',
+    'https://pagead2.googlesyndication.com'
+];
+
+/** Frames the Google Ads tag may open to record a conversion. */
+const GOOGLE_ADS_FRAME_SOURCES = ['https://td.doubleclick.net', 'https://www.googletagmanager.com'];
+
+/**
  * Build the policy for one page request.
  *
  * `script-src` allows scripts carrying the nonce, plus `'strict-dynamic'`, which
@@ -30,6 +49,11 @@
  * `img-src` allows any HTTPS image because token logos, market logos, and
  * sign-in avatars come from hosts the site does not control.
  *
+ * `connect-src` and `frame-src` also allow the Google Ads hosts above. The tag
+ * script itself needs no `script-src` entry, because the consent module adds
+ * it from a script that already carries the nonce, which `'strict-dynamic'`
+ * trusts.
+ *
  * In development, Next.js needs `'unsafe-eval'` for fast refresh, and the
  * browser talks to the backend on a different local port, so those are
  * allowed only when `isDevelopment` is true.
@@ -42,7 +66,7 @@
  */
 export function buildContentSecurityPolicy(nonce: string, isDevelopment: boolean): string {
     const scriptSources = ["'self'", `'nonce-${nonce}'`, "'strict-dynamic'"];
-    const connectSources = ["'self'"];
+    const connectSources = ["'self'", ...GOOGLE_ADS_CONNECT_SOURCES];
     if (isDevelopment) {
         scriptSources.push("'unsafe-eval'");
         connectSources.push('http://localhost:*', 'ws://localhost:*');
@@ -55,6 +79,7 @@ export function buildContentSecurityPolicy(nonce: string, isDevelopment: boolean
         "img-src 'self' data: blob: https:",
         "font-src 'self' data:",
         `connect-src ${connectSources.join(' ')}`,
+        `frame-src 'self' ${GOOGLE_ADS_FRAME_SOURCES.join(' ')}`,
         "worker-src 'self' blob:",
         "object-src 'none'",
         "base-uri 'self'"

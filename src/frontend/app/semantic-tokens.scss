@@ -1022,6 +1022,22 @@
     /* Above page content and sticky elements, below dialogs and popovers, so
        the Menu tab's own panel and any toast or tooltip paint over the bar. */
     --tab-bar-z-index: var(--z-index-fixed);
+
+    /* ========================================================================
+     * CONSENT BANNER TOKENS
+     *
+     * The cookie banner is fixed to the bottom of the screen and must sit
+     * above the mobile tab bar, which occupies the same edge, so a visitor can
+     * always reach Reject all. It stays below dialogs, toasts, and popovers.
+     * The background is the high-contrast surface rather than the default
+     * card surface, because the banner floats over page content and its text
+     * must not compete with what shows through.
+     * ======================================================================== */
+
+    --consent-banner-z-index: calc(var(--z-index-fixed) + 1);
+    --consent-banner-background: var(--color-surface-accent);
+    --consent-banner-border: var(--border-width-thin) solid var(--color-border-strong);
+    --consent-banner-shadow: var(--shadow-lg);
 }
 
 /* ============================================================================

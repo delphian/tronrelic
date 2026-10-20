@@ -10,8 +10,12 @@ import { MobileTabBarZone, WidgetZone, collectMenuNamespaces, fetchWidgetsForRou
 import { fetchMenuNamespace } from '../../modules/menu/server';
 import type { IMenuSeed } from '../../modules/menu/types';
 import { getServerSession, type ISSRSession } from '../../modules/user/lib/session-server';
-import { DEFAULT_LANGUAGE } from '@/types';
+import { CONSENT_COOKIE_NAME, DEFAULT_LANGUAGE } from '@/types';
 import { fetchLocalizationSeed, resolveMetadataLanguage } from '../../modules/localization/server';
+import { fetchConsentSeed } from '../../modules/consent/server';
+// Imported from the file rather than the consent barrel, for the same reason
+// as buildLanguageAlternates below.
+import { PrivacyChoicesButton } from '../../modules/consent/components/PrivacyChoicesButton';
 // Imported from the files rather than the module barrel, which also exports
 // components with stylesheets and would pull their CSS into the layout bundle.
 import { buildLanguageAlternates } from '../../modules/localization/lib/buildLanguageAlternates';
@@ -352,14 +356,20 @@ export default async function RootLayout({ children, params }: { children: React
   // The snapshot and catalog inside it come from the Next.js fetch cache, so
   // they cost a backend call about once a minute rather than per request, and
   // the catalog is skipped entirely for English.
-  const [runtimeConfig, headFragments, htmlAttributes, ssrSession, widgetBundle, mainMenu, localizationSeed] = await Promise.all([
+  //
+  // The consent seed resolves, from the visitor's country and saved choice,
+  // whether the cookie banner shows and whether analytics and the Google Ads
+  // tag may run. Resolving it here means the banner is in the server HTML for
+  // a visitor who must answer, rather than appearing after hydration.
+  const [runtimeConfig, headFragments, htmlAttributes, ssrSession, widgetBundle, mainMenu, localizationSeed, consentSeed] = await Promise.all([
     getServerConfig(),
     fetchHeadFragments(pathname, cookieMap),
     fetchHtmlAttributes(pathname, cookieMap),
     fetchSSRSession(),
     fetchWidgetsForRoute(pathname, {}),
     fetchMenuNamespace('main', cookieStore.toString()),
-    fetchLocalizationSeed(lang)
+    fetchLocalizationSeed(lang),
+    fetchConsentSeed(headersList.get('cf-ipcountry'), cookieStore.get(CONSENT_COOKIE_NAME)?.value)
   ]);
 
   const extraMenuNamespaces = collectMenuNamespaces(widgetBundle.widgets).filter(namespace => namespace !== 'main');
@@ -413,7 +423,7 @@ export default async function RootLayout({ children, params }: { children: React
         ))}
       </head>
       <body>
-        <Providers ssrSession={ssrSession} ssrMenus={ssrMenus} ssrLocalization={localizationSeed}>
+        <Providers ssrSession={ssrSession} ssrMenus={ssrMenus} ssrLocalization={localizationSeed} ssrConsent={consentSeed}>
           {/* The site header is built entirely from widgets an operator places
               in site-top: the Site logo, a Menu showing `main`, and the Sign-in button. The
               zone sits inside <header> so the page keeps its header landmark
@@ -427,6 +437,10 @@ export default async function RootLayout({ children, params }: { children: React
           </main>
           <footer>
             <WidgetZone name="footer" widgets={widgetBundle.widgets} layout={widgetBundle.zones['footer']} route={pathname} params={{}} />
+            {/* Rendered here rather than as a widget, so withdrawing consent
+                stays one click away on every page whatever an operator places
+                in the footer zone. Renders nothing while consent is off. */}
+            <PrivacyChoicesButton />
           </footer>
           {/* Phone navigation fixed to the bottom of the screen. Renders
               nothing until an operator places a widget in the zone, and only

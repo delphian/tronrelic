@@ -1,0 +1,26 @@
+/**
+ * Footer "Privacy choices" button, drawn as a quiet text link so it sits with
+ * the footer's other links rather than looking like an action button.
+ */
+
+.row {
+    display: flex;
+    justify-content: center;
+    padding: var(--padding-sm);
+}
+
+.button {
+    padding: 0;
+    background: none;
+    border: none;
+    font: inherit;
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+    text-decoration: underline;
+    cursor: pointer;
+    transition: color var(--transition-base);
+
+    &:hover {
+        color: var(--color-secondary);
+    }
+}

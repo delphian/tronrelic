@@ -51,6 +51,7 @@ import { ProvidersModule } from './modules/providers/index.js';
 import { ValuationModule } from './modules/valuation/index.js';
 import { AddressTagsModule } from './modules/address-tags/index.js';
 import { LocalizationModule } from './modules/localization/index.js';
+import { ConsentModule } from './modules/consent/index.js';
 import { ToolsModule } from './modules/tools/index.js';
 import { AiToolsModule, createAccountEndUserResolver } from './modules/ai-tools/index.js';
 import { McpModule } from './modules/mcp/index.js';
@@ -293,6 +294,7 @@ interface BootstrapContext {
         valuation: ValuationModule;
         addressTags: AddressTagsModule;
         localization: LocalizationModule;
+        consent: ConsentModule;
         tools: ToolsModule;
         notifications: NotificationsModule;
         curation: CurationModule;
@@ -481,7 +483,11 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     // those limits survive a backend restart, and the WebSocket service so it
     // can drop a user's sockets when their session ends or their groups change.
     await identityModule.init({ ...sharedDeps, redis, socketDisconnector: WebSocketService.getInstance() });
-    await trafficModule.init({ ...sharedDeps, scheduler: schedulerService, clickhouse });
+    // Consent initializes before traffic because traffic's page-view endpoint
+    // asks it, per request, whether the visitor allowed the analytics cookie.
+    const consentModule = new ConsentModule();
+    await consentModule.init({ database: coreDatabase, serviceRegistry, menuService, app });
+    await trafficModule.init({ ...sharedDeps, scheduler: schedulerService, clickhouse, consent: consentModule.getConsentService() });
     // Account-history: pull-based per-account transaction backfill into ClickHouse.
     // Receives the scheduler service (for its bounded ingestion job) and clickhouse
     // (its store); no-ops ingestion when clickhouse is absent. Independent of block sync.
@@ -637,6 +643,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
             valuation: valuationModule,
             addressTags: addressTagsModule,
             localization: localizationModule,
+            consent: consentModule,
             tools: toolsModule,
             notifications: notificationsModule,
             curation: curationModule,
@@ -712,6 +719,10 @@ async function bootstrapRun(ctx: BootstrapContext): Promise<void> {
     // Localization publishes 'localization' and mounts its public and admin
     // routers; no ordering constraint beyond menu having run.
     await modules.localization.run();
+    // Consent publishes 'consent' and mounts its public and admin routers; no
+    // ordering constraint beyond menu having run. Traffic already holds its
+    // service from init, so it does not need consent to have run first.
+    await modules.consent.run();
     // ClickHouse accounts runs before scheduler (which runs last and starts
     // ticking), so its usage rollup job is registered before the scheduler activates.
     await modules.clickhouseAccounts.run();

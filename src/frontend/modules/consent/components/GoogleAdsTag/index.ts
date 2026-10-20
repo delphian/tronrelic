@@ -1,0 +1,1 @@
+export { GoogleAdsTag } from './GoogleAdsTag';

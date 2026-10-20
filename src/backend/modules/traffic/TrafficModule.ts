@@ -18,7 +18,7 @@
  */
 
 import type { Express, Router } from 'express';
-import type { ICacheService, IClickHouseService, IDatabaseService, IMenuService, IModule, IModuleMetadata, ISchedulerService, IServiceRegistry, ServiceWatchDisposer } from '@/types';
+import type { ICacheService, IClickHouseService, IConsentService, IDatabaseService, IMenuService, IModule, IModuleMetadata, ISchedulerService, IServiceRegistry, ServiceWatchDisposer } from '@/types';
 import { registerTrafficAiTools } from './ai-tools.js';
 import { logger } from '../../lib/logger.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
@@ -70,6 +70,13 @@ export interface ITrafficModuleDependencies {
      * account/wallet-adoption overview panel.
      */
     serviceRegistry: IServiceRegistry;
+
+    /**
+     * The consent module's rule. The page-view endpoint asks it on every
+     * request, so a visitor in a consent region who has not allowed analytics
+     * is not recorded and never receives a `tronrelic_tid` cookie.
+     */
+    consent: IConsentService;
 }
 
 /**
@@ -204,7 +211,14 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
 
         // Slim first-touch analytics bootstrap (no identity, no Mongo). Reads the
         // automated-network list from memory to classify each event.
-        this.bootstrapController = new BootstrapController(this.trafficService, this.botNetworksService, this.logger);
+        // Also asks the consent module, per page event, whether the visitor
+        // allowed the analytics cookie.
+        this.bootstrapController = new BootstrapController(
+            this.trafficService,
+            this.botNetworksService,
+            dependencies.consent,
+            this.logger
+        );
 
         // Admin management of the automated-network list.
         this.botNetworksController = new BotNetworksController(this.botNetworksService, this.logger);
