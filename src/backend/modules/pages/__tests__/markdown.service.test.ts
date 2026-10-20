@@ -285,6 +285,26 @@ function hello() {
             expect(stripped).toContain('Has  inline.');
         });
 
+        it('removes everything after an unclosed inline script, as the renderer does', () => {
+            const markdown = 'Visible <script>private note\n\nNext paragraph\n';
+
+            const stripped = markdownService.stripHiddenMarkup(markdown);
+
+            expect(stripped).toContain('Visible');
+            expect(stripped).not.toContain('private note');
+            expect(stripped).not.toContain('Next paragraph');
+        });
+
+        it('keeps the text after a script whose closing tag is in a later paragraph', () => {
+            const markdown = 'Visible <script>private\n\nmore</script> tail\n';
+
+            const stripped = markdownService.stripHiddenMarkup(markdown);
+
+            expect(stripped).not.toContain('private');
+            expect(stripped).not.toContain('more');
+            expect(stripped).toContain('tail');
+        });
+
         it('keeps comments shown inside code and leaves other formatting as written', () => {
             const markdown = '* item\n\n`<!-- span -->`\n\n```html\n<!-- fenced -->\n```\n';
 

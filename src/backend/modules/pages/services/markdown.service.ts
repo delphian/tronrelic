@@ -42,46 +42,82 @@ interface IMarkdownTreeNode {
  * too, so the stripper has to treat all three as one range.
  *
  * @param value - The raw HTML of one node.
- * @returns True when the node opens a script that a later node closes.
+ * @returns True when the node opens a script and does not close it itself,
+ *   so the caller has to find the closing tag in a later node or treat the
+ *   script as running to the end of the markdown.
  */
 function opensUnclosedScript(value: string): boolean {
     return /<script\b/i.test(value) && !/<\/script\s*>/i.test(value);
 }
 
 /**
- * Collect the source ranges of the raw HTML in a markdown syntax tree.
+ * Collect every raw HTML node in a markdown syntax tree, in document order.
  *
- * Raw HTML is the only place a hidden comment or script can live. Walking the
- * tree rather than searching the text is what keeps a comment shown inside a
- * code block, because the parser reports a code block as `code`, not `html`.
- * An inline script's range runs from its opening tag to the sibling that
- * closes it, so the script's text is covered as well.
+ * Pairing an opening `<script>` with the tag that closes it cannot be done one
+ * parent at a time, because the closing tag often lands in a different block.
+ * In `Visible <script>x\n\nmore</script> tail` the two tags sit in separate
+ * paragraphs, so a scan limited to one parent's children never finds the
+ * close. Flattening the tree first gives the pairing step a single
+ * document-order list to work from. Collecting from the tree rather than
+ * searching the markdown text is what keeps a comment shown inside a code
+ * block, because the parser reports a code block as `code`, not `html`.
  *
  * @param node - The node whose children to search, starting from the tree root.
+ * @param nodes - Receives each raw HTML node found, so the caller can pair an
+ *   opening script tag with whichever later node closes it.
+ */
+function collectHtmlNodes(node: IMarkdownTreeNode, nodes: IMarkdownTreeNode[]): void {
+    for (const child of node.children ?? []) {
+        if (child.type === 'html') {
+            nodes.push(child);
+        } else {
+            collectHtmlNodes(child, nodes);
+        }
+    }
+}
+
+/**
+ * Collect the source ranges of the raw HTML in a markdown syntax tree.
+ *
+ * Raw HTML is the only place a hidden comment or script can live. An inline
+ * script's range runs from its opening tag to whichever later HTML node closes
+ * it, so the script's text is covered as well. When no later node closes it,
+ * the range runs to the end of the markdown: the HTML parser behind the
+ * renderer reads everything after an unclosed `<script>` as script content and
+ * the sanitizer then drops all of it, so a shorter range here would hand the
+ * public AI tools text the rendered page never shows.
+ *
+ * @param tree - The root of the parsed markdown syntax tree.
+ * @param inputLength - Length of the markdown the tree was parsed from, used as
+ *   the end of an unclosed script's range so the stripper hides exactly as
+ *   much as the renderer does.
  * @param ranges - Receives one `[start, end]` character range per HTML span.
  */
-function collectHtmlRanges(node: IMarkdownTreeNode, ranges: Array<[number, number]>): void {
-    const children = node.children ?? [];
-    for (let index = 0; index < children.length; index++) {
-        const child = children[index];
-        if (child.type !== 'html') {
-            collectHtmlRanges(child, ranges);
-            continue;
-        }
+function collectHtmlRanges(
+    tree: IMarkdownTreeNode,
+    inputLength: number,
+    ranges: Array<[number, number]>
+): void {
+    const nodes: IMarkdownTreeNode[] = [];
+    collectHtmlNodes(tree, nodes);
 
-        let last = child;
-        if (opensUnclosedScript(child.value ?? '')) {
-            const closeIndex = children.findIndex((sibling, siblingIndex) =>
-                siblingIndex > index && sibling.type === 'html' && /<\/script\s*>/i.test(sibling.value ?? '')
+    for (let index = 0; index < nodes.length; index++) {
+        const node = nodes[index];
+        let end = node.position?.end.offset;
+
+        if (opensUnclosedScript(node.value ?? '')) {
+            const closeIndex = nodes.findIndex((candidate, candidateIndex) =>
+                candidateIndex > index && /<\/script\s*>/i.test(candidate.value ?? '')
             );
-            if (closeIndex !== -1) {
-                last = children[closeIndex];
+            if (closeIndex === -1) {
+                end = inputLength;
+            } else {
+                end = nodes[closeIndex].position?.end.offset;
                 index = closeIndex;
             }
         }
 
-        const start = child.position?.start.offset;
-        const end = last.position?.end.offset;
+        const start = node.position?.start.offset;
         if (start !== undefined && end !== undefined) {
             ranges.push([start, end]);
         }
@@ -236,7 +272,7 @@ export class MarkdownService implements IMarkdownService {
     stripHiddenMarkup(markdown: string): string {
         const tree = remark().use(remarkGfm).parse(markdown) as IMarkdownTreeNode;
         const ranges: Array<[number, number]> = [];
-        collectHtmlRanges(tree, ranges);
+        collectHtmlRanges(tree, markdown.length, ranges);
         ranges.sort((a, b) => b[0] - a[0]);
 
         let result = markdown;
