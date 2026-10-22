@@ -11,8 +11,10 @@
 
 import type {
     IDatabaseService,
+    ILanguage,
     ILocalizationPublicConfig,
     ILocalizationService,
+    IPublicLocalizedRoute,
     ISystemLogService,
     ITranslationCatalog,
     TranslationParams
@@ -20,6 +22,41 @@ import type {
 import { DEFAULT_LANGUAGE, findPublishedLanguages, interpolateTranslation } from '@/types';
 import type { ILanguageDocument, ILocalizedRouteDocument, ITranslationDocument } from '../database/index.js';
 import { LANGUAGES_COLLECTION, ROUTES_COLLECTION, TRANSLATIONS_COLLECTION } from '../database/index.js';
+import { toLanguage } from './toLanguage.js';
+
+/**
+ * Longest a snapshot that includes content routes is served before it is
+ * rebuilt, even without an `invalidate()` call. Content routes come from
+ * another module, whose approvals can finish after it has already asked for a
+ * rebuild, so this bounds how long a snapshot read in that gap can stay wrong.
+ * It matches the 60 seconds the frontend caches the snapshot for anyway.
+ */
+const CONTENT_ROUTES_MAX_AGE_MS = 60_000;
+
+/**
+ * Combine routes that share a pattern into one entry listing all their
+ * languages, ordered by pattern.
+ *
+ * An administrator's route and a content route can name the same address, for
+ * example when a route was published for a CMS page by hand before the page
+ * had translations of its own. One entry per pattern keeps the snapshot free of
+ * duplicates for consumers that key on the pattern, such as the switcher click
+ * counters.
+ *
+ * @param routes - Routes from every source, possibly repeating a pattern.
+ * @returns One route per pattern, with the languages de-duplicated.
+ */
+function mergeRoutes(routes: ReadonlyArray<IPublicLocalizedRoute>): IPublicLocalizedRoute[] {
+    const merged = new Map<string, Set<string>>();
+    for (const route of routes) {
+        const languages = merged.get(route.pattern) ?? new Set<string>();
+        route.languages.forEach(language => languages.add(language));
+        merged.set(route.pattern, languages);
+    }
+    return [...merged.entries()]
+        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+        .map(([pattern, languages]) => ({ pattern, languages: [...languages] }));
+}
 
 /** Dependencies injected once at bootstrap. */
 export interface ILocalizationServiceDependencies {
@@ -27,6 +64,14 @@ export interface ILocalizationServiceDependencies {
     database: IDatabaseService;
     /** Module-scoped logger. */
     logger: ISystemLogService;
+    /**
+     * Lists addresses another module publishes in other languages on its own,
+     * such as CMS pages that have a published translation. They are added to
+     * the snapshot's routes, so the middleware, `hreflang` links, sitemap, and
+     * language switcher treat them like routes an administrator published.
+     * Optional; without it only the administrator's routes are served.
+     */
+    listContentRoutes?: () => Promise<IPublicLocalizedRoute[]>;
 }
 
 /**
@@ -42,6 +87,7 @@ export class LocalizationService implements ILocalizationService {
 
     private readonly database: IDatabaseService;
     private readonly logger: ISystemLogService;
+    private readonly listContentRoutes: (() => Promise<IPublicLocalizedRoute[]>) | null;
 
     /**
      * The public snapshot being served, or the load in progress. Holding the
@@ -49,6 +95,9 @@ export class LocalizationService implements ILocalizationService {
      * invalidation share one database read instead of each starting their own.
      */
     private publicConfig: Promise<ILocalizationPublicConfig> | null = null;
+
+    /** When the current snapshot load started, for `CONTENT_ROUTES_MAX_AGE_MS`. */
+    private publicConfigStartedAt = 0;
 
     /** Catalogs by language code, with the same sharing rule as `publicConfig`. */
     private readonly catalogs = new Map<string, Promise<ITranslationCatalog>>();
@@ -61,6 +110,7 @@ export class LocalizationService implements ILocalizationService {
     private constructor(deps: ILocalizationServiceDependencies) {
         this.database = deps.database;
         this.logger = deps.logger;
+        this.listContentRoutes = deps.listContentRoutes ?? null;
     }
 
     /**
@@ -107,9 +157,12 @@ export class LocalizationService implements ILocalizationService {
 
     /** @inheritdoc */
     public async getPublicConfig(): Promise<ILocalizationPublicConfig> {
-        if (!this.publicConfig) {
+        const expired = this.listContentRoutes !== null
+            && Date.now() - this.publicConfigStartedAt > CONTENT_ROUTES_MAX_AGE_MS;
+        if (!this.publicConfig || expired) {
             const load = this.loadPublicConfig();
             this.publicConfig = load;
+            this.publicConfigStartedAt = Date.now();
             // A failed load must not stay cached, or one database hiccup would
             // pin the site to that error until the next admin edit.
             load.catch(() => {
@@ -151,6 +204,16 @@ export class LocalizationService implements ILocalizationService {
     }
 
     /** @inheritdoc */
+    public async getLanguage(code: string): Promise<ILanguage | null> {
+        // A string check before the query keeps an object such as
+        // `{ $ne: null }` from being read as a Mongo operator.
+        const document = typeof code === 'string' && code !== ''
+            ? await this.database.getCollection<ILanguageDocument>(LANGUAGES_COLLECTION).findOne({ code })
+            : null;
+        return document ? toLanguage(document) : null;
+    }
+
+    /** @inheritdoc */
     public async getLanguagesForPath(path: string): Promise<string[]> {
         const config = await this.getPublicConfig();
         return findPublishedLanguages(config, path);
@@ -161,7 +224,9 @@ export class LocalizationService implements ILocalizationService {
      *
      * Only enabled languages appear, and each route lists only its enabled
      * languages, so a consumer can trust the snapshot without cross-checking.
-     * A route left with no enabled language is omitted entirely.
+     * A route left with no enabled language is omitted entirely. The routes
+     * are the administrator's published routes plus the content routes, such
+     * as translated CMS pages, merged by pattern.
      *
      * @returns The snapshot the public config endpoint serves.
      */
@@ -173,11 +238,14 @@ export class LocalizationService implements ILocalizationService {
             .toArray();
         const enabledCodes = new Set(languages.map(language => language.code));
 
-        const routes = await this.database
-            .getCollection<ILocalizedRouteDocument>(ROUTES_COLLECTION)
-            .find({})
-            .sort({ pattern: 1 })
-            .toArray();
+        const [routes, contentRoutes] = await Promise.all([
+            this.database
+                .getCollection<ILocalizedRouteDocument>(ROUTES_COLLECTION)
+                .find({})
+                .sort({ pattern: 1 })
+                .toArray(),
+            this.loadContentRoutes()
+        ]);
 
         const config: ILocalizationPublicConfig = {
             defaultLanguage: DEFAULT_LANGUAGE,
@@ -187,7 +255,7 @@ export class LocalizationService implements ILocalizationService {
                 nativeName: language.nativeName,
                 direction: language.direction
             })),
-            routes: routes
+            routes: mergeRoutes([...routes, ...contentRoutes])
                 .map(route => ({
                     pattern: route.pattern,
                     languages: route.languages.filter(code => enabledCodes.has(code))
@@ -200,6 +268,30 @@ export class LocalizationService implements ILocalizationService {
             'Localization snapshot loaded'
         );
         return config;
+    }
+
+    /**
+     * Ask the content route source, when one is configured, for the addresses
+     * it publishes in other languages.
+     *
+     * A failure is logged and treated as no content routes rather than thrown.
+     * Every page render reads this snapshot, so an error in another module's
+     * storage must not stop the administrator's routes from being served; the
+     * translated pages fall back to English-only until the next rebuild, which
+     * `CONTENT_ROUTES_MAX_AGE_MS` guarantees within a minute.
+     *
+     * @returns The content routes, or an empty list.
+     */
+    private async loadContentRoutes(): Promise<IPublicLocalizedRoute[]> {
+        let routes: IPublicLocalizedRoute[] = [];
+        if (this.listContentRoutes) {
+            try {
+                routes = await this.listContentRoutes();
+            } catch (error) {
+                this.logger.warn({ error }, 'Content routes unavailable; localization snapshot built without them');
+            }
+        }
+        return routes;
     }
 
     /**

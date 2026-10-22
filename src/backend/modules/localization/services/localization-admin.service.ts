@@ -31,6 +31,7 @@ import type { ILanguageDocument, ILocalizedRouteDocument, ITranslationDocument, 
 import { KEYS_COLLECTION, LANGUAGES_COLLECTION, ROUTES_COLLECTION, TRANSLATIONS_COLLECTION } from '../database/index.js';
 import { LocalizationConflictError, LocalizationNotFoundError, LocalizationValidationError } from './localization-errors.js';
 import { CORE_NAMESPACE, KEY_PATTERN, MAX_SOURCE_LENGTH, MAX_TRANSLATION_LENGTH, joinKeyId } from './translation-key-rules.js';
+import { toLanguage } from './toLanguage.js';
 
 /** Longest language name accepted, in either form. */
 const MAX_NAME_LENGTH = 80;
@@ -198,7 +199,7 @@ export class LocalizationAdminService {
             const patterns = routes.filter(route => route.languages.includes(language.code)).map(route => route.pattern);
             const publishedKeys = keys.filter(key => isRenderedOnAny(key.routes, patterns));
             summaries.push({
-                ...this.toLanguage(language),
+                ...toLanguage(language),
                 ...countProgress(keys, savedAt),
                 publishedRoutes: countProgress(publishedKeys, savedAt)
             });
@@ -252,7 +253,7 @@ export class LocalizationAdminService {
         }
 
         this.logger.info({ code, actor }, 'Language added');
-        return this.toLanguage(document);
+        return toLanguage(document);
     }
 
     /**
@@ -297,7 +298,7 @@ export class LocalizationAdminService {
         this.onChange();
         this.logger.info({ code, actor, changes: Object.keys(set).filter(field => field !== 'updatedAt') }, 'Language updated');
 
-        return this.toLanguage({ ...existing, ...set });
+        return toLanguage({ ...existing, ...set });
     }
 
     /**
@@ -825,24 +826,6 @@ export class LocalizationAdminService {
     private translateDuplicate(error: unknown, message: string): unknown {
         const isDuplicate = typeof error === 'object' && error !== null && (error as { code?: number }).code === 11000;
         return isDuplicate ? new LocalizationConflictError(message) : error;
-    }
-
-    /**
-     * Convert a stored language to its wire form.
-     *
-     * @param document - Stored language.
-     * @returns The API shape.
-     */
-    private toLanguage(document: ILanguageDocument): ILanguage {
-        return {
-            code: document.code,
-            name: document.name,
-            nativeName: document.nativeName,
-            direction: document.direction,
-            enabled: document.enabled,
-            createdAt: document.createdAt.toISOString(),
-            updatedAt: document.updatedAt.toISOString()
-        };
     }
 
     /**

@@ -15,6 +15,7 @@ import type {
     IMenuService,
     IModule,
     IModuleMetadata,
+    IPublicLocalizedRoute,
     IServiceRegistry,
     ITrafficIgnoreList
 } from '@/types';
@@ -99,6 +100,13 @@ export interface ILocalizationModuleDependencies {
      * discovered plugin id. Supplied by bootstrap from the plugin manager.
      */
     listKnownNamespaces: () => string[];
+    /**
+     * Lists addresses another module publishes in other languages on its own,
+     * merged into the public snapshot's routes. Bootstrap supplies the pages
+     * module's translated CMS pages. Optional; without it only routes
+     * published on the Routes tab are served.
+     */
+    listContentRoutes?: () => Promise<IPublicLocalizedRoute[]>;
 }
 
 /**
@@ -137,7 +145,11 @@ export class LocalizationModule implements IModule<ILocalizationModuleDependenci
 
         await ensureLocalizationIndexes(deps.database);
 
-        LocalizationService.setDependencies({ database: deps.database, logger: this.logger });
+        LocalizationService.setDependencies({
+            database: deps.database,
+            logger: this.logger,
+            listContentRoutes: deps.listContentRoutes
+        });
         this.service = LocalizationService.getInstance();
 
         this.adminService = new LocalizationAdminService({

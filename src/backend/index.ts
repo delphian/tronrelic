@@ -50,7 +50,7 @@ import { PriceHistoryModule } from './modules/price-history/index.js';
 import { ProvidersModule } from './modules/providers/index.js';
 import { ValuationModule } from './modules/valuation/index.js';
 import { AddressTagsModule } from './modules/address-tags/index.js';
-import { LocalizationModule } from './modules/localization/index.js';
+import { LocalizationModule, LocalizationService } from './modules/localization/index.js';
 import { ConsentModule } from './modules/consent/index.js';
 import { ToolsModule } from './modules/tools/index.js';
 import { AiToolsModule, createAccountEndUserResolver } from './modules/ai-tools/index.js';
@@ -475,7 +475,15 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     const schedulerModule = new SchedulerModule();
 
     await logsModule.init({ pinoLogger, database: coreDatabase, app, serviceRegistry });
-    await pagesModule.init({ ...sharedDeps, contentService });
+    // Translated CMS pages appear in the localization snapshot, so a change to
+    // a page or translation asks for a rebuild. Resolved at call time: the
+    // localization service is configured further down, and these changes only
+    // arrive through requests after startup.
+    await pagesModule.init({
+        ...sharedDeps,
+        contentService,
+        onLocalizedRoutesChanged: () => LocalizationService.getInstance().invalidate()
+    });
     await widgetsModule.init({ ...sharedDeps, systemConfig: SystemConfigService.getInstance() });
     await schedulerModule.init({ database: coreDatabase, menuService, app });
     const schedulerService = schedulerModule.getSchedulerService();
@@ -538,7 +546,10 @@ async function bootstrapInit(): Promise<BootstrapContext> {
         listKnownNamespaces: () => [
             'core',
             ...PluginManagerService.getInstance().getAllManifests().map(manifest => manifest.id)
-        ]
+        ],
+        // CMS pages opt into a language by having a published translation in
+        // it; their addresses join the snapshot's routes.
+        listContentRoutes: () => pagesModule.getPageTranslationService().listLocalizedRoutes()
     });
     await toolsModule.init(sharedDeps);
     // Notifications module: builds the category/channel registries, preference,

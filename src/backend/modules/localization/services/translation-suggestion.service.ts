@@ -16,9 +16,7 @@
  */
 
 import type {
-    IAiProvider,
     IAiProviderRegistry,
-    IAiQueryResult,
     IDatabaseService,
     ILocalizationSettings,
     ISystemLogService,
@@ -26,6 +24,8 @@ import type {
     ITranslationSuggestionResult
 } from '@/types';
 import { MAX_TRANSLATION_SUGGESTION_KEYS } from '@/types';
+import { resolveAiProvider, type IAiFeatureWording } from '../../../services/resolveAiProvider.js';
+import { runIsolatedAiQuery } from '../../../services/runIsolatedAiQuery.js';
 import type { ILanguageDocument, ITranslationDocument, ITranslationKeyDocument } from '../database/index.js';
 import { KEYS_COLLECTION, LANGUAGES_COLLECTION, TRANSLATIONS_COLLECTION } from '../database/index.js';
 import {
@@ -39,6 +39,12 @@ import { buildSuggestionPrompt, parseSuggestionReply, type IParsedSuggestionRepl
 
 /** How long one request may take before it is abandoned. A full page can take a while to write. */
 const QUERY_TIMEOUT_MS = 180_000;
+
+/** How this feature names itself and its settings in provider refusals. */
+const SUGGESTION_WORDING: IAiFeatureWording = {
+    featureName: 'translation suggestions',
+    settingsLocation: 'the Settings tab'
+};
 
 /** Output tokens budgeted for the JSON wrapper and the general notes. */
 const BASE_OUTPUT_TOKENS = 512;
@@ -98,14 +104,30 @@ export class TranslationSuggestionService {
         const language = await this.requireLanguage(request?.language);
         const items = await this.loadItems(this.requireKeyRefs(request?.keys), language.code);
         const settings = await this.settings.getSettings();
-        const { provider, providerId } = this.resolveProvider(settings);
+        const { provider, providerId } = resolveAiProvider(
+            this.getProviderRegistry(),
+            settings.providerId,
+            SUGGESTION_WORDING,
+            message => new LocalizationUnavailableError(message)
+        );
 
-        const result = await this.runQuery(provider, {
-            prompt: buildSuggestionPrompt(language, items),
-            systemPrompt: settings.systemPrompt,
-            model: settings.model ?? undefined,
-            maxTokens: estimateOutputTokens(items)
-        });
+        const result = await runIsolatedAiQuery(
+            provider,
+            {
+                prompt: buildSuggestionPrompt(language, items),
+                systemPrompt: settings.systemPrompt,
+                model: settings.model ?? undefined,
+                maxTokens: estimateOutputTokens(items),
+                timeoutMs: QUERY_TIMEOUT_MS,
+                refusalMessage: 'The model declined to translate these strings.',
+                maxTokensMessage: 'The model ran out of output space before finishing. Narrow the filters so fewer keys are on the page, then try again.',
+                settingsLocation: SUGGESTION_WORDING.settingsLocation
+            },
+            message => {
+                this.logger.warn({ actor, providerId, model: settings.model, message }, 'Translation suggestion request failed');
+                return new LocalizationProviderError(message);
+            }
+        );
 
         let parsed: IParsedSuggestionReply;
         try {
@@ -142,100 +164,6 @@ export class TranslationSuggestionService {
             costUsd,
             usage: { inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens }
         };
-    }
-
-    /**
-     * Pick the provider the Settings tab names, or the active one when it
-     * names none.
-     *
-     * A named provider that is no longer installed is an error rather than a
-     * silent fallback to the active provider, because the administrator chose
-     * that provider and its model on purpose, and the model id may mean
-     * nothing to a different vendor.
-     *
-     * @param settings - Current settings.
-     * @returns The provider instance and its registry id.
-     */
-    private resolveProvider(settings: ILocalizationSettings): { provider: IAiProvider; providerId: string } {
-        const registry = this.getProviderRegistry();
-        if (!registry) {
-            throw new LocalizationUnavailableError('No AI provider is installed. Enable an AI provider plugin to use translation suggestions.');
-        }
-
-        let provider: IAiProvider | null;
-        let providerId: string | undefined;
-        if (settings.providerId) {
-            provider = registry.getProvider(settings.providerId);
-            providerId = settings.providerId;
-            if (!provider) {
-                throw new LocalizationUnavailableError(
-                    `The AI provider "${settings.providerId}" chosen on the Settings tab is not installed. Choose another on the Settings tab.`
-                );
-            }
-        } else {
-            provider = registry.getActive();
-            providerId = registry.listProviders().find(info => info.active)?.id;
-            if (!provider || !providerId) {
-                throw new LocalizationUnavailableError('No AI provider is active. Enable an AI provider plugin to use translation suggestions.');
-            }
-        }
-
-        return { provider, providerId };
-    }
-
-    /**
-     * Send the request and check the model actually answered.
-     *
-     * A returned result only means the transport worked. A refusal, a reply cut
-     * off by the token limit, and a run that paused or stopped to call a tool
-     * all come back as results with no final answer. A partial JSON reply from
-     * one of those either fails to parse with a confusing message or, worse,
-     * parses cleanly and fills the editors from an unfinished answer. So the
-     * stop reason is checked as an allowlist: only `end_turn` and
-     * `stop_sequence`, the two endings the model chose for itself, go on to the
-     * parser. A refusal and the token limit keep their own wording because an
-     * administrator can act on each, and every other reason, including one
-     * added to `AiStopReason` later, is reported rather than accepted.
-     *
-     * @param provider - Provider to call.
-     * @param options - Prompt, system prompt, model, and output budget.
-     * @returns The provider's result.
-     */
-    private async runQuery(
-        provider: IAiProvider,
-        options: { prompt: string; systemPrompt: string; model: string | undefined; maxTokens: number }
-    ): Promise<IAiQueryResult> {
-        let result: IAiQueryResult;
-        try {
-            result = await provider.query({
-                ...options,
-                timeoutMs: QUERY_TIMEOUT_MS,
-                thinkingBudget: 0,
-                toolAllowlist: [],
-                expandVariables: false,
-                mode: 'programmatic'
-            });
-        } catch (error) {
-            this.logger.warn({ error, model: options.model }, 'Translation suggestion request failed');
-            throw new LocalizationProviderError(
-                `The AI provider could not complete the request: ${error instanceof Error ? error.message : String(error)}`
-            );
-        }
-
-        if (result.stopReason === 'refusal') {
-            throw new LocalizationProviderError('The model declined to translate these strings.');
-        }
-        if (result.stopReason === 'max_tokens') {
-            throw new LocalizationProviderError(
-                'The model ran out of output space before finishing. Narrow the filters so fewer keys are on the page, then try again.'
-            );
-        }
-        if (result.stopReason !== 'end_turn' && result.stopReason !== 'stop_sequence') {
-            throw new LocalizationProviderError(
-                `The model stopped before finishing its answer (${result.stopReason}). Try again, or choose a different model on the Settings tab.`
-            );
-        }
-        return result;
     }
 
     /**

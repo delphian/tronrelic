@@ -6,5 +6,6 @@
 
 export * from './api/client';
 export { AiToolSchemaView } from './components/AiToolSchemaView';
+export { AiModelSelect, isSameAiModelChoice, type IAiModelChoice } from './components/AiModelSelect';
 export { useViewportFill } from './hooks/useViewportFill';
 export { useTranscriptScroll, type ITranscriptScroll } from './hooks/useTranscriptScroll';

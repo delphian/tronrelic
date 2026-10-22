@@ -114,7 +114,7 @@ An error the author throws (a validation failure such as a slug conflict) passes
 | Actor for admin routes | `actorFromAdminRequest(req)` (`src/backend/services/content-actor.ts`): a signed-in admin is a curator; the service token is `system:service-token` and is not |
 | Hooks | `content.beforeCreate` / `beforeUpdate` / `beforeDelete` / `beforeRestore` (series) |
 | Types | `@delphian/tronrelic-types` → `IContent`, `IManagedContentType`, `IContentService`, `IContentActor`, `IContentPayloadRecord`, `ContentCurationState`, `ContentVersion`, `ContentErrorCode` |
-| Managed types today | `core:page` (Pages module) |
+| Managed types today | `core:page` and `core:page-translation` (Pages module) |
 
 ## Adopting an Existing Type
 

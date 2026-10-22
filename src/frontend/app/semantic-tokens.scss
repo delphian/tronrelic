@@ -812,6 +812,18 @@
     --code-block-max-height: 200px;
 
     /* ========================================================================
+     * MARKDOWN EDITOR TOKENS
+     *
+     * The smallest height of a markdown editing pane and its preview, such as
+     * the page translation editor on /system/pages. Tall enough to show a
+     * frontmatter block and the start of the body without scrolling. Fixed
+     * rather than density-scaled because it sizes a control, not the space
+     * between pieces of content.
+     * ======================================================================== */
+
+    --markdown-editor-min-height: 420px;
+
+    /* ========================================================================
      * ALERT COMPONENT TOKENS
      * ======================================================================== */
 

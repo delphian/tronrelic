@@ -8,3 +8,4 @@ export { RoutesTab } from './RoutesTab';
 export { TranslationsTab } from './TranslationsTab';
 export { SettingsTab } from './SettingsTab';
 export { SwitchesTab } from './SwitchesTab';
+export { SuggestionSummary } from './SuggestionSummary';

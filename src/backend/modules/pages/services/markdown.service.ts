@@ -9,7 +9,8 @@ import type {
     ICacheService,
     IMarkdownService,
     IFrontmatterData,
-    IParsedMarkdown
+    IParsedMarkdown,
+    IPublicPageRender
 } from '@/types';
 
 /**
@@ -151,6 +152,18 @@ export class MarkdownService implements IMarkdownService {
      * Full key format: "page:render:{slug}"
      */
     private readonly RENDER_CACHE_PREFIX = 'page:render:';
+
+    /**
+     * Redis cache key prefix for a translation's render.
+     * Full key format: "page:render-translation:{language}:{slug}"
+     */
+    private readonly TRANSLATION_RENDER_CACHE_PREFIX = 'page:render-translation:';
+
+    /**
+     * Tag prefix carried by every translation render of one slug.
+     * Full tag format: "page:translations:{slug}"
+     */
+    private readonly TRANSLATION_TAG_PREFIX = 'page:translations:';
 
     /**
      * Cache TTL for rendered HTML (24 hours in seconds).
@@ -375,10 +388,45 @@ export class MarkdownService implements IMarkdownService {
     }
 
     /**
+     * Get the cached render of a page's translation into one language.
+     *
+     * Translations are cached apart from the English render so a visitor to
+     * `/zh/about` never receives the English body, and the other way round.
+     *
+     * @param slug - The page's slug, which its translations share.
+     * @param language - Language code of the translation.
+     * @returns The cached render, or null when none is cached.
+     */
+    async getCachedTranslationRender(slug: string, language: string): Promise<IPublicPageRender | null> {
+        return await this.cacheService.get<IPublicPageRender>(this.translationRenderKey(slug, language));
+    }
+
+    /**
+     * Cache the render of a page's translation into one language.
+     *
+     * The entry is tagged with the page's slug, so `invalidateAllCaches` drops
+     * every language's render of the page in one call without knowing which
+     * languages exist.
+     *
+     * @param slug - The page's slug.
+     * @param language - Language code of the translation.
+     * @param render - The rendered HTML and metadata to keep.
+     */
+    async cacheTranslationRender(slug: string, language: string, render: IPublicPageRender): Promise<void> {
+        await this.cacheService.set(
+            this.translationRenderKey(slug, language),
+            render,
+            this.CACHE_TTL,
+            [this.translationTag(slug)]
+        );
+    }
+
+    /**
      * Invalidate all caches for a page slug.
      *
-     * Removes both HTML-only cache and full render cache.
-     * Called automatically when a page is updated or deleted.
+     * Removes the HTML-only cache, the full render cache, and the render of
+     * every translation served at the slug. Called automatically when a page
+     * or one of its translations is changed or deleted.
      *
      * @param slug - Page slug whose caches should be invalidated
      * @returns Promise resolving when all cache deletions complete
@@ -387,6 +435,28 @@ export class MarkdownService implements IMarkdownService {
         await Promise.all([
             this.cacheService.del(this.CACHE_PREFIX + slug),
             this.cacheService.del(this.RENDER_CACHE_PREFIX + slug),
+            this.cacheService.invalidate(this.translationTag(slug)),
         ]);
+    }
+
+    /**
+     * Build the cache key of one translation's render.
+     *
+     * @param slug - The page's slug.
+     * @param language - Language code of the translation.
+     * @returns The key, distinct from every English cache key.
+     */
+    private translationRenderKey(slug: string, language: string): string {
+        return `${this.TRANSLATION_RENDER_CACHE_PREFIX}${language}:${slug}`;
+    }
+
+    /**
+     * Build the tag every translation render of a page carries.
+     *
+     * @param slug - The page's slug.
+     * @returns The tag `invalidateAllCaches` clears for that slug.
+     */
+    private translationTag(slug: string): string {
+        return `${this.TRANSLATION_TAG_PREFIX}${slug}`;
     }
 }

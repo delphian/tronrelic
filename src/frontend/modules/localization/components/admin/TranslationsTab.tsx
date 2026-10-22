@@ -427,7 +427,18 @@ export function TranslationsTab({ initialRoute }: ITranslationsTabProps) {
                 push({
                     tone: result.suggestions.length > 0 ? 'success' : 'warning',
                     title: `Suggested ${result.suggestions.length} of ${targetRows.length} — review, then save`,
-                    description: <SuggestionSummary result={result} />,
+                    description: (
+                        <SuggestionSummary
+                            notes={result.notes}
+                            itemNotes={result.suggestions.flatMap(suggestion => suggestion.note === null
+                                ? []
+                                : [{ id: rowId(suggestion), label: suggestion.key, note: suggestion.note }])}
+                            unanswered={result.unanswered.map(entry => entry.key)}
+                            costUsd={result.costUsd}
+                            model={result.model}
+                            usage={result.usage}
+                        />
+                    ),
                     duration: hasNotes ? 0 : undefined
                 });
             } else {

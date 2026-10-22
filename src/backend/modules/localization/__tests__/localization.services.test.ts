@@ -131,6 +131,82 @@ describe('LocalizationService', () => {
     });
 });
 
+describe('LocalizationService content routes', () => {
+    let db: ReturnType<typeof createMockDatabaseService>;
+    let logger: ISystemLogService;
+
+    beforeEach(() => {
+        LocalizationService.resetForTests();
+        db = createMockDatabaseService();
+        logger = createLogger();
+    });
+
+    /**
+     * Configure the singleton with a content route source.
+     *
+     * @param listContentRoutes - The source the snapshot reads translated page addresses from.
+     * @returns The configured service.
+     */
+    function serviceWith(listContentRoutes: () => Promise<Array<{ pattern: string; languages: string[] }>>): LocalizationService {
+        LocalizationService.setDependencies({ database: db, logger, listContentRoutes });
+        return LocalizationService.getInstance();
+    }
+
+    it('merges content routes with published routes, by pattern and enabled language', async () => {
+        seedLanguage(db, 'zh', true);
+        seedLanguage(db, 'ru', false);
+        db.getCollectionData(ROUTES_COLLECTION).push(
+            { _id: new ObjectId(), pattern: '/markets', languages: ['zh'], updatedAt: new Date() }
+        );
+        const service = serviceWith(async () => [
+            { pattern: '/about', languages: ['ru', 'zh'] },
+            { pattern: '/markets', languages: ['zh'] },
+            { pattern: '/privacy', languages: ['ru'] }
+        ]);
+
+        const config = await service.getPublicConfig();
+
+        // /privacy is translated only into a disabled language, so it is not live.
+        expect(config.routes).toEqual([
+            { pattern: '/about', languages: ['zh'] },
+            { pattern: '/markets', languages: ['zh'] }
+        ]);
+    });
+
+    it('serves the published routes when the content route source fails', async () => {
+        seedLanguage(db, 'zh', true);
+        db.getCollectionData(ROUTES_COLLECTION).push(
+            { _id: new ObjectId(), pattern: '/markets', languages: ['zh'], updatedAt: new Date() }
+        );
+        const service = serviceWith(async () => {
+            throw new Error('pages unavailable');
+        });
+
+        const config = await service.getPublicConfig();
+
+        expect(config.routes).toEqual([{ pattern: '/markets', languages: ['zh'] }]);
+        expect(logger.warn).toHaveBeenCalled();
+    });
+
+    it('rebuilds a snapshot with content routes once it is a minute old', async () => {
+        vi.useFakeTimers();
+        try {
+            seedLanguage(db, 'zh', true);
+            let routes = [{ pattern: '/about', languages: ['zh'] }];
+            const service = serviceWith(async () => routes);
+            expect((await service.getPublicConfig()).routes).toHaveLength(1);
+
+            routes = [];
+            expect((await service.getPublicConfig()).routes).toHaveLength(1);
+
+            vi.advanceTimersByTime(61_000);
+            expect((await service.getPublicConfig()).routes).toHaveLength(0);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+});
+
 describe('LocalizationAdminService', () => {
     let db: ReturnType<typeof createMockDatabaseService>;
     let onChange: ReturnType<typeof vi.fn<() => void>>;

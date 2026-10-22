@@ -22,42 +22,25 @@ import { Save } from 'lucide-react';
 import type { ILocalizationSettings } from '@/types';
 import { Panel } from '../../../../components/ui/Panel';
 import { Button } from '../../../../components/ui/Button';
-import { Select } from '../../../../components/ui/Select';
 import { Textarea } from '../../../../components/ui/Textarea';
 import { Field } from '../../../../components/ui/Field';
 import { ClientTime } from '../../../../components/ui/ClientTime';
 import { useToast } from '../../../../components/ui/ToastProvider';
-import { getQueryProviders, type IAiProviderModels } from '../../../ai-tools';
+import {
+    AiModelSelect,
+    getQueryProviders,
+    isSameAiModelChoice,
+    type IAiModelChoice,
+    type IAiProviderModels
+} from '../../../ai-tools';
 import { getLocalizationSettings, updateLocalizationSettings } from '../../api/client';
 import styles from './LocalizationAdmin.module.scss';
 
 /** Rows the system prompt editor shows; a glossary needs room. */
 const PROMPT_ROWS = 12;
 
-/**
- * Encode a provider and model as one select value. The empty string is the
- * automatic choice: the active provider with its own default model.
- *
- * @param providerId - Provider registry id, or null for the active provider.
- * @param model - Model id, or null for the provider's default.
- * @returns The select value.
- */
-function encodeModelChoice(providerId: string | null, model: string | null): string {
-    return providerId ? `${providerId}|${model ?? ''}` : '';
-}
-
-/**
- * Decode a select value back into the provider and model it names.
- *
- * @param value - Value from the model select.
- * @returns The provider id and model id, each null when automatic.
- */
-function decodeModelChoice(value: string): { providerId: string | null; model: string | null } {
-    const separator = value.indexOf('|');
-    return separator === -1
-        ? { providerId: null, model: null }
-        : { providerId: value.slice(0, separator), model: value.slice(separator + 1) || null };
-}
+/** The automatic choice: the active provider with its default model. */
+const AUTOMATIC_CHOICE: IAiModelChoice = { providerId: null, model: null };
 
 /**
  * The Settings tab: system prompt and model choice for the AI translation
@@ -69,7 +52,7 @@ export function SettingsTab() {
     const [settings, setSettings] = useState<ILocalizationSettings | null>(null);
     const [providers, setProviders] = useState<IAiProviderModels[]>([]);
     const [systemPrompt, setSystemPrompt] = useState('');
-    const [modelChoice, setModelChoice] = useState('');
+    const [modelChoice, setModelChoice] = useState<IAiModelChoice>(AUTOMATIC_CHOICE);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const { push } = useToast();
@@ -89,7 +72,7 @@ export function SettingsTab() {
             setSettings(nextSettings);
             setProviders(nextProviders);
             setSystemPrompt(nextSettings.systemPrompt);
-            setModelChoice(encodeModelChoice(nextSettings.providerId, nextSettings.model));
+            setModelChoice({ providerId: nextSettings.providerId, model: nextSettings.model });
         } catch (error) {
             push({ tone: 'danger', title: 'Could not load settings', description: error instanceof Error ? error.message : String(error) });
         } finally {
@@ -107,10 +90,10 @@ export function SettingsTab() {
     const handleSave = useCallback(async () => {
         setSaving(true);
         try {
-            const next = await updateLocalizationSettings({ systemPrompt, ...decodeModelChoice(modelChoice) });
+            const next = await updateLocalizationSettings({ systemPrompt, ...modelChoice });
             setSettings(next);
             setSystemPrompt(next.systemPrompt);
-            setModelChoice(encodeModelChoice(next.providerId, next.model));
+            setModelChoice({ providerId: next.providerId, model: next.model });
             push({ tone: 'success', title: 'Localization settings saved' });
         } catch (error) {
             push({ tone: 'danger', title: 'Could not save settings', description: error instanceof Error ? error.message : String(error) });
@@ -119,14 +102,10 @@ export function SettingsTab() {
         }
     }, [modelChoice, push, systemPrompt]);
 
-    const savedChoice = settings ? encodeModelChoice(settings.providerId, settings.model) : '';
-    const dirty = settings !== null && (systemPrompt !== settings.systemPrompt || modelChoice !== savedChoice);
-    // A saved choice whose provider or model is no longer offered still gets
-    // an option, so the select shows what is stored rather than silently
-    // switching to something else.
-    const savedChoiceListed = savedChoice === '' || providers.some(provider =>
-        savedChoice === encodeModelChoice(provider.id, null)
-        || provider.models.some(model => savedChoice === encodeModelChoice(provider.id, model.id)));
+    const dirty = settings !== null && (
+        systemPrompt !== settings.systemPrompt
+        || !isSameAiModelChoice(modelChoice, { providerId: settings.providerId, model: settings.model })
+    );
 
     // Save sits in the panel header, beside the "Saved 2h ago" line it updates,
     // rather than on a line of its own under a twelve-row editor.
@@ -159,25 +138,12 @@ export function SettingsTab() {
                             ? 'No AI provider is installed. Enable an AI provider plugin to use translation suggestions.'
                             : undefined}
                     >
-                        <Select
+                        <AiModelSelect
                             id="localization-model"
-                            size="sm"
+                            providers={providers}
                             value={modelChoice}
-                            onChange={event => setModelChoice(event.target.value)}
-                        >
-                            <option value="">Active provider, its default model</option>
-                            {!savedChoiceListed && (
-                                <option value={savedChoice}>{settings.providerId} / {settings.model ?? 'default'} (not installed)</option>
-                            )}
-                            {providers.map(provider => (
-                                <optgroup key={provider.id} label={provider.active ? `${provider.label} (active)` : provider.label}>
-                                    <option value={encodeModelChoice(provider.id, null)}>{provider.label}, its default model</option>
-                                    {provider.models.map(model => (
-                                        <option key={model.id} value={encodeModelChoice(provider.id, model.id)}>{model.display_name}</option>
-                                    ))}
-                                </optgroup>
-                            ))}
-                        </Select>
+                            onChange={setModelChoice}
+                        />
                     </Field>
                     <Field
                         label="System prompt"

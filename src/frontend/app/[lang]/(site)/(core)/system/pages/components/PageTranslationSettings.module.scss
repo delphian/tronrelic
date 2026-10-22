@@ -1,0 +1,10 @@
+.form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+}
+
+/* A model name is short, so the select does not need the full panel width. */
+.model_field {
+    max-width: var(--max-width-md);
+}

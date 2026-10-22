@@ -8,7 +8,7 @@ import { CorePageZones } from '../../../../components/widgets';
 import { CategoryLandingPage } from '../../../../modules/menu';
 import { getServerSideApiUrlWithPath } from '../../../../lib/api-url';
 import { buildMetadata, buildArticleStructuredData, localizedAbsoluteUrl, toOpenGraphLocale } from '../../../../lib/seo';
-import { localizeHref, localizePath } from '@/types';
+import { DEFAULT_LANGUAGE, localizeHref, localizePath } from '@/types';
 import { fetchLocalizationSeed, getServerTranslator, resolveMetadataLanguage } from '../../../../modules/localization/server';
 import { menuTranslationKey } from '../../../../modules/menu/lib/menuTranslationKey';
 import { getServerConfig } from '../../../../lib/serverConfig';
@@ -78,6 +78,25 @@ interface ICategoryResolveResponse {
         url: string;
         icon?: string;
     }[];
+}
+
+/**
+ * Build the URL of a public CMS page endpoint in the language being rendered.
+ *
+ * A translated request adds `?language=`, and the backend then answers with
+ * that page's translation or a 404. It never falls back to the English body,
+ * so a translated address cannot serve English text under a translated
+ * `<html lang>`.
+ *
+ * @param apiUrl - Server-side API base URL.
+ * @param slug - The page's slug.
+ * @param language - The request's language; the default language adds no query.
+ * @param suffix - Path after the slug, such as `/render`.
+ * @returns The endpoint URL to fetch.
+ */
+function publicPageUrl(apiUrl: string, slug: string, language: string, suffix = ''): string {
+    const query = language === DEFAULT_LANGUAGE ? '' : `?language=${encodeURIComponent(language)}`;
+    return `${apiUrl}/pages/${encodeURIComponent(slug)}${suffix}${query}`;
 }
 
 /**
@@ -214,7 +233,7 @@ export async function generateMetadata({ params }: { params: Promise<IPageParams
         const apiUrl = getServerSideApiUrlWithPath();
 
         try {
-            const response = await fetch(`${apiUrl}/pages/${encodeURIComponent(slug)}`, {
+            const response = await fetch(publicPageUrl(apiUrl, slug, language), {
                 next: { revalidate: 60 }
             });
 
@@ -420,15 +439,17 @@ export default async function UnifiedPage({ params }: { params: Promise<IPagePar
     const slug = '/' + resolvedParams.slug.join('/');
     const resolution = await resolveSlug(slug);
 
-    // Custom CMS page — render server-side with Article structured data
+    // Custom CMS page — render server-side with Article structured data. A
+    // translated request gets the page's translation into that language, or a
+    // 404 when the page has no published translation into it.
     if (resolution.type === 'custom') {
         const apiUrl = getServerSideApiUrlWithPath();
-        const encodedSlug = encodeURIComponent(slug);
+        const language = await resolveMetadataLanguage(params);
 
         // Fetch rendered HTML and page metadata in parallel
         const [renderResponse, pageResponse] = await Promise.all([
-            fetch(`${apiUrl}/pages/${encodedSlug}/render`, { next: { revalidate: 60 } }),
-            fetch(`${apiUrl}/pages/${encodedSlug}`, { next: { revalidate: 60 } })
+            fetch(publicPageUrl(apiUrl, slug, language, '/render'), { next: { revalidate: 60 } }),
+            fetch(publicPageUrl(apiUrl, slug, language), { next: { revalidate: 60 } })
         ]);
 
         if (!renderResponse.ok) {
@@ -440,7 +461,7 @@ export default async function UnifiedPage({ params }: { params: Promise<IPagePar
         // If requested slug differs from current slug, redirect to current
         // slug, staying in the language the visitor asked for.
         if (renderData.requestedSlug !== renderData.currentSlug) {
-            redirect(localizePath(renderData.currentSlug, await resolveMetadataLanguage(params)));
+            redirect(localizePath(renderData.currentSlug, language));
         }
 
         // Build Article structured data from page metadata (dates, description)
@@ -452,7 +473,8 @@ export default async function UnifiedPage({ params }: { params: Promise<IPagePar
                 siteUrl,
                 title: pageData.page.title,
                 description: pageData.page.description,
-                path: pageData.page.slug,
+                // The address this version is served at, prefix included.
+                path: localizePath(pageData.page.slug, language),
                 datePublished: pageData.page.createdAt,
                 dateModified: pageData.page.updatedAt,
                 image: pageData.page.ogImage,

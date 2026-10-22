@@ -1,0 +1,136 @@
+@use '../../../../../../breakpoints' as *;
+
+/* The panel adapts to the width it is given, so it reads the same full-width
+ * on /system/pages and inside a narrower admin container. */
+.container {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+    container-type: inline-size;
+    container-name: page-translations;
+}
+
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--gap-md);
+}
+
+.title {
+    margin: 0;
+    font-size: var(--font-size-heading-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+}
+
+.actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-sm);
+}
+
+.error {
+    margin: 0;
+    color: var(--color-danger-text);
+}
+
+.notice {
+    margin: 0;
+    font-size: var(--font-size-body-sm);
+    color: var(--color-warning-text);
+}
+
+.help {
+    margin: 0;
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+    line-height: var(--line-height-relaxed);
+}
+
+.list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: var(--gap-md);
+    padding: var(--padding-md) 0;
+}
+
+.row + .row {
+    border-top: var(--border-width-thin) solid var(--color-border);
+}
+
+.row_header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-sm);
+}
+
+.language_name {
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+}
+
+.row_meta {
+    margin: 0;
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+}
+
+/* English and translation side by side, stacked when the panel is narrow. */
+.panes {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--gap-md);
+}
+
+.pane {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+    min-width: 0;
+}
+
+.pane_title {
+    margin: 0;
+    font-size: var(--font-size-body-lg);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+}
+
+/* Shared <Textarea> supplies the control styling; this keeps only the
+ * pane-filling height and the monospace face markdown editing needs. */
+.textarea {
+    flex: 1;
+    min-height: var(--markdown-editor-min-height);
+    font-family: var(--font-mono);
+}
+
+.preview {
+    flex: 1;
+    min-height: var(--markdown-editor-min-height);
+    padding: var(--padding-md);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-muted);
+    overflow-y: auto;
+    line-height: var(--line-height-relaxed);
+}
+
+@container page-translations (max-width: #{$breakpoint-mobile-lg}) {
+    .panes {
+        grid-template-columns: 1fr;
+    }
+
+    .row {
+        flex-direction: column;
+    }
+}

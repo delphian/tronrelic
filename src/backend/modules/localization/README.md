@@ -7,7 +7,7 @@ Serves the site in languages other than English. Administrators add languages, p
 | | |
 |---|---|
 | Module id | `localization` |
-| Service registry name | `'localization'` → `ILocalizationService` (read-only: snapshot, catalog, `translate`, `getLanguagesForPath`) |
+| Service registry name | `'localization'` → `ILocalizationService` (read-only: snapshot, catalog, `translate`, `getLanguage`, `getLanguagesForPath`) |
 | Admin UI | `/system/localization` — Languages, Routes, Translations, Switches, Settings, Database, Logs tabs |
 | Public API | `/api/localization` |
 | Admin API | `/api/admin/system/localization` (`requireAdmin`, grouped rate limiter) |
@@ -26,7 +26,7 @@ Serves the site in languages other than English. Administrators add languages, p
 Every page lives under `src/frontend/app/[lang]/`. The Next.js middleware reads the public snapshot (cached 60 seconds, the same cache it keeps for the redirect map) and decides the language:
 
 1. `/markets` is English. The middleware rewrites it internally to `/en/markets`; the address bar never changes.
-2. `/zh/markets` is Chinese only when `zh` is enabled **and** a route covering `/markets` lists `zh`. Otherwise the whole path is treated as an English path, so it 404s, and a disabled language never takes over a page that already lives at `/zh/...`.
+2. `/zh/markets` is Chinese only when `zh` is enabled **and** a route covering `/markets` lists `zh`, whether published on the Routes tab or contributed by a translated CMS page ([Content Routes](#content-routes)). Otherwise the whole path is treated as an English path, so it 404s, and a disabled language never takes over a page that already lives at `/zh/...`.
 3. Public files (`/images/*.png`, `/plugins/*.js`, `/icon.png`) pass through untouched so Next.js can serve them.
 
 The middleware sets the `x-tronrelic-language` request header to the language it chose and `x-pathname` to the path without the prefix. The `(site)` layout returns 404 for any request whose `[lang]` value the middleware did not set, which is what stops `/images/about` from rendering the `/about` page. The root layout fetches the snapshot and, for a non-English page, the catalog (both through the Next.js fetch cache), writes `<html lang dir>` and the `hreflang` links, and seeds `LocalizationProvider`. Components call `t(key, englishText)`; the same lookup runs on the server and in the browser, so hydration matches.
@@ -64,6 +64,8 @@ Each row on the Translations tab has a Suggest button, and the panel header has 
 
 `TranslationSuggestionService` resolves the provider through the `'ai-providers'` registry at request time: `getProvider(id)` when Settings names one, which fails with 503 rather than falling back if that provider is gone, otherwise `getActive()`. It calls `query()` with `toolAllowlist: []`, `expandVariables: false`, and `thinkingBudget: 0`, because the English comes from the site and plugins and must not be able to invoke a tool or expand a `{%variable%}`. The prompt (built in `translation-suggestion-prompt.ts`) sends the strings as JSON data with numbered ids, includes a stale row's previous translation as context, and asks for a JSON reply. The parser drops entries with unknown ids or empty text, reports their keys as unanswered, and adds a note when a translation dropped a `{placeholder}` the English has. Only an `end_turn` or `stop_sequence` stop is parsed; any other stop reason (`refusal`, `max_tokens`, `tool_use`, `pause_turn`) is reported as a 502, so an unfinished run never fills the editors. Every run is logged under `tronrelic:localization` with the actor, model, token usage, and cost.
 
+Choosing the provider and accepting only a finished answer are shared with the pages module's page translation Suggest button, in `src/backend/services/resolveAiProvider.ts` and `src/backend/services/runIsolatedAiQuery.ts`, and the toast body is the shared `SuggestionSummary` component. The two features keep separate settings.
+
 The cost is the provider's figure after the run. There is no estimate beforehand, because `IAiProvider` has no pricing method and per-model rates live inside the provider plugin. The suggestion route has its own limit of 20 requests a minute on top of the admin limiter, since each one is a paid call.
 
 ## Translating Text in Code
@@ -88,7 +90,15 @@ Pass values as `{name}` placeholders instead of concatenating, so a translator c
 
 **Links keep the visitor in their language.** Stored links, such as menu URLs, are unprefixed, so on a Chinese page a link to `/markets` would drop the visitor back into English. Prefixing every link is not safe either, because `/zh/x` returns 404 unless `x` is published in Chinese. `localizeHref(href, language, config)` in `@/types` applies the middleware's rule: it adds the prefix only when the target is live in the page's language, keeps any query string or fragment, and leaves English pages and off-site links alone. Client components call `const localize = useLocalizedHref()` and render `href={localize(url)}`, plugins call `context.useLocalizedHref()`, and server components build the same function from `fetchLocalizationSeed(lang)`. Menus (`MenuNavClient`) and category landing pages use it today. Other links across the site are still unprefixed and should adopt it as they are touched.
 
-**Only text rendered on the server is reported.** Text that only appears after an interaction (a modal, a toast) is translated if a translation exists, but its key is not discovered automatically — add it on the Translations tab. CMS page bodies are content, not interface text, and are not translated by this module. Do not publish a CMS page's route in another language: the translated address would serve the English body under a translated `<html lang>` and `hreflang` links.
+**Only text rendered on the server is reported.** Text that only appears after an interaction (a modal, a toast) is translated if a translation exists, but its key is not discovered automatically — add it on the Translations tab.
+
+**CMS pages are translated by the pages module, not here.** Page bodies are content rather than interface text, so each page's translations are managed content stored by the pages module and edited from the page's **Translations** button on `/system/pages`. A page with a published translation into a language joins this module's snapshot automatically; see [Content Routes](#content-routes). Do not publish a CMS page's route on the Routes tab: requests in that language return 404 until the page has a translation of its own.
+
+## Content Routes
+
+Bootstrap injects `listContentRoutes`, a function returning addresses another module publishes in other languages on its own. Today that is the pages module's `PageTranslationService.listLocalizedRoutes()`: each CMS page slug, and each of its old slugs, that has a published translation, with those translations' languages. `LocalizationService` merges them with the Routes tab's routes by pattern, filters both to enabled languages, and serves the result as one snapshot, so the middleware, `hreflang` links, sitemap, language switcher, and `localizeHref` treat a translated page like a published route. The Routes tab and its counts show only the routes administrators published there.
+
+The pages module calls `LocalizationService.invalidate()` after a change that can alter what is served, through a closure bootstrap gives it. Because an approval from the curation queue can finish after it asks for the rebuild, a snapshot that includes content routes is also rebuilt once it is 60 seconds old. A failure in the source is logged as a warning and the snapshot is built without content routes, so the published routes keep working; the next rebuild retries.
 
 ## Public REST
 
@@ -165,7 +175,7 @@ A translation is *stale* when `translations.updatedAt < keys.sourceChangedAt`. S
 | `api/*.controller.ts`, `api/localization.routes.ts` | Thin HTTP adapters |
 | `database/` | Document shapes, collection names, `ensureLocalizationIndexes` |
 
-Bootstrap (`src/backend/index.ts`) injects `listKnownPaths` (CMS page slugs plus `main` menu URLs) for the enable check and `listKnownNamespaces` (`core` plus plugin manifest ids) for observation validation.
+Bootstrap (`src/backend/index.ts`) injects `listKnownPaths` (CMS page slugs plus `main` menu URLs) for the enable check, `listKnownNamespaces` (`core` plus plugin manifest ids) for observation validation, and `listContentRoutes` (translated CMS page addresses) for the snapshot.
 
 ## Further Reading
 
