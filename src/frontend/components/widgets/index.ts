@@ -12,6 +12,7 @@
 
 export { WidgetZone } from './WidgetZone';
 export { MobileTabBarZone } from './MobileTabBarZone';
+export { CorePageZones } from './CorePageZones';
 export { fetchWidgetsForRoute } from './fetchWidgetsForRoute';
 export { collectMenuNamespaces } from './collectMenuNamespaces';
 export type { IWidgetBundle } from './fetchWidgetsForRoute';

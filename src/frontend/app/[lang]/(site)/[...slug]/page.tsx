@@ -4,6 +4,7 @@ import type { IPluginPageMetadata } from '@/types';
 import { cache } from 'react';
 import { Page } from '../../../../components/layout';
 import { PluginPageWithZones } from '../../../../components/PluginPageWithZones';
+import { CorePageZones } from '../../../../components/widgets';
 import { CategoryLandingPage } from '../../../../modules/menu';
 import { getServerSideApiUrlWithPath } from '../../../../lib/api-url';
 import { buildMetadata, buildArticleStructuredData, localizedAbsoluteUrl, toOpenGraphLocale } from '../../../../lib/seo';
@@ -459,21 +460,25 @@ export default async function UnifiedPage({ params }: { params: Promise<IPagePar
             });
         }
 
+        // CorePageZones gives a markdown page the same main-before and
+        // main-after zones as a page in the (core) route group.
         return (
-            <Page>
-                {articleJsonLd && (
-                    <script
-                        type="application/ld+json"
-                        dangerouslySetInnerHTML={{ __html: JSON.stringify(articleJsonLd) }}
-                    />
-                )}
-                <article>
-                    <div
-                        className={styles.content}
-                        dangerouslySetInnerHTML={{ __html: renderData.html }}
-                    />
-                </article>
-            </Page>
+            <CorePageZones>
+                <Page>
+                    {articleJsonLd && (
+                        <script
+                            type="application/ld+json"
+                            dangerouslySetInnerHTML={{ __html: JSON.stringify(articleJsonLd) }}
+                        />
+                    )}
+                    <article>
+                        <div
+                            className={styles.content}
+                            dangerouslySetInnerHTML={{ __html: renderData.html }}
+                        />
+                    </article>
+                </Page>
+            </CorePageZones>
         );
     }
 
@@ -495,14 +500,18 @@ export default async function UnifiedPage({ params }: { params: Promise<IPagePar
          */
         const localizeCardHref = (href: string): string => localizeHref(href, language, config);
 
+        // Wrapped in the core zones so a widget placed on a category page,
+        // such as the language switcher on /tools, has somewhere to render.
         return (
-            <CategoryLandingPage
-                node={node}
-                items={resolution.data.children}
-                namespace={CATEGORY_MENU_NAMESPACE}
-                t={t}
-                localizeHref={localizeCardHref}
-            />
+            <CorePageZones>
+                <CategoryLandingPage
+                    node={node}
+                    items={resolution.data.children}
+                    namespace={CATEGORY_MENU_NAMESPACE}
+                    t={t}
+                    localizeHref={localizeCardHref}
+                />
+            </CorePageZones>
         );
     }
 
