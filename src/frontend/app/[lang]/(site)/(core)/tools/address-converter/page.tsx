@@ -9,7 +9,7 @@ import { Suspense } from 'react';
 import type { Metadata } from 'next';
 import { buildMetadata } from '../../../../../../lib/seo';
 import { getServerConfig } from '../../../../../../lib/serverConfig';
-import { resolveMetadataLanguage } from '../../../../../../modules/localization/server';
+import { getServerTranslator } from '../../../../../../modules/localization/server';
 import { AddressConverter } from '../../../../../../modules/tools';
 
 /**
@@ -18,13 +18,16 @@ import { AddressConverter } from '../../../../../../modules/tools';
  * @param props - Route props; `params.lang` selects the language the canonical URL uses.
  */
 export async function generateMetadata({ params }: { params: Promise<{ lang: string }> }): Promise<Metadata> {
-    const [{ siteUrl }, language] = await Promise.all([getServerConfig(), resolveMetadataLanguage(params)]);
+    const [{ siteUrl }, { t, language }] = await Promise.all([getServerConfig(), getServerTranslator(params)]);
 
     return buildMetadata({
         siteUrl,
         language,
-        title: 'TRON Address Converter | Base58 to Hex & Hex to Base58',
-        description: 'Convert TRON addresses between Base58 and Hex formats instantly. Validate address checksums and decode raw blockchain address formats.',
+        title: t('tools.addressConverter.meta.title', 'TRON Address Converter | Base58 to Hex & Hex to Base58'),
+        description: t(
+            'tools.addressConverter.meta.description',
+            'Convert TRON addresses between Base58 and Hex formats instantly. Validate address checksums and decode raw blockchain address formats.'
+        ),
         path: '/tools/address-converter',
         keywords: [
             'TRON address converter',

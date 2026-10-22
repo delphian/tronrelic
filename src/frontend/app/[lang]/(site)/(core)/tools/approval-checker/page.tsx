@@ -9,7 +9,7 @@ import { Suspense } from 'react';
 import type { Metadata } from 'next';
 import { buildMetadata } from '../../../../../../lib/seo';
 import { getServerConfig } from '../../../../../../lib/serverConfig';
-import { resolveMetadataLanguage } from '../../../../../../modules/localization/server';
+import { getServerTranslator } from '../../../../../../modules/localization/server';
 import { ApprovalChecker } from '../../../../../../modules/tools';
 
 /**
@@ -18,13 +18,16 @@ import { ApprovalChecker } from '../../../../../../modules/tools';
  * @param props - Route props; `params.lang` selects the language the canonical URL uses.
  */
 export async function generateMetadata({ params }: { params: Promise<{ lang: string }> }): Promise<Metadata> {
-    const [{ siteUrl }, language] = await Promise.all([getServerConfig(), resolveMetadataLanguage(params)]);
+    const [{ siteUrl }, { t, language }] = await Promise.all([getServerConfig(), getServerTranslator(params)]);
 
     return buildMetadata({
         siteUrl,
         language,
-        title: 'TRON Token Approval Checker | TRC20 Allowance Scanner',
-        description: 'Scan any TRON wallet for active TRC20 token approvals. Find unlimited allowances, revoke risks, and spender contracts on the TRON blockchain.',
+        title: t('tools.approvalChecker.meta.title', 'TRON Token Approval Checker | TRC20 Allowance Scanner'),
+        description: t(
+            'tools.approvalChecker.meta.description',
+            'Scan any TRON wallet for active TRC20 token approvals. Find unlimited allowances, revoke risks, and spender contracts on the TRON blockchain.'
+        ),
         path: '/tools/approval-checker',
         keywords: [
             'TRON approval checker',

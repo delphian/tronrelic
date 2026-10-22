@@ -49,7 +49,12 @@ describe('createTranslator', () => {
         expect(t('title', 'Energy Markets')).toBe('Energy Markets');
         expect(reportTranslationObservation).toHaveBeenCalledWith({
             namespace: 'core', key: 'title', source: 'Energy Markets', path: '/markets'
-        });
+        }, ['/markets']);
+    });
+
+    it('reports no covering route for a page outside every published route', () => {
+        createTranslator({ ...seed('en', {}), path: '/about' }, 'core').t('title', 'About');
+        expect(reportTranslationObservation).toHaveBeenCalledWith(expect.objectContaining({ path: '/about' }), []);
     });
 
     it('returns the translation for its own namespace only, with placeholders filled', () => {
@@ -60,7 +65,10 @@ describe('createTranslator', () => {
 
     it('reports a translated page that fell back to English as missing', () => {
         createTranslator(seed('zh', {}), 'core').t('title', 'Energy Markets');
-        expect(reportTranslationObservation).toHaveBeenCalledWith(expect.objectContaining({ key: 'title', missingIn: 'zh' }));
+        expect(reportTranslationObservation).toHaveBeenCalledWith(
+            expect.objectContaining({ key: 'title', missingIn: 'zh' }),
+            ['/markets']
+        );
     });
 });
 

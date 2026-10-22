@@ -14,6 +14,7 @@ import { Page, PageHeader, Stack } from '../../../../components/layout';
 import { Card } from '../../../../components/ui/Card';
 import { Input } from '../../../../components/ui/Input';
 import { Button } from '../../../../components/ui/Button';
+import { useTranslation } from '../../../localization/hooks/useTranslation';
 import { convertTimestamp } from '../../api/client';
 import type { ITimestampConversionResult } from '../../types';
 import styles from './TimestampConverter.module.scss';
@@ -21,11 +22,15 @@ import styles from './TimestampConverter.module.scss';
 /** Available input type options. */
 type InputType = 'timestamp' | 'blockNumber' | 'dateString';
 
-/** Label and placeholder for each input type. */
-const INPUT_CONFIG: Record<InputType, { label: string; placeholder: string; type: string }> = {
-    timestamp: { label: 'Unix Timestamp (seconds)', placeholder: '1712793600', type: 'number' },
-    blockNumber: { label: 'TRON Block Number', placeholder: '70000000', type: 'number' },
-    dateString: { label: 'Date (ISO 8601)', placeholder: '2025-04-10T12:00:00Z', type: 'text' }
+/**
+ * Placeholder and input type for each input type. The visible labels are
+ * looked up through the translator inside the component, because a
+ * module-level constant cannot call the translation hook.
+ */
+const INPUT_CONFIG: Record<InputType, { placeholder: string; type: string }> = {
+    timestamp: { placeholder: '1712793600', type: 'number' },
+    blockNumber: { placeholder: '70000000', type: 'number' },
+    dateString: { placeholder: '2025-04-10T12:00:00Z', type: 'text' }
 };
 
 /**
@@ -41,6 +46,21 @@ export function TimestampConverter() {
     const [result, setResult] = useState<ITimestampConversionResult | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
+    const { t } = useTranslation();
+
+    /** Short labels for the input type switch. */
+    const tabLabels: Record<InputType, string> = {
+        timestamp: t('tools.timestampConverter.tab.timestamp', 'Unix Timestamp'),
+        blockNumber: t('tools.timestampConverter.tab.blockNumber', 'TRON Block Number'),
+        dateString: t('tools.timestampConverter.tab.dateString', 'Date')
+    };
+
+    /** Full field labels, naming the unit or format each input expects. */
+    const fieldLabels: Record<InputType, string> = {
+        timestamp: t('tools.timestampConverter.field.timestamp', 'Unix Timestamp (seconds)'),
+        blockNumber: t('tools.timestampConverter.field.blockNumber', 'TRON Block Number'),
+        dateString: t('tools.timestampConverter.field.dateString', 'Date (ISO 8601)')
+    };
 
     /** Build the payload and call the API. */
     const handleConvert = async () => {
@@ -56,7 +76,9 @@ export function TimestampConverter() {
             if (inputType === 'timestamp' || inputType === 'blockNumber') {
                 const parsed = Number(trimmed);
                 if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed < 0) {
-                    setError(`Invalid ${inputType === 'timestamp' ? 'timestamp' : 'block number'}: must be a non-negative integer`);
+                    setError(inputType === 'timestamp'
+                        ? t('tools.timestampConverter.error.invalidTimestamp', 'Invalid timestamp: must be a non-negative integer')
+                        : t('tools.timestampConverter.error.invalidBlockNumber', 'Invalid block number: must be a non-negative integer'));
                     setLoading(false);
                     return;
                 }
@@ -68,7 +90,7 @@ export function TimestampConverter() {
             const data = await convertTimestamp(payload);
             setResult(data);
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Conversion failed');
+            setError(err instanceof Error ? err.message : t('tools.timestampConverter.error.failed', 'Conversion failed'));
         } finally {
             setLoading(false);
         }
@@ -84,7 +106,10 @@ export function TimestampConverter() {
 
     return (
         <Page>
-            <PageHeader title="Timestamp Converter" subtitle="Convert between Unix timestamps, dates, and TRON block numbers" />
+            <PageHeader
+                title={t('tools.timestampConverter.title', 'Timestamp Converter')}
+                subtitle={t('tools.timestampConverter.subtitle', 'Convert between Unix timestamps, dates, and TRON block numbers')}
+            />
             <div className={styles.container}>
             <Card>
                 <Stack gap="md">
@@ -96,13 +121,13 @@ export function TimestampConverter() {
                                 className={type === inputType ? 'is-active' : undefined}
                                 onClick={() => { setInputType(type); setResult(null); setError(null); }}
                             >
-                                {INPUT_CONFIG[type].label.split(' (')[0]}
+                                {tabLabels[type]}
                             </button>
                         ))}
                     </div>
 
                     <label className={styles.label} htmlFor="timestamp-input">
-                        {config.label}
+                        {fieldLabels[inputType]}
                     </label>
                     <div className={styles.input_row}>
                         <Input
@@ -120,10 +145,10 @@ export function TimestampConverter() {
                             loading={loading}
                         >
                             <Clock size={18} />
-                            Convert
+                            {t('tools.timestampConverter.convert', 'Convert')}
                         </Button>
                         <Button variant="secondary" onClick={handleNow}>
-                            Now
+                            {t('tools.timestampConverter.now', 'Now')}
                         </Button>
                     </div>
 
@@ -133,35 +158,38 @@ export function TimestampConverter() {
                         <div className={styles.results}>
                             <div className={styles.stat_grid}>
                                 <div className={styles.stat}>
-                                    <span className={styles.stat__label}>Unix Timestamp</span>
+                                    <span className={styles.stat__label}>{t('tools.timestampConverter.result.timestamp', 'Unix Timestamp')}</span>
                                     <span className={styles.stat__value}>{result.timestamp.toLocaleString()}</span>
                                 </div>
                                 <div className={styles.stat}>
-                                    <span className={styles.stat__label}>Milliseconds</span>
+                                    <span className={styles.stat__label}>{t('tools.timestampConverter.result.milliseconds', 'Milliseconds')}</span>
                                     <span className={styles.stat__value}>{result.timestampMs.toLocaleString()}</span>
                                 </div>
                                 <div className={styles.stat}>
-                                    <span className={styles.stat__label}>UTC Date</span>
+                                    <span className={styles.stat__label}>{t('tools.timestampConverter.result.utcDate', 'UTC Date')}</span>
                                     <span className={styles.stat__value}>{result.dateString}</span>
                                 </div>
                                 <div className={styles.stat}>
                                     <span className={styles.stat__label}>
-                                        Block Number
+                                        {t('tools.timestampConverter.result.blockNumber', 'Block Number')}
                                         {result.blockNumberIsEstimate && (
-                                            <span className={styles.estimate_badge}> (estimate)</span>
+                                            <span className={styles.estimate_badge}> {t('tools.timestampConverter.result.estimate', '(estimate)')}</span>
                                         )}
                                     </span>
                                     <span className={styles.stat__value}>{result.blockNumber.toLocaleString()}</span>
                                 </div>
                                 <div className={styles.stat}>
-                                    <span className={styles.stat__label}>Relative</span>
+                                    <span className={styles.stat__label}>{t('tools.timestampConverter.result.relative', 'Relative')}</span>
                                     <span className={styles.stat__value}>{result.relativeTime}</span>
                                 </div>
                             </div>
 
                             <p className={styles.disclaimer}>
-                                Block numbers are estimated using a 3-second interval from block #{result.referenceBlock.number.toLocaleString()}.
-                                Accuracy decreases for timestamps far from the reference point.
+                                {t(
+                                    'tools.timestampConverter.disclaimer',
+                                    'Block numbers are estimated using a 3-second interval from block #{block}. Accuracy decreases for timestamps far from the reference point.',
+                                    { block: result.referenceBlock.number.toLocaleString() }
+                                )}
                             </p>
                         </div>
                     )}

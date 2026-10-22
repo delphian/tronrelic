@@ -38,7 +38,7 @@ A language change is a change of the `[lang]` segment, so Next.js re-renders the
 1. **Languages tab** — add the language. It starts disabled; nothing changes for visitors.
 2. **Translations tab** — keys appear as the site renders them. Pick the language and translate, narrowing the list by namespace, status, published route, or text. A key whose English changed after its translation was saved shows as *stale*. Each row shows the English above its editor; when two or more editors hold unsaved text, **Save all** in the panel header saves them in one request. The Suggest buttons fill editors from an AI model; see [AI Translation Suggestions](#ai-translation-suggestions).
 3. **Routes tab** — publish the route pattern in the language. The missing count shows how many keys rendered on that route still lack a translation; "Show keys" opens the Translations tab filtered to them.
-4. **Languages tab** — enable the language. Enabling is refused when existing CMS pages or menu URLs already start with `/<code>/`.
+4. **Languages tab** — enable the language. Enabling is refused when existing CMS pages or menu URLs already start with `/<code>/`. The tab shows two sets of counts: **On published routes** covers the keys rendered on routes published in the language, the same keys the Routes tab counts; **All keys** covers every key the site has reported, including text seen only on pages not published in the language. A gap between the two is not an error. It is the work left before more routes can be published.
 5. Place the **Language switcher** widget (`/system/widgets`) so visitors can reach the translated pages. It renders nothing on English-only pages.
 
 A translated page that falls back to English for a missing key still renders; the frontend reports it and the backend logs a warning once per language and key per process (Logs tab).
@@ -99,7 +99,9 @@ Pass values as `{name}` placeholders instead of concatenating, so a translator c
 | POST | `/api/localization/observations` | `{ observations: ITranslationObservation[] }` → 204. **Frontend container only**: refused (403) when any proxy header (`x-forwarded-for`, `x-real-ip`, `cf-connecting-ip`, `forwarded`) is present or the peer is not a private address. Rate-limited 600/min |
 | POST | `/api/localization/switches` | `ILanguageSwitch` → 204 whether or not it was counted. Public, from visitors' browsers. Rate-limited 30/min per address. See [Switcher Click Tracking](#switcher-click-tracking) |
 
-Observations are validated: the namespace must be `core` or a discovered plugin id, keys match `^[A-Za-z0-9_.:-]{1,200}$`, sources are capped at 2,000 characters, batches at 200, and the collection at 20,000 keys. The frontend reports each key with at most five paths per server process.
+Observations are validated: the namespace must be `core` or a discovered plugin id, keys match `^[A-Za-z0-9_.:-]{1,200}$`, sources are capped at 2,000 characters, batches at 200, and the collection at 20,000 keys.
+
+**How a key is tied to a route.** The admin counts attribute a key to a route only when one of the key's remembered paths (`routes[]`) matches the route's pattern, so both caps on those paths protect published routes. The frontend (`observationReporter.ts`) reports each key with at most five paths per server process, except that a path covered by a published route the key has not yet been reported on is always reported, once per route per process. The backend keeps at most 20 paths per key; when a new path overflows the list, `selectRoutesToDrop` drops the oldest paths first but keeps the newest path matching each published pattern, so header and menu keys seen on thousands of address pages stay attributed to every published route. The frontend only knows routes published in an *enabled* language, so for a language that is still disabled the five-path cap applies as before; visit the route once after enabling the language if its counts look short.
 
 ## Admin REST
 
@@ -107,7 +109,7 @@ All under `/api/admin/system/localization`. Errors: 400 validation, 404 not foun
 
 | Method | Path | Body / query | Returns |
 |---|---|---|---|
-| GET | `/languages` | — | `{ languages: ILanguageSummary[] }` with translated/stale/missing counts |
+| GET | `/languages` | — | `{ languages: ILanguageSummary[] }` with site-wide translated/stale/missing counts and the same counts over published routes in `publishedRoutes` (`ITranslationProgress`) |
 | POST | `/languages` | `{ code, name, nativeName, direction? }` | `{ language }` 201; starts disabled; `en` refused |
 | PATCH | `/languages/:code` | `{ name?, nativeName?, direction?, enabled? }` | `{ language }`; enabling refused (409) when known paths start with `/<code>` |
 | DELETE | `/languages/:code` | — | 204; deletes its translations, removes it from routes, drops emptied routes |
@@ -153,7 +155,7 @@ A translation is *stale* when `translations.updatedAt < keys.sourceChangedAt`. S
 | `LocalizationModule.ts` | `IModule`: builds services in `init()`; publishes `'localization'`, mounts routers, registers menu nodes in `run()` |
 | `services/localization.service.ts` | `LocalizationService` singleton (`ILocalizationService`); in-memory snapshot and catalogs, cleared by `invalidate()` |
 | `services/localization-admin.service.ts` | Language, route, key, and translation management; all validation |
-| `services/translation-observation.service.ts` | Intake of reported keys; missing-translation warnings |
+| `services/translation-observation.service.ts` | Intake of reported keys; missing-translation warnings; `selectRoutesToDrop`, which trims a key's path list without losing its published routes |
 | `services/translation-key-rules.ts` | Key pattern and length caps shared by both write paths |
 | `services/localization-settings.service.ts` | The settings document: system prompt, provider, model, and the default prompt |
 | `services/translation-suggestion.service.ts` | Resolves the AI provider, runs the translation request, logs usage and cost |

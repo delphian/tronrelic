@@ -8,7 +8,7 @@
 import type { Metadata } from 'next';
 import { buildMetadata } from '../../../../../../lib/seo';
 import { getServerConfig } from '../../../../../../lib/serverConfig';
-import { resolveMetadataLanguage } from '../../../../../../modules/localization/server';
+import { getServerTranslator } from '../../../../../../modules/localization/server';
 import { StakeCalculator } from '../../../../../../modules/tools';
 
 /**
@@ -17,13 +17,16 @@ import { StakeCalculator } from '../../../../../../modules/tools';
  * @param props - Route props; `params.lang` selects the language the canonical URL uses.
  */
 export async function generateMetadata({ params }: { params: Promise<{ lang: string }> }): Promise<Metadata> {
-    const [{ siteUrl }, language] = await Promise.all([getServerConfig(), resolveMetadataLanguage(params)]);
+    const [{ siteUrl }, { t, language }] = await Promise.all([getServerConfig(), getServerTranslator(params)]);
 
     return buildMetadata({
         siteUrl,
         language,
-        title: 'TRON Stake Calculator | TRX Staking Energy & Bandwidth Yield',
-        description: 'Calculate energy and bandwidth yield from staking TRX on the TRON network. Compare staking returns against renting energy from delegation markets.',
+        title: t('tools.stakeCalculator.meta.title', 'TRON Stake Calculator | TRX Staking Energy & Bandwidth Yield'),
+        description: t(
+            'tools.stakeCalculator.meta.description',
+            'Calculate energy and bandwidth yield from staking TRX on the TRON network. Compare staking returns against renting energy from delegation markets.'
+        ),
         path: '/tools/stake-calculator',
         keywords: [
             'TRON stake calculator',

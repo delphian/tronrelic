@@ -16,9 +16,9 @@
  */
 
 import type { IDatabaseService, ISystemLogService, ITranslationObservation } from '@/types';
-import { LANGUAGE_CODE_PATTERN } from '@/types';
-import type { ITranslationKeyDocument } from '../database/index.js';
-import { KEYS_COLLECTION } from '../database/index.js';
+import { LANGUAGE_CODE_PATTERN, matchRoutePattern } from '@/types';
+import type { ILocalizedRouteDocument, ITranslationKeyDocument } from '../database/index.js';
+import { KEYS_COLLECTION, ROUTES_COLLECTION } from '../database/index.js';
 import { KEY_PATTERN, MAX_PATH_LENGTH, MAX_ROUTES_PER_KEY, MAX_SOURCE_LENGTH, joinKeyId } from './translation-key-rules.js';
 
 /** Most observations accepted in one request; the frontend batches well below this. */
@@ -92,6 +92,8 @@ export class TranslationObservationService {
         const batch = observations.slice(0, MAX_OBSERVATIONS_PER_BATCH);
         const result: IObservationResult = { accepted: 0, rejected: observations.length - batch.length };
         let keyCount = await this.keys().countDocuments({});
+        const patterns = (await this.routes().find({}, { projection: { _id: 0, pattern: 1 } }).toArray())
+            .map(route => route.pattern);
 
         for (const raw of batch) {
             const observation = this.parse(raw, namespaces);
@@ -100,7 +102,7 @@ export class TranslationObservationService {
                 continue;
             }
 
-            const stored = await this.upsertKey(observation, keyCount < MAX_KEYS);
+            const stored = await this.upsertKey(observation, keyCount < MAX_KEYS, patterns);
             if (stored === 'inserted') {
                 keyCount += 1;
             }
@@ -164,9 +166,15 @@ export class TranslationObservationService {
      *
      * @param observation - A validated observation.
      * @param mayInsert - False once the key cap is reached, so only existing keys update.
+     * @param patterns - Every published route pattern, used to decide which
+     *   remembered paths to keep when the path list is full.
      * @returns Whether the key was inserted, updated, or refused by the cap.
      */
-    private async upsertKey(observation: ITranslationObservation, mayInsert: boolean): Promise<'inserted' | 'updated' | 'capped'> {
+    private async upsertKey(
+        observation: ITranslationObservation,
+        mayInsert: boolean,
+        patterns: string[]
+    ): Promise<'inserted' | 'updated' | 'capped'> {
         const now = new Date();
         const filter = { namespace: observation.namespace, key: observation.key };
         const existing = await this.keys().findOne(filter, { projection: { source: 1 } });
@@ -203,16 +211,42 @@ export class TranslationObservationService {
                 set.sourceChangedAt = now;
             }
             await this.keys().updateOne(filter, { $set: set });
-            // Record the path at the front of the list only when it is new, and
-            // keep the list capped so a key used on every blog post does not
+            // Record the path at the front of the list only when it is new,
+            // then trim the list so a key used on every blog post does not
             // grow without bound.
-            await this.keys().updateOne(
+            const added = await this.keys().updateOne(
                 { ...filter, routes: { $ne: observation.path } },
-                { $push: { routes: { $each: [observation.path], $position: 0, $slice: MAX_ROUTES_PER_KEY } } }
+                { $push: { routes: { $each: [observation.path], $position: 0 } } }
             );
+            if (added.modifiedCount > 0) {
+                await this.trimRoutes(filter, patterns);
+            }
         }
 
         return outcome;
+    }
+
+    /**
+     * Bring a key's path list back down to `MAX_ROUTES_PER_KEY` once a new
+     * path pushes it over.
+     *
+     * The admin page attributes a key to a published route only when one of
+     * its remembered paths matches that route. Header and menu keys render on
+     * every page, so their lists fill up with address and transaction pages,
+     * and simply dropping the oldest path used to drop the one path that tied
+     * the key to a published route. The route then reported fewer keys than
+     * it actually renders. See `selectRoutesToDrop` for the order paths are
+     * dropped in.
+     *
+     * @param filter - Namespace and key of the document to trim.
+     * @param patterns - Every published route pattern.
+     */
+    private async trimRoutes(filter: { namespace: string; key: string }, patterns: string[]): Promise<void> {
+        const document = await this.keys().findOne(filter, { projection: { _id: 0, routes: 1 } });
+        const drop = selectRoutesToDrop(document?.routes ?? [], patterns, MAX_ROUTES_PER_KEY);
+        if (drop.length > 0) {
+            await this.keys().updateOne(filter, { $pull: { routes: { $in: drop } } });
+        }
     }
 
     /**
@@ -251,4 +285,45 @@ export class TranslationObservationService {
     private keys() {
         return this.database.getCollection<ITranslationKeyDocument>(KEYS_COLLECTION);
     }
+
+    /** @returns The published routes collection. */
+    private routes() {
+        return this.database.getCollection<ILocalizedRouteDocument>(ROUTES_COLLECTION);
+    }
+}
+
+/**
+ * Choose which remembered paths to drop when a key's path list is longer than
+ * the cap, keeping the key attributed to every published route it renders on.
+ *
+ * The newest path matching each published pattern is protected, because it is
+ * the evidence that ties the key to that route. Unprotected paths are dropped
+ * oldest first. Only when every remaining path is protected, which happens
+ * when a key renders on more published routes than the cap allows, are
+ * protected paths dropped, again oldest first.
+ *
+ * @param paths - The key's remembered paths, newest first.
+ * @param patterns - Every published route pattern.
+ * @param max - How many paths the list may hold.
+ * @returns The paths to remove; empty when the list is within the cap.
+ */
+export function selectRoutesToDrop(paths: string[], patterns: string[], max: number): string[] {
+    const excess = paths.length - max;
+    const drop: string[] = [];
+    if (excess > 0) {
+        const protectedPaths = new Set<string>();
+        for (const pattern of patterns) {
+            const newest = paths.find(path => matchRoutePattern(pattern, path));
+            if (newest !== undefined) {
+                protectedPaths.add(newest);
+            }
+        }
+        const oldestFirst = [...paths].reverse();
+        const candidates = [
+            ...oldestFirst.filter(path => !protectedPaths.has(path)),
+            ...oldestFirst.filter(path => protectedPaths.has(path))
+        ];
+        drop.push(...candidates.slice(0, excess));
+    }
+    return drop;
 }

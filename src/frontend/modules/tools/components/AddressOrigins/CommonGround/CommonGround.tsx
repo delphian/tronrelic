@@ -7,6 +7,7 @@
 import { useId } from 'react';
 import { Users } from 'lucide-react';
 import { TronAddress } from '../../../../../components/ui/TronAddress';
+import { useTranslation } from '../../../../localization/hooks/useTranslation';
 import type { ISharedParty } from '../lib/collectSharedParties';
 import styles from './CommonGround.module.scss';
 
@@ -42,18 +43,20 @@ export interface ICommonGroundProps {
  */
 export function CommonGround({ parties, walletCount, onFollow }: ICommonGroundProps) {
     const titleId = useId();
+    const { t } = useTranslation();
 
     return parties.length === 0 ? null : (
         <section className={styles.panel} aria-labelledby={titleId}>
             <header className={styles.header}>
                 <h2 id={titleId} className={styles.title}>
                     <Users size={16} aria-hidden="true" />
-                    Common ground
+                    {t('tools.addressOrigins.commonGround.title', 'Common ground')}
                 </h2>
                 <p className={styles.note}>
-                    Reached by more than one of these wallets. A lead to check, not proof of a
-                    shared operator — one exchange or onboarding service activates millions of
-                    unrelated wallets.
+                    {t(
+                        'tools.addressOrigins.commonGround.note',
+                        'Reached by more than one of these wallets. A lead to check, not proof of a shared operator — one exchange or onboarding service activates millions of unrelated wallets.'
+                    )}
                 </p>
             </header>
 
@@ -63,16 +66,22 @@ export function CommonGround({ parties, walletCount, onFollow }: ICommonGroundPr
                         <TronAddress address={party.address} />
                         <p className={styles.reach}>
                             <span className={styles.count}>
-                                {party.sightings.length} of {walletCount} wallets
+                                {t(
+                                    'tools.addressOrigins.commonGround.reach',
+                                    '{count} of {total} wallets',
+                                    { count: party.sightings.length, total: walletCount }
+                                )}
                             </span>
                             <span className={styles.steps}>
                                 {party.sightings
-                                    .map(sighting => (sighting.step === 0 ? 'one of your wallets' : `${sighting.step} up`))
-                                    .join(', ')}
+                                    .map(sighting => (sighting.step === 0
+                                        ? t('tools.addressOrigins.commonGround.ownWallet', 'one of your wallets')
+                                        : t('tools.addressOrigins.commonGround.stepsUp', '{step} up', { step: sighting.step })))
+                                    .join(t('tools.addressOrigins.commonGround.listSeparator', ', '))}
                             </span>
                         </p>
                         <button type="button" className={styles.follow} onClick={() => onFollow(party.address)}>
-                            Trace this account
+                            {t('tools.addressOrigins.commonGround.follow', 'Trace this account')}
                         </button>
                     </li>
                 ))}

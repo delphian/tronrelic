@@ -8,7 +8,7 @@
  */
 
 import type { ITranslator, TranslationParams } from '@/types';
-import { DEFAULT_LANGUAGE, interpolateTranslation } from '@/types';
+import { DEFAULT_LANGUAGE, interpolateTranslation, matchRoutePattern } from '@/types';
 import type { ILocalizationSeed } from '../types';
 import { reportTranslationObservation } from './observationReporter';
 
@@ -26,6 +26,11 @@ import { reportTranslationObservation } from './observationReporter';
  */
 export function createTranslator(seed: ILocalizationSeed, namespace: string): ITranslator {
     const entries = seed.catalog[namespace];
+    // Worked out once per translator rather than per lookup, since the page
+    // path is fixed for the whole render.
+    const routePatterns = seed.config.routes
+        .filter(route => matchRoutePattern(route.pattern, seed.path))
+        .map(route => route.pattern);
 
     /**
      * Look a key up and return the text to render.
@@ -44,7 +49,7 @@ export function createTranslator(seed: ILocalizationSeed, namespace: string): IT
             source: fallback,
             path: seed.path,
             ...(isMissing ? { missingIn: seed.language } : {})
-        });
+        }, routePatterns);
         return interpolateTranslation(translated ?? fallback, params);
     };
 

@@ -15,6 +15,7 @@ import { Card } from '../../../../components/ui/Card';
 import { Input } from '../../../../components/ui/Input';
 import { Button } from '../../../../components/ui/Button';
 import { TronAddress } from '../../../../components/ui/TronAddress';
+import { useTranslation } from '../../../localization/hooks/useTranslation';
 import { verifySignature } from '../../api/client';
 import styles from './SignatureVerifier.module.scss';
 
@@ -35,6 +36,7 @@ export function SignatureVerifier() {
     const [normalizedWallet, setNormalizedWallet] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
+    const { t } = useTranslation();
 
     /** Pre-fill from URL parameters and auto-verify if all present. */
     useEffect(() => {
@@ -74,7 +76,7 @@ export function SignatureVerifier() {
             setNormalizedWallet(result.wallet);
         } catch (err) {
             setVerified(false);
-            setError(err instanceof Error ? err.message : 'Verification failed');
+            setError(err instanceof Error ? err.message : t('tools.signatureVerifier.error.failed', 'Verification failed'));
         } finally {
             setLoading(false);
         }
@@ -84,11 +86,14 @@ export function SignatureVerifier() {
 
     return (
         <Page>
-            <PageHeader title="Signature Verifier" subtitle="Verify a TRON wallet signed a specific message" />
+            <PageHeader
+                title={t('tools.signatureVerifier.title', 'Signature Verifier')}
+                subtitle={t('tools.signatureVerifier.subtitle', 'Verify a TRON wallet signed a specific message')}
+            />
             <Card>
                 <Stack gap="md">
                     <div>
-                        <label className={styles.label} htmlFor="wallet-input">Wallet Address</label>
+                        <label className={styles.label} htmlFor="wallet-input">{t('tools.signatureVerifier.walletLabel', 'Wallet Address')}</label>
                         <Input
                             id="wallet-input"
                             value={wallet}
@@ -97,16 +102,16 @@ export function SignatureVerifier() {
                         />
                     </div>
                     <div>
-                        <label className={styles.label} htmlFor="message-input">Message</label>
+                        <label className={styles.label} htmlFor="message-input">{t('tools.signatureVerifier.messageLabel', 'Message')}</label>
                         <Input
                             id="message-input"
                             value={message}
                             onChange={e => setMessage(e.target.value)}
-                            placeholder="The exact message that was signed"
+                            placeholder={t('tools.signatureVerifier.messagePlaceholder', 'The exact message that was signed')}
                         />
                     </div>
                     <div>
-                        <label className={styles.label} htmlFor="signature-input">Signature</label>
+                        <label className={styles.label} htmlFor="signature-input">{t('tools.signatureVerifier.signatureLabel', 'Signature')}</label>
                         <Input
                             id="signature-input"
                             value={signature}
@@ -121,7 +126,7 @@ export function SignatureVerifier() {
                         loading={loading}
                     >
                         <ShieldCheck size={18} />
-                        Verify Signature
+                        {t('tools.signatureVerifier.submit', 'Verify Signature')}
                     </Button>
 
                     {error && <p className={styles.error}>{error}</p>}
@@ -136,7 +141,9 @@ export function SignatureVerifier() {
                             </div>
                             <div className={styles.result__body}>
                                 <span className={styles.result__status}>
-                                    {verified ? 'Signature Valid' : 'Signature Invalid'}
+                                    {verified
+                                        ? t('tools.signatureVerifier.valid', 'Signature Valid')
+                                        : t('tools.signatureVerifier.invalid', 'Signature Invalid')}
                                 </span>
                                 {normalizedWallet && (
                                     <TronAddress address={normalizedWallet} className={styles.result__wallet} />

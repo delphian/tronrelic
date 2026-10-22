@@ -7,12 +7,19 @@
 
 import { useId } from 'react';
 import { BookOpen } from 'lucide-react';
+import { useTranslation } from '../../../../localization/hooks/useTranslation';
 import styles from './ReadingGuide.module.scss';
 
 /**
  * One thing a reader has to know before drawing a conclusion from a chain.
  */
 interface IGuidePoint {
+    /**
+     * Stable segment of the translation keys for this point, so rewording the
+     * English marks existing translations stale instead of orphaning them.
+     */
+    id: string;
+
     /** The claim being corrected, stated as a short sentence. */
     heading: string;
 
@@ -31,22 +38,27 @@ interface IGuidePoint {
  */
 const GUIDE_POINTS: IGuidePoint[] = [
     {
+        id: 'payment',
         heading: 'Activation is a payment, not ownership.',
         body: 'It means that account paid the roughly 1 TRX fee to bring this address into existence. Paid-activation services do this for strangers, and an exchange does it for every withdrawal to a new address.'
     },
     {
+        id: 'rarity',
         heading: 'A shared account is only as meaningful as it is rare.',
         body: 'Exchanges, faucets, wallet-onboarding flows and airdrop contracts have each activated millions of unrelated addresses. This tool does not yet measure how many accounts an ancestor created, so treat a shared account as a lead to check.'
     },
     {
+        id: 'claimKinds',
         heading: 'The rungs are not all the same kind of claim.',
         body: 'Some name the account that signed a transfer. Some name a contract, which is code and owns nothing. Some name whoever signed a call to that contract. Each rung says which it is.'
     },
     {
+        id: 'chainEnd',
         heading: 'A chain that ends has run out of indexed history.',
         body: 'That is not the same as reaching a true origin, and the closing line on each chain says which one happened.'
     },
     {
+        id: 'controllers',
         heading: 'One address is not always one actor.',
         body: 'An account can be controlled by keys held elsewhere. Where that is visible, the other controllers are offered as leads beneath the rung.'
     }
@@ -65,19 +77,24 @@ const GUIDE_POINTS: IGuidePoint[] = [
  */
 export function ReadingGuide() {
     const titleId = useId();
+    const { t } = useTranslation();
 
     return (
         <section className={styles.guide} aria-labelledby={titleId}>
             <h2 id={titleId} className={styles.title}>
                 <BookOpen size={16} aria-hidden="true" />
-                How to read a chain
+                {t('tools.addressOrigins.readingGuide.title', 'How to read a chain')}
             </h2>
 
             <dl className={styles.points}>
                 {GUIDE_POINTS.map(point => (
-                    <div key={point.heading} className={styles.point}>
-                        <dt className={styles.point_heading}>{point.heading}</dt>
-                        <dd className={styles.point_body}>{point.body}</dd>
+                    <div key={point.id} className={styles.point}>
+                        <dt className={styles.point_heading}>
+                            {t(`tools.addressOrigins.readingGuide.${point.id}.heading`, point.heading)}
+                        </dt>
+                        <dd className={styles.point_body}>
+                            {t(`tools.addressOrigins.readingGuide.${point.id}.body`, point.body)}
+                        </dd>
                     </div>
                 ))}
             </dl>

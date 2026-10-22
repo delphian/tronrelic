@@ -12,6 +12,7 @@ import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { Tooltip } from '../../../../../components/ui/Tooltip';
 import { TronAddress } from '../../../../../components/ui/TronAddress';
 import { TronTransactionId } from '../../../../../components/ui/TronTransactionId';
+import { useTranslation } from '../../../../localization/hooks/useTranslation';
 import type { IOriginHop } from '../../../types';
 import { CAVEAT_COPY } from '../lib/CAVEAT_COPY';
 import { ROLE_COPY } from '../lib/ROLE_COPY';
@@ -86,7 +87,15 @@ export function LadderRung({
     isLast,
     onFollow
 }: ILadderRungProps) {
-    const role = hop ? ROLE_COPY[resolveHopRole(hop)] : null;
+    const { t } = useTranslation();
+    const roleId = hop ? resolveHopRole(hop) : null;
+    // The copy tables hold the English; the role and caveat codes give each
+    // string a stable translation key.
+    const role = roleId ? {
+        label: t(`tools.addressOrigins.role.${roleId}.label`, ROLE_COPY[roleId].label),
+        explanation: t(`tools.addressOrigins.role.${roleId}.explanation`, ROLE_COPY[roleId].explanation)
+    } : null;
+    const sharedExplanation = t('tools.addressOrigins.rung.sharedExplanation', SHARED_EXPLANATION);
     // The contract the climb stepped over, offered below as a lead. Present only
     // when the hop named two parties and the climb followed the signer.
     const contractParty = hop?.callerAddress ? hop.activatorAddress : null;
@@ -99,7 +108,7 @@ export function LadderRung({
         <li className={cn(styles.rung, isShared && styles.rung_shared, isLast && styles.rung_last)}>
             {hop && (
                 <p className={styles.connector}>
-                    activated by, on <ClientTime date={new Date(hop.blockTimestamp)} format="date" />
+                    {t('tools.addressOrigins.rung.activatedOn', 'activated by, on')} <ClientTime date={new Date(hop.blockTimestamp)} format="date" />
                 </p>
             )}
 
@@ -119,15 +128,17 @@ export function LadderRung({
                             </Badge>
                         </Tooltip>
                     ) : (
-                        <Badge tone="neutral" size="xs">Traced wallet</Badge>
+                        <Badge tone="neutral" size="xs">
+                            {t('tools.addressOrigins.rung.tracedWallet', 'Traced wallet')}
+                        </Badge>
                     )}
 
                     {isShared && (
-                        <Tooltip content={SHARED_EXPLANATION}>
+                        <Tooltip content={sharedExplanation}>
                             <Badge tone="info" size="xs">
                                 <Users size={11} aria-hidden="true" />
-                                Shared
-                                <span className={styles.sr_only}>. {SHARED_EXPLANATION}</span>
+                                {t('tools.addressOrigins.rung.shared', 'Shared')}
+                                <span className={styles.sr_only}>. {sharedExplanation}</span>
                             </Badge>
                         </Tooltip>
                     )}
@@ -156,7 +167,10 @@ export function LadderRung({
             {caveats.length > 0 && (
                 <div className={styles.caveats}>
                     {caveats.map(caveat => {
-                        const { label, tone, icon: CaveatIcon, explanation } = CAVEAT_COPY[caveat];
+                        const copy = CAVEAT_COPY[caveat];
+                        const { tone, icon: CaveatIcon } = copy;
+                        const label = t(`tools.addressOrigins.caveat.${caveat}.label`, copy.label);
+                        const explanation = t(`tools.addressOrigins.caveat.${caveat}.explanation`, copy.explanation);
                         return (
                             <Tooltip key={caveat} content={explanation}>
                                 <Badge tone={tone} size="xs">

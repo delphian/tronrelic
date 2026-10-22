@@ -21,6 +21,7 @@ import type {
     ITranslationKey,
     ITranslationNamespaceSummary,
     ITranslationPage,
+    ITranslationProgress,
     ITranslationRow,
     LanguageDirection,
     TranslationStatus
@@ -167,34 +168,39 @@ export class LocalizationAdminService {
     /**
      * List every configured language with how far its translation has got.
      *
-     * @returns Languages ordered by code, each with translated, stale, and missing counts.
+     * Two sets of counts are returned because they answer different
+     * questions. The site-wide counts cover every key the frontend has
+     * reported, including keys seen only on pages that are not published in
+     * the language, and show how much work remains before more routes can be
+     * published. The `publishedRoutes` counts cover only the keys rendered on
+     * routes published in the language, which are the gaps a visitor can see
+     * today and the same keys the Routes tab counts. Showing only the first
+     * made the two tabs look as though they disagreed.
+     *
+     * @returns Languages ordered by code, each with site-wide and published-route progress.
      */
     async listLanguages(): Promise<ILanguageSummary[]> {
         const languages = await this.languages().find({}).sort({ code: 1 }).toArray();
-        const keyIndex = await this.loadKeySourceDates();
+        const keys = await this.keys()
+            .find({}, { projection: { _id: 0, namespace: 1, key: 1, routes: 1, sourceChangedAt: 1 } })
+            .toArray();
+        const routes = await this.routes().find({}, { projection: { _id: 0, pattern: 1, languages: 1 } }).toArray();
         const summaries: ILanguageSummary[] = [];
 
         for (const language of languages) {
             const translations = await this.translations()
                 .find({ language: language.code }, { projection: { _id: 0, namespace: 1, key: 1, updatedAt: 1 } })
                 .toArray();
-            let translated = 0;
-            let stale = 0;
-            for (const translation of translations) {
-                const sourceChangedAt = keyIndex.get(joinKeyId(translation.namespace, translation.key));
-                if (sourceChangedAt) {
-                    if (translation.updatedAt >= sourceChangedAt) {
-                        translated += 1;
-                    } else {
-                        stale += 1;
-                    }
-                }
-            }
+            const savedAt = new Map(translations.map(translation => [
+                joinKeyId(translation.namespace, translation.key),
+                translation.updatedAt
+            ]));
+            const patterns = routes.filter(route => route.languages.includes(language.code)).map(route => route.pattern);
+            const publishedKeys = keys.filter(key => isRenderedOnAny(key.routes, patterns));
             summaries.push({
                 ...this.toLanguage(language),
-                translated,
-                stale,
-                missing: keyIndex.size - translated - stale
+                ...countProgress(keys, savedAt),
+                publishedRoutes: countProgress(publishedKeys, savedAt)
             });
         }
 
@@ -339,7 +345,7 @@ export class LocalizationAdminService {
         const translated = await this.loadTranslatedSets();
 
         return routes.map(route => {
-            const routeKeys = keys.filter(key => key.routes.some(path => matchRoutePattern(route.pattern, path)));
+            const routeKeys = keys.filter(key => isRenderedOnAny(key.routes, [route.pattern]));
             const missingByLanguage: Record<string, number> = {};
             for (const code of languageCodes) {
                 const done = translated.get(code) ?? new Set<string>();
@@ -470,7 +476,7 @@ export class LocalizationAdminService {
         const byKey = new Map(translations.map(translation => [joinKeyId(translation.namespace, translation.key), translation]));
 
         const rows = keys
-            .filter(key => !query.route || key.routes.some(path => matchRoutePattern(query.route as string, path)))
+            .filter(key => !query.route || isRenderedOnAny(key.routes, [query.route as string]))
             .map(key => this.toRow(key, language, byKey.get(joinKeyId(key.namespace, key.key)) ?? null))
             .filter(row => !query.status || row.status === query.status);
 
@@ -693,19 +699,6 @@ export class LocalizationAdminService {
                 `Cannot enable "${code}": existing pages already use ${prefix} as their address (${named}${more}). Move those pages first.`
             );
         }
-    }
-
-    /**
-     * Map every key to the moment its English source last changed, which is
-     * what decides whether a translation is current or stale.
-     *
-     * @returns Source-change dates keyed by `joinKeyId`.
-     */
-    private async loadKeySourceDates(): Promise<Map<string, Date>> {
-        const keys = await this.keys()
-            .find({}, { projection: { _id: 0, namespace: 1, key: 1, sourceChangedAt: 1 } })
-            .toArray();
-        return new Map(keys.map(key => [joinKeyId(key.namespace, key.key), key.sourceChangedAt]));
     }
 
     /**
@@ -956,6 +949,46 @@ export class LocalizationAdminService {
  */
 function escapeRegExp(value: string): string {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Decide whether a key was rendered on a page that one of the route patterns
+ * covers. The Languages, Routes, and Translations tabs all attribute keys to
+ * routes this way, so their counts agree.
+ *
+ * @param paths - The paths the frontend reported the key on.
+ * @param patterns - Route patterns to test the paths against.
+ * @returns True when any reported path matches any pattern.
+ */
+function isRenderedOnAny(paths: string[], patterns: string[]): boolean {
+    return patterns.some(pattern => paths.some(path => matchRoutePattern(pattern, path)));
+}
+
+/**
+ * Count how many of a set of keys are translated, stale, or missing in one
+ * language. A translation is stale when it was saved before the key's English
+ * source last changed.
+ *
+ * @param keys - The keys to count, with the date each one's English last changed.
+ * @param savedAt - When each key's translation in the language was saved, by `joinKeyId`.
+ * @returns The three counts, which always add up to the number of keys given.
+ */
+function countProgress(
+    keys: Pick<ITranslationKeyDocument, 'namespace' | 'key' | 'sourceChangedAt'>[],
+    savedAt: Map<string, Date>
+): ITranslationProgress {
+    const progress: ITranslationProgress = { translated: 0, stale: 0, missing: 0 };
+    for (const key of keys) {
+        const updatedAt = savedAt.get(joinKeyId(key.namespace, key.key));
+        if (!updatedAt) {
+            progress.missing += 1;
+        } else if (updatedAt >= key.sourceChangedAt) {
+            progress.translated += 1;
+        } else {
+            progress.stale += 1;
+        }
+    }
+    return progress;
 }
 
 /**

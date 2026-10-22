@@ -23,7 +23,7 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
-import type { ILanguageSummary, LanguageDirection } from '@/types';
+import type { ILanguageSummary, ITranslationProgress, LanguageDirection } from '@/types';
 import { Panel } from '../../../../components/ui/Panel';
 import { Button } from '../../../../components/ui/Button';
 import { IconButton } from '../../../../components/ui/IconButton';
@@ -45,6 +45,24 @@ const EMPTY_FORM = { code: '', name: '', nativeName: '', direction: 'ltr' as Lan
 
 /** Element id of the add form, referenced by the header button's `aria-controls`. */
 const ADD_FORM_ID = 'localization-add-language';
+
+/**
+ * Show one set of translation counts as badges. The table shows two sets per
+ * language, one for the routes published in it and one for every key, so the
+ * badges are drawn by one component to keep the two columns alike.
+ *
+ * @param props.progress - The translated, stale, and missing counts to show.
+ * @returns The badge row; stale and missing are left out when zero.
+ */
+function ProgressBadges({ progress }: { progress: ITranslationProgress }) {
+    return (
+        <div className={styles.badge_row}>
+            <Badge size="xs" tone="success">{progress.translated} translated</Badge>
+            {progress.stale > 0 && <Badge size="xs" tone="warning">{progress.stale} stale</Badge>}
+            {progress.missing > 0 && <Badge size="xs" tone="neutral">{progress.missing} missing</Badge>}
+        </div>
+    );
+}
 
 /**
  * The Languages tab: the language table and its add form.
@@ -197,7 +215,7 @@ export function LanguagesTab() {
     return (
         <Panel
             title="Languages"
-            meta="English is always on and needs no setup"
+            meta="English is always on and needs no setup. All keys includes text seen only on pages not yet published in the language"
             actions={!empty && (
                 <Button
                     size="sm"
@@ -268,7 +286,8 @@ export function LanguagesTab() {
                     <Thead>
                         <Tr>
                             <Th>Language</Th>
-                            <Th>Progress</Th>
+                            <Th>On published routes</Th>
+                            <Th>All keys</Th>
                             <Th width="shrink">Direction</Th>
                             <Th width="shrink">Enabled</Th>
                             <Th width="shrink"><span className={styles.visually_hidden}>Actions</span></Th>
@@ -284,12 +303,11 @@ export function LanguagesTab() {
                                         <span className={`${styles.cell_meta} ${styles.mono}`}>{language.code}</span>
                                     </div>
                                 </Td>
-                                <Td data-label="Progress">
-                                    <div className={styles.badge_row}>
-                                        <Badge size="xs" tone="success">{language.translated} translated</Badge>
-                                        {language.stale > 0 && <Badge size="xs" tone="warning">{language.stale} stale</Badge>}
-                                        {language.missing > 0 && <Badge size="xs" tone="neutral">{language.missing} missing</Badge>}
-                                    </div>
+                                <Td data-label="On published routes">
+                                    <ProgressBadges progress={language.publishedRoutes} />
+                                </Td>
+                                <Td data-label="All keys">
+                                    <ProgressBadges progress={language} />
                                 </Td>
                                 <Td data-label="Direction">
                                     <Select

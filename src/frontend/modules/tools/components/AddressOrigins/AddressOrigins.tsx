@@ -26,6 +26,7 @@ import { StatGrid, StatTile } from '../../../../components/ui/StatTile';
 // Direct import (not the modules/user barrel) keeps that component's CSS out of the bundle.
 import { useAuthSession } from '../../../user/components/SessionProvider';
 import { isValidTronAddress } from '../../../../lib/tronAddress';
+import { useTranslation } from '../../../localization/hooks/useTranslation';
 import { useOriginTrace } from '../../hooks/useOriginTrace';
 import { collectSharedParties } from './lib/collectSharedParties';
 import { summariseLadders } from './lib/summariseLadders';
@@ -48,6 +49,7 @@ import styles from './AddressOrigins.module.scss';
  */
 export function AddressOrigins() {
     const { isLoggedIn } = useAuthSession();
+    const { t } = useTranslation();
     const searchParams = useSearchParams();
     const { ladders, streaming, limited, error, trace, reportProblem } = useOriginTrace();
 
@@ -132,7 +134,7 @@ export function AddressOrigins() {
     const handleTrace = (): void => {
         const targets = effectiveAddresses();
         if (targets.length === 0) {
-            reportProblem('Enter at least one valid TRON address. They start with T.');
+            reportProblem(t('tools.addressOrigins.page.noValidAddress', 'Enter at least one valid TRON address. They start with T.'));
         } else {
             trace(targets);
         }
@@ -165,7 +167,11 @@ export function AddressOrigins() {
         const alreadyComparing = existing.includes(address);
 
         if (isLoggedIn && !alreadyComparing && existing.length >= MAX_ADDRESSES) {
-            reportProblem(`Already comparing ${MAX_ADDRESSES} wallets. Remove one to follow this lead.`);
+            reportProblem(t(
+                'tools.addressOrigins.page.walletCapReached',
+                'Already comparing {count} wallets. Remove one to follow this lead.',
+                { count: MAX_ADDRESSES }
+            ));
         } else {
             const targets = isLoggedIn
                 ? (alreadyComparing ? existing : [...existing, address])
@@ -180,8 +186,11 @@ export function AddressOrigins() {
     return (
         <Page>
             <PageHeader
-                title="Address Origins"
-                subtitle="A TRON account only exists once another account pays to create it. Trace that chain back as far as the record goes."
+                title={t('tools.addressOrigins.page.title', 'Address Origins')}
+                subtitle={t(
+                    'tools.addressOrigins.page.subtitle',
+                    'A TRON account only exists once another account pays to create it. Trace that chain back as far as the record goes.'
+                )}
             />
 
             <TracePanel
@@ -209,25 +218,29 @@ export function AddressOrigins() {
                                   * out-shout the chains they summarise.
                                   */}
                                 <StatGrid size="sm">
-                                    <StatTile size="sm" label="Wallets traced" value={summary.wallets} />
                                     <StatTile
                                         size="sm"
-                                        label="Accounts found"
-                                        value={summary.rungs}
-                                        note="above the wallets you entered"
+                                        label={t('tools.addressOrigins.summary.walletsTraced', 'Wallets traced')}
+                                        value={summary.wallets}
                                     />
                                     <StatTile
                                         size="sm"
-                                        label="Shared accounts"
+                                        label={t('tools.addressOrigins.summary.accountsFound', 'Accounts found')}
+                                        value={summary.rungs}
+                                        note={t('tools.addressOrigins.summary.accountsFoundNote', 'above the wallets you entered')}
+                                    />
+                                    <StatTile
+                                        size="sm"
+                                        label={t('tools.addressOrigins.summary.sharedAccounts', 'Shared accounts')}
                                         value={summary.shared}
                                         tone={summary.shared > 0 ? 'primary' : 'neutral'}
-                                        note="reached by two or more"
+                                        note={t('tools.addressOrigins.summary.sharedAccountsNote', 'reached by two or more')}
                                     />
                                     <StatTile
                                         size="sm"
-                                        label="Longest chain"
+                                        label={t('tools.addressOrigins.summary.longestChain', 'Longest chain')}
                                         value={summary.deepest}
-                                        note="steps above the wallet"
+                                        note={t('tools.addressOrigins.summary.longestChainNote', 'steps above the wallet')}
                                     />
                                 </StatGrid>
 
@@ -246,17 +259,20 @@ export function AddressOrigins() {
                         ) : (
                             <div className={styles.empty}>
                                 <GitBranch size={24} aria-hidden="true" className={styles.empty_icon} />
-                                <p className={styles.empty_title}>No trace yet.</p>
+                                <p className={styles.empty_title}>
+                                    {t('tools.addressOrigins.page.emptyTitle', 'No trace yet.')}
+                                </p>
                                 <p className={styles.empty_note}>
-                                    Enter a wallet above and the chain appears here, one account at a
-                                    time, each rung naming who paid to create the account below it and
-                                    what that does and does not prove.
+                                    {t(
+                                        'tools.addressOrigins.page.emptyNote',
+                                        'Enter a wallet above and the chain appears here, one account at a time, each rung naming who paid to create the account below it and what that does and does not prove.'
+                                    )}
                                 </p>
                             </div>
                         )}
                     </div>
 
-                    <aside className={styles.rail} aria-label="Reading aids">
+                    <aside className={styles.rail} aria-label={t('tools.addressOrigins.page.readingAids', 'Reading aids')}>
                         <CommonGround
                             parties={sharedParties}
                             walletCount={summary.wallets}

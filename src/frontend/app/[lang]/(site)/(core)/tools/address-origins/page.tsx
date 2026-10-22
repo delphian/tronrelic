@@ -9,22 +9,30 @@ import { Suspense } from 'react';
 import type { Metadata } from 'next';
 import { buildMetadata } from '../../../../../../lib/seo';
 import { getServerConfig } from '../../../../../../lib/serverConfig';
-import { resolveMetadataLanguage } from '../../../../../../modules/localization/server';
+import { getServerTranslator } from '../../../../../../modules/localization/server';
 import { AddressOrigins } from '../../../../../../modules/tools';
 
 /**
  * Generate SEO metadata targeting TRON address provenance and wallet-clustering keywords.
  *
- * @param props - Route props; `params.lang` selects the language the canonical URL uses.
+ * The title and description go through the translator, so a page published in
+ * another language sends search engines the translated text it displays.
+ *
+ * @param props - Route props; `params.lang` selects the language for the
+ *   translated text and the canonical URL.
+ * @returns The page's metadata.
  */
 export async function generateMetadata({ params }: { params: Promise<{ lang: string }> }): Promise<Metadata> {
-    const [{ siteUrl }, language] = await Promise.all([getServerConfig(), resolveMetadataLanguage(params)]);
+    const [{ siteUrl }, { t, language }] = await Promise.all([getServerConfig(), getServerTranslator(params)]);
 
     return buildMetadata({
         siteUrl,
         language,
-        title: 'TRON Address Origins | Wallet Activation Tracer',
-        description: 'Trace any TRON wallet back through its chain of activator accounts to the account that created it, and reveal ancestors shared across multiple wallets.',
+        title: t('tools.addressOrigins.meta.title', 'TRON Address Origins | Wallet Activation Tracer'),
+        description: t(
+            'tools.addressOrigins.meta.description',
+            'Trace any TRON wallet back through its chain of activator accounts to the account that created it, and reveal ancestors shared across multiple wallets.'
+        ),
         path: '/tools/address-origins',
         keywords: [
             'TRON address origin',
