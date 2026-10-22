@@ -8,7 +8,7 @@
 import type { Metadata } from 'next';
 import { buildMetadata } from '../../../../../../lib/seo';
 import { getServerConfig } from '../../../../../../lib/serverConfig';
-import { resolveMetadataLanguage } from '../../../../../../modules/localization/server';
+import { getServerTranslator } from '../../../../../../modules/localization/server';
 import { EnergyEstimator } from '../../../../../../modules/tools';
 
 /**
@@ -17,13 +17,16 @@ import { EnergyEstimator } from '../../../../../../modules/tools';
  * @param props - Route props; `params.lang` selects the language the canonical URL uses.
  */
 export async function generateMetadata({ params }: { params: Promise<{ lang: string }> }): Promise<Metadata> {
-    const [{ siteUrl }, language] = await Promise.all([getServerConfig(), resolveMetadataLanguage(params)]);
+    const [{ siteUrl }, { t, language }] = await Promise.all([getServerConfig(), getServerTranslator(params)]);
 
     return buildMetadata({
         siteUrl,
         language,
-        title: 'TRON Energy Estimator | TRX Transaction Cost Calculator',
-        description: 'Estimate energy costs for TRON transactions before sending. Calculate TRX fees for USDT transfers, smart contract calls, and TRC20 token operations.',
+        title: t('tools.energyEstimator.meta.title', 'TRON Energy Estimator | TRX Transaction Cost Calculator'),
+        description: t(
+            'tools.energyEstimator.meta.description',
+            'Estimate energy costs for TRON transactions before sending. Calculate TRX fees for USDT transfers, smart contract calls, and TRC20 token operations.'
+        ),
         path: '/tools/energy-estimator',
         keywords: [
             'TRON energy estimator',

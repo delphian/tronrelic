@@ -167,6 +167,44 @@ export function createMockDatabaseService(): IDatabaseService & {
     }
 
     /**
+     * Apply one `$push` value to an array the way MongoDB does, so code that
+     * prepends with `{ $each, $position }` or caps with `$slice` behaves the
+     * same under test as in production. A plain value is appended.
+     *
+     * @param current - The array being pushed onto.
+     * @param value - The `$push` value: a plain element or a `$each` modifier object.
+     * @returns The resulting array.
+     */
+    function applyPush(current: any[], value: any): any[] {
+        let result: any[];
+        if (value && typeof value === 'object' && Array.isArray(value.$each)) {
+            const position = typeof value.$position === 'number' ? value.$position : current.length;
+            result = [...current.slice(0, position), ...deepClone(value.$each), ...current.slice(position)];
+            if (typeof value.$slice === 'number') {
+                result = value.$slice >= 0 ? result.slice(0, value.$slice) : result.slice(value.$slice);
+            }
+        } else {
+            result = [...current, value];
+        }
+        return result;
+    }
+
+    /**
+     * Decide whether one array element matches a `$pull` condition, which is
+     * either a plain value to remove or an `{ $in: [...] }` list of values.
+     *
+     * @param element - An element of the array being pulled from.
+     * @param condition - The `$pull` condition for that array.
+     * @returns True when the element should be removed.
+     */
+    function pullMatches(element: any, condition: any): boolean {
+        if (condition && typeof condition === 'object' && Array.isArray(condition.$in)) {
+            return condition.$in.includes(element);
+        }
+        return element === condition;
+    }
+
+    /**
      * Check for injected errors and throw if found.
      */
     function checkInjectedError(collectionName: string, operation: string): void {
@@ -362,6 +400,7 @@ export function createMockDatabaseService(): IDatabaseService & {
                         const unsetKeys = Object.keys((update as any).$unset || {});
                         const incFields = (update as any).$inc || {};
                         const pushFields = (update as any).$push || {};
+                        const pullFields = (update as any).$pull || {};
 
                         // Positional (`$[ident]`) paths route through the
                         // arrayFilters-aware walker; everything else keeps the
@@ -412,7 +451,15 @@ export function createMockDatabaseService(): IDatabaseService & {
                             }
                             const lastKey = parts[parts.length - 1];
                             if (!Array.isArray(obj[lastKey])) obj[lastKey] = [];
-                            obj[lastKey].push(value);
+                            obj[lastKey] = applyPush(obj[lastKey], value);
+                        }
+
+                        // Apply $pull - remove matching elements from top-level arrays
+                        for (const [key, condition] of Object.entries(pullFields)) {
+                            const current = (data[docIndex] as any)[key];
+                            if (Array.isArray(current)) {
+                                (data[docIndex] as any)[key] = current.filter((element: any) => !pullMatches(element, condition));
+                            }
                         }
 
                         return { modifiedCount: 1, matchedCount: 1, acknowledged: true, upsertedCount: 0 };

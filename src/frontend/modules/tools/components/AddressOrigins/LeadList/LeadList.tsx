@@ -7,6 +7,7 @@
 import { Cpu, Key } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '../../../../../lib/cn';
+import { useTranslation } from '../../../../localization/hooks/useTranslation';
 import styles from './LeadList.module.scss';
 
 /**
@@ -97,14 +98,22 @@ interface ILead {
  * @returns The leads row, or null when this rung has nothing further to offer.
  */
 export function LeadList({ contractParty, controllers, shared, onFollow, className }: ILeadListProps) {
+    const { t } = useTranslation();
     const leads: ILead[] = [];
 
     if (contractParty) {
         leads.push({
             address: contractParty,
-            label: `Trace the contract ${abbreviate(contractParty)}`,
+            label: t(
+                'tools.addressOrigins.leads.contractLabel',
+                'Trace the contract {address}',
+                { address: abbreviate(contractParty) }
+            ),
             icon: Cpu,
-            hint: 'Trace the contract whose balance funded this account. Its own ancestry leads to whoever deployed it, which is a different question from who funded this wallet.'
+            hint: t(
+                'tools.addressOrigins.leads.contractHint',
+                'Trace the contract whose balance funded this account. Its own ancestry leads to whoever deployed it, which is a different question from who funded this wallet.'
+            )
         });
     }
 
@@ -114,9 +123,16 @@ export function LeadList({ contractParty, controllers, shared, onFollow, classNa
     for (const controller of new Set(controllers)) {
         leads.push({
             address: controller,
-            label: `Trace the controller ${abbreviate(controller)}`,
+            label: t(
+                'tools.addressOrigins.leads.controllerLabel',
+                'Trace the controller {address}',
+                { address: abbreviate(controller) }
+            ),
             icon: Key,
-            hint: 'This key can authorise transactions for the account on this rung. Its ancestry is a separate lead that the single ladder above does not cover.'
+            hint: t(
+                'tools.addressOrigins.leads.controllerHint',
+                'This key can authorise transactions for the account on this rung. Its ancestry is a separate lead that the single ladder above does not cover.'
+            )
         });
     }
 
@@ -131,7 +147,7 @@ export function LeadList({ contractParty, controllers, shared, onFollow, classNa
                 >
                     <lead.icon size={12} aria-hidden="true" />
                     {lead.label}
-                    {shared.has(lead.address) && <span className={styles.lead_shared}>shared</span>}
+                    {shared.has(lead.address) && <span className={styles.lead_shared}>{t('tools.addressOrigins.leads.shared', 'shared')}</span>}
                     <span className={styles.sr_only}>. {lead.hint}</span>
                 </button>
             ))}

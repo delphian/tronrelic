@@ -29,8 +29,15 @@ export interface IClosingNote {
     /** Leading glyph, decorative — the text carries the meaning. */
     icon: LucideIcon;
 
-    /** What to tell the reader about why the climb stopped. */
+    /** What to tell the reader about why the climb stopped, in English. */
     text: string;
+
+    /**
+     * Translation key for `text`, so the ladder can render it in the page's
+     * language. Null when `text` is a message the server sent, which has no
+     * stored translation.
+     */
+    key: string | null;
 }
 
 /**
@@ -56,38 +63,44 @@ export function resolveClosingNote(ladder: IOriginLadder, isLoggedIn: boolean): 
         note = {
             tone: 'danger',
             icon: AlertTriangle,
-            text: ladder.errorMessage ?? 'Interrupted before the trace finished. Please retry.'
+            text: ladder.errorMessage ?? 'Interrupted before the trace finished. Please retry.',
+            key: ladder.errorMessage ? null : 'tools.addressOrigins.closing.interrupted'
         };
     } else if (ladder.status === 'done') {
         if (ladder.stopReason === 'unresolved' && ladder.hops.length > 0) {
             note = {
                 tone: 'neutral',
                 icon: Flag,
-                text: 'Chain ends here — the last account has no activator we can attribute. It may be a true origin, or its funding may not be traceable.'
+                text: 'Chain ends here — the last account has no activator we can attribute. It may be a true origin, or its funding may not be traceable.',
+                key: 'tools.addressOrigins.closing.chainEnds'
             };
         } else if (ladder.stopReason === 'unresolved') {
             note = {
                 tone: 'warning',
                 icon: AlertTriangle,
-                text: 'No activator could be attributed for this wallet — its funding transfer is not traceable to a sender.'
+                text: 'No activator could be attributed for this wallet — its funding transfer is not traceable to a sender.',
+                key: 'tools.addressOrigins.closing.noActivator'
             };
         } else if (ladder.stopReason === 'depth-cap' && isLoggedIn) {
             note = {
                 tone: 'warning',
                 icon: AlertTriangle,
-                text: 'Stopped at the depth cap — a limit, not the end of the chain.'
+                text: 'Stopped at the depth cap — a limit, not the end of the chain.',
+                key: 'tools.addressOrigins.closing.depthCap'
             };
         } else if (ladder.stopReason === 'cycle') {
             note = {
                 tone: 'warning',
                 icon: AlertTriangle,
-                text: 'Stopped — the chain repeated an account it had already passed through.'
+                text: 'Stopped — the chain repeated an account it had already passed through.',
+                key: 'tools.addressOrigins.closing.cycle'
             };
         } else if (ladder.stopReason === 'provider-error') {
             note = {
                 tone: 'warning',
                 icon: AlertTriangle,
-                text: 'Tracing was interrupted before the chain ended. Please retry.'
+                text: 'Tracing was interrupted before the chain ended. Please retry.',
+                key: 'tools.addressOrigins.closing.providerError'
             };
         }
     }

@@ -10,7 +10,7 @@ import { Suspense } from 'react';
 import type { Metadata } from 'next';
 import { buildMetadata } from '../../../../../../lib/seo';
 import { getServerConfig } from '../../../../../../lib/serverConfig';
-import { resolveMetadataLanguage } from '../../../../../../modules/localization/server';
+import { getServerTranslator } from '../../../../../../modules/localization/server';
 import { SignatureVerifier } from '../../../../../../modules/tools';
 
 /**
@@ -19,13 +19,16 @@ import { SignatureVerifier } from '../../../../../../modules/tools';
  * @param props - Route props; `params.lang` selects the language the canonical URL uses.
  */
 export async function generateMetadata({ params }: { params: Promise<{ lang: string }> }): Promise<Metadata> {
-    const [{ siteUrl }, language] = await Promise.all([getServerConfig(), resolveMetadataLanguage(params)]);
+    const [{ siteUrl }, { t, language }] = await Promise.all([getServerConfig(), getServerTranslator(params)]);
 
     return buildMetadata({
         siteUrl,
         language,
-        title: 'TRON Signature Verifier | Verify TRX Signed Messages',
-        description: 'Verify TRON wallet signatures and signed messages. Confirm message authenticity and prove wallet ownership on the TRON blockchain.',
+        title: t('tools.signatureVerifier.meta.title', 'TRON Signature Verifier | Verify TRX Signed Messages'),
+        description: t(
+            'tools.signatureVerifier.meta.description',
+            'Verify TRON wallet signatures and signed messages. Confirm message authenticity and prove wallet ownership on the TRON blockchain.'
+        ),
         path: '/tools/signature-verifier',
         keywords: [
             'TRON signature verifier',

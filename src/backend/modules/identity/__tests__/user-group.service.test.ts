@@ -74,7 +74,7 @@ const NORMAL_USER = 'eeeeeeeeeeeeeeeeeeeeeeee';
  * `module_user_auth_users` collection. Membership lives on the BA user's
  * `groups` additional field, keyed by the ObjectId `_id`, so seeding here is
  * how we establish membership state — the shared mock does not apply
- * `$addToSet`/`$pull`, so write paths are validated via matched/throw
+ * `$addToSet`, so write paths are validated via matched/throw
  * contracts rather than array mutation. `id` must be a 24-char hex string.
  */
 function seedUser(
@@ -228,8 +228,8 @@ describe('UserGroupService', () => {
     // -------- Membership (delegated to GroupService over module_user_auth_users) --------
     //
     // Membership writes (`$addToSet`/`$pull`/`$set` of the array) are owned
-    // by GroupService; the shared mock applies `$set` to top-level fields but
-    // not `$addToSet`/`$pull`. We seed membership state directly and assert
+    // by GroupService; the shared mock applies `$set` and `$pull` to top-level
+    // fields but not `$addToSet`. We seed membership state directly and assert
     // the read-side contract plus the definition-validation/throw paths.
 
     describe('membership reads', () => {

@@ -6,6 +6,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from '../../localization/hooks/useTranslation';
 import { createAddressOriginsStream } from '../api/client';
 import type { IOriginHop, IOriginLadder, OriginStopReason } from '../types';
 
@@ -61,6 +62,7 @@ export function useOriginTrace(): IOriginTrace {
     const [streaming, setStreaming] = useState(false);
     const [limited, setLimited] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const { t } = useTranslation();
 
     const sourceRef = useRef<EventSource | null>(null);
     const completedRef = useRef(false);
@@ -126,7 +128,10 @@ export function useOriginTrace(): IOriginTrace {
                 parsed = JSON.parse((event as MessageEvent).data) as T;
                 ok = true;
             } catch {
-                setError('The trace sent something this page could not read. Please retry.');
+                setError(t(
+                    'tools.addressOrigins.errors.unreadable',
+                    'The trace sent something this page could not read. Please retry.'
+                ));
                 stopStream();
                 setStreaming(false);
             }
@@ -181,13 +186,16 @@ export function useOriginTrace(): IOriginTrace {
         stream.onerror = () => {
             if (!completedRef.current) {
                 setError(startedRef.current
-                    ? 'The connection dropped while tracing. Please retry.'
-                    : 'The trace could not be started. This tool allows a few traces per minute — wait a moment and retry.');
+                    ? t('tools.addressOrigins.errors.connectionDropped', 'The connection dropped while tracing. Please retry.')
+                    : t(
+                        'tools.addressOrigins.errors.notStarted',
+                        'The trace could not be started. This tool allows a few traces per minute — wait a moment and retry.'
+                    ));
             }
             stopStream();
             setStreaming(false);
         };
-    }, [stopStream, updateLadder]);
+    }, [stopStream, updateLadder, t]);
 
     const reportProblem = useCallback((message: string): void => {
         setError(message);

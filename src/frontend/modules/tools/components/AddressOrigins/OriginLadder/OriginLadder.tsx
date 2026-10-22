@@ -7,6 +7,7 @@
 
 import { Loader2 } from 'lucide-react';
 import { cn } from '../../../../../lib/cn';
+import { useTranslation } from '../../../../localization/hooks/useTranslation';
 import type { IOriginLadder as IOriginLadderData } from '../../../types';
 import { resolveClosingNote } from '../lib/resolveClosingNote';
 import { LadderRung } from '../LadderRung';
@@ -45,6 +46,7 @@ export interface IOriginLadderProps {
  * @returns The rendered chain and its closing line.
  */
 export function OriginLadder({ ladder, sharedAddresses, isLoggedIn, onFollow }: IOriginLadderProps) {
+    const { t } = useTranslation();
     const closing = resolveClosingNote(ladder, isLoggedIn);
     const isClimbing = ladder.status === 'climbing';
     // While hops are still arriving, the newest rung is not the chain's end, so
@@ -53,7 +55,11 @@ export function OriginLadder({ ladder, sharedAddresses, isLoggedIn, onFollow }: 
     const lastRungIndex = isClimbing ? -1 : ladder.hops.length - 1;
 
     return (
-        <article className={styles.card} aria-label={`Activation chain for ${ladder.address}`}>
+        <article className={styles.card} aria-label={t(
+            'tools.addressOrigins.ladder.ariaLabel',
+            'Activation chain for {address}',
+            { address: ladder.address }
+        )}>
             <ol className={styles.chain}>
                 <LadderRung
                     step={0}
@@ -93,14 +99,14 @@ export function OriginLadder({ ladder, sharedAddresses, isLoggedIn, onFollow }: 
                 {isClimbing && (
                     <p className={styles.progress}>
                         <Loader2 size={14} className={styles.spinner} aria-hidden="true" />
-                        Climbing…
+                        {t('tools.addressOrigins.ladder.climbing', 'Climbing…')}
                     </p>
                 )}
 
                 {closing && (
                     <p className={cn(styles.closing, styles[`closing_${closing.tone}`])}>
                         <closing.icon size={14} aria-hidden="true" />
-                        {closing.text}
+                        {closing.key ? t(closing.key, closing.text) : closing.text}
                     </p>
                 )}
 
@@ -108,7 +114,9 @@ export function OriginLadder({ ladder, sharedAddresses, isLoggedIn, onFollow }: 
                     that genuinely ran out of history has already said so above, and
                     offering to climb further would contradict it. */}
                 {!isLoggedIn && ladder.status === 'done' && ladder.stopReason === 'depth-cap' && ladder.hops.length > 0 && (
-                    <p className={styles.tier}>Sign in to climb past the immediate parent.</p>
+                    <p className={styles.tier}>
+                        {t('tools.addressOrigins.ladder.signInToClimb', 'Sign in to climb past the immediate parent.')}
+                    </p>
                 )}
             </footer>
         </article>

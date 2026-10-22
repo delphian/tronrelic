@@ -13,6 +13,7 @@ import { Page, PageHeader, Stack } from '../../../../components/layout';
 import { Card } from '../../../../components/ui/Card';
 import { Input } from '../../../../components/ui/Input';
 import { Button } from '../../../../components/ui/Button';
+import { useTranslation } from '../../../localization/hooks/useTranslation';
 import { estimateStakeFromTrx, estimateStakeFromEnergy } from '../../api/client';
 import type { IStakeEstimate } from '../../types';
 import styles from './StakeCalculator.module.scss';
@@ -30,6 +31,8 @@ export function StakeCalculator() {
     const [result, setResult] = useState<IStakeEstimate | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
+    const { t } = useTranslation();
+    const failedMessage = t('tools.stakeCalculator.error.failed', 'Calculation failed');
 
     /** Calculate from TRX amount. */
     const handleFromTrx = async () => {
@@ -43,7 +46,7 @@ export function StakeCalculator() {
             setResult(data);
             setEnergyInput(String(Math.round(data.energy)));
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Calculation failed');
+            setError(err instanceof Error ? err.message : failedMessage);
         } finally {
             setLoading(false);
         }
@@ -61,7 +64,7 @@ export function StakeCalculator() {
             setResult(data);
             setTrxInput(String(data.trx));
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Calculation failed');
+            setError(err instanceof Error ? err.message : failedMessage);
         } finally {
             setLoading(false);
         }
@@ -69,13 +72,16 @@ export function StakeCalculator() {
 
     return (
         <Page>
-            <PageHeader title="Stake Calculator" subtitle="Calculate energy from TRX or TRX from energy using live network parameters" />
+            <PageHeader
+                title={t('tools.stakeCalculator.title', 'Stake Calculator')}
+                subtitle={t('tools.stakeCalculator.subtitle', 'Calculate energy from TRX or TRX from energy using live network parameters')}
+            />
             <div className={styles.container}>
             <Card>
                 <Stack gap="md">
                     <div className={styles.fields}>
                         <div className={styles.field_group}>
-                            <label className={styles.label} htmlFor="trx-input">TRX to Stake</label>
+                            <label className={styles.label} htmlFor="trx-input">{t('tools.stakeCalculator.trxLabel', 'TRX to Stake')}</label>
                             <div className={styles.input_row}>
                                 <Input
                                     id="trx-input"
@@ -83,22 +89,22 @@ export function StakeCalculator() {
                                     min="1"
                                     value={trxInput}
                                     onChange={e => setTrxInput(e.target.value)}
-                                    placeholder="Enter TRX amount"
+                                    placeholder={t('tools.stakeCalculator.trxPlaceholder', 'Enter TRX amount')}
                                     onKeyDown={e => e.key === 'Enter' && handleFromTrx()}
                                 />
                                 <Button variant="primary" onClick={handleFromTrx} disabled={loading || !trxInput} loading={loading}>
                                     <Calculator size={18} />
-                                    Calculate
+                                    {t('tools.stakeCalculator.calculate', 'Calculate')}
                                 </Button>
                             </div>
                         </div>
 
                         <div className={styles.divider}>
-                            <span className={styles.divider__text}>or</span>
+                            <span className={styles.divider__text}>{t('tools.stakeCalculator.or', 'or')}</span>
                         </div>
 
                         <div className={styles.field_group}>
-                            <label className={styles.label} htmlFor="energy-input">Target Energy</label>
+                            <label className={styles.label} htmlFor="energy-input">{t('tools.stakeCalculator.energyLabel', 'Target Energy')}</label>
                             <div className={styles.input_row}>
                                 <Input
                                     id="energy-input"
@@ -106,12 +112,12 @@ export function StakeCalculator() {
                                     min="1"
                                     value={energyInput}
                                     onChange={e => setEnergyInput(e.target.value)}
-                                    placeholder="Enter energy amount"
+                                    placeholder={t('tools.stakeCalculator.energyPlaceholder', 'Enter energy amount')}
                                     onKeyDown={e => e.key === 'Enter' && handleFromEnergy()}
                                 />
                                 <Button variant="primary" onClick={handleFromEnergy} disabled={loading || !energyInput} loading={loading}>
                                     <Calculator size={18} />
-                                    Calculate
+                                    {t('tools.stakeCalculator.calculate', 'Calculate')}
                                 </Button>
                             </div>
                         </div>
@@ -123,23 +129,23 @@ export function StakeCalculator() {
                         <div className={styles.results}>
                             <div className={styles.stat_grid}>
                                 <div className={styles.stat}>
-                                    <span className={styles.stat__label}>TRX Required</span>
+                                    <span className={styles.stat__label}>{t('tools.stakeCalculator.trxRequired', 'TRX Required')}</span>
                                     <span className={styles.stat__value}>{result.trx.toLocaleString()}</span>
                                 </div>
                                 <div className={styles.stat}>
-                                    <span className={styles.stat__label}>Energy</span>
+                                    <span className={styles.stat__label}>{t('tools.stakeCalculator.energy', 'Energy')}</span>
                                     <span className={styles.stat__value}>{result.energy.toLocaleString()}</span>
                                 </div>
                                 <div className={styles.stat}>
-                                    <span className={styles.stat__label}>Bandwidth</span>
+                                    <span className={styles.stat__label}>{t('tools.stakeCalculator.bandwidth', 'Bandwidth')}</span>
                                     <span className={styles.stat__value}>{result.bandwidth.toLocaleString()}</span>
                                 </div>
                                 <div className={styles.stat}>
-                                    <span className={styles.stat__label}>Energy / TRX</span>
+                                    <span className={styles.stat__label}>{t('tools.stakeCalculator.energyPerTrx', 'Energy / TRX')}</span>
                                     <span className={styles.stat__value}>{result.energyPerTrx}</span>
                                 </div>
                                 <div className={styles.stat}>
-                                    <span className={styles.stat__label}>Bandwidth / TRX</span>
+                                    <span className={styles.stat__label}>{t('tools.stakeCalculator.bandwidthPerTrx', 'Bandwidth / TRX')}</span>
                                     <span className={styles.stat__value}>{result.bandwidthPerTrx}</span>
                                 </div>
                             </div>

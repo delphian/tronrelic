@@ -8,7 +8,7 @@
 import type { Metadata } from 'next';
 import { buildMetadata } from '../../../../../../lib/seo';
 import { getServerConfig } from '../../../../../../lib/serverConfig';
-import { resolveMetadataLanguage } from '../../../../../../modules/localization/server';
+import { getServerTranslator } from '../../../../../../modules/localization/server';
 import { TimestampConverter } from '../../../../../../modules/tools';
 
 /**
@@ -17,13 +17,16 @@ import { TimestampConverter } from '../../../../../../modules/tools';
  * @param props - Route props; `params.lang` selects the language the canonical URL uses.
  */
 export async function generateMetadata({ params }: { params: Promise<{ lang: string }> }): Promise<Metadata> {
-    const [{ siteUrl }, language] = await Promise.all([getServerConfig(), resolveMetadataLanguage(params)]);
+    const [{ siteUrl }, { t, language }] = await Promise.all([getServerConfig(), getServerTranslator(params)]);
 
     return buildMetadata({
         siteUrl,
         language,
-        title: 'TRON Block & Timestamp Converter | Epoch to Block Number',
-        description: 'Convert between Unix timestamps, human-readable dates, and TRON block numbers. Bidirectional epoch converter with live block estimation.',
+        title: t('tools.timestampConverter.meta.title', 'TRON Block & Timestamp Converter | Epoch to Block Number'),
+        description: t(
+            'tools.timestampConverter.meta.description',
+            'Convert between Unix timestamps, human-readable dates, and TRON block numbers. Bidirectional epoch converter with live block estimation.'
+        ),
         path: '/tools/timestamp-converter',
         keywords: [
             'TRON block number converter',

@@ -19,6 +19,7 @@ export type { TranslationParams } from './TranslationParams.js';
 export type { ITranslator } from './ITranslator.js';
 export type { ILocalizationService } from './ILocalizationService.js';
 export type { TranslationStatus } from './TranslationStatus.js';
+export type { ITranslationProgress } from './ITranslationProgress.js';
 export type { ILanguageSummary } from './ILanguageSummary.js';
 export type { ILocalizedRouteSummary } from './ILocalizedRouteSummary.js';
 export type { ITranslationRow } from './ITranslationRow.js';

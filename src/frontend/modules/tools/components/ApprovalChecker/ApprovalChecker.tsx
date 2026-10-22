@@ -21,6 +21,7 @@ import { Button } from '../../../../components/ui/Button';
 import { Badge } from '../../../../components/ui/Badge';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../components/ui/Table';
 import { TronAddress } from '../../../../components/ui/TronAddress';
+import { useTranslation } from '../../../localization/hooks/useTranslation';
 import { checkApprovals } from '../../api/client';
 import type { IApprovalCheckResult } from '../../types';
 import styles from './ApprovalChecker.module.scss';
@@ -41,6 +42,9 @@ export function ApprovalChecker() {
     const [result, setResult] = useState<IApprovalCheckResult | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
+    const { t } = useTranslation();
+    const title = t('tools.approvalChecker.title', 'Token Approval Checker');
+    const subtitle = t('tools.approvalChecker.subtitle', 'Scan a TRON wallet for active TRC20 token approvals');
 
     /**
      * Pre-fill from a forwarded `?address=` param on mount, why: the shared
@@ -72,7 +76,7 @@ export function ApprovalChecker() {
             const data = await checkApprovals(trimmed);
             setResult(data);
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to check approvals');
+            setError(err instanceof Error ? err.message : t('tools.approvalChecker.error.failed', 'Failed to check approvals'));
         } finally {
             setLoading(false);
         }
@@ -81,15 +85,17 @@ export function ApprovalChecker() {
     if (!isLoggedIn) {
         return (
             <Page>
-                <PageHeader title="Token Approval Checker" subtitle="Scan a TRON wallet for active TRC20 token approvals" />
+                <PageHeader title={title} subtitle={subtitle} />
                 <div className={styles.container}>
                     <Card>
                         <Stack gap="md">
                             <div className={styles.gate_message}>
                                 <ShieldAlert size={24} />
                                 <p>
-                                    This tool requires you to be signed in. Use the sign-in
-                                    button in the page header to authenticate, then return here.
+                                    {t(
+                                        'tools.approvalChecker.signInRequired',
+                                        'This tool requires you to be signed in. Use the sign-in button in the page header to authenticate, then return here.'
+                                    )}
                                 </p>
                             </div>
                         </Stack>
@@ -101,7 +107,7 @@ export function ApprovalChecker() {
 
     return (
         <Page>
-            <PageHeader title="Token Approval Checker" subtitle="Scan a TRON wallet for active TRC20 token approvals" />
+            <PageHeader title={title} subtitle={subtitle} />
             <div className={styles.container}>
             <Card>
                 <Stack gap="md">
@@ -109,12 +115,12 @@ export function ApprovalChecker() {
                         input and names it via aria-label, so a `htmlFor`
                         pointing at an id this component no longer renders
                         would be a dangling association. */}
-                    <span className={styles.label}>TRON Wallet Address</span>
+                    <span className={styles.label}>{t('tools.approvalChecker.addressLabel', 'TRON Wallet Address')}</span>
                     <div className={styles.input_row}>
                         <AddressSelector
                             value={address}
                             onChange={setAddress}
-                            aria-label="TRON wallet address"
+                            aria-label={t('tools.approvalChecker.addressAriaLabel', 'TRON wallet address')}
                         />
                         <Button
                             variant="primary"
@@ -123,14 +129,14 @@ export function ApprovalChecker() {
                             loading={loading}
                         >
                             <Shield size={18} />
-                            Check
+                            {t('tools.approvalChecker.check', 'Check')}
                         </Button>
                     </div>
 
                     {error && <p className={styles.error}>{error}</p>}
 
                     {result && result.approvals.length === 0 && (
-                        <p className={styles.empty}>No active token approvals found for this address.</p>
+                        <p className={styles.empty}>{t('tools.approvalChecker.empty', 'No active token approvals found for this address.')}</p>
                     )}
 
                     {result && result.approvals.length > 0 && (
@@ -138,10 +144,10 @@ export function ApprovalChecker() {
                             <Table variant="compact">
                                 <Thead>
                                     <Tr>
-                                        <Th>Token</Th>
-                                        <Th>Spender</Th>
-                                        <Th>Allowance</Th>
-                                        <Th width="shrink">Status</Th>
+                                        <Th>{t('tools.approvalChecker.column.token', 'Token')}</Th>
+                                        <Th>{t('tools.approvalChecker.column.spender', 'Spender')}</Th>
+                                        <Th>{t('tools.approvalChecker.column.allowance', 'Allowance')}</Th>
+                                        <Th width="shrink">{t('tools.approvalChecker.column.status', 'Status')}</Th>
                                     </Tr>
                                 </Thead>
                                 <Tbody>
@@ -161,9 +167,9 @@ export function ApprovalChecker() {
                                             <Td>{approval.allowanceFormatted}</Td>
                                             <Td>
                                                 {approval.isUnlimited ? (
-                                                    <Badge tone="danger" size="sm">Unlimited</Badge>
+                                                    <Badge tone="danger" size="sm">{t('tools.approvalChecker.unlimited', 'Unlimited')}</Badge>
                                                 ) : (
-                                                    <Badge tone="success" size="sm">Limited</Badge>
+                                                    <Badge tone="success" size="sm">{t('tools.approvalChecker.limited', 'Limited')}</Badge>
                                                 )}
                                             </Td>
                                         </Tr>
@@ -173,7 +179,7 @@ export function ApprovalChecker() {
 
                             {result.truncated && (
                                 <p className={styles.truncated}>
-                                    Results truncated. Only the first 20 approval pairs are shown.
+                                    {t('tools.approvalChecker.truncated', 'Results truncated. Only the first {count} approval pairs are shown.', { count: 20 })}
                                 </p>
                             )}
                         </div>

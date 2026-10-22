@@ -11,7 +11,7 @@ import type { ISystemLogService } from '@/types';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 import { LocalizationService } from '../services/localization.service.js';
 import { LocalizationAdminService } from '../services/localization-admin.service.js';
-import { TranslationObservationService } from '../services/translation-observation.service.js';
+import { TranslationObservationService, selectRoutesToDrop } from '../services/translation-observation.service.js';
 import { LocalizationConflictError, LocalizationNotFoundError, LocalizationValidationError } from '../services/localization-errors.js';
 import { KEYS_COLLECTION, LANGUAGES_COLLECTION, ROUTES_COLLECTION, TRANSLATIONS_COLLECTION } from '../database/index.js';
 
@@ -258,6 +258,21 @@ describe('LocalizationAdminService', () => {
         expect(summary).toMatchObject({ code: 'zh', translated: 1, stale: 1, missing: 1 });
     });
 
+    it('counts a language\'s progress site-wide and on the routes published in it separately', async () => {
+        seedLanguage(db, 'zh', true);
+        seedKey(db, 'published', new Date());
+        seedKey(db, 'unpublished', new Date());
+        // Seen only on a page that is not published in Chinese.
+        db.getCollectionData(KEYS_COLLECTION)[1].routes = ['/about'];
+        db.getCollectionData(ROUTES_COLLECTION).push(
+            { _id: new ObjectId(), pattern: '/markets', languages: ['zh'], updatedAt: new Date() }
+        );
+
+        const [summary] = await admin.listLanguages();
+        expect(summary).toMatchObject({ translated: 0, stale: 0, missing: 2 });
+        expect(summary.publishedRoutes).toEqual({ translated: 0, stale: 0, missing: 1 });
+    });
+
     it('counts the untranslated keys rendered on each published route', async () => {
         seedLanguage(db, 'zh', true);
         seedKey(db, 'title', new Date());
@@ -338,5 +353,41 @@ describe('TranslationObservationService', () => {
             expect.objectContaining({ language: 'zh', namespace: 'core', key: 'title' }),
             expect.stringContaining('Missing translation')
         );
+    });
+
+    it('keeps the path tying a key to a published route when a full path list is trimmed', async () => {
+        const now = new Date();
+        // Twenty remembered paths, newest first; the oldest is the only one on a published route.
+        const paths = [...Array.from({ length: 19 }, (_, index) => `/address/T${index}`), '/tools/address-origins'];
+        db.getCollectionData(KEYS_COLLECTION).push({
+            namespace: 'core', key: 'menu.tools', source: 'Tools', routes: paths, origin: 'observed',
+            firstSeenAt: now, lastSeenAt: now, sourceChangedAt: now
+        });
+        db.getCollectionData(ROUTES_COLLECTION).push(
+            { _id: new ObjectId(), pattern: '/tools/address-origins', languages: ['zh'], updatedAt: now }
+        );
+
+        await observations.record([{ namespace: 'core', key: 'menu.tools', source: 'Tools', path: '/address/TNEW' }]);
+
+        const stored = db.getCollectionData(KEYS_COLLECTION)[0].routes as string[];
+        expect(stored).toHaveLength(20);
+        expect(stored[0]).toBe('/address/TNEW');
+        expect(stored).toContain('/tools/address-origins');
+        expect(stored).not.toContain('/address/T18');
+    });
+});
+
+describe('selectRoutesToDrop', () => {
+    it('drops nothing while the list is within the cap', () => {
+        expect(selectRoutesToDrop(['/a', '/b'], [], 2)).toEqual([]);
+    });
+
+    it('drops unprotected paths oldest first, keeping the newest path for each published pattern', () => {
+        const paths = ['/blog/new', '/x', '/blog/old', '/y'];
+        expect(selectRoutesToDrop(paths, ['/blog/*'], 2)).toEqual(['/y', '/blog/old']);
+    });
+
+    it('drops protected paths oldest first only when nothing else is left to drop', () => {
+        expect(selectRoutesToDrop(['/a', '/b', '/c'], ['/a', '/b', '/c'], 2)).toEqual(['/c']);
     });
 });

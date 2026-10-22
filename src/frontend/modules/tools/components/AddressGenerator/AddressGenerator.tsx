@@ -11,12 +11,14 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { KeyRound, Search, Square, Copy, Check, Eye, EyeOff, ShieldCheck, TriangleAlert, QrCode } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
+import type { ITranslator } from '@/types';
 import { Page, PageHeader, Stack } from '../../../../components/layout';
 import { Card } from '../../../../components/ui/Card';
 import { Input } from '../../../../components/ui/Input';
 import { Button } from '../../../../components/ui/Button';
 import { Badge } from '../../../../components/ui/Badge';
 import { useModal } from '../../../../components/ui/ModalProvider';
+import { useTranslation } from '../../../localization/hooks/useTranslation';
 import styles from './AddressGenerator.module.scss';
 
 /** Valid Base58 characters — excludes 0, O, I, l. */
@@ -26,12 +28,15 @@ const BASE58_SET = new Set(BASE58_CHARS);
 /** Maximum vanity matches to store before auto-stopping the search. */
 const MAX_VANITY_MATCHES = 100;
 
-/** Characters commonly confused with valid Base58 characters. */
-const CONFUSED_CHARS: Record<string, string> = {
-    '0': '(zero) — did you mean O? (also excluded)',
-    'O': '(uppercase O) — excluded to avoid confusion with 0',
-    'I': '(uppercase I) — excluded to avoid confusion with l',
-    'l': '(lowercase L) — excluded to avoid confusion with I',
+/**
+ * Characters commonly confused with valid Base58 characters, each with the
+ * translation key and English text of the hint shown beside it.
+ */
+const CONFUSED_CHARS: Record<string, { key: string; text: string }> = {
+    '0': { key: 'tools.addressGenerator.base58.hintZero', text: '(zero) — did you mean O? (also excluded)' },
+    'O': { key: 'tools.addressGenerator.base58.hintUpperO', text: '(uppercase O) — excluded to avoid confusion with 0' },
+    'I': { key: 'tools.addressGenerator.base58.hintUpperI', text: '(uppercase I) — excluded to avoid confusion with l' },
+    'l': { key: 'tools.addressGenerator.base58.hintLowerL', text: '(lowercase L) — excluded to avoid confusion with I' },
 };
 
 /** Generated address with its private key, optional mnemonic, and derived gender. */
@@ -47,18 +52,21 @@ interface IGeneratedAddress {
  * Returns a warning message if invalid characters are found, null otherwise.
  *
  * @param pattern - The vanity search string to validate
+ * @param t - Translator for the page, so the warning reads in the visitor's language
  * @returns Warning message or null
  */
-function validateBase58(pattern: string): string | null {
+function validateBase58(pattern: string, t: ITranslator['t']): string | null {
     const invalid = [...pattern].filter(ch => !BASE58_SET.has(ch));
     if (invalid.length === 0) return null;
 
     const details = invalid.map(ch => {
         const hint = CONFUSED_CHARS[ch];
-        return hint ? `'${ch}' ${hint}` : `'${ch}'`;
+        return hint ? `'${ch}' ${t(hint.key, hint.text)}` : `'${ch}'`;
     });
 
-    return `Invalid Base58 character${invalid.length > 1 ? 's' : ''}: ${details.join(', ')}`;
+    return invalid.length > 1
+        ? t('tools.addressGenerator.base58.invalidMany', 'Invalid Base58 characters: {details}', { details: details.join(', ') })
+        : t('tools.addressGenerator.base58.invalidOne', 'Invalid Base58 character: {details}', { details: details.join(', ') });
 }
 
 /**
@@ -73,9 +81,10 @@ function validateBase58(pattern: string): string | null {
  *
  * @param pattern - The search pattern
  * @param caseSensitive - Whether matching is case-sensitive
+ * @param t - Translator for the page, so the estimate reads in the visitor's language
  * @returns Human-readable difficulty string
  */
-function getDifficultyEstimate(pattern: string, caseSensitive: boolean): string {
+function getDifficultyEstimate(pattern: string, caseSensitive: boolean, t: ITranslator['t']): string {
     if (!pattern) return '';
 
     const n = pattern.length;
@@ -97,11 +106,15 @@ function getDifficultyEstimate(pattern: string, caseSensitive: boolean): string 
     const probAnyPosition = Math.min(1, positions * probPerPosition);
     const expected = Math.round(1 / probAnyPosition);
 
-    if (expected < 1000) return `~${expected} attempts`;
-    if (expected < 1_000_000) return `~${(expected / 1000).toFixed(1)}K attempts`;
-    if (expected < 1_000_000_000) return `~${(expected / 1_000_000).toFixed(1)}M attempts`;
+    if (expected < 1000) return t('tools.addressGenerator.difficulty.attempts', '~{count} attempts', { count: expected });
+    if (expected < 1_000_000) {
+        return t('tools.addressGenerator.difficulty.thousands', '~{count}K attempts', { count: (expected / 1000).toFixed(1) });
+    }
+    if (expected < 1_000_000_000) {
+        return t('tools.addressGenerator.difficulty.millions', '~{count}M attempts', { count: (expected / 1_000_000).toFixed(1) });
+    }
 
-    return `~${(expected / 1_000_000_000).toFixed(1)}B attempts`;
+    return t('tools.addressGenerator.difficulty.billions', '~{count}B attempts', { count: (expected / 1_000_000_000).toFixed(1) });
 }
 
 /**
@@ -148,6 +161,7 @@ function InlineQrCode({ value, label }: { value: string; label: string }) {
  * @param props.privateKey - Private key to encode in the QR code
  */
 function QrModalContent({ address, privateKey }: { address: string; privateKey: string }) {
+    const { t } = useTranslation();
     return (
         <div className={styles.qr_modal}>
             <div className={styles.qr_panel__code}>
@@ -161,7 +175,7 @@ function QrModalContent({ address, privateKey }: { address: string; privateKey: 
             </div>
             <code className={styles.qr_modal__address}>{address}</code>
             <p className={styles.qr_modal__hint}>
-                Scan to import private key into a mobile wallet
+                {t('tools.addressGenerator.qr.scanHint', 'Scan to import private key into a mobile wallet')}
             </p>
         </div>
     );
@@ -174,6 +188,7 @@ function QrModalContent({ address, privateKey }: { address: string; privateKey: 
  * @param props.entry - The generated address entry including mnemonic
  */
 function SingleAddressResult({ entry }: { entry: IGeneratedAddress }) {
+    const { t } = useTranslation();
     const [revealedMnemonic, setRevealedMnemonic] = useState(false);
     const [revealedKey, setRevealedKey] = useState(false);
     const [copiedField, setCopiedField] = useState<'address' | 'mnemonic' | 'key' | null>(null);
@@ -202,7 +217,7 @@ function SingleAddressResult({ entry }: { entry: IGeneratedAddress }) {
 
     const mnemonic = entry.mnemonic;
     const maskedMnemonic = !mnemonic
-        ? 'Unavailable'
+        ? t('tools.addressGenerator.result.unavailable', 'Unavailable')
         : revealedMnemonic
             ? mnemonic
             : mnemonic.split(' ').map(() => '\u2022\u2022\u2022\u2022').join(' ');
@@ -211,15 +226,19 @@ function SingleAddressResult({ entry }: { entry: IGeneratedAddress }) {
     return (
         <div className={styles.single_result}>
             <div className={styles.single_result__field}>
-                <span className={styles.single_result__label}>Address</span>
+                <span className={styles.single_result__label}>{t('tools.addressGenerator.label.address', 'Address')}</span>
                 <div className={styles.single_result__value_row}>
                     <code className={styles.single_result__mono}>{entry.address}</code>
-                    <Badge tone="neutral">{entry.gender === 'male' ? 'Yang ☰' : 'Yin ☷'}</Badge>
+                    <Badge tone="neutral">
+                        {entry.gender === 'male'
+                            ? t('tools.addressGenerator.result.yang', 'Yang ☰')
+                            : t('tools.addressGenerator.result.yin', 'Yin ☷')}
+                    </Badge>
                     <button
                         className={styles.icon_button}
                         onClick={() => handleCopy(entry.address, 'address')}
-                        aria-label="Copy address"
-                        title="Copy address"
+                        aria-label={t('tools.addressGenerator.action.copyAddress', 'Copy address')}
+                        title={t('tools.addressGenerator.action.copyAddress', 'Copy address')}
                     >
                         {copiedField === 'address'
                             ? <Check size={14} style={{ color: 'var(--color-success)' }} />
@@ -229,7 +248,7 @@ function SingleAddressResult({ entry }: { entry: IGeneratedAddress }) {
                 </div>
             </div>
             <div className={styles.single_result__field}>
-                <span className={styles.single_result__label}>Recovery Phrase</span>
+                <span className={styles.single_result__label}>{t('tools.addressGenerator.label.recoveryPhrase', 'Recovery Phrase')}</span>
                 <div className={styles.single_result__value_row}>
                     <code className={`${styles.single_result__mono} ${!revealedMnemonic ? styles.single_result__masked : ''}`}>
                         {maskedMnemonic}
@@ -241,16 +260,20 @@ function SingleAddressResult({ entry }: { entry: IGeneratedAddress }) {
                             setRevealedMnemonic(next);
                             if (!next) setShowMnemonicQr(false);
                         }}
-                        aria-label={revealedMnemonic ? 'Hide recovery phrase' : 'Reveal recovery phrase'}
-                        title={revealedMnemonic ? 'Hide' : 'Reveal'}
+                        aria-label={revealedMnemonic
+                            ? t('tools.addressGenerator.action.hideRecoveryPhrase', 'Hide recovery phrase')
+                            : t('tools.addressGenerator.action.revealRecoveryPhrase', 'Reveal recovery phrase')}
+                        title={revealedMnemonic
+                            ? t('tools.addressGenerator.action.hide', 'Hide')
+                            : t('tools.addressGenerator.action.reveal', 'Reveal')}
                     >
                         {revealedMnemonic ? <EyeOff size={14} /> : <Eye size={14} />}
                     </button>
                     <button
                         className={styles.icon_button}
                         onClick={() => handleCopy(entry.mnemonic!, 'mnemonic')}
-                        aria-label="Copy recovery phrase"
-                        title="Copy recovery phrase"
+                        aria-label={t('tools.addressGenerator.action.copyRecoveryPhrase', 'Copy recovery phrase')}
+                        title={t('tools.addressGenerator.action.copyRecoveryPhrase', 'Copy recovery phrase')}
                     >
                         {copiedField === 'mnemonic'
                             ? <Check size={14} style={{ color: 'var(--color-success)' }} />
@@ -261,19 +284,23 @@ function SingleAddressResult({ entry }: { entry: IGeneratedAddress }) {
                         <button
                             className={styles.icon_button}
                             onClick={() => setShowMnemonicQr(prev => !prev)}
-                            aria-label={showMnemonicQr ? 'Hide QR code' : 'Show QR code'}
-                            title={showMnemonicQr ? 'Hide QR' : 'Show QR'}
+                            aria-label={showMnemonicQr
+                                ? t('tools.addressGenerator.action.hideQrCode', 'Hide QR code')
+                                : t('tools.addressGenerator.action.showQrCode', 'Show QR code')}
+                            title={showMnemonicQr
+                                ? t('tools.addressGenerator.action.hideQr', 'Hide QR')
+                                : t('tools.addressGenerator.action.showQr', 'Show QR')}
                         >
                             <QrCode size={14} />
                         </button>
                     )}
                 </div>
                 {showMnemonicQr && revealedMnemonic && mnemonic && (
-                    <InlineQrCode value={mnemonic} label="Recovery Phrase" />
+                    <InlineQrCode value={mnemonic} label={t('tools.addressGenerator.label.recoveryPhrase', 'Recovery Phrase')} />
                 )}
             </div>
             <div className={styles.single_result__field}>
-                <span className={styles.single_result__label}>Private Key</span>
+                <span className={styles.single_result__label}>{t('tools.addressGenerator.label.privateKey', 'Private Key')}</span>
                 <div className={styles.single_result__value_row}>
                     <code className={`${styles.single_result__mono} ${!revealedKey ? styles.single_result__masked : ''}`}>
                         {maskedKey}
@@ -285,16 +312,20 @@ function SingleAddressResult({ entry }: { entry: IGeneratedAddress }) {
                             setRevealedKey(next);
                             if (!next) setShowKeyQr(false);
                         }}
-                        aria-label={revealedKey ? 'Hide private key' : 'Reveal private key'}
-                        title={revealedKey ? 'Hide' : 'Reveal'}
+                        aria-label={revealedKey
+                            ? t('tools.addressGenerator.action.hidePrivateKey', 'Hide private key')
+                            : t('tools.addressGenerator.action.revealPrivateKey', 'Reveal private key')}
+                        title={revealedKey
+                            ? t('tools.addressGenerator.action.hide', 'Hide')
+                            : t('tools.addressGenerator.action.reveal', 'Reveal')}
                     >
                         {revealedKey ? <EyeOff size={14} /> : <Eye size={14} />}
                     </button>
                     <button
                         className={styles.icon_button}
                         onClick={() => handleCopy(entry.privateKey, 'key')}
-                        aria-label="Copy private key"
-                        title="Copy private key"
+                        aria-label={t('tools.addressGenerator.action.copyPrivateKey', 'Copy private key')}
+                        title={t('tools.addressGenerator.action.copyPrivateKey', 'Copy private key')}
                     >
                         {copiedField === 'key'
                             ? <Check size={14} style={{ color: 'var(--color-success)' }} />
@@ -305,15 +336,19 @@ function SingleAddressResult({ entry }: { entry: IGeneratedAddress }) {
                         <button
                             className={styles.icon_button}
                             onClick={() => setShowKeyQr(prev => !prev)}
-                            aria-label={showKeyQr ? 'Hide QR code' : 'Show QR code'}
-                            title={showKeyQr ? 'Hide QR' : 'Show QR'}
+                            aria-label={showKeyQr
+                                ? t('tools.addressGenerator.action.hideQrCode', 'Hide QR code')
+                                : t('tools.addressGenerator.action.showQrCode', 'Show QR code')}
+                            title={showKeyQr
+                                ? t('tools.addressGenerator.action.hideQr', 'Hide QR')
+                                : t('tools.addressGenerator.action.showQr', 'Show QR')}
                         >
                             <QrCode size={14} />
                         </button>
                     )}
                 </div>
                 {showKeyQr && revealedKey && (
-                    <InlineQrCode value={entry.privateKey} label="Private Key" />
+                    <InlineQrCode value={entry.privateKey} label={t('tools.addressGenerator.label.privateKey', 'Private Key')} />
                 )}
             </div>
         </div>
@@ -363,6 +398,7 @@ function AddressRow({ entry, index, pattern, caseSensitive }: {
     pattern: string;
     caseSensitive: boolean;
 }) {
+    const { t } = useTranslation();
     const [revealed, setRevealed] = useState(false);
     const [copiedField, setCopiedField] = useState<'address' | 'key' | null>(null);
     const { open: openModal } = useModal();
@@ -390,8 +426,8 @@ function AddressRow({ entry, index, pattern, caseSensitive }: {
                 <button
                     className={styles.icon_button}
                     onClick={() => handleCopy(entry.address, 'address')}
-                    aria-label="Copy address"
-                    title="Copy address"
+                    aria-label={t('tools.addressGenerator.action.copyAddress', 'Copy address')}
+                    title={t('tools.addressGenerator.action.copyAddress', 'Copy address')}
                 >
                     {copiedField === 'address'
                         ? <Check size={12} style={{ color: 'var(--color-success)' }} />
@@ -409,16 +445,20 @@ function AddressRow({ entry, index, pattern, caseSensitive }: {
                 <button
                     className={styles.icon_button}
                     onClick={() => setRevealed(prev => !prev)}
-                    aria-label={revealed ? 'Hide private key' : 'Reveal private key'}
-                    title={revealed ? 'Hide' : 'Reveal'}
+                    aria-label={revealed
+                        ? t('tools.addressGenerator.action.hidePrivateKey', 'Hide private key')
+                        : t('tools.addressGenerator.action.revealPrivateKey', 'Reveal private key')}
+                    title={revealed
+                        ? t('tools.addressGenerator.action.hide', 'Hide')
+                        : t('tools.addressGenerator.action.reveal', 'Reveal')}
                 >
                     {revealed ? <EyeOff size={12} /> : <Eye size={12} />}
                 </button>
                 <button
                     className={styles.icon_button}
                     onClick={() => handleCopy(entry.privateKey, 'key')}
-                    aria-label="Copy private key"
-                    title="Copy private key"
+                    aria-label={t('tools.addressGenerator.action.copyPrivateKey', 'Copy private key')}
+                    title={t('tools.addressGenerator.action.copyPrivateKey', 'Copy private key')}
                 >
                     {copiedField === 'key'
                         ? <Check size={12} style={{ color: 'var(--color-success)' }} />
@@ -430,15 +470,19 @@ function AddressRow({ entry, index, pattern, caseSensitive }: {
                     onClick={() => {
                         if (!revealed) return;
                         openModal({
-                            title: 'Private Key QR Code',
+                            title: t('tools.addressGenerator.qr.modalTitle', 'Private Key QR Code'),
                             size: 'sm',
                             content: <QrModalContent address={entry.address} privateKey={entry.privateKey} />,
                             dismissible: true,
                         });
                     }}
                     disabled={!revealed}
-                    aria-label={revealed ? 'Show QR code' : 'Reveal private key before showing QR code'}
-                    title={revealed ? 'Show QR' : 'Reveal private key first'}
+                    aria-label={revealed
+                        ? t('tools.addressGenerator.action.showQrCode', 'Show QR code')
+                        : t('tools.addressGenerator.action.revealBeforeQrCode', 'Reveal private key before showing QR code')}
+                    title={revealed
+                        ? t('tools.addressGenerator.action.showQr', 'Show QR')
+                        : t('tools.addressGenerator.action.revealFirst', 'Reveal private key first')}
                 >
                     <QrCode size={12} />
                 </button>
@@ -455,6 +499,7 @@ function AddressRow({ entry, index, pattern, caseSensitive }: {
  * are generated in-browser and never sent to a server.
  */
 export function AddressGenerator() {
+    const { t } = useTranslation();
     const workerRef = useRef<Worker | null>(null);
 
     const [singleResult, setSingleResult] = useState<IGeneratedAddress | null>(null);
@@ -541,25 +586,25 @@ export function AddressGenerator() {
     /** Validate vanity input on change. */
     const handlePatternChange = useCallback((value: string) => {
         setVanityPattern(value);
-        setBase58Warning(value ? validateBase58(value) : null);
-    }, []);
+        setBase58Warning(value ? validateBase58(value, t) : null);
+    }, [t]);
 
     const difficulty = vanityPattern.trim() && !base58Warning
-        ? getDifficultyEstimate(vanityPattern.trim(), caseSensitive)
+        ? getDifficultyEstimate(vanityPattern.trim(), caseSensitive, t)
         : '';
 
     return (
         <Page>
             <PageHeader
-                title="Address Generator"
-                subtitle="Generate random TRON addresses and search for vanity patterns"
+                title={t('tools.addressGenerator.title', 'Address Generator')}
+                subtitle={t('tools.addressGenerator.subtitle', 'Generate random TRON addresses and search for vanity patterns')}
             />
             <div className={styles.container}>
                 {/* Single generation */}
                 <Card>
                     <Stack gap="md">
                         <div className={styles.section_header}>
-                            <span className={styles.section_title}>Generate Address</span>
+                            <span className={styles.section_title}>{t('tools.addressGenerator.generate.title', 'Generate Address')}</span>
                             <Button
                                 variant="primary"
                                 onClick={handleGenerate}
@@ -567,7 +612,7 @@ export function AddressGenerator() {
                                 loading={generating}
                             >
                                 <KeyRound size={18} />
-                                Generate
+                                {t('tools.addressGenerator.generate.button', 'Generate')}
                             </Button>
                         </div>
 
@@ -578,17 +623,17 @@ export function AddressGenerator() {
                 {/* Vanity search */}
                 <Card>
                     <Stack gap="md">
-                        <span className={styles.section_title}>Vanity Search</span>
+                        <span className={styles.section_title}>{t('tools.addressGenerator.vanity.title', 'Vanity Search')}</span>
 
                         <label className={styles.label} htmlFor="vanity-input">
-                            Search pattern (matched anywhere in address)
+                            {t('tools.addressGenerator.vanity.patternLabel', 'Search pattern (matched anywhere in address)')}
                         </label>
                         <div className={styles.input_row}>
                             <Input
                                 id="vanity-input"
                                 value={vanityPattern}
                                 onChange={e => handlePatternChange(e.target.value)}
-                                placeholder="e.g. cafe, TRON, abc"
+                                placeholder={t('tools.addressGenerator.vanity.patternPlaceholder', 'e.g. cafe, TRON, abc')}
                                 disabled={searching}
                                 onKeyDown={e => e.key === 'Enter' && !searching && !base58Warning && handleStartSearch()}
                             />
@@ -600,12 +645,12 @@ export function AddressGenerator() {
                                     onChange={e => setCaseSensitive(e.target.checked)}
                                     disabled={searching}
                                 />
-                                <span className={styles.toggle__label}>Case sensitive</span>
+                                <span className={styles.toggle__label}>{t('tools.addressGenerator.vanity.caseSensitive', 'Case sensitive')}</span>
                             </label>
                             {searching ? (
                                 <Button variant="danger" onClick={handleStopSearch}>
                                     <Square size={18} />
-                                    Stop
+                                    {t('tools.addressGenerator.vanity.stop', 'Stop')}
                                 </Button>
                             ) : (
                                 <Button
@@ -614,7 +659,7 @@ export function AddressGenerator() {
                                     disabled={!vanityPattern.trim() || !!base58Warning}
                                 >
                                     <Search size={18} />
-                                    Search
+                                    {t('tools.addressGenerator.vanity.search', 'Search')}
                                 </Button>
                             )}
                         </div>
@@ -628,21 +673,28 @@ export function AddressGenerator() {
 
                         {difficulty && !base58Warning && (
                             <p className={styles.difficulty}>
-                                Expected difficulty: {difficulty}
+                                {t('tools.addressGenerator.vanity.difficulty', 'Expected difficulty: {difficulty}', { difficulty })}
                             </p>
                         )}
 
                         {(searching || stats.checked > 0) && (
                             <div className={styles.stats}>
                                 <Badge tone={searching ? 'success' : 'neutral'} showLiveIndicator={searching}>
-                                    {searching ? 'Searching' : 'Stopped'}
+                                    {searching
+                                        ? t('tools.addressGenerator.vanity.searching', 'Searching')
+                                        : t('tools.addressGenerator.vanity.stopped', 'Stopped')}
                                 </Badge>
                                 <span className={styles.stats__text}>
-                                    {formatNumber(stats.checked)} attempts &mdash; ~{formatNumber(stats.rate)}/sec
+                                    {t('tools.addressGenerator.vanity.progress', '{checked} attempts — ~{rate}/sec', {
+                                        checked: formatNumber(stats.checked),
+                                        rate: formatNumber(stats.rate)
+                                    })}
                                 </span>
                                 {matches.length > 0 && (
                                     <span className={styles.stats__matches}>
-                                        {matches.length} match{matches.length !== 1 ? 'es' : ''}
+                                        {matches.length === 1
+                                            ? t('tools.addressGenerator.vanity.matchOne', '{count} match', { count: matches.length })
+                                            : t('tools.addressGenerator.vanity.matchMany', '{count} matches', { count: matches.length })}
                                     </span>
                                 )}
                             </div>
@@ -654,9 +706,9 @@ export function AddressGenerator() {
                                     <thead>
                                         <tr>
                                             <th className={styles.match_table__th}>#</th>
-                                            <th className={styles.match_table__th}>Address</th>
-                                            <th className={styles.match_table__th}>Gender</th>
-                                            <th className={styles.match_table__th}>Private Key</th>
+                                            <th className={styles.match_table__th}>{t('tools.addressGenerator.label.address', 'Address')}</th>
+                                            <th className={styles.match_table__th}>{t('tools.addressGenerator.label.gender', 'Gender')}</th>
+                                            <th className={styles.match_table__th}>{t('tools.addressGenerator.label.privateKey', 'Private Key')}</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -674,10 +726,10 @@ export function AddressGenerator() {
                 <div className={styles.notice}>
                     <ShieldCheck size={16} />
                     <p>
-                        Keys are generated entirely in your browser using a Web Worker.
-                        No private keys are ever sent to a server. Use caution before
-                        sending real funds to a web-generated address — consider hardware
-                        wallets for significant holdings.
+                        {t(
+                            'tools.addressGenerator.securityNotice',
+                            'Keys are generated entirely in your browser using a Web Worker. No private keys are ever sent to a server. Use caution before sending real funds to a web-generated address — consider hardware wallets for significant holdings.'
+                        )}
                     </p>
                 </div>
             </div>

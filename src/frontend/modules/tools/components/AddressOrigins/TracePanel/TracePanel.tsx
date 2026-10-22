@@ -10,6 +10,7 @@ import { AddressSelector } from '../../../../../components/ui/AddressSelector';
 import { Button } from '../../../../../components/ui/Button';
 import { Card } from '../../../../../components/ui/Card';
 import { IconButton } from '../../../../../components/ui/IconButton';
+import { useTranslation } from '../../../../localization/hooks/useTranslation';
 import { MAX_ADDRESSES } from '../lib/MAX_ADDRESSES';
 import type { IWalletRow } from '../lib/IWalletRow';
 import styles from './TracePanel.module.scss';
@@ -76,6 +77,7 @@ export function TracePanel({
     // A signed-out reader gets one wallet, so extra rows are not offered and any
     // the reader had before signing out are not sent.
     const visibleRows = isLoggedIn ? rows : rows.slice(0, 1);
+    const { t } = useTranslation();
 
     return (
         <Card padding="md">
@@ -85,7 +87,9 @@ export function TracePanel({
                 <Stack gap="md">
                     <fieldset className={styles.fieldset}>
                         <legend className={styles.legend}>
-                            {isLoggedIn ? 'Wallets to trace' : 'Wallet to trace'}
+                            {isLoggedIn
+                                ? t('tools.addressOrigins.tracePanel.legendMany', 'Wallets to trace')
+                                : t('tools.addressOrigins.tracePanel.legendOne', 'Wallet to trace')}
                         </legend>
 
                         <div className={styles.rows}>
@@ -94,13 +98,21 @@ export function TracePanel({
                                     <AddressSelector
                                         value={row.value || null}
                                         onChange={next => onChange(row.id, next ?? '')}
-                                        aria-label={`TRON wallet address ${index + 1}`}
+                                        aria-label={t(
+                                            'tools.addressOrigins.tracePanel.addressLabel',
+                                            'TRON wallet address {number}',
+                                            { number: index + 1 }
+                                        )}
                                     />
                                     {isLoggedIn && visibleRows.length > 1 && (
                                         <IconButton
                                             variant="ghost"
                                             size="sm"
-                                            aria-label={`Remove wallet ${index + 1}`}
+                                            aria-label={t(
+                                                'tools.addressOrigins.tracePanel.removeWallet',
+                                                'Remove wallet {number}',
+                                                { number: index + 1 }
+                                            )}
                                             onClick={() => onRemove(row.id)}
                                         >
                                             <X size={16} />
@@ -119,12 +131,12 @@ export function TracePanel({
                             loading={streaming}
                             icon={<GitBranch size={18} />}
                         >
-                            Trace origins
+                            {t('tools.addressOrigins.tracePanel.submit', 'Trace origins')}
                         </Button>
 
                         {isLoggedIn && rows.length < MAX_ADDRESSES && (
                             <Button variant="secondary" onClick={onAdd} icon={<Plus size={16} />}>
-                                Add a wallet
+                                {t('tools.addressOrigins.tracePanel.addWallet', 'Add a wallet')}
                             </Button>
                         )}
                     </div>
@@ -140,8 +152,10 @@ export function TracePanel({
                       */}
                     {limited && (
                         <p className={styles.note} role="status">
-                            Some of the wallets you entered were not traced, because the server did not
-                            accept them as TRON addresses.
+                            {t(
+                                'tools.addressOrigins.tracePanel.limited',
+                                'Some of the wallets you entered were not traced, because the server did not accept them as TRON addresses.'
+                            )}
                         </p>
                     )}
 
@@ -149,9 +163,11 @@ export function TracePanel({
                         <p className={styles.tier}>
                             <Lock size={14} aria-hidden="true" />
                             <span>
-                                Signed out, a trace returns the immediate parent and stops there. Sign in to
-                                climb the whole chain, and to compare up to {MAX_ADDRESSES} wallets at once —
-                                which is how an account shared between them shows up.
+                                {t(
+                                    'tools.addressOrigins.tracePanel.signedOutTier',
+                                    'Signed out, a trace returns the immediate parent and stops there. Sign in to climb the whole chain, and to compare up to {count} wallets at once — which is how an account shared between them shows up.',
+                                    { count: MAX_ADDRESSES }
+                                )}
                             </span>
                         </p>
                     )}

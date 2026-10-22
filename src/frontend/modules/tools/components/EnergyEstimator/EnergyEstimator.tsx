@@ -15,6 +15,7 @@ import { Card } from '../../../../components/ui/Card';
 import { Input } from '../../../../components/ui/Input';
 import { Button } from '../../../../components/ui/Button';
 import { Badge } from '../../../../components/ui/Badge';
+import { useTranslation } from '../../../localization/hooks/useTranslation';
 import { estimateEnergy } from '../../api/client';
 import type { IEnergyEstimate } from '../../types';
 import styles from './EnergyEstimator.module.scss';
@@ -34,6 +35,14 @@ export function EnergyEstimator() {
     const [result, setResult] = useState<IEnergyEstimate | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
+    const { t } = useTranslation();
+
+    /** Confidence levels the backend reports, shown in the visitor's language. */
+    const confidenceLabels: Record<string, string> = {
+        high: t('tools.energyEstimator.confidence.high', 'high'),
+        medium: t('tools.energyEstimator.confidence.medium', 'medium'),
+        low: t('tools.energyEstimator.confidence.low', 'low')
+    };
 
     /** Submit estimation request. */
     const handleEstimate = async () => {
@@ -45,7 +54,7 @@ export function EnergyEstimator() {
             const data = await estimateEnergy(contractType, Number(methodCalls), Number(txPerDay));
             setResult(data);
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Estimation failed');
+            setError(err instanceof Error ? err.message : t('tools.energyEstimator.error.failed', 'Estimation failed'));
         } finally {
             setLoading(false);
         }
@@ -53,21 +62,24 @@ export function EnergyEstimator() {
 
     return (
         <Page>
-            <PageHeader title="Energy Estimator" subtitle="Estimate daily energy requirements and compare staking with burning TRX for fees" />
+            <PageHeader
+                title={t('tools.energyEstimator.title', 'Energy Estimator')}
+                subtitle={t('tools.energyEstimator.subtitle', 'Estimate daily energy requirements and compare staking with burning TRX for fees')}
+            />
             <Card>
                 <Stack gap="md">
                     <Grid columns="responsive" gap="md">
                         <div>
-                            <label className={styles.label} htmlFor="contract-type">Contract Type</label>
+                            <label className={styles.label} htmlFor="contract-type">{t('tools.energyEstimator.contractType', 'Contract Type')}</label>
                             <Input
                                 id="contract-type"
                                 value={contractType}
                                 onChange={e => setContractType(e.target.value)}
-                                placeholder="e.g., TriggerSmartContract"
+                                placeholder={t('tools.energyEstimator.contractTypePlaceholder', 'e.g., {example}', { example: 'TriggerSmartContract' })}
                             />
                         </div>
                         <div>
-                            <label className={styles.label} htmlFor="method-calls">Avg Method Calls / TX</label>
+                            <label className={styles.label} htmlFor="method-calls">{t('tools.energyEstimator.methodCalls', 'Avg Method Calls / TX')}</label>
                             <Input
                                 id="method-calls"
                                 type="number"
@@ -77,7 +89,7 @@ export function EnergyEstimator() {
                             />
                         </div>
                         <div>
-                            <label className={styles.label} htmlFor="tx-per-day">Transactions / Day</label>
+                            <label className={styles.label} htmlFor="tx-per-day">{t('tools.energyEstimator.txPerDay', 'Transactions / Day')}</label>
                             <Input
                                 id="tx-per-day"
                                 type="number"
@@ -89,7 +101,7 @@ export function EnergyEstimator() {
                     </Grid>
                     <Button variant="primary" onClick={handleEstimate} disabled={loading} loading={loading}>
                         <Zap size={18} />
-                        Estimate Energy
+                        {t('tools.energyEstimator.submit', 'Estimate Energy')}
                     </Button>
 
                     {error && <p className={styles.error}>{error}</p>}
@@ -98,38 +110,45 @@ export function EnergyEstimator() {
                         <div className={styles.results}>
                             <div className={styles.stat_grid}>
                                 <div className={styles.stat}>
-                                    <span className={styles.stat__label}>Required Energy</span>
+                                    <span className={styles.stat__label}>{t('tools.energyEstimator.requiredEnergy', 'Required Energy')}</span>
                                     <span className={styles.stat__value}>{result.requiredEnergy.toLocaleString()}</span>
                                 </div>
                                 <div className={styles.stat}>
-                                    <span className={styles.stat__label}>Recommended Stake</span>
+                                    <span className={styles.stat__label}>{t('tools.energyEstimator.recommendedStake', 'Recommended Stake')}</span>
                                     <span className={styles.stat__value}>{result.recommendedStake.toLocaleString()} TRX</span>
                                 </div>
                                 <div className={styles.stat}>
-                                    <span className={styles.stat__label}>Burn Cost / Day</span>
+                                    <span className={styles.stat__label}>{t('tools.energyEstimator.burnCostDay', 'Burn Cost / Day')}</span>
                                     <span className={styles.stat__value}>{result.burnCostPerDayTRX.toLocaleString()} TRX</span>
                                 </div>
                                 <div className={styles.stat}>
-                                    <span className={styles.stat__label}>Burn Cost / Month</span>
+                                    <span className={styles.stat__label}>{t('tools.energyEstimator.burnCostMonth', 'Burn Cost / Month')}</span>
                                     <span className={styles.stat__value}>{result.burnCostPerMonthTRX.toLocaleString()} TRX</span>
                                 </div>
                                 <div className={styles.stat}>
-                                    <span className={styles.stat__label}>Burn Equals Stake After</span>
+                                    <span className={styles.stat__label}>{t('tools.energyEstimator.burnEqualsStake', 'Burn Equals Stake After')}</span>
                                     <span className={styles.stat__value}>
-                                        {result.burnMatchesStakeDays != null ? `${result.burnMatchesStakeDays} days` : 'N/A'}
+                                        {result.burnMatchesStakeDays != null
+                                            ? t('tools.energyEstimator.days', '{count} days', { count: result.burnMatchesStakeDays })
+                                            : t('tools.energyEstimator.notApplicable', 'N/A')}
                                     </span>
                                 </div>
                                 <div className={styles.stat}>
-                                    <span className={styles.stat__label}>Confidence</span>
+                                    <span className={styles.stat__label}>{t('tools.energyEstimator.confidenceLabel', 'Confidence')}</span>
                                     <Badge tone={result.confidence === 'high' ? 'success' : result.confidence === 'medium' ? 'warning' : 'danger'}>
-                                        {result.confidence} ({result.sampleSize} samples)
+                                        {t('tools.energyEstimator.confidenceValue', '{level} ({count} samples)', {
+                                            level: confidenceLabels[result.confidence] ?? result.confidence,
+                                            count: result.sampleSize
+                                        })}
                                     </Badge>
                                 </div>
                             </div>
                             <p className="text-muted">
-                                Burn cost is the TRX the network burns, at {result.burnPriceSun.toLocaleString()} SUN per unit, when an account
-                                has no staked or rented energy. Staked TRX is locked rather than spent and can be unstaked later. Renting energy
-                                from a market usually costs less than burning.
+                                {t(
+                                    'tools.energyEstimator.burnNote',
+                                    'Burn cost is the TRX the network burns, at {sun} SUN per unit, when an account has no staked or rented energy. Staked TRX is locked rather than spent and can be unstaked later. Renting energy from a market usually costs less than burning.',
+                                    { sun: result.burnPriceSun.toLocaleString() }
+                                )}
                             </p>
                         </div>
                     )}

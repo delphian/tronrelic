@@ -143,6 +143,12 @@ export function matchesFilter(doc: any, filter: Filter<any>): boolean {
                         return !doc._id.equals(neValue);
                     }
                 }
+                // MongoDB matches an array field against $ne when no element
+                // equals the value, which is how "add this path only if it
+                // is not already listed" guards are written.
+                if (Array.isArray(docValue)) {
+                    return !docValue.includes(neValue);
+                }
                 return docValue !== neValue;
             }
 

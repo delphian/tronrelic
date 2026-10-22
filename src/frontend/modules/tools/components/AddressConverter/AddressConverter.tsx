@@ -14,6 +14,7 @@ import { Page, PageHeader, Stack } from '../../../../components/layout';
 import { Card } from '../../../../components/ui/Card';
 import { Input } from '../../../../components/ui/Input';
 import { Button } from '../../../../components/ui/Button';
+import { useTranslation } from '../../../localization/hooks/useTranslation';
 import { convertAddress } from '../../api/client';
 import type { IAddressConversionResult } from '../../types';
 import styles from './AddressConverter.module.scss';
@@ -26,6 +27,7 @@ import styles from './AddressConverter.module.scss';
  */
 export function AddressConverter() {
     const searchParams = useSearchParams();
+    const { t } = useTranslation();
     const [input, setInput] = useState('');
     const [result, setResult] = useState<IAddressConversionResult | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -58,7 +60,7 @@ export function AddressConverter() {
             const data = await convertAddress(payload);
             setResult(data);
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Invalid address format');
+            setError(err instanceof Error ? err.message : t('tools.addressConverter.error.invalidFormat', 'Invalid address format'));
         } finally {
             setLoading(false);
         }
@@ -66,19 +68,22 @@ export function AddressConverter() {
 
     return (
         <Page>
-            <PageHeader title="Address Converter" subtitle="Convert between TRON hex and base58check formats" />
+            <PageHeader
+                title={t('tools.addressConverter.title', 'Address Converter')}
+                subtitle={t('tools.addressConverter.subtitle', 'Convert between TRON hex and base58check formats')}
+            />
             <div className={styles.container}>
             <Card>
                 <Stack gap="md">
                     <label className={styles.label} htmlFor="address-input">
-                        TRON Address (hex or base58check)
+                        {t('tools.addressConverter.inputLabel', 'TRON Address (hex or base58check)')}
                     </label>
                     <div className={styles.input_row}>
                         <Input
                             id="address-input"
                             value={input}
                             onChange={e => setInput(e.target.value)}
-                            placeholder="T... or 41..."
+                            placeholder={t('tools.addressConverter.inputPlaceholder', 'T... or 41...')}
                             onKeyDown={e => e.key === 'Enter' && handleConvert()}
                         />
                         <Button
@@ -88,7 +93,7 @@ export function AddressConverter() {
                             loading={loading}
                         >
                             <ArrowLeftRight size={18} />
-                            Convert
+                            {t('tools.addressConverter.convert', 'Convert')}
                         </Button>
                     </div>
 
