@@ -15,6 +15,22 @@ export interface IPageSettings {
      */
     blacklistedRoutes: string[];
 
+    /**
+     * System prompt sent ahead of every page translation Suggest request: the
+     * site's tone and a glossary. Falls back to a built-in default until an
+     * administrator saves their own.
+     */
+    translationSystemPrompt: string;
+
+    /**
+     * Registry id of the AI provider that runs page translation suggestions,
+     * or null for whichever provider is active.
+     */
+    translationProviderId: string | null;
+
+    /** Model id on that provider, or null for the provider's default model. */
+    translationModel: string | null;
+
     /** Last update timestamp. */
     updatedAt: Date;
 }

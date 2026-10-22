@@ -8,9 +8,11 @@
 
 import type { Express, Router } from 'express';
 import type {
+    IAiProviderRegistry,
     ICacheService,
     IContentService,
     IDatabaseService,
+    ILocalizationService,
     IMenuService,
     IModule,
     IModuleMetadata,
@@ -20,12 +22,30 @@ import type {
 import { logger } from '../../lib/logger.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
 import { PageService } from './services/page.service.js';
+import { PageTranslationService } from './services/page-translation.service.js';
+import { PageTranslationSuggestionService } from './services/page-translation-suggestion.service.js';
+import { ensurePageTranslationIndexes } from './database/index.js';
 import { PagesController } from './api/pages.controller.js';
+import { PageTranslationsController } from './api/page-translations.controller.js';
 import { createPagesRouter } from './api/pages.routes.js';
 import { createPublicPagesRouter } from './api/pages.public-routes.js';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
 import { createAdminRateLimiter } from '../../api/middleware/rate-limit.js';
 import { registerPageAiTools } from './ai-tools.js';
+
+/**
+ * Registry name of the core AI provider registry, as documented in
+ * `docs/system/system-ai-tools.md`. Written out rather than imported from the
+ * ai-tools module, whose barrel would load that whole module into this one.
+ */
+const AI_PROVIDERS_SERVICE_NAME = 'ai-providers';
+
+/**
+ * Registry name the localization module publishes its read service under.
+ * Written out for the same reason: importing the localization barrel would
+ * load that module into this one.
+ */
+const LOCALIZATION_SERVICE_NAME = 'localization';
 
 export interface IPagesModuleDependencies {
     database: IDatabaseService;
@@ -42,16 +62,27 @@ export interface IPagesModuleDependencies {
      */
     serviceRegistry: IServiceRegistry;
     app: Express;
+    /**
+     * Called after a change that can alter which page addresses are served in
+     * which language: a translation saved, deleted, restored, or approved, or
+     * a page approved, deleted, or restored. Bootstrap points it at the
+     * localization snapshot, which lists translated page addresses and belongs
+     * to another module. Optional because the pages module works without
+     * localization; nothing is refreshed when it is absent.
+     */
+    onLocalizedRoutesChanged?: () => void;
 }
 
 /**
  * Pages module class.
  *
  * Lifecycle:
- * - `init()` — store deps, configure `PageService` singleton, build controller.
- * - `run()` — register the `core:page` managed content type, register the
- *   `/system/pages` menu item, mount admin and public routers, and register
- *   the read-only page AI tools.
+ * - `init()` — store deps, configure the `PageService` and
+ *   `PageTranslationService` singletons, ensure the translation indexes, and
+ *   build the controllers.
+ * - `run()` — register the `core:page` and `core:page-translation` managed
+ *   content types, register the `/system/pages` menu item, mount admin and
+ *   public routers, and register the read-only page AI tools.
  *
  * No file dependencies — uploads go through the Files module's
  * `/api/admin/files` admin surface, which is registered before Pages so
@@ -73,7 +104,9 @@ export class PagesModule implements IModule<IPagesModuleDependencies> {
     private serviceRegistry!: IServiceRegistry;
     private app!: Express;
     private pageService!: PageService;
+    private translationService!: PageTranslationService;
     private controller!: PagesController;
+    private translationsController!: PageTranslationsController;
 
     /**
      * Removes the `'ai-tools'` watch that keeps the page tools registered.
@@ -100,10 +133,46 @@ export class PagesModule implements IModule<IPagesModuleDependencies> {
         this.serviceRegistry = dependencies.serviceRegistry;
         this.app = dependencies.app;
 
-        PageService.setDependencies(this.database, this.cacheService, this.contentService, this.logger);
+        const onLocalizedRoutesChanged = dependencies.onLocalizedRoutesChanged ?? (() => undefined);
+
+        PageService.setDependencies(
+            this.database,
+            this.cacheService,
+            this.contentService,
+            this.logger,
+            onLocalizedRoutesChanged
+        );
         this.pageService = PageService.getInstance();
 
+        await ensurePageTranslationIndexes(this.database);
+        PageTranslationService.setDependencies({
+            database: this.database,
+            cacheService: this.cacheService,
+            contentService: this.contentService,
+            pages: this.pageService,
+            onRoutesChanged: onLocalizedRoutesChanged,
+            logger: this.logger
+        });
+        this.translationService = PageTranslationService.getInstance();
+
+        // The provider registry and the localization service are looked up per
+        // request rather than captured here: both are published after this
+        // module starts, and provider plugins come and go at runtime.
+        const suggestionService = new PageTranslationSuggestionService({
+            source: this.translationService,
+            settings: this.pageService,
+            getProviderRegistry: () => this.serviceRegistry.get<IAiProviderRegistry>(AI_PROVIDERS_SERVICE_NAME) ?? null,
+            getLocalization: () => this.serviceRegistry.get<ILocalizationService>(LOCALIZATION_SERVICE_NAME) ?? null,
+            logger: this.logger
+        });
+
         this.controller = new PagesController(this.pageService, this.logger);
+        this.translationsController = new PageTranslationsController(
+            this.translationService,
+            this.pageService,
+            suggestionService,
+            this.logger
+        );
 
         this.logger.info('Pages module initialized');
     }
@@ -120,7 +189,8 @@ export class PagesModule implements IModule<IPagesModuleDependencies> {
         // soon as curation publishes itself. The returned disposer is not kept:
         // a module lives for the whole process and never unregisters.
         this.contentService.registerType(this.pageService.getContentType(), this.metadata.id);
-        this.logger.info('core:page registered as managed content');
+        this.contentService.registerType(this.translationService.getContentType(), this.metadata.id);
+        this.logger.info('core:page and core:page-translation registered as managed content');
 
         try {
             await this.menuService.create({
@@ -139,11 +209,11 @@ export class PagesModule implements IModule<IPagesModuleDependencies> {
             throw new Error(`Failed to register pages menu item: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
 
-        const adminRouter: Router = createPagesRouter(this.controller);
+        const adminRouter: Router = createPagesRouter(this.controller, this.translationsController);
         this.app.use('/api/admin/pages', createAdminRateLimiter('pages-admin'), requireAdmin, adminRouter);
         this.logger.info('Admin pages router mounted at /api/admin/pages');
 
-        const publicRouter: Router = createPublicPagesRouter(this.controller);
+        const publicRouter: Router = createPublicPagesRouter(this.controller, this.translationsController);
         this.app.use('/api/pages', publicRouter);
         this.logger.info('Public pages router mounted at /api/pages');
 
@@ -163,5 +233,20 @@ export class PagesModule implements IModule<IPagesModuleDependencies> {
             throw new Error('PagesModule not initialized - call init() first');
         }
         return this.pageService;
+    }
+
+    /**
+     * Accessor for the `PageTranslationService` singleton, which bootstrap
+     * hands to the localization module as the source of translated page
+     * addresses. Should only be called after `init()` completes.
+     *
+     * @returns The translation service.
+     * @throws When `init()` has not run.
+     */
+    getPageTranslationService(): PageTranslationService {
+        if (!this.translationService) {
+            throw new Error('PagesModule not initialized - call init() first');
+        }
+        return this.translationService;
     }
 }

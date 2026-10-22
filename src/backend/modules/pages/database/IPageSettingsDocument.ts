@@ -13,6 +13,15 @@ import { ObjectId } from 'mongodb';
 export interface IPageSettingsDocument {
     _id: ObjectId;
     blacklistedRoutes: string[];
+    /**
+     * System prompt for page translation suggestions. Absent until an
+     * administrator saves one, which means the built-in default applies.
+     */
+    translationSystemPrompt?: string;
+    /** AI provider for page translation suggestions; absent or null for the active provider. */
+    translationProviderId?: string | null;
+    /** Model on that provider; absent or null for the provider's default. */
+    translationModel?: string | null;
     updatedAt: Date;
 }
 

@@ -9,10 +9,11 @@ import { Input } from '../../../../../../../components/ui/Input';
 import { Select } from '../../../../../../../components/ui/Select';
 import { StatTile, StatGrid } from '../../../../../../../components/ui/StatTile';
 import { ClientTime } from '../../../../../../../components/ui/ClientTime';
-import { Plus, Edit, Trash2, Eye, EyeOff, Search, RotateCcw, Clock, XCircle, Archive } from 'lucide-react';
+import { Plus, Edit, Trash2, Eye, EyeOff, Search, RotateCcw, Clock, XCircle, Archive, Languages } from 'lucide-react';
 import type { IPage } from '@/types';
 import styles from './PagesTab.module.scss';
 import { PageEditor } from '../components/PageEditor';
+import { PageTranslations } from '../components/PageTranslations';
 
 /**
  * Page counts returned with the list. Published and draft counts describe the
@@ -46,6 +47,8 @@ type PageListFilter = 'all' | 'published' | 'drafts' | 'pending' | 'deleted';
  *   soft-deleted pages
  * - Markdown editor with live preview
  * - Create, update, soft-delete, and restore operations
+ * - Translations per page: a page is served in another language only while
+ *   it has a published translation into it
  * - Review state per page: a change made through the service token or an
  *   automated caller waits in /system/curation while the approved version
  *   stays live
@@ -62,6 +65,7 @@ export function PagesTab() {
     const [listFilter, setListFilter] = useState<PageListFilter>('all');
     const [editingPage, setEditingPage] = useState<IPage | null>(null);
     const [isCreating, setIsCreating] = useState(false);
+    const [translatingPage, setTranslatingPage] = useState<(IPage & { contentId: string }) | null>(null);
 
     /**
      * Fetch pages list from API.
@@ -175,6 +179,11 @@ export function PagesTab() {
     useEffect(() => {
         void fetchPages();
     }, [fetchPages]);
+
+    // Show the translations panel for one page
+    if (translatingPage) {
+        return <PageTranslations page={translatingPage} onClose={() => setTranslatingPage(null)} />;
+    }
 
     // Show editor when creating or editing
     if (isCreating || editingPage) {
@@ -350,6 +359,14 @@ export function PagesTab() {
                                                 onClick={() => setEditingPage(page)}
                                             >
                                                 Edit
+                                            </Button>
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                icon={<Languages size={16} />}
+                                                onClick={() => page.contentId && setTranslatingPage({ ...page, contentId: page.contentId })}
+                                            >
+                                                Translations
                                             </Button>
                                             <Button
                                                 variant="ghost"

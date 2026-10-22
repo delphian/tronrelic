@@ -1,6 +1,7 @@
 import type { IPage } from './IPage';
 import type { IPageSettings } from './IPageSettings';
 import type { IPublicPage } from './IPublicPage.js';
+import type { IPublicPageRender } from './IPublicPageRender.js';
 import type { IContentActor } from '../content/IContentActor.js';
 import type { ContentCurationState } from '../content/ContentCurationState.js';
 
@@ -166,15 +167,7 @@ export interface IPageService {
      * Render the page a visitor sees at a slug, with Redis-first caching.
      * Returns null when no visible, published page is served at that slug.
      */
-    renderPublicPageBySlug(slug: string): Promise<{
-        html: string;
-        metadata: {
-            title: string;
-            description?: string;
-            keywords?: string[];
-            ogImage?: string;
-        };
-    } | null>;
+    renderPublicPageBySlug(slug: string): Promise<IPublicPageRender | null>;
 
     // ============================================================================
     // Settings Management

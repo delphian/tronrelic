@@ -8,6 +8,7 @@ import type {
     IPageContent,
     IPageSettings,
     IPublicPage,
+    IPublicPageRender,
     ICacheService,
     IDatabaseService,
     ISystemLogService,
@@ -20,21 +21,22 @@ import { DEFAULT_PAGE_SETTINGS } from '../database/index.js';
 import { MarkdownService } from './markdown.service.js';
 import { PageContentType, PAGE_CONTENT_TYPE_ID } from './page-content-type.js';
 import type { IPageWriteInput } from './page-content-type.js';
+import { DEFAULT_PAGE_TRANSLATION_SYSTEM_PROMPT } from './page-translation-prompt.js';
+import { normalizeAiSystemPrompt } from '../../../services/normalizeAiSystemPrompt.js';
+import { normalizeAiId } from '../../../services/normalizeAiId.js';
 import { ObjectId } from 'mongodb';
 
+/** Longest page translation system prompt accepted. Long enough for a sizeable glossary. */
+const MAX_TRANSLATION_SYSTEM_PROMPT_LENGTH = 8000;
+
 /**
- * The public render payload: rendered HTML plus the metadata the page head
- * needs.
+ * Build the plain error a settings validation failure throws, which the
+ * controller answers with 400.
+ *
+ * @param message - Explanation shown to the administrator.
+ * @returns The error to throw.
  */
-interface IPublicRender {
-    html: string;
-    metadata: {
-        title: string;
-        description?: string;
-        keywords?: string[];
-        ogImage?: string;
-    };
-}
+const invalidSetting = (message: string): Error => new Error(message);
 
 /** Pages returned by `listPublicPages` when the caller does not say how many. */
 const PUBLIC_LIST_DEFAULT_LIMIT = 20;
@@ -109,17 +111,28 @@ export class PageService implements IPageService {
      * @param contentService - The core content service every page operation
      *   and public read passes through.
      * @param logger - Scoped logger.
+     * @param onPublicPagesChanged - Called after a change that can alter which
+     *   page addresses visitors reach, so the localization snapshot that lists
+     *   translated page addresses is rebuilt instead of naming a page that
+     *   moved or went away.
      */
     private constructor(
         private readonly database: IDatabaseService,
         private readonly cacheService: ICacheService,
         private readonly contentService: IContentService,
-        private readonly logger: ISystemLogService
+        private readonly logger: ISystemLogService,
+        private readonly onPublicPagesChanged: () => void
     ) {
         this.markdownService = new MarkdownService(cacheService);
         this.pagesCollection = database.getCollection<IPageDocument>('pages');
         this.settingsCollection = database.getCollection<IPageSettingsDocument>('page_settings');
-        this.contentType = new PageContentType(this.pagesCollection, this.markdownService, this, logger);
+        this.contentType = new PageContentType(
+            this.pagesCollection,
+            this.markdownService,
+            this,
+            logger,
+            onPublicPagesChanged
+        );
     }
 
     /**
@@ -129,15 +142,19 @@ export class PageService implements IPageService {
      * @param cacheService - Redis cache service.
      * @param contentService - The core content service.
      * @param logger - Scoped logger.
+     * @param onPublicPagesChanged - Called after a change that can alter which
+     *   page addresses visitors reach. Defaults to doing nothing, for callers
+     *   such as tests that have no localization snapshot to refresh.
      */
     public static setDependencies(
         database: IDatabaseService,
         cacheService: ICacheService,
         contentService: IContentService,
-        logger: ISystemLogService
+        logger: ISystemLogService,
+        onPublicPagesChanged: () => void = () => undefined
     ): void {
         if (!PageService.instance) {
-            PageService.instance = new PageService(database, cacheService, contentService, logger);
+            PageService.instance = new PageService(database, cacheService, contentService, logger, onPublicPagesChanged);
         }
     }
 
@@ -213,6 +230,8 @@ export class PageService implements IPageService {
      */
     async deletePage(id: string, actor: IContentActor): Promise<void> {
         await this.contentService.delete(PAGE_CONTENT_TYPE_ID, id, actor);
+        // After core has marked its row, so a rebuild cannot still see the page.
+        this.onPublicPagesChanged();
     }
 
     /**
@@ -224,8 +243,26 @@ export class PageService implements IPageService {
      */
     async restorePage(id: string, actor: IContentActor): Promise<IPage> {
         const restored = await this.contentService.restore<IPageContent>(PAGE_CONTENT_TYPE_ID, id, actor);
+        this.onPublicPagesChanged();
 
         return this.toIPageFromContent(restored);
+    }
+
+    /**
+     * List the slugs a page is stored under: its latest edit's slug first,
+     * then its approved version's when that differs. A translation is served
+     * at its page's slug, so a translation change drops the render caches of
+     * these addresses. Soft-deleted pages are included, because their caches
+     * may still hold a render from before the deletion.
+     *
+     * @param pageId - The page's core content id.
+     * @returns The slugs, empty when no page has that id.
+     */
+    async listSlugsForPage(pageId: string): Promise<string[]> {
+        const doc = await this.pagesCollection.findOne({ contentId: pageId });
+        const slugs = doc ? [doc.slug, doc.approved?.slug] : [];
+
+        return Array.from(new Set(slugs.filter((slug): slug is string => Boolean(slug))));
     }
 
     /**
@@ -498,14 +535,14 @@ export class PageService implements IPageService {
      * @param slug - The requested path.
      * @returns The render, or null when no visible, published page is served there.
      */
-    async renderPublicPageBySlug(slug: string): Promise<IPublicRender | null> {
+    async renderPublicPageBySlug(slug: string): Promise<IPublicPageRender | null> {
         const cached = await this.markdownService.getCachedRender(slug);
         if (cached) {
             return cached;
         }
 
         const page = await this.getPublicPageBySlug(slug);
-        let response: IPublicRender | null = null;
+        let response: IPublicPageRender | null = null;
         if (page) {
             const { body } = this.markdownService.parseMarkdown(page.content);
             const html = await this.markdownService.renderMarkdown(body);
@@ -571,6 +608,26 @@ export class PageService implements IPageService {
 
         if (updates.blacklistedRoutes !== undefined) {
             updateDoc.blacklistedRoutes = updates.blacklistedRoutes;
+        }
+        if (updates.translationSystemPrompt !== undefined) {
+            updateDoc.translationSystemPrompt = normalizeAiSystemPrompt(
+                updates.translationSystemPrompt,
+                MAX_TRANSLATION_SYSTEM_PROMPT_LENGTH,
+                invalidSetting
+            );
+        }
+        if (updates.translationProviderId !== undefined) {
+            updateDoc.translationProviderId = normalizeAiId(updates.translationProviderId, 'provider', invalidSetting);
+            // A model id only means something on the provider that offers it,
+            // so switching provider without naming a model clears the model
+            // rather than sending the old provider's id to the new one.
+            if (updates.translationModel === undefined
+                && updateDoc.translationProviderId !== (settings.translationProviderId ?? null)) {
+                updateDoc.translationModel = null;
+            }
+        }
+        if (updates.translationModel !== undefined) {
+            updateDoc.translationModel = normalizeAiId(updates.translationModel, 'model', invalidSetting);
         }
 
         await this.settingsCollection.updateOne({ _id: settings._id }, { $set: updateDoc });
@@ -837,6 +894,9 @@ export class PageService implements IPageService {
         return {
             _id: doc._id.toString(),
             blacklistedRoutes: doc.blacklistedRoutes,
+            translationSystemPrompt: doc.translationSystemPrompt ?? DEFAULT_PAGE_TRANSLATION_SYSTEM_PROMPT,
+            translationProviderId: doc.translationProviderId ?? null,
+            translationModel: doc.translationModel ?? null,
             updatedAt: doc.updatedAt,
         };
     }

@@ -106,12 +106,17 @@ export class PageContentType implements IManagedContentType<IPageContent, IPageW
      * @param markdown - Parses frontmatter and owns the render caches.
      * @param slugPolicy - The page service's slug rules.
      * @param logger - Scoped logger for storage diagnostics.
+     * @param onApproved - Called after a version is approved, because an
+     *   approval can change which addresses are served in which language (a
+     *   rename or an unpublish going live), including approvals made from the
+     *   curation queue that never pass through the page service.
      */
     constructor(
         private readonly pages: Collection<IPageDocument>,
         private readonly markdown: MarkdownService,
         private readonly slugPolicy: IPageSlugPolicy,
-        private readonly logger: ISystemLogService
+        private readonly logger: ISystemLogService,
+        private readonly onApproved: () => void = () => undefined
     ) {}
 
     /**
@@ -314,6 +319,7 @@ export class PageContentType implements IManagedContentType<IPageContent, IPageW
         };
         await this.pages.updateOne({ _id: doc._id }, { $set: { approved } });
         await this.invalidate(doc.slug, doc.approved?.slug);
+        this.onApproved();
 
         return;
     }

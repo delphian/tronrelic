@@ -430,6 +430,24 @@ describe('PageService', () => {
             const updated = await service.updateSettings({ blacklistedRoutes: ['^/blocked/.*'] });
             expect(updated.blacklistedRoutes).toEqual(['^/blocked/.*']);
         });
+
+        it('defaults the page translation AI settings until they are saved', async () => {
+            const settings = await service.getSettings();
+            expect(settings.translationSystemPrompt.length).toBeGreaterThan(0);
+            expect(settings.translationProviderId).toBeNull();
+            expect(settings.translationModel).toBeNull();
+        });
+
+        it('clears the translation model when the provider changes without naming one', async () => {
+            await service.updateSettings({ translationProviderId: 'p1', translationModel: 'model-a' });
+            const updated = await service.updateSettings({ translationProviderId: 'p2' });
+            expect(updated.translationProviderId).toBe('p2');
+            expect(updated.translationModel).toBeNull();
+        });
+
+        it('refuses an empty translation system prompt', async () => {
+            await expect(service.updateSettings({ translationSystemPrompt: '   ' })).rejects.toThrow(/system prompt/);
+        });
     });
 
     describe('sanitizeSlug', () => {

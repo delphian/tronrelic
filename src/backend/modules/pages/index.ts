@@ -9,6 +9,7 @@ export { PagesModule } from './PagesModule.js';
 export type { IPagesModuleDependencies } from './PagesModule.js';
 
 export { PageService } from './services/page.service.js';
+export { PageTranslationService } from './services/page-translation.service.js';
 export { MarkdownService } from './services/markdown.service.js';
 
 export { PagesController } from './api/pages.controller.js';

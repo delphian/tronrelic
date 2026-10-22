@@ -5,6 +5,7 @@ import { PagesModule } from '../index.js';
 import type { IPagesModuleDependencies } from '../index.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../../menu/index.js';
 import { PageService } from '../services/page.service.js';
+import { PageTranslationService } from '../services/page-translation.service.js';
 import { AI_TOOL_NAMES } from '../ai-tools.js';
 import type { IAiToolRegistry, ICacheService, IMenuService, IServiceRegistry } from '@/types';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
@@ -83,6 +84,7 @@ describe('PagesModule', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         PageService.resetForTests();
+        PageTranslationService.resetForTests();
         mockDatabase = createMockDatabaseService();
         mockCache = new MockCacheService();
         mockMenu = new MockMenuService();
@@ -147,6 +149,17 @@ describe('PagesModule', () => {
 
             expect(mockContent.registerType).toHaveBeenCalledWith(
                 expect.objectContaining({ typeId: 'core:page' }),
+                'pages'
+            );
+        });
+
+        it('registers core:page-translation as managed content', async () => {
+            const module = new PagesModule();
+            await module.init(deps());
+            await module.run();
+
+            expect(mockContent.registerType).toHaveBeenCalledWith(
+                expect.objectContaining({ typeId: 'core:page-translation' }),
                 'pages'
             );
         });

@@ -11,12 +11,20 @@ import type { IDatabaseService, ILocalizationSettings, ISystemLogService } from 
 import type { ILocalizationSettingsDocument } from '../database/index.js';
 import { SETTINGS_COLLECTION } from '../database/index.js';
 import { LocalizationValidationError } from './localization-errors.js';
+import { normalizeAiSystemPrompt } from '../../../services/normalizeAiSystemPrompt.js';
+import { normalizeAiId } from '../../../services/normalizeAiId.js';
 
 /** Longest system prompt accepted. Long enough for a sizeable glossary. */
 export const MAX_SYSTEM_PROMPT_LENGTH = 8000;
 
-/** Longest provider or model id accepted. */
-const MAX_ID_LENGTH = 200;
+/**
+ * Build the validation error a bad settings value throws, which the
+ * controller answers with 400.
+ *
+ * @param message - Explanation shown to the administrator.
+ * @returns The error to throw.
+ */
+const invalidSetting = (message: string): Error => new LocalizationValidationError(message);
 
 /**
  * System prompt used until an administrator writes their own. It sets the
@@ -105,16 +113,16 @@ export class LocalizationSettingsService {
         };
 
         if (patch.systemPrompt !== undefined) {
-            next.systemPrompt = this.requireSystemPrompt(patch.systemPrompt);
+            next.systemPrompt = normalizeAiSystemPrompt(patch.systemPrompt, MAX_SYSTEM_PROMPT_LENGTH, invalidSetting);
         }
         if (patch.providerId !== undefined) {
-            next.providerId = this.optionalId(patch.providerId, 'provider');
+            next.providerId = normalizeAiId(patch.providerId, 'provider', invalidSetting);
             if (patch.model === undefined && next.providerId !== current.providerId) {
                 next.model = null;
             }
         }
         if (patch.model !== undefined) {
-            next.model = this.optionalId(patch.model, 'model');
+            next.model = normalizeAiId(patch.model, 'model', invalidSetting);
         }
 
         await this.collection().updateOne({ key: 'settings' }, { $set: next }, { upsert: true });
@@ -123,39 +131,6 @@ export class LocalizationSettingsService {
             'Localization settings saved'
         );
         return this.getSettings();
-    }
-
-    /**
-     * Validate a system prompt.
-     *
-     * @param value - Candidate prompt from the request.
-     * @returns The trimmed prompt.
-     */
-    private requireSystemPrompt(value: unknown): string {
-        const trimmed = typeof value === 'string' ? value.trim() : '';
-        if (trimmed === '' || trimmed.length > MAX_SYSTEM_PROMPT_LENGTH) {
-            throw new LocalizationValidationError(`Invalid system prompt: must be 1–${MAX_SYSTEM_PROMPT_LENGTH} characters`);
-        }
-        return trimmed;
-    }
-
-    /**
-     * Validate an optional provider or model id. An empty string means the
-     * same as null, which is what an "automatic" choice in a select sends.
-     *
-     * @param value - Candidate id from the request.
-     * @param label - Field name used in the error message.
-     * @returns The trimmed id, or null.
-     */
-    private optionalId(value: unknown, label: string): string | null {
-        let result: string | null = null;
-        if (value !== null) {
-            if (typeof value !== 'string' || value.trim().length > MAX_ID_LENGTH) {
-                throw new LocalizationValidationError(`Invalid ${label}: expected an id of at most ${MAX_ID_LENGTH} characters`);
-            }
-            result = value.trim() === '' ? null : value.trim();
-        }
-        return result;
     }
 
     /** @returns The settings collection. */

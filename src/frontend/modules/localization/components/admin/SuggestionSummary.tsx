@@ -5,22 +5,42 @@
  *
  * The administrator reviews suggested text before saving it, so they need what
  * the model said alongside it: its remarks on the batch, its notes on specific
- * keys, which keys it skipped, and what the run cost. Kept as its own
- * component so the Translations tab only decides when to show it.
+ * items, which items it skipped, and what the run cost. Both the localization
+ * Translations tab and the page translation editor on `/system/pages` show
+ * this same body, so a suggestion reads the same wherever it was requested.
  *
  * @module modules/localization/components/admin/SuggestionSummary
  */
 
-import type { ITranslationSuggestionResult } from '@/types';
 import styles from './LocalizationAdmin.module.scss';
 
-/** Per-key notes listed before the rest are summarised as a count. */
+/** Per-item notes listed before the rest are summarised as a count. */
 const MAX_LISTED_NOTES = 5;
+
+/** One item's note from the model, such as a key it was unsure how to translate. */
+interface ISuggestionItemNote {
+    /** Stable id for the list key. */
+    id: string;
+    /** What the note is about, shown in monospace, such as a translation key. */
+    label: string;
+    /** The model's remark. */
+    note: string;
+}
 
 /** Props for {@link SuggestionSummary}. */
 interface ISuggestionSummaryProps {
-    /** What the suggestion request returned. */
-    result: ITranslationSuggestionResult;
+    /** The model's general remarks, or null when it had none. */
+    notes: string | null;
+    /** The model's notes on individual items; omit for a single-item request. */
+    itemNotes?: ISuggestionItemNote[];
+    /** Labels of requested items the model returned nothing usable for. */
+    unanswered?: string[];
+    /** Cost the provider reported, or null when it could not price the run. */
+    costUsd: number | null;
+    /** Model that answered. */
+    model: string;
+    /** Tokens sent to and received from the model. */
+    usage: { inputTokens: number; outputTokens: number };
 }
 
 /**
@@ -39,37 +59,36 @@ export function formatSuggestionCost(costUsd: number | null): string {
 }
 
 /**
- * Render the model's remarks, its per-key notes, any skipped keys, and the
+ * Render the model's remarks, its per-item notes, any skipped items, and the
  * cost line.
  *
- * @param props - The suggestion result.
+ * @param props - What the suggestion request returned.
  * @returns The toast description.
  */
-export function SuggestionSummary({ result }: ISuggestionSummaryProps) {
-    const noted = result.suggestions.filter(suggestion => suggestion.note !== null);
-    const hidden = noted.length - MAX_LISTED_NOTES;
+export function SuggestionSummary({ notes, itemNotes = [], unanswered = [], costUsd, model, usage }: ISuggestionSummaryProps) {
+    const hidden = itemNotes.length - MAX_LISTED_NOTES;
 
     return (
         <div className={styles.suggestion_summary}>
-            {result.notes && <p className={styles.suggestion_text}>{result.notes}</p>}
-            {noted.length > 0 && (
+            {notes && <p className={styles.suggestion_text}>{notes}</p>}
+            {itemNotes.length > 0 && (
                 <ul className={styles.suggestion_notes}>
-                    {noted.slice(0, MAX_LISTED_NOTES).map(suggestion => (
-                        <li key={`${suggestion.namespace}:${suggestion.key}`}>
-                            <span className={styles.mono}>{suggestion.key}</span>: {suggestion.note}
+                    {itemNotes.slice(0, MAX_LISTED_NOTES).map(item => (
+                        <li key={item.id}>
+                            <span className={styles.mono}>{item.label}</span>: {item.note}
                         </li>
                     ))}
                     {hidden > 0 && <li>{hidden} more {hidden === 1 ? 'note' : 'notes'} on the page</li>}
                 </ul>
             )}
-            {result.unanswered.length > 0 && (
+            {unanswered.length > 0 && (
                 <p className={styles.suggestion_text}>
-                    No suggestion for {result.unanswered.map(entry => entry.key).join(', ')}.
+                    No suggestion for {unanswered.join(', ')}.
                 </p>
             )}
             <p className={styles.suggestion_cost}>
-                {formatSuggestionCost(result.costUsd)} · {result.model} · {result.usage.inputTokens.toLocaleString()} in /{' '}
-                {result.usage.outputTokens.toLocaleString()} out tokens
+                {formatSuggestionCost(costUsd)} · {model} · {usage.inputTokens.toLocaleString()} in /{' '}
+                {usage.outputTokens.toLocaleString()} out tokens
             </p>
         </div>
     );

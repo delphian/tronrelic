@@ -2,6 +2,7 @@
  * @fileoverview The read-only localization contract published as `'localization'`.
  */
 
+import type { ILanguage } from './ILanguage.js';
 import type { ILocalizationPublicConfig } from './ILocalizationPublicConfig.js';
 import type { ITranslationCatalog } from './ITranslationCatalog.js';
 import type { TranslationParams } from './TranslationParams.js';
@@ -41,6 +42,19 @@ export interface ILocalizationService {
      * @returns The text to show, with placeholders filled.
      */
     translate(namespace: string, key: string, language: string, fallback: string, params?: TranslationParams): Promise<string>;
+
+    /**
+     * Read one configured language, enabled or not.
+     *
+     * Content is translated before its language is switched on, so a caller
+     * preparing a translation, such as the pages module's Suggest button,
+     * needs a language's names even while visitors cannot reach it yet. The
+     * public snapshot lists only enabled languages and cannot answer that.
+     *
+     * @param code - Language code such as `zh`.
+     * @returns The language, or null when no language has that code.
+     */
+    getLanguage(code: string): Promise<ILanguage | null>;
 
     /**
      * List the enabled languages a path is published in.

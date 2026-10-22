@@ -1,25 +1,10 @@
 import type { Request, Response } from 'express';
-import type { ContentCurationState, ContentErrorCode, IPage, IPageService, ISystemLogService } from '@/types';
+import type { ContentCurationState, IPage, IPageService, ISystemLogService } from '@/types';
 import { actorFromAdminRequest } from '../../../services/content-actor.js';
-import { isContentError } from '../../../services/content-error.js';
+import { sendContentWriteError } from './sendContentWriteError.js';
 
 /** Review states the admin list accepts as a `curation` filter. */
 const CURATION_FILTERS: ReadonlyArray<ContentCurationState> = ['pending', 'approved', 'rejected'];
-
-/**
- * HTTP status for each content service refusal. `vetoed` is a policy refusal
- * (403); `curation-unavailable` means the change needs a reviewer the server
- * cannot reach right now (503).
- */
-const CONTENT_ERROR_STATUS: Record<ContentErrorCode, number> = {
-    'unknown-type': 500,
-    'not-found': 404,
-    'deleted': 409,
-    'not-deleted': 409,
-    'vetoed': 403,
-    'curation-unavailable': 503,
-    'superseded': 409
-};
 
 /**
  * The page fields the public metadata endpoint returns to an anonymous caller.
@@ -384,12 +369,7 @@ export class PagesController {
      * @param error - The caught error.
      */
     private sendWriteError(res: Response, label: string, error: unknown): void {
-        const status = isContentError(error) ? CONTENT_ERROR_STATUS[error.code] : 400;
-        res.status(status).json({
-            error: label,
-            code: isContentError(error) ? error.code : undefined,
-            message: error instanceof Error ? error.message : 'Unknown error',
-        });
+        sendContentWriteError(res, label, error);
 
         return;
     }

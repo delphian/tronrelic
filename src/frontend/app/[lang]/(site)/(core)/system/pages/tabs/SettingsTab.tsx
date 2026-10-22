@@ -8,11 +8,13 @@ import { ClientTime } from '../../../../../../../components/ui/ClientTime';
 import { Save } from 'lucide-react';
 import type { IPageSettings } from '@/types';
 import styles from './SettingsTab.module.scss';
+import { PageTranslationSettings } from '../components/PageTranslationSettings';
 
 /**
- * Pages settings — pages-only concerns. Currently the only page-level
- * setting is the route blacklist that prevents custom slugs from shadowing
- * core URLs. File-upload policy lives at /system/files.
+ * Pages settings — pages-only concerns: the route blacklist that prevents
+ * custom slugs from shadowing core URLs, and the AI model and system prompt
+ * the page translation Suggest button uses. File-upload policy lives at
+ * /system/files.
  */
 export function SettingsTab() {
     const [settings, setSettings] = useState<IPageSettings | null>(null);
@@ -141,6 +143,8 @@ export function SettingsTab() {
                     </div>
                 </div>
             </Card>
+
+            {settings && <PageTranslationSettings settings={settings} onSaved={setSettings} />}
 
             {settings && (
                 <Card tone="muted" padding="md">
