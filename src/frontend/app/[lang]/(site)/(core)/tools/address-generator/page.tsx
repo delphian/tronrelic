@@ -9,6 +9,7 @@
 import type { Metadata } from 'next';
 import { buildMetadata } from '../../../../../../lib/seo';
 import { getServerConfig } from '../../../../../../lib/serverConfig';
+import { translateKeywords } from '../../../../../../lib/translateKeywords';
 import { getServerTranslator } from '../../../../../../modules/localization/server';
 import { AddressGenerator } from '../../../../../../modules/tools';
 
@@ -29,7 +30,7 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
             'Generate TRON wallets with BIP39 recovery phrases entirely in your browser. Create vanity addresses with custom patterns. Private keys never leave your device.'
         ),
         path: '/tools/address-generator',
-        keywords: [
+        keywords: translateKeywords(t, 'tools.addressGenerator.meta.keywords', [
             'TRON address generator',
             'TRON vanity address',
             'TRX wallet generator',
@@ -38,7 +39,7 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
             'TRON recovery phrase',
             'TRX vanity address search',
             'TRON offline wallet'
-        ]
+        ])
     });
 }
 

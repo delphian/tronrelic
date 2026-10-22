@@ -9,6 +9,7 @@ import { Suspense } from 'react';
 import type { Metadata } from 'next';
 import { buildMetadata } from '../../../../../../lib/seo';
 import { getServerConfig } from '../../../../../../lib/serverConfig';
+import { translateKeywords } from '../../../../../../lib/translateKeywords';
 import { getServerTranslator } from '../../../../../../modules/localization/server';
 import { AddressConverter } from '../../../../../../modules/tools';
 
@@ -29,7 +30,7 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
             'Convert TRON addresses between Base58 and Hex formats instantly. Validate address checksums and decode raw blockchain address formats.'
         ),
         path: '/tools/address-converter',
-        keywords: [
+        keywords: translateKeywords(t, 'tools.addressConverter.meta.keywords', [
             'TRON address converter',
             'TRX Base58 to hex',
             'TRON hex to Base58',
@@ -38,7 +39,7 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
             'TRON checksum validator',
             'TRON address encoding',
             'TRX address hex converter'
-        ]
+        ])
     });
 }
 

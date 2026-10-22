@@ -10,6 +10,7 @@ import { Suspense } from 'react';
 import type { Metadata } from 'next';
 import { buildMetadata } from '../../../../../../lib/seo';
 import { getServerConfig } from '../../../../../../lib/serverConfig';
+import { translateKeywords } from '../../../../../../lib/translateKeywords';
 import { getServerTranslator } from '../../../../../../modules/localization/server';
 import { SignatureVerifier } from '../../../../../../modules/tools';
 
@@ -30,7 +31,7 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
             'Verify TRON wallet signatures and signed messages. Confirm message authenticity and prove wallet ownership on the TRON blockchain.'
         ),
         path: '/tools/signature-verifier',
-        keywords: [
+        keywords: translateKeywords(t, 'tools.signatureVerifier.meta.keywords', [
             'TRON signature verifier',
             'TRX signed message',
             'TRON wallet verification',
@@ -39,7 +40,7 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
             'TRON cryptographic proof',
             'verify TRON wallet ownership',
             'TronLink signature verify'
-        ]
+        ])
     });
 }
 

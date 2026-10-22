@@ -9,14 +9,16 @@ import { Suspense } from 'react';
 import type { Metadata } from 'next';
 import { buildMetadata } from '../../../../../../lib/seo';
 import { getServerConfig } from '../../../../../../lib/serverConfig';
+import { translateKeywords } from '../../../../../../lib/translateKeywords';
 import { getServerTranslator } from '../../../../../../modules/localization/server';
 import { AddressOrigins } from '../../../../../../modules/tools';
 
 /**
  * Generate SEO metadata targeting TRON address provenance and wallet-clustering keywords.
  *
- * The title and description go through the translator, so a page published in
- * another language sends search engines the translated text it displays.
+ * The title, description, and keywords go through the translator, so a page
+ * published in another language sends search engines the translated text it
+ * displays.
  *
  * @param props - Route props; `params.lang` selects the language for the
  *   translated text and the canonical URL.
@@ -34,7 +36,7 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
             'Trace any TRON wallet back through its chain of activator accounts to the account that created it, and reveal ancestors shared across multiple wallets.'
         ),
         path: '/tools/address-origins',
-        keywords: [
+        keywords: translateKeywords(t, 'tools.addressOrigins.meta.keywords', [
             'TRON address origin',
             'TRON wallet activation',
             'TRON activator account',
@@ -43,7 +45,7 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
             'TRON wallet clustering',
             'trace TRON wallet funding',
             'TRON account creator'
-        ]
+        ])
     });
 }
 

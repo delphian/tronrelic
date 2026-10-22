@@ -9,6 +9,7 @@ import { Suspense } from 'react';
 import type { Metadata } from 'next';
 import { buildMetadata } from '../../../../../../lib/seo';
 import { getServerConfig } from '../../../../../../lib/serverConfig';
+import { translateKeywords } from '../../../../../../lib/translateKeywords';
 import { getServerTranslator } from '../../../../../../modules/localization/server';
 import { ApprovalChecker } from '../../../../../../modules/tools';
 
@@ -29,7 +30,7 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
             'Scan any TRON wallet for active TRC20 token approvals. Find unlimited allowances, revoke risks, and spender contracts on the TRON blockchain.'
         ),
         path: '/tools/approval-checker',
-        keywords: [
+        keywords: translateKeywords(t, 'tools.approvalChecker.meta.keywords', [
             'TRON approval checker',
             'TRC20 allowance scanner',
             'TRON token approvals',
@@ -38,7 +39,7 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
             'token allowance checker',
             'TRON smart contract approvals',
             'TRX token permissions'
-        ]
+        ])
     });
 }
 

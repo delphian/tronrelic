@@ -8,6 +8,7 @@
 import type { Metadata } from 'next';
 import { buildMetadata } from '../../../../../../lib/seo';
 import { getServerConfig } from '../../../../../../lib/serverConfig';
+import { translateKeywords } from '../../../../../../lib/translateKeywords';
 import { getServerTranslator } from '../../../../../../modules/localization/server';
 import { StakeCalculator } from '../../../../../../modules/tools';
 
@@ -28,7 +29,7 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
             'Calculate energy and bandwidth yield from staking TRX on the TRON network. Compare staking returns against renting energy from delegation markets.'
         ),
         path: '/tools/stake-calculator',
-        keywords: [
+        keywords: translateKeywords(t, 'tools.stakeCalculator.meta.keywords', [
             'TRON stake calculator',
             'TRX staking yield',
             'TRON energy staking',
@@ -37,7 +38,7 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
             'TRX freeze calculator',
             'TRON Stake 2.0',
             'TRX energy vs rent'
-        ]
+        ])
     });
 }
 

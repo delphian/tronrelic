@@ -16,6 +16,7 @@ import { Input } from '../../../../components/ui/Input';
 import { Button } from '../../../../components/ui/Button';
 import { useTranslation } from '../../../localization/hooks/useTranslation';
 import { convertTimestamp } from '../../api/client';
+import { formatRelativeTime } from '../../lib/formatRelativeTime';
 import type { ITimestampConversionResult } from '../../types';
 import styles from './TimestampConverter.module.scss';
 
@@ -180,7 +181,12 @@ export function TimestampConverter() {
                                 </div>
                                 <div className={styles.stat}>
                                     <span className={styles.stat__label}>{t('tools.timestampConverter.result.relative', 'Relative')}</span>
-                                    <span className={styles.stat__value}>{result.relativeTime}</span>
+                                    {/* Worded here rather than taken from the API's
+                                        relativeTime, which the backend writes in
+                                        English. A result only exists after a click,
+                                        so reading the clock here cannot cause a
+                                        hydration mismatch. */}
+                                    <span className={styles.stat__value}>{formatRelativeTime(result.timestampMs, Date.now(), t)}</span>
                                 </div>
                             </div>
 
