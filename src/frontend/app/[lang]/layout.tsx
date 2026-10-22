@@ -11,7 +11,8 @@ import { fetchMenuNamespace } from '../../modules/menu/server';
 import type { IMenuSeed } from '../../modules/menu/types';
 import { getServerSession, type ISSRSession } from '../../modules/user/lib/session-server';
 import { CONSENT_COOKIE_NAME, DEFAULT_LANGUAGE } from '@/types';
-import { fetchLocalizationSeed, resolveMetadataLanguage } from '../../modules/localization/server';
+import { fetchLocalizationSeed, getServerTranslator } from '../../modules/localization/server';
+import { translateKeywords } from '../../lib/translateKeywords';
 import { fetchConsentSeed } from '../../modules/consent/server';
 // Imported from the file rather than the consent barrel, for the same reason
 // as buildLanguageAlternates below.
@@ -97,7 +98,7 @@ function buildSiteStructuredData(siteUrl: string) {
  * @returns Metadata object with runtime siteUrl for metadataBase
  */
 export async function generateMetadata({ params }: { params: Promise<ILanguageParams> }): Promise<Metadata> {
-  const [{ siteUrl }, language] = await Promise.all([getServerConfig(), resolveMetadataLanguage(params)]);
+  const [{ siteUrl }, { t, language }] = await Promise.all([getServerConfig(), getServerTranslator(params)]);
 
   const rootMetadata = buildMetadata({
     siteUrl,
@@ -105,13 +106,15 @@ export async function generateMetadata({ params }: { params: Promise<ILanguagePa
     title: 'Live TRON Blockchain Stats – Track Activity & Rent Energy | TronRelic',
     description: 'Explore live TRON blockchain metrics on TronRelic, including recent large stakes, energy delegations, and new token creations. Compare real-time TRON energy rental rates to optimize your transactions.',
     path: '/',
-    keywords: [
+    // Translated so a page that sets no keywords of its own still sends
+    // search engines keywords in its language.
+    keywords: translateKeywords(t, 'site.meta.keywords', [
       'TRON energy',
       'TRX staking',
       'TRON delegation',
       'TRON resource market',
       'TRON blockchain analytics'
-    ]
+    ])
   });
 
   return {

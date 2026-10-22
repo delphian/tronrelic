@@ -8,6 +8,7 @@
 import type { Metadata } from 'next';
 import { buildMetadata } from '../../../../../../lib/seo';
 import { getServerConfig } from '../../../../../../lib/serverConfig';
+import { translateKeywords } from '../../../../../../lib/translateKeywords';
 import { getServerTranslator } from '../../../../../../modules/localization/server';
 import { EnergyEstimator } from '../../../../../../modules/tools';
 
@@ -28,7 +29,7 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
             'Estimate energy costs for TRON transactions before sending. Calculate TRX fees for USDT transfers, smart contract calls, and TRC20 token operations.'
         ),
         path: '/tools/energy-estimator',
-        keywords: [
+        keywords: translateKeywords(t, 'tools.energyEstimator.meta.keywords', [
             'TRON energy estimator',
             'TRX transaction cost',
             'TRON energy calculator',
@@ -37,7 +38,7 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
             'TRON fee calculator',
             'TRX gas estimator',
             'TRON smart contract cost'
-        ]
+        ])
     });
 }
 

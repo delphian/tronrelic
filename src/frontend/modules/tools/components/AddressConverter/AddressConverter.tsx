@@ -102,11 +102,11 @@ export function AddressConverter() {
                     {result && (
                         <div className={styles.result}>
                             <div className={styles.result__field}>
-                                <span className={styles.result__label}>Base58Check</span>
+                                <span className={styles.result__label}>{t('tools.addressConverter.result.base58check', 'Base58Check')}</span>
                                 <code className={styles.result__value}>{result.base58check}</code>
                             </div>
                             <div className={styles.result__field}>
-                                <span className={styles.result__label}>Hex</span>
+                                <span className={styles.result__label}>{t('tools.addressConverter.result.hex', 'Hex')}</span>
                                 <code className={styles.result__value}>{result.hex}</code>
                             </div>
                         </div>

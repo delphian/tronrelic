@@ -8,6 +8,7 @@
 import type { Metadata } from 'next';
 import { buildMetadata } from '../../../../../../lib/seo';
 import { getServerConfig } from '../../../../../../lib/serverConfig';
+import { translateKeywords } from '../../../../../../lib/translateKeywords';
 import { getServerTranslator } from '../../../../../../modules/localization/server';
 import { TimestampConverter } from '../../../../../../modules/tools';
 
@@ -28,7 +29,7 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
             'Convert between Unix timestamps, human-readable dates, and TRON block numbers. Bidirectional epoch converter with live block estimation.'
         ),
         path: '/tools/timestamp-converter',
-        keywords: [
+        keywords: translateKeywords(t, 'tools.timestampConverter.meta.keywords', [
             'TRON block number converter',
             'TRON timestamp converter',
             'Unix epoch to TRON block',
@@ -37,7 +38,7 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
             'epoch converter TRON',
             'TRX block explorer tool',
             'TRON block height calculator'
-        ]
+        ])
     });
 }
 

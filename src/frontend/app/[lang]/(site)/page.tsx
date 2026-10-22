@@ -3,16 +3,18 @@ import { Page } from '../../../components/layout';
 import { WidgetZone, fetchWidgetsForRoute } from '../../../components/widgets';
 import { buildMetadata } from '../../../lib/seo';
 import { getServerConfig } from '../../../lib/serverConfig';
-import { resolveMetadataLanguage } from '../../../modules/localization/server';
+import { translateKeywords } from '../../../lib/translateKeywords';
+import { getServerTranslator } from '../../../modules/localization/server';
 
 /**
- * Home page metadata, with the canonical URL in the page's language.
+ * Home page metadata, with the canonical URL and the keywords in the page's
+ * language.
  *
  * @param props - Route props; `params.lang` selects the language described.
  * @returns The page metadata.
  */
 export async function generateMetadata({ params }: { params: Promise<{ lang: string }> }): Promise<Metadata> {
-  const [{ siteUrl }, language] = await Promise.all([getServerConfig(), resolveMetadataLanguage(params)]);
+  const [{ siteUrl }, { t, language }] = await Promise.all([getServerConfig(), getServerTranslator(params)]);
 
   return buildMetadata({
     siteUrl,
@@ -20,13 +22,13 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
     title: 'Live TRON Blockchain Activity & Energy Tools | TronRelic',
     description: 'Explore live TRON network activity and discover the best way to rent energy. Powered by real-time graphs, alerts, and deep market data.',
     path: '/',
-    keywords: [
+    keywords: translateKeywords(t, 'home.meta.keywords', [
       'TRON analytics',
       'TRON energy market',
       'TRX staking tools',
       'TRON blockchain monitoring',
       'TRON delegation alerts'
-    ]
+    ])
   });
 }
 

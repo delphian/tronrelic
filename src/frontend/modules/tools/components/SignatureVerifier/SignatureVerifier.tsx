@@ -98,7 +98,7 @@ export function SignatureVerifier() {
                             id="wallet-input"
                             value={wallet}
                             onChange={e => setWallet(e.target.value)}
-                            placeholder="T... or 41..."
+                            placeholder={t('tools.signatureVerifier.walletPlaceholder', 'T... or 41...')}
                         />
                     </div>
                     <div>
