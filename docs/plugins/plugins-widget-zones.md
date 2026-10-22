@@ -24,8 +24,8 @@ Every operation — register, list, mutate, resolve — flows through one named 
 | `ticker-after` | `site` | Root layout, directly below `site-top` | Reaches every route the root layout serves — scope with route filters |
 | `footer` | `site` | Root layout, below `<main>` inside a semantic `<footer>` | Site-wide links, legal text, attribution |
 | `mobile-tab-bar` | `site` | Root layout, fixed to the bottom of the screen on pages 768px wide or narrower; renders nothing, and reserves no space, while empty | The core Tab bar widget, for phone navigation |
-| `main-before` | `core` | Above page content inside the `(core)` route group | Banners, alerts on front-of-house pages |
-| `main-after` | `core` | Below page content inside the `(core)` route group | Feeds, summaries on front-of-house pages |
+| `main-before` | `core` | Above page content via `CorePageZones`, on pages in the `(core)` route group and on the menu category and markdown pages the catch-all route serves | Banners, alerts on front-of-house pages |
+| `main-after` | `core` | Below page content via `CorePageZones`, on the same pages as `main-before` | Feeds, summaries on front-of-house pages |
 | `plugin-content:before` | `plugin` | Above each plugin page via `PluginPageWithZones` | Cross-plugin injection above plugin pages |
 | `plugin-content:after` | `plugin` | Below each plugin page via `PluginPageWithZones` | Cross-plugin injection below plugin pages |
 
