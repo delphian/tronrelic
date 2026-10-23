@@ -41,7 +41,7 @@ A managed type lists its `reviewedFields`. On every create and update, core read
 
 | Actor | What happens |
 |---|---|
-| A curator (`isCurator: true` — a signed-in admin) | Approved on the spot. Core asks the author to copy the latest edit into its approved version. If a queue item was open, core approves it through curation so the queue history records the curator. |
+| A curator (`isCurator: true` — a signed-in admin) | Approved on the spot. Core asks the author to copy the latest edit into its approved version. If a queue item was open, core approves it through curation so the queue history records the curator. The exception is a type that publishes to destinations, described under [Publishing to destinations](#publishing-to-destinations). |
 | Anyone else (the `ADMIN_API_TOKEN` service token, AI tools, plugins) | Held. Core marks the item `pending` and holds it in the central curation queue. Visitors keep seeing the approved version. |
 
 A type with an empty `reviewedFields` list never enters review. A change that touches only unreviewed fields leaves the review state alone.
@@ -70,6 +70,12 @@ The curation queue decides items through `ICurationType`. For a managed type, co
 More than one queue item can end up open for the same content. Two saves can race and each open one, and a curator's own save approves the content directly when the open item cannot be approved through curation. Each hold therefore gets a fresh `holdId`, stored on the core row and carried in the queue item's ref (`{ id, holdId }`). A decision on an item whose `holdId` is no longer on the row is not applied. Approving one fails with `superseded`, and rejecting one changes nothing.
 
 Three existing content types still implement `ICurationType` directly: the blog (`blog:post`), curated memos (`memo-tracker:curated-memo`), and social posts (`core:social-post`). They must migrate to managed content. Do not model new work on them.
+
+### Publishing to destinations
+
+A type that sets `publishesToSinks: true` on its `IManagedContentType` gets the curation queue's sink picker. When a curator approves an item there, the queue offers the content router's publish sinks that the type's `classification` allows, such as X or Telegram, and the curator picks which ones fire. Core makes the item live first and hands it to the syndication outbox only after that succeeds, so an approval the content service refuses never publishes anywhere.
+
+Destinations are chosen only on a decision made in the queue, and the queue refuses an approval that selects none. So for such a type, a curator's create or edit is held for review like anyone else's while the item is pending or has never been live: the change is saved, the open queue item shows it, and the curator approves it there with its destinations. Once the item is live and not pending, a curator's edit is approved directly and does not publish it again.
 
 ### Soft deletion is mandatory
 
@@ -110,7 +116,7 @@ An error the author throws (a validation failure such as a slug conflict) passes
 | Service registry name | `'content'` → `IContentService` |
 | Constructed | `bootstrapInit` (`src/backend/services/content-service.ts`), before module init |
 | Core collection | `content_items` |
-| Author contract | `IManagedContentType<T, TCreate, TUpdate>` — `classification`, `reviewedFields`, `describe`, `create`, `discardCreate`, `read`, `update`, `delete`, `restore`, `approve` |
+| Author contract | `IManagedContentType<T, TCreate, TUpdate>` — `classification`, `reviewedFields`, optional `publishesToSinks`, `describe`, `create`, `discardCreate`, `read`, `update`, `delete`, `restore`, `approve` |
 | Actor for admin routes | `actorFromAdminRequest(req)` (`src/backend/services/content-actor.ts`): a signed-in admin is a curator; the service token is `system:service-token` and is not |
 | Hooks | `content.beforeCreate` / `beforeUpdate` / `beforeDelete` / `beforeRestore` (series) |
 | Types | `@delphian/tronrelic-types` → `IContent`, `IManagedContentType`, `IContentService`, `IContentActor`, `IContentPayloadRecord`, `ContentCurationState`, `ContentVersion`, `ContentErrorCode` |

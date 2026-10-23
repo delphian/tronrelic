@@ -48,6 +48,21 @@ export interface IManagedContentType<T extends IContent = IContent, TCreate = un
     classification: IContentClassification;
 
     /**
+     * Offer publish destinations, such as X or Telegram, when a curator
+     * approves an item in the curation queue. When true, the queue shows the
+     * content router's publish sinks that `classification` allows, the curator
+     * picks which ones fire, and the approved version is handed to the
+     * syndication outbox. When false or omitted, approval only makes the item
+     * live on the platform.
+     *
+     * Destinations are chosen only when an item is decided in the queue, so a
+     * curator's own create or edit is held for review too while the item is
+     * pending or has never been live. Once the item is live, a curator's edit
+     * is approved directly and does not publish it again.
+     */
+    publishesToSinks?: boolean;
+
+    /**
      * The type's own fields a curator must review. When a non-curator's create
      * or update leaves any of these different, core holds the item for review.
      * An empty list means the type never enters curation.

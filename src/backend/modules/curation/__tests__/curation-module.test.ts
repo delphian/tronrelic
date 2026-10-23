@@ -500,6 +500,25 @@ describe('CurationService sink selection', () => {
         expect(type.applyEdit).toHaveBeenCalledOnce(); // a refusal does not undo the decision
     });
 
+    it('sends nothing to a selected sink when the commit fails, and records the sink as not sent', async () => {
+        // The owning type refuses the approval at commit, as managed content
+        // does for a superseded hold. Delivering first would publish content
+        // the platform never made live.
+        const deliver = vi.fn(async () => undefined);
+        const sink = makePublishSink('core:internal-publish', ['body'], { egress: 'internal', audience: 'admin' }, deliver);
+        const { service } = makeSinkService([sink]);
+        const type = postType({ applyEdit: vi.fn(async () => { throw new Error('superseded'); }) });
+        service.registerType(type, 'media');
+        const held = await service.hold({ typeId: 'media:post', ref: {} });
+
+        await expect(service.approve(held.id, 'admin-1', [{ sinkId: 'core:internal-publish' }])).rejects.toThrow('superseded');
+
+        expect(deliver).not.toHaveBeenCalled();
+        expect((await service.get(held.id))?.sinks).toEqual([
+            { sinkId: 'core:internal-publish', status: 'failed', error: 'The approval did not commit, so nothing was sent' }
+        ]);
+    });
+
     it('rejects an ineligible sink before recording the decision (item stays pending)', async () => {
         const sink = makePublishSink('core:internal-publish', ['body'], { egress: 'internal', audience: 'admin' }, vi.fn());
         const { service } = makeSinkService([sink]);

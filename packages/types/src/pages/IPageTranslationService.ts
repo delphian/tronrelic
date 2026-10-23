@@ -16,6 +16,7 @@
 import type { IContentActor } from '../content/IContentActor.js';
 import type { IPublicLocalizedRoute } from '../localization/IPublicLocalizedRoute.js';
 import type { IPageTranslation } from './IPageTranslation.js';
+import type { IPageTranslationSource } from './IPageTranslationSource.js';
 import type { IPublicPageRender } from './IPublicPageRender.js';
 import type { IPublicPageTranslationMetadata } from './IPublicPageTranslationMetadata.js';
 
@@ -32,6 +33,18 @@ export interface IPageTranslationService {
      * @throws Error when no page has that id.
      */
     listTranslations(pageId: string): Promise<IPageTranslation[]>;
+
+    /**
+     * Get the English text a page's translations are written against, so the
+     * editor shows and starts drafts from the same text the stale flag and
+     * the Suggest button use.
+     *
+     * @param pageId - The page's core content id.
+     * @returns The English version visitors are served, or the latest edit
+     *   when none is served yet, and whether a newer edit is waiting for review.
+     * @throws Error when no page has that id.
+     */
+    getTranslationSource(pageId: string): Promise<IPageTranslationSource>;
 
     /**
      * Create a page's translation into one language.

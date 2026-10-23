@@ -19,13 +19,17 @@ import { Badge } from '../../../../../../../components/ui/Badge';
 import { Textarea } from '../../../../../../../components/ui/Textarea';
 import { Stack } from '../../../../../../../components/layout';
 import { ArrowLeft, Save, X, Eye, Plus, Edit, Trash2, RotateCcw, Clock, XCircle, AlertCircle, Archive, Sparkles } from 'lucide-react';
-import type { ILanguage, IPage, IPageTranslation, IPageTranslationSuggestionResult } from '@/types';
+import type { ILanguage, IPage, IPageTranslation, IPageTranslationSource, IPageTranslationSuggestionResult } from '@/types';
 import { localizePath } from '@/types';
 import styles from './PageTranslations.module.scss';
 
 /** Props for the translations panel. */
 interface PageTranslationsProps {
-    /** The page whose translations are managed, at its latest edit. */
+    /**
+     * The page whose translations are managed, at its latest edit. Used for
+     * its id, title, and slug only; the English text shown to translators
+     * comes from the backend's translation source instead.
+     */
     page: IPage & { contentId: string };
     /** Returns to the page list. */
     onClose: () => void;
@@ -52,18 +56,19 @@ const FRONTMATTER_PATTERN = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/;
  * translation never puts it live, and `slug` is left out because a
  * translation is always served at its page's slug.
  *
- * @param page - The English page being translated.
+ * @param source - The English text the backend says translations follow,
+ *   so a new draft starts from the same text the stale check compares with.
  * @returns Frontmatter carrying the English values, followed by the English body.
  */
-function buildTranslationTemplate(page: IPage): string {
-    const body = page.content.replace(FRONTMATTER_PATTERN, '');
+function buildTranslationTemplate(source: IPageTranslationSource): string {
+    const body = source.content.replace(FRONTMATTER_PATTERN, '');
     const lines = [
         '---',
-        `title: ${JSON.stringify(page.title)}`,
-        `description: ${JSON.stringify(page.description ?? '')}`,
-        `keywords: ${JSON.stringify(page.keywords ?? [])}`,
+        `title: ${JSON.stringify(source.title)}`,
+        `description: ${JSON.stringify(source.description)}`,
+        `keywords: ${JSON.stringify(source.keywords)}`,
         'published: false',
-        `ogImage: ${JSON.stringify(page.ogImage ?? '')}`,
+        `ogImage: ${JSON.stringify(source.ogImage ?? '')}`,
         '---',
         ''
     ];
@@ -93,6 +98,7 @@ async function readError(response: Response, fallback: string): Promise<string> 
 export function PageTranslations({ page, onClose }: PageTranslationsProps) {
     const [languages, setLanguages] = useState<ILanguage[]>([]);
     const [translations, setTranslations] = useState<IPageTranslation[]>([]);
+    const [source, setSource] = useState<IPageTranslationSource | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [draft, setDraft] = useState<ITranslationDraft | null>(null);
@@ -110,8 +116,9 @@ export function PageTranslations({ page, onClose }: PageTranslationsProps) {
     const baseUrl = `/api/admin/pages/${page.contentId}/translations`;
 
     /**
-     * Load the configured languages and this page's translations together,
-     * so the list never shows one without the other.
+     * Load the configured languages, this page's translations, and the
+     * English text they follow together, so the list never shows one without
+     * the others.
      */
     const load = useCallback(async () => {
         try {
@@ -126,9 +133,11 @@ export function PageTranslations({ page, onClose }: PageTranslationsProps) {
                 throw new Error(await readError(translationsResponse, 'Failed to load translations'));
             }
             const languagesData: { languages: ILanguage[] } = await languagesResponse.json();
-            const translationsData: { translations: IPageTranslation[] } = await translationsResponse.json();
+            const translationsData: { translations: IPageTranslation[]; source: IPageTranslationSource } =
+                await translationsResponse.json();
             setLanguages(languagesData.languages);
             setTranslations(translationsData.translations);
+            setSource(translationsData.source);
             setError(null);
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to load translations');
@@ -194,7 +203,10 @@ export function PageTranslations({ page, onClose }: PageTranslationsProps) {
      * @param existing - The stored translation, or null to create one.
      */
     const openEditor = (language: ILanguage, existing: IPageTranslation | null) => {
-        setDraft({ language, existing, content: existing?.content ?? buildTranslationTemplate(page) });
+        if (!source) {
+            return;
+        }
+        setDraft({ language, existing, content: existing?.content ?? buildTranslationTemplate(source) });
         setShowPreview(false);
         setPreview('');
         setError(null);
@@ -212,10 +224,10 @@ export function PageTranslations({ page, onClose }: PageTranslationsProps) {
      * Translations tab.
      */
     const suggestDraft = async () => {
-        if (!draft) {
+        if (!draft || !source) {
             return;
         }
-        const startingContent = draft.existing?.content ?? buildTranslationTemplate(page);
+        const startingContent = draft.existing?.content ?? buildTranslationTemplate(source);
         if (draft.content !== startingContent && !confirm('Replace the text in the editor with an AI suggestion?')) {
             return;
         }
@@ -378,15 +390,24 @@ export function PageTranslations({ page, onClose }: PageTranslationsProps) {
                     </Card>
                 )}
 
+                {source?.pendingEdit && (
+                    <Card tone="muted" padding="sm">
+                        <p className={styles.notice}>
+                            An English edit is awaiting review. Translate the English text shown here; once the
+                            edit is approved, this translation will be marked stale so you can update it.
+                        </p>
+                    </Card>
+                )}
+
                 <div className={styles.panes}>
                     <Card padding="md" className={styles.pane}>
-                        <h3 className={styles.pane_title}>{showPreview ? 'Preview' : 'English (latest edit)'}</h3>
+                        <h3 className={styles.pane_title}>{showPreview ? 'Preview' : 'English'}</h3>
                         {showPreview ? (
                             <div className={styles.preview} dangerouslySetInnerHTML={{ __html: preview }} />
                         ) : (
                             <Textarea
                                 className={styles.textarea}
-                                value={page.content}
+                                value={source?.content ?? ''}
                                 readOnly
                                 aria-label="English page markdown"
                                 spellCheck={false}

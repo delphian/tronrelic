@@ -216,9 +216,10 @@ export class ContentService implements IContentService {
         await this.runVeto(HOOKS.content.beforeCreate, { operation: 'create', typeId, id, actor, input });
 
         const reviewed = entry.type.reviewedFields.length > 0;
+        const curatorQueued = this.keepsCuratorChangeInQueue(entry, actor, null);
         // Refuse before writing anything when the item would need review but
         // there is no queue to hold it in — never create it unreviewed.
-        const curation = reviewed && !actor.isCurator ? this.requireCuration() : undefined;
+        const curation = reviewed && (!actor.isCurator || curatorQueued) ? this.requireCuration() : undefined;
 
         const now = new Date();
         // An item that will be held starts out `pending`, so public readers
@@ -244,7 +245,7 @@ export class ContentService implements IContentService {
         }
 
         try {
-            if (reviewed && actor.isCurator) {
+            if (reviewed && actor.isCurator && !curatorQueued) {
                 await this.markApproved(entry, id);
             } else if (curation) {
                 await this.holdForReview(curation, entry, id, actor);
@@ -264,6 +265,9 @@ export class ContentService implements IContentService {
      * item as approved by that curator); anyone else's is held for review.
      * An item left `pending` with no open queue item is treated the same way
      * even when no reviewed field changed, since nothing else can decide it.
+     * A type that publishes to sinks keeps a curator's change in the queue
+     * while the item is pending or has never been live; see
+     * `keepsCuratorChangeInQueue`.
      *
      * @param typeId - The managed content type.
      * @param id - The content id.
@@ -277,7 +281,8 @@ export class ContentService implements IContentService {
         await this.runVeto(HOOKS.content.beforeUpdate, { operation: 'update', typeId, id, actor, input: patch });
 
         const reviewed = entry.type.reviewedFields.length > 0;
-        const curation = reviewed && !actor.isCurator ? this.requireCuration() : undefined;
+        const curatorQueued = this.keepsCuratorChangeInQueue(entry, actor, row);
+        const curation = reviewed && (!actor.isCurator || curatorQueued) ? this.requireCuration() : undefined;
         const before = reviewed ? await this.readPayload(entry, id, 'working') : undefined;
 
         // A never-reviewed item is served at its working version, so a change
@@ -303,7 +308,7 @@ export class ContentService implements IContentService {
             // promoting it. Any save of it needs a decision, or it stays stuck.
             const orphaned = row.curation === 'pending' && !row.curationItemId;
             if (orphaned || this.reviewedFieldsChanged(entry, before, after)) {
-                if (actor.isCurator) {
+                if (actor.isCurator && !curatorQueued) {
                     await this.approveByCurator(entry, id, actor);
                 } else if (curation) {
                     await this.holdForReview(curation, entry, id, actor);
@@ -885,6 +890,30 @@ export class ContentService implements IContentService {
         );
 
         return;
+    }
+
+    /**
+     * Decide whether a curator's reviewed change has to go through the
+     * curation queue instead of being approved on the spot.
+     *
+     * For a type that publishes to sinks, the queue is the only place a
+     * curator picks where the item goes, and approving a queue item with no
+     * destination selected is refused. So while the item is pending, or has
+     * never been live, a curator's change is held like anyone else's: the
+     * edit is saved, the open queue item shows it, and the curator approves
+     * it there with its destinations. Once the item is live and not pending,
+     * a curator's edit is approved directly and publishes nowhere, because
+     * the item already reached its destinations when it first went live.
+     *
+     * @param entry - The managed type.
+     * @param actor - Who is making the change.
+     * @param row - The item's core row, or null for a create.
+     * @returns True when the change must be held for review.
+     */
+    private keepsCuratorChangeInQueue(entry: IRegisteredManagedType, actor: IContentActor, row: IContent | null): boolean {
+        return actor.isCurator
+            && entry.type.publishesToSinks === true
+            && (row?.curation === 'pending' || !row?.hasApprovedVersion);
     }
 
     /**

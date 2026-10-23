@@ -157,6 +157,29 @@ describe('ContentService', () => {
         );
     });
 
+    it('binds a type without publish destinations unless it asks for them', () => {
+        expect(curation.registerType).toHaveBeenCalledWith(expect.objectContaining({ publishesToSinks: false }), 'test');
+    });
+
+    it('offers publish destinations in the queue for a type that publishes to sinks', () => {
+        const publishing = {
+            ...createFakeType().type,
+            typeId: 'test:post',
+            classification: { egress: 'external', audience: 'public' } as const,
+            publishesToSinks: true
+        };
+        service.registerType(publishing, 'test');
+
+        expect(curation.registerType).toHaveBeenCalledWith(
+            expect.objectContaining({
+                typeId: 'test:post',
+                publishesToSinks: true,
+                classification: { egress: 'external', audience: 'public' }
+            }),
+            'test'
+        );
+    });
+
     it('refuses a malformed type at registration', () => {
         const broken = { ...createFakeType().type, typeId: 'no-namespace' };
         expect(() => service.registerType(broken, 'test')).toThrow(/namespaced/);
@@ -344,6 +367,57 @@ describe('ContentService', () => {
             expect(updated.curation).toBe('approved');
             const [publicView] = await service.readPublic<IFakeContent>('test:item', [item.id]);
             expect(publicView.title).toBe('C');
+        });
+    });
+
+    describe('a type that publishes to sinks', () => {
+        /**
+         * Register a second fake type that publishes to sinks, so a curator's
+         * change has to reach destinations through a queue decision.
+         *
+         * @returns The publishing type, already registered.
+         */
+        function registerPublishingType() {
+            const publishing = createFakeType();
+            const type = { ...publishing.type, typeId: 'test:post', publishesToSinks: true };
+            service.registerType(type, 'test');
+            return type;
+        }
+
+        it('holds a curator\'s new item so destinations are chosen in the queue', async () => {
+            const type = registerPublishingType();
+            const item = await service.create<IFakeContent>('test:post', { title: 'A', note: 'n' }, curator);
+
+            expect(item.curation).toBe('pending');
+            expect(item.hasApprovedVersion).toBe(false);
+            expect(type.approve).not.toHaveBeenCalled();
+            expect(curation.hold).toHaveBeenCalledOnce();
+        });
+
+        it('keeps a pending item in the queue when a curator edits it', async () => {
+            registerPublishingType();
+            const item = await service.create<IFakeContent>('test:post', { title: 'A', note: 'n' }, automated);
+
+            const updated = await service.update<IFakeContent>('test:post', item.id, { title: 'B' }, curator);
+
+            expect(curation.approve).not.toHaveBeenCalled();
+            expect(curation.hold).toHaveBeenCalledOnce();
+            expect(updated.curation).toBe('pending');
+            expect(updated.curationItemId).toBe('item-1');
+            expect(await service.readPublic('test:post', [item.id])).toEqual([]);
+        });
+
+        it('approves a curator\'s edit of a live item directly, without opening a queue item', async () => {
+            registerPublishingType();
+            const item = await service.create<IFakeContent>('test:post', { title: 'A', note: 'n' }, automated);
+            await curation.approve('item-1');
+
+            const updated = await service.update<IFakeContent>('test:post', item.id, { title: 'B' }, curator);
+
+            expect(curation.hold).toHaveBeenCalledOnce();
+            expect(updated.curation).toBe('approved');
+            const [publicView] = await service.readPublic<IFakeContent>('test:post', [item.id]);
+            expect(publicView.title).toBe('B');
         });
     });
 
