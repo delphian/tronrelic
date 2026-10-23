@@ -59,6 +59,11 @@ export interface IManagedContentType<T extends IContent = IContent, TCreate = un
      * curator's own create or edit is held for review too while the item is
      * pending or has never been live. Once the item is live, a curator's edit
      * is approved directly and does not publish it again.
+     *
+     * Because the queue is the only place destinations are picked, a type that
+     * sets this must also declare at least one reviewed field. Registration
+     * refuses the pair, since an item that never enters curation could never
+     * reach a sink.
      */
     publishesToSinks?: boolean;
 

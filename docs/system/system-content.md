@@ -75,7 +75,7 @@ Three existing content types still implement `ICurationType` directly: the blog 
 
 A type that sets `publishesToSinks: true` on its `IManagedContentType` gets the curation queue's sink picker. When a curator approves an item there, the queue offers the content router's publish sinks that the type's `classification` allows, such as X or Telegram, and the curator picks which ones fire. Core makes the item live first and hands it to the syndication outbox only after that succeeds, so an approval the content service refuses never publishes anywhere.
 
-Destinations are chosen only on a decision made in the queue, and the queue refuses an approval that selects none. So for such a type, a curator's create or edit is held for review like anyone else's while the item is pending or has never been live: the change is saved, the open queue item shows it, and the curator approves it there with its destinations. Once the item is live and not pending, a curator's edit is approved directly and does not publish it again.
+Destinations are chosen only on a decision made in the queue, and the queue refuses an approval that selects none. So for such a type, a curator's create or edit is held for review like anyone else's while the item is pending or has never been live: the change is saved, the open queue item shows it, and the curator approves it there with its destinations. Once the item is live and not pending, a curator's edit is approved directly and does not publish it again. Registration refuses a type that sets `publishesToSinks` but declares no `reviewedFields`, because its items would never enter the queue.
 
 ### Soft deletion is mandatory
 
