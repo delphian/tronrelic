@@ -342,7 +342,7 @@ export class CurationService implements ICurationService {
     }
 
     /**
-     * List decided envelopes (approved/rejected) newest-first for the history view.
+     * List closed envelopes (approved/rejected/dismissed) newest-first for the history view.
      * Unlike `listPending`, these are returned with their cached preview rather than
      * a live `describe()`: history records what was decided at decision time, so the
      * snapshot frozen into the envelope is the faithful view — re-deriving from the
@@ -531,6 +531,41 @@ export class CurationService implements ICurationService {
     }
 
     /**
+     * Close a pending envelope whose owning type is not registered. Approve and
+     * reject both commit through the owner's `applyEdit`, so an item held by a
+     * plugin that has since been removed can never leave the queue through them.
+     * This records the `dismissed` status with who closed it and why, and does
+     * nothing else: no owner call, no sink delivery, and no `content.published`.
+     *
+     * Refused while the type is registered, so an admin cannot use it to skip
+     * the owner's own reject handling for an item that still has an owner.
+     *
+     * @param id - The envelope id.
+     * @param decidedBy - Better Auth user id of the admin closing the item.
+     * @param reason - Why the item was closed, kept on the audit trail.
+     * @returns The dismissed envelope, or null when the item is missing, no
+     *          longer pending, or its owning type is registered.
+     */
+    async dismiss(id: string, decidedBy?: string, reason?: string): Promise<ICurationItem | null> {
+        const existing = await this.queue.get(id);
+        let result: ICurationItem | null = null;
+        if (existing && existing.status === 'pending') {
+            if (this.types.has(existing.typeId)) {
+                this.logger.warn(
+                    { id, typeId: existing.typeId },
+                    'Curation dismissal refused — owning type is registered; approve or reject instead'
+                );
+            } else {
+                result = await this.queue.resolve(id, 'dismissed', decidedBy, undefined, undefined, reason);
+                if (result) {
+                    await this.notifyChanged();
+                }
+            }
+        }
+        return result;
+    }
+
+    /**
      * Apply an operator's inline edit to a pending item through its owning type,
      * then re-derive and re-cache the preview. The owning type validates the
      * patch and owns the write (core never touches the payload), mirroring how
@@ -669,7 +704,7 @@ export class CurationService implements ICurationService {
      */
     private async decide(
         id: string,
-        status: Exclude<CurationItemStatus, 'pending'>,
+        status: Exclude<CurationItemStatus, 'pending' | 'dismissed'>,
         decidedBy?: string,
         sinks?: ICurationSinkSelection[]
     ): Promise<ICurationItem | null> {

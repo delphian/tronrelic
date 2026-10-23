@@ -6,7 +6,9 @@
  * the curator decides one item at a time without losing sight of how many are
  * left. Approving commits the effect through its owning plugin; rejecting
  * discards it. An item whose owning plugin is disabled returns a 409 that the
- * toast reports, since it cannot be decided until the plugin is re-enabled.
+ * toast reports, since it cannot be decided until the plugin is re-enabled. An
+ * item whose plugin is no longer installed at all offers Dismiss instead, which
+ * closes it without calling the plugin.
  *
  * After a decision the next item opens on its own: the one that slid into the
  * decided item's place in the list, which is the next one down. Refetches on
@@ -24,13 +26,14 @@ import {
     listCurations,
     approveCuration,
     rejectCuration,
+    dismissCuration,
     editCuration,
     setSinkDefaults,
     type ICurationItemView,
     type ICurationSinkSelection
 } from '../../../../../../../modules/curation';
 import { QueueRail } from '../components/QueueRail';
-import { ReviewSheet } from '../components/ReviewSheet';
+import { ReviewSheet, type CurationAction } from '../components/ReviewSheet';
 import { CurationEditForm } from '../components/CurationEditForm';
 import { countLabel } from '../components/countLabel';
 import styles from './PendingTab.module.scss';
@@ -38,7 +41,35 @@ import styles from './PendingTab.module.scss';
 /** The decision currently in flight, so only its button shows progress. */
 interface IBusyDecision {
     id: string;
-    action: 'approve' | 'reject';
+    action: CurationAction;
+}
+
+/** The toast tone and title shown after each kind of decision succeeds. */
+const DECISION_TOASTS: Record<CurationAction, { tone: 'success' | 'info'; title: string }> = {
+    approve: { tone: 'success', title: 'Approved' },
+    reject: { tone: 'info', title: 'Rejected' },
+    dismiss: { tone: 'info', title: 'Dismissed' }
+};
+
+/**
+ * Send one decision to the backend. Kept apart from the component so the
+ * handler stays a single call regardless of which action it is.
+ *
+ * @param id - The item to decide.
+ * @param action - Which decision to send.
+ * @param sinks - The destinations chosen for an approval, if any.
+ * @returns Resolves when the backend has recorded the decision.
+ */
+function sendDecision(id: string, action: CurationAction, sinks?: ICurationSinkSelection[]): Promise<void> {
+    let request: Promise<void>;
+    if (action === 'approve') {
+        request = approveCuration(id, sinks);
+    } else if (action === 'reject') {
+        request = rejectCuration(id);
+    } else {
+        request = dismissCuration(id);
+    }
+    return request;
 }
 
 /**
@@ -165,20 +196,20 @@ export function PendingTab({ onChanged }: { onChanged: () => void }) {
     }, []);
 
     /**
-     * Approve or reject an item, then refetch so the next item opens.
+     * Approve, reject, or dismiss an item, then refetch so the next item opens.
      *
      * @param id - The item to decide.
-     * @param action - Approve (commit) or reject (discard).
+     * @param action - Approve (commit), reject (discard), or dismiss (close an
+     *   item whose plugin is gone).
      * @param sinks - The destinations chosen for an approval, if any.
      */
-    const resolve = useCallback(async (id: string, action: 'approve' | 'reject', sinks?: ICurationSinkSelection[]) => {
+    const resolve = useCallback(async (id: string, action: CurationAction, sinks?: ICurationSinkSelection[]) => {
         setBusy({ id, action });
         try {
-            await (action === 'approve' ? approveCuration(id, sinks) : rejectCuration(id));
+            await sendDecision(id, action, sinks);
             const fanned = action === 'approve' && sinks !== undefined && sinks.length > 0;
             push({
-                tone: action === 'approve' ? 'success' : 'info',
-                title: action === 'approve' ? 'Approved' : 'Rejected',
+                ...DECISION_TOASTS[action],
                 description: fanned ? `Publishing to ${countLabel(sinks.length, 'destination')}.` : undefined
             });
             setFocusSheet(true);
@@ -274,6 +305,7 @@ export function PendingTab({ onChanged }: { onChanged: () => void }) {
                         autoFocusHeading={focusSheet}
                         onApprove={(id, sinks) => { void resolve(id, 'approve', sinks); }}
                         onReject={(id) => { void resolve(id, 'reject'); }}
+                        onDismiss={(id) => { void resolve(id, 'dismiss'); }}
                         onEdit={openEditor}
                         onSetDefault={(id, sinkIds) => { void setDefault(id, sinkIds); }}
                     />

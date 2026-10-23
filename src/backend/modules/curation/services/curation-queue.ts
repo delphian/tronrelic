@@ -94,8 +94,8 @@ export class CurationQueue {
     }
 
     /**
-     * List decided envelopes (approved or rejected), most-recently-decided first,
-     * for the curation history view. The records were never discarded — a decision
+     * List closed envelopes (approved, rejected, or dismissed), most-recently-closed
+     * first, for the curation history view. The records were never discarded — a decision
      * mutates an item in place rather than deleting it (see `resolve`) — so this is
      * the audit half of the queue: who decided what, and when. Sorted by `decidedAt`
      * so the freshest decisions lead, backed by the `{ status, decidedAt }` index.
@@ -107,7 +107,7 @@ export class CurationQueue {
         const capped = Math.min(Math.max(1, limit), 500);
         const collection = this.database.getCollection<ICurationItem>(COLLECTION);
         return collection
-            .find({ status: { $in: ['approved', 'rejected'] } })
+            .find({ status: { $in: ['approved', 'rejected', 'dismissed'] } })
             .sort({ decidedAt: -1 })
             .limit(capped)
             .toArray();
@@ -127,10 +127,11 @@ export class CurationQueue {
     }
 
     /**
-     * Transition a pending envelope to `approved` or `rejected`. The conditional
-     * update on `status: 'pending'` is the atomic gate: two concurrent decisions
-     * serialize on the document, so only the first transitions it and gets the
-     * envelope back, ensuring the owning type's callback runs exactly once.
+     * Transition a pending envelope to `approved`, `rejected`, or `dismissed`.
+     * The conditional update on `status: 'pending'` is the atomic gate: two
+     * concurrent decisions serialize on the document, so only the first
+     * transitions it and gets the envelope back, ensuring the owning type's
+     * callback runs exactly once.
      *
      * @param id - The envelope id.
      * @param status - The terminal state.
@@ -139,6 +140,8 @@ export class CurationQueue {
      * @param sinks - Selected sinks, recorded `pending` in the same atomic write
      *        so the publish intent commits with the decision and is never lost to
      *        a crash before the delivery relay runs.
+     * @param dismissReason - Why a `dismissed` item was closed, written in the same
+     *        atomic update so history never shows a dismissal without its reason.
      * @returns The updated envelope, or null when no pending envelope matched.
      */
     async resolve(
@@ -146,7 +149,8 @@ export class CurationQueue {
         status: Exclude<CurationItemStatus, 'pending'>,
         decidedBy?: string,
         preview?: ICurationPreview,
-        sinks?: ICurationSinkOutcome[]
+        sinks?: ICurationSinkOutcome[],
+        dismissReason?: string
     ): Promise<ICurationItem | null> {
         const existing = await this.database.findOne<ICurationItem>(COLLECTION, { id, status: 'pending' });
         let resolved: ICurationItem | null = null;
@@ -169,6 +173,9 @@ export class CurationQueue {
             if (sinks !== undefined) {
                 setFields.sinks = sinks;
             }
+            if (dismissReason !== undefined) {
+                setFields.dismissReason = dismissReason;
+            }
             const modified = await this.database.updateMany(COLLECTION, { id, status: 'pending' }, { $set: setFields });
             if (modified > 0) {
                 resolved = {
@@ -177,7 +184,8 @@ export class CurationQueue {
                     decidedAt,
                     decidedBy,
                     preview: preview ?? existing.preview,
-                    sinks: sinks ?? existing.sinks
+                    sinks: sinks ?? existing.sinks,
+                    dismissReason: dismissReason ?? existing.dismissReason
                 };
                 this.logger.info({ id, status, decidedBy }, `Curation item ${status}: ${existing.typeId}`);
             }

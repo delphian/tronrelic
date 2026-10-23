@@ -284,6 +284,54 @@ describe('CurationService', () => {
         expect(await service.countPending()).toBe(1); // not lost — waits for the owner to return
     });
 
+    it('dismisses an item whose owning type is unregistered, recording who and why without calling the owner', async () => {
+        const hookRegistry = createMockHookRegistry();
+        const service = makeService(hookRegistry);
+        const type = spyCurationType();
+        service.registerType(type, 'x-poster');
+        const held = await service.hold({ typeId: 'x-poster:tweet', ref: { postId: 'p1' } });
+
+        service.unregisterType('x-poster:tweet');
+        const dismissed = await service.dismiss(held.id, 'admin-1', "Owning provider 'x-poster' is not registered");
+
+        expect(dismissed?.status).toBe('dismissed');
+        expect(dismissed?.decidedBy).toBe('admin-1');
+        expect(dismissed?.dismissReason).toBe("Owning provider 'x-poster' is not registered");
+        expect(type.applyEdit).not.toHaveBeenCalled();
+        expect(hookRegistry.invoke).not.toHaveBeenCalled();
+        expect(await service.countPending()).toBe(0);
+
+        // The dismissal stays on the audit trail alongside approvals and rejections.
+        const history = await service.listHistory();
+        expect(history.map((item) => item.id)).toEqual([held.id]);
+        expect(history[0].dismissReason).toBe("Owning provider 'x-poster' is not registered");
+    });
+
+    it('refuses to dismiss an item whose owning type is registered, leaving it pending', async () => {
+        const service = makeService();
+        const type = spyCurationType();
+        service.registerType(type, 'x-poster');
+        const held = await service.hold({ typeId: 'x-poster:tweet', ref: {} });
+
+        const dismissed = await service.dismiss(held.id, 'admin-1', 'not needed');
+
+        expect(dismissed).toBeNull();
+        expect(type.applyEdit).not.toHaveBeenCalled();
+        expect(await service.countPending()).toBe(1);
+    });
+
+    it('returns null when dismissing an item that is already decided', async () => {
+        const service = makeService();
+        service.registerType(spyCurationType(), 'x-poster');
+        const held = await service.hold({ typeId: 'x-poster:tweet', ref: {} });
+        await service.reject(held.id, 'admin-1');
+
+        service.unregisterType('x-poster:tweet');
+
+        expect(await service.dismiss(held.id, 'admin-2', 'late')).toBeNull();
+        expect((await service.get(held.id))?.status).toBe('rejected');
+    });
+
     it('surfaces a failed commit to the caller while leaving the decision recorded', async () => {
         const service = makeService();
         const type = spyCurationType({ applyEdit: vi.fn(async () => { throw new Error('publish failed'); }) });

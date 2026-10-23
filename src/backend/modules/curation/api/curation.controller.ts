@@ -18,9 +18,12 @@ import type { CurationService } from '../services/curation-service.js';
  * editor uses to address its own record). Drops the Mongo `_id`.
  *
  * @param item - The stored envelope.
+ * @param ownerAvailable - Whether the item's owning type is registered. Sent
+ *        only for pending items, so the dashboard can offer Dismiss instead of
+ *        Approve and Reject when the owner is gone. Omit for decided items.
  * @returns A JSON-safe view of the item.
  */
-function serializeCurationItem(item: ICurationItem): Record<string, unknown> {
+function serializeCurationItem(item: ICurationItem, ownerAvailable?: boolean): Record<string, unknown> {
     return {
         id: item.id,
         typeId: item.typeId,
@@ -32,7 +35,9 @@ function serializeCurationItem(item: ICurationItem): Record<string, unknown> {
         createdAt: item.createdAt instanceof Date ? item.createdAt.toISOString() : item.createdAt,
         decidedAt: item.decidedAt instanceof Date ? item.decidedAt.toISOString() : item.decidedAt,
         decidedBy: item.decidedBy,
-        sinks: item.sinks
+        dismissReason: item.dismissReason,
+        sinks: item.sinks,
+        ownerAvailable
     };
 }
 
@@ -96,7 +101,9 @@ export class CurationController {
     /** GET /curations — pending items held across every content type. */
     listCurations = async (_req: Request, res: Response): Promise<void> => {
         const items = await this.curation.listPending();
-        res.json({ curations: items.map(serializeCurationItem) });
+        res.json({
+            curations: items.map((item) => serializeCurationItem(item, this.curation.hasType(item.typeId)))
+        });
     };
 
     /** GET /curations/count — pending curation count for the nav badge. */
@@ -104,10 +111,10 @@ export class CurationController {
         res.json({ count: await this.curation.countPending() });
     };
 
-    /** GET /curations/history — decided items (approved/rejected), most recent decision first. */
+    /** GET /curations/history — closed items (approved/rejected/dismissed), most recent first. */
     listCurationHistory = async (_req: Request, res: Response): Promise<void> => {
         const items = await this.curation.listHistory();
-        res.json({ curations: items.map(serializeCurationItem) });
+        res.json({ curations: items.map((item) => serializeCurationItem(item)) });
     };
 
     /** GET /curations/:id/sinks — the eligible publish sinks for a pending item. */
@@ -149,6 +156,33 @@ export class CurationController {
     /** POST /curations/:id/reject — reject a held item and discard it via its type. */
     rejectCuration = async (req: Request, res: Response): Promise<void> => {
         await this.decideCuration(req, res, 'reject');
+    };
+
+    /**
+     * POST /curations/:id/dismiss — close a pending item whose owning provider
+     * is not registered. Approve and reject return 409 for such an item, so
+     * without this route it would stay in the queue forever. Returns 404 when
+     * the item is not pending, and 409 when the owner is registered, because an
+     * item with a live owner must be approved or rejected so the owner can act.
+     */
+    dismissCuration = async (req: Request, res: Response): Promise<void> => {
+        const id = req.params.id;
+        const item = await this.curation.get(id);
+        if (!item || item.status !== 'pending') {
+            res.status(404).json({ error: 'No pending curation item matched that id.' });
+            return;
+        }
+        if (this.curation.hasType(item.typeId)) {
+            res.status(409).json({ error: 'The owning provider is available; approve or reject this item instead.' });
+            return;
+        }
+        const reason = `Owning provider '${item.providerId}' is not registered`;
+        const result = await this.curation.dismiss(id, actorId(req), reason);
+        if (!result) {
+            res.status(409).json({ error: 'Curation item could not be dismissed; it may have just been resolved.' });
+            return;
+        }
+        res.json(serializeCurationItem(result));
     };
 
     /** PATCH /curations/:id — apply an operator's inline edit to a held item. */

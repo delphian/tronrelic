@@ -2,8 +2,8 @@
 
 /**
  * @fileoverview History tab — every decided item, most recent decision first.
- * Decisions never delete a record, so this is the audit of what was approved or
- * rejected, by whom, and where approved content was delivered. It stays a
+ * Decisions never delete a record, so this is the audit of what was approved,
+ * rejected, or dismissed, by whom, and where approved content was delivered. It stays a
  * table because it is data to skim rather than work to act on: each row leads
  * with the decision, names the item with a one-line excerpt, and summarises
  * delivery. Choosing a row opens the full record in a slide-over.
@@ -118,7 +118,7 @@ export function HistoryTab() {
     if (loading && items.length === 0) {
         body = <p className={styles.placeholder}>Loading decisions…</p>;
     } else if (items.length === 0) {
-        body = error ? null : <p className={styles.placeholder}>No decisions yet. Approved and rejected items are listed here.</p>;
+        body = error ? null : <p className={styles.placeholder}>No decisions yet. Approved, rejected, and dismissed items are listed here.</p>;
     } else {
         body = (
             <div className={`table-scroll ${styles.table_wrap}`}>

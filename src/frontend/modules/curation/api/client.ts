@@ -52,7 +52,15 @@ export interface ICurationItemView {
     createdAt: string;
     decidedAt?: string;
     decidedBy?: string;
+    /** Why a `dismissed` item was closed; absent on every other status. */
+    dismissReason?: string;
     sinks?: ICurationSinkOutcome[];
+    /**
+     * Whether the owning type is registered. Sent only for pending items; when
+     * false the item can only be dismissed, because approve and reject need the
+     * owner to commit.
+     */
+    ownerAvailable?: boolean;
 }
 
 /**
@@ -66,7 +74,7 @@ export async function listCurations(): Promise<ICurationItemView[]> {
 }
 
 /**
- * List decided curation items (approved/rejected), most-recently-decided first.
+ * List closed curation items (approved/rejected/dismissed), most recent first.
  * The pending queue answers "what needs me now?"; this answers "what was decided,
  * when, and by whom?" — the records persist after a decision, this surfaces them.
  *
@@ -165,4 +173,16 @@ export async function setSinkDefaults(id: string, sinkIds: string[]): Promise<vo
  */
 export async function rejectCuration(id: string): Promise<void> {
     await parse(await fetch(`${BASE}/curations/${encodeURIComponent(id)}/reject`, { method: 'POST' }), 'reject curation item');
+}
+
+/**
+ * Close a held item whose owning provider is gone, so it leaves the queue
+ * without calling the missing owner. The backend refuses this with a 409 while
+ * the owner is registered, which surfaces here as a thrown error.
+ *
+ * @param id - The curation envelope id.
+ * @returns Resolves when the item is dismissed.
+ */
+export async function dismissCuration(id: string): Promise<void> {
+    await parse(await fetch(`${BASE}/curations/${encodeURIComponent(id)}/dismiss`, { method: 'POST' }), 'dismiss curation item');
 }
