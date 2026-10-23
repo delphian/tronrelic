@@ -46,6 +46,7 @@ import type {
     IPlacementService,
     IZoneLayoutConfig
 } from '@/types';
+import { DEFAULT_LANGUAGE } from '@/types';
 import type { PlacementResolver } from './placements/placement-resolver.js';
 import type { WidgetRouteCache } from './placements/WidgetRouteCache.js';
 import { ZoneLayoutService } from './zones/zone-layout.service.js';
@@ -203,12 +204,18 @@ export class WidgetsService implements IWidgetsService {
 
     async fetchWidgetsForRoute(
         route: string,
-        params: Record<string, string> = {}
+        params: Record<string, string> = {},
+        language: string = DEFAULT_LANGUAGE
     ): Promise<IWidgetData[]> {
         // Every page render calls this (twice), so results are held for a
-        // few seconds per route. Writes below clear the cache, so only live
-        // fetcher data can be that stale, never placement changes.
-        return this.routeCache.get(route, params, () => this.resolver.resolveForRoute(route, params));
+        // few seconds per route and language. Writes below clear the cache,
+        // so only live fetcher data can be that stale, never placement changes.
+        return this.routeCache.get(
+            route,
+            params,
+            () => this.resolver.resolveForRoute(route, params, language),
+            language
+        );
     }
 
     // ------------------------------------------------------------

@@ -19,6 +19,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { AlertCircle, Archive, ArrowLeft, Edit, Eye, Plus, RotateCcw, Save, Sparkles, Trash2, X } from 'lucide-react';
 import type {
     IContentTranslation,
+    IContentTranslationsProps,
     IContentTranslationSource,
     ILanguage,
     ITranslatableField,
@@ -43,29 +44,6 @@ import {
     suggestTranslation
 } from '../../api/client';
 import styles from './ContentTranslations.module.scss';
-
-/** Props for the translation editor. */
-export interface ContentTranslationsProps {
-    /** The managed content type, such as `core:page`. */
-    typeId: string;
-    /** Core content id of the item being translated. */
-    contentId: string;
-    /** The item's English title, shown in the headings. */
-    title: string;
-    /**
-     * The English address the item is served at, so the editor can name the
-     * translated address. Null when the item has no public address.
-     */
-    publicPath: string | null;
-    /**
-     * Renders a Markdown field's draft to HTML for the preview pane. Supplied
-     * by a type whose Markdown is rendered in a way only it knows; leave it out
-     * and the editor offers no preview.
-     */
-    renderPreview?: (markdown: string) => Promise<string>;
-    /** Returns to the content type's own list. */
-    onClose: () => void;
-}
 
 /** The translation open in the editor. */
 interface ITranslationDraft {
@@ -142,7 +120,7 @@ function startingValues(source: IContentTranslationSource): Record<string, strin
  * @param props - The item and the close handler.
  * @returns The language list, or the editor for one language.
  */
-export function ContentTranslations({ typeId, contentId, title, publicPath, renderPreview, onClose }: ContentTranslationsProps) {
+export function ContentTranslations({ typeId, contentId, title, publicPath, renderPreview, onClose }: IContentTranslationsProps) {
     const [languages, setLanguages] = useState<ILanguage[]>([]);
     const [translations, setTranslations] = useState<IContentTranslation[]>([]);
     const [source, setSource] = useState<IContentTranslationSource | null>(null);

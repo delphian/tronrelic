@@ -1,0 +1,14 @@
+/* Quiet metadata under an item's title: the badges carry the colour, the
+ * label stays muted so the row reads as secondary to the item itself. */
+.row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--badge-gap);
+}
+
+.label,
+.none {
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+}

@@ -1,5 +1,6 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import type { IZoneLayoutConfig } from '@/types';
+import { DEFAULT_LANGUAGE, LANGUAGE_CODE_PATTERN } from '@/types';
 import { WidgetsService } from '../../modules/widgets/widgets.service.js';
 import { logger } from '../../lib/logger.js';
 
@@ -18,13 +19,14 @@ export function widgetRouter(): Router {
     const router = Router();
 
     /**
-     * GET /api/widgets?route=<path>&params=<json>
+     * GET /api/widgets?route=<path>&params=<json>&language=<code>
      *
      * Fetch widgets for a specific route with pre-fetched data.
      *
      * Query params:
      * - route: URL path to match against placement routes (e.g., '/', '/tools/energy-estimator')
      * - params: Optional JSON-encoded route parameters (e.g., '{"slug":"about-us"}')
+     * - language: Optional language of the page; English when absent or malformed
      *
      * Returns:
      * {
@@ -76,8 +78,14 @@ export function widgetRouter(): Router {
             // Lazy lookup — the service singleton is configured by
             // `WidgetsModule.init()`, which runs before the HTTP server
             // accepts connections.
+            // The page's language, for fetchers whose content is translated.
+            // Anything that is not a language code falls back to English
+            // rather than becoming a cache key.
+            const requestedLanguage = typeof req.query.language === 'string' ? req.query.language : '';
+            const language = LANGUAGE_CODE_PATTERN.test(requestedLanguage) ? requestedLanguage : DEFAULT_LANGUAGE;
+
             const service = WidgetsService.getInstance();
-            const widgets = await service.fetchWidgetsForRoute(route, params);
+            const widgets = await service.fetchWidgetsForRoute(route, params, language);
 
             // Flatten the zone snapshot to a zoneId → layoutConfig map so
             // the frontend can apply each zone's flexbox layout to its

@@ -57,6 +57,28 @@ export class ContentTranslationsController {
     };
 
     /**
+     * Summarize the translations of the items in an admin list.
+     *
+     * @param req - Params: `typeId`. Query: `ids`, comma-separated content ids.
+     * @param res - Receives `{ statuses }`, keyed by content id.
+     */
+    getStatuses = async (req: Request, res: Response): Promise<void> => {
+        try {
+            const raw = typeof req.query.ids === 'string' ? req.query.ids : '';
+            const ids = raw.split(',').map((id) => id.trim()).filter((id) => id !== '');
+            res.json({ statuses: await this.translations.summarizeTranslations(req.params.typeId, ids) });
+        } catch (error) {
+            this.logger.error({ error, typeId: req.params.typeId }, 'Failed to summarize content translations');
+            res.status(isContentError(error) ? CONTENT_ERROR_STATUS[error.code] : 500).json({
+                error: 'Failed to load translation status',
+                message: error instanceof Error ? error.message : 'Unknown error'
+            });
+        }
+
+        return;
+    };
+
+    /**
      * Create or replace one translation.
      *
      * @param req - Params: `typeId`, `id`, `language`. Body: `{ values, published }`.
@@ -210,6 +232,8 @@ export function createContentTranslationsAdminRouter(controller: ContentTranslat
     router.get('/translation-settings', controller.getSettings);
     router.patch('/translation-settings', controller.updateSettings);
 
+    // Two segments, so it cannot collide with the three-segment item routes below.
+    router.get('/:typeId/translation-status', controller.getStatuses);
     router.get('/:typeId/:id/translations', controller.getOverview);
     router.put('/:typeId/:id/translations/:language', controller.saveTranslation);
     router.delete('/:typeId/:id/translations/:language', controller.deleteTranslation);

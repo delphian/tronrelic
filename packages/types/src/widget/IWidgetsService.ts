@@ -178,10 +178,17 @@ export interface IWidgetsService {
      * the result must be the same for every visitor.
      *
      * The SSR entry point used by `/api/widgets`.
+     *
+     * @param route - Request path the widgets are resolved for.
+     * @param params - Route params forwarded to each data fetcher.
+     * @param language - Language of the page being rendered, forwarded to
+     *   each fetcher as `placement.language` and part of the cache key.
+     *   Defaults to English.
      */
     fetchWidgetsForRoute(
         route: string,
-        params?: Record<string, string>
+        params?: Record<string, string>,
+        language?: string
     ): Promise<IWidgetData[]>;
 
     // ------------------------------------------------------------

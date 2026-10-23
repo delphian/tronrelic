@@ -45,7 +45,8 @@ modules/pages/
 │   ├── 003_add_old_slugs_to_pages.ts
 │   ├── 005_strip_file_fields_from_page_settings.ts
 │   ├── 007_adopt_pages_as_managed_content.ts
-│   └── 010_move_page_translations_to_core.ts
+│   ├── 010_move_page_translations_to_core.ts
+│   └── 011_remove_legacy_page_translations.ts
 ├── services/
 │   ├── page.service.ts       # IPageService singleton; routes page CRUD and public reads through core
 │   ├── page-content-type.ts  # core:page storage callbacks (IManagedContentType)
@@ -152,7 +153,7 @@ The core content service runs the translation workflow for every translatable ty
 | English values | The page at the version core chose; `body` is its markdown without frontmatter |
 | Public paths | The page's slug and old slugs, while its served version is `published`. An old slug containing anything but `a-z`, `0-9`, `-`, and `/` is left out |
 | Translated text | `module_pages_translation_values`, through the store core hands out; unique on `(contentId, language)`, where `contentId` is the page's id |
-| Admin UI | `/system/pages` → a page's **Translations** button opens the core `ContentTranslations` editor, with the page editor's preview endpoint as its Markdown preview |
+| Admin UI | `/system/pages` → a page's **Translations** button opens the core `ContentTranslations` editor, with the page editor's preview endpoint as its Markdown preview. Each row in the page list shows the core `TranslationStatusBadges` row: one badge per live translation, green when published, amber when the English changed, neutral for a draft |
 | Who may write | A signed-in admin. The `ADMIN_API_TOKEN` service token is refused with 403, because translations are not reviewed |
 | Served when | The page is served at that slug, the translation is published and not deleted, and the language is enabled |
 
@@ -216,7 +217,7 @@ interface ITranslationValueDocument {   // From src/backend/services/content-tra
 
 **Indexes:** `(contentId, language)` (unique), created at boot by `PageService.ensureTranslationIndexes`. Whether a translation is published or deleted, its fingerprint, and its audit fields live in the core `content_translations` collection, not here.
 
-`module_pages_translations`, where translations were stored as `core:page-translation` managed content, is no longer read. Migration 010 copied it into the collection above and left it in place for rollback.
+`module_pages_translations`, where translations were stored as `core:page-translation` managed content, is no longer read. Migration 010 copied it into the collection above and left it in place for rollback; migration 011 removes it once an operator chooses to.
 
 ### `page_settings`
 
@@ -250,6 +251,7 @@ A rename held for review adds the live slug to `oldSlugs` before anyone approves
 - `module:pages:008_restore_pages_text_index` — restored the `text_search` text index the Mongoose schema used to build, without which the `/system/pages` search fails with "text index required for $text query". One `createIndex` call after read-only checks; a no-op when the same index exists, and refuses, without writing, when a different text index exists.
 - `module:pages:009_restore_pages_slug_unique_index` — restored the unique `slug_1` index the Mongoose schema used to build, so two pages can never be stored under one URL. One `createIndex` call after read-only checks; a no-op when the unique index exists, and refuses, without writing, when pages already share a slug (listing them) or when a non-unique `slug_1` exists.
 - `module:pages:010_move_page_translations_to_core` — moved page translations from the retired `core:page-translation` type to the core content translation service: copied each translation's served text into `module_pages_translation_values`, wrote its state row in `content_translations` (keeping its fingerprint, so stale flags carry over), closed any review item still pending for the old type as rejected, and moved the AI translation settings from `page_settings` to `content_translation_settings`. A translation that only ever existed as a held or rejected edit is moved unpublished. Until it runs, pages are served in English only. Safe to re-run.
+- `module:pages:011_remove_legacy_page_translations` — removes what migration 010 kept for rollback: the `core:page-translation` rows in `content_items` and the `module_pages_translations` collection. Not part of any deploy; run it from `/system/database` once the site has run on the new translations long enough that a rollback will not be needed. It first checks that every old translation has its state row and its text in the new collections, and refuses without deleting anything when one does not. There is no rollback short of a backup. On a replica set the drop is refused inside the migration's transaction, so the emptied collection stays and can be dropped by hand.
 
 ## Related Documents
 

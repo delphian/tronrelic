@@ -12,6 +12,7 @@ import type {
     IContentTranslation,
     IContentTranslationOverview,
     IContentTranslationSettings,
+    IContentTranslationStatus,
     IContentTranslationSuggestion,
     IContentTranslationWrite
 } from '@/types';
@@ -63,6 +64,32 @@ function itemPath(typeId: string, id: string): string {
  */
 export async function getTranslationOverview(typeId: string, id: string): Promise<IContentTranslationOverview> {
     return send<IContentTranslationOverview>('GET', itemPath(typeId, id), 'load translations');
+}
+
+/**
+ * Summarize the translations of the items in an admin list.
+ *
+ * @param typeId - The managed content type.
+ * @param ids - Core content ids of the listed items.
+ * @returns Each translated item's statuses, keyed by content id; items with
+ *   no translations are absent.
+ */
+export async function getTranslationStatuses(
+    typeId: string,
+    ids: ReadonlyArray<string>
+): Promise<Record<string, IContentTranslationStatus[]>> {
+    let statuses: Record<string, IContentTranslationStatus[]> = {};
+    if (ids.length > 0) {
+        const query = new URLSearchParams({ ids: ids.join(',') });
+        const body = await send<{ statuses: Record<string, IContentTranslationStatus[]> }>(
+            'GET',
+            `/${encodeURIComponent(typeId)}/translation-status?${query.toString()}`,
+            'load translation status'
+        );
+        statuses = body.statuses;
+    }
+
+    return statuses;
 }
 
 /**

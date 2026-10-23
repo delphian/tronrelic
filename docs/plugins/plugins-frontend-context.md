@@ -14,7 +14,7 @@ interface IFrontendPluginContext {
     layout: ILayoutComponents;     // Page, PageHeader, Stack, Grid, Section, SubMenu
     ui: IUIComponents;             // Card, Panel, FigureList, Badge, Button, CopyButton, IconButton, Switch, Input, Select, Textarea, Skeleton, StatTile, StatGrid, ClientTime, Tooltip, TronAddress, TronTransactionId, IconPickerModal, ConfirmDialog, AccountPicker, AddressSelector, Table family
     charts: IChartComponents;      // LineChart, BarChart, PriceRail
-    system: ISystemComponents;     // SchedulerMonitor, CollectionBrowser, ClickHouseTableBrowser, SystemLogsMonitor, AiToolSchemaView (admin)
+    system: ISystemComponents;     // SchedulerMonitor, CollectionBrowser, ClickHouseTableBrowser, SystemLogsMonitor, AiToolSchemaView, ContentTranslations, TranslationStatusBadges (admin)
     api: IApiClient;               // get/post/put/patch/delete with runtime base URL
     websocket: IWebSocketClient;   // socket + auto-prefixed helpers
     useUser: () => IPluginUserState;
@@ -42,9 +42,9 @@ The `definePlugin({ pages: [{ path, component }] })` registration wires `context
 
 ## Admin Surfaces (`context.system`)
 
-Five core admin components are republished to plugins so a plugin's own admin
-page can offer Schedules, Database, Logs, and AI Tools tabs without sending the
-operator back to `/system`. Import them from the context — never by relative path across
+Seven core admin components are republished to plugins so a plugin's own admin
+page can offer Schedules, Database, Logs, and AI Tools tabs, and translate its
+managed content, without sending the operator back to `/system`. Import them from the context — never by relative path across
 the workspace.
 
 **A plugin that registers a scheduler job or owns storage must offer those
@@ -63,6 +63,17 @@ the `trp-onchain-typologies` workbench page is the reference implementation.
 | `ClickHouseTableBrowser` | ClickHouse tables and rows (read-only) | `pluginId` — your `manifest.id` |
 | `SystemLogsMonitor` | Log entries, level counts, live polling | `service` — `plugin:<manifest.id>` |
 | `AiToolSchemaView` | One AI tool's input parameters, read-only | None — pass `schema`, the tool's `inputSchema` |
+| `ContentTranslations` | The translation editor for one managed content item | `typeId` and `contentId` of the item |
+| `TranslationStatusBadges` | One item's translations as a badge row for an admin list | None — pass that item's `statuses` |
+
+`ContentTranslations` and `TranslationStatusBadges` are for a plugin whose
+managed content type sets `translation` (see
+[system-content.md](../system/system-content.md#translations)). Core runs the
+translation workflow, so the plugin mounts this editor rather than building
+one, and shows the badge row beside each item in its list. Fetch the statuses
+for the whole list in one request to
+`/api/admin/content/<typeId>/translation-status?ids=<id>,<id>`, which answers
+`{ statuses }` keyed by content id.
 
 `AiToolSchemaView` is for a plugin that lists its own AI tools on its admin page.
 It renders the parameter list the `/system/ai-tools` detail panel shows, so an

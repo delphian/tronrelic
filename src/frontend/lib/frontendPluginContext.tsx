@@ -47,6 +47,7 @@ import { SchedulerMonitor } from '../modules/scheduler';
 import { CollectionBrowser, ClickHouseTableBrowser } from '../modules/database';
 import { SystemLogsMonitor } from '../modules/logs';
 import { AiToolSchemaView } from '../modules/ai-tools';
+import { ContentTranslations, TranslationStatusBadges } from '../modules/content';
 import { Page, PageHeader, Stack, Grid, Section } from '../components/layout';
 // Imported by direct path, not the layout barrel: the barrel is kept
 // client-safe and excludes MenuNav (MenuNavSSR pulls next/headers). SubMenu
@@ -441,7 +442,9 @@ export function FrontendPluginContextProvider({ children }: { children: React.Re
             CollectionBrowser,
             ClickHouseTableBrowser,
             SystemLogsMonitor,
-            AiToolSchemaView
+            AiToolSchemaView,
+            ContentTranslations,
+            TranslationStatusBadges
         };
 
         const api = new ApiClient();
@@ -568,7 +571,9 @@ export function createPluginContext(pluginId: string): IFrontendPluginContext {
         CollectionBrowser,
         ClickHouseTableBrowser,
         SystemLogsMonitor,
-        AiToolSchemaView
+        AiToolSchemaView,
+        ContentTranslations,
+        TranslationStatusBadges
     };
 
     const api = new ApiClient();

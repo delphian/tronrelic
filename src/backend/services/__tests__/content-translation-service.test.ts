@@ -156,6 +156,38 @@ describe('ContentTranslationService', () => {
         expect(served?.values.text).toBe('你好');
     });
 
+    it('summarizes translation state for a list, flags stale ones, and leaves untranslated items out', async () => {
+        service.registerType(noteType(database), 'test');
+        const translated = await service.create<INote>('test:note', { text: 'Hi', paths: ['/hi'] }, curator);
+        const untranslated = await service.create<INote>('test:note', { text: 'Bye', paths: ['/bye'] }, curator);
+        await service.translations().saveTranslation('test:note', translated.id, 'zh', { values: { text: '你好' }, published: true }, curator);
+        await service.translations().saveTranslation('test:note', translated.id, 'es', { values: { text: 'Hola' }, published: false }, curator);
+        await service.update('test:note', translated.id, { text: 'Hello' }, curator);
+        await service.translations().saveTranslation('test:note', translated.id, 'es', { values: { text: 'Hola' }, published: false }, curator);
+
+        const summary = await service.translations().summarizeTranslations('test:note', [translated.id, untranslated.id]);
+
+        expect(summary[untranslated.id]).toBeUndefined();
+        expect(summary[translated.id]).toEqual([
+            { language: 'es', published: false, stale: false, deleted: false },
+            { language: 'zh', published: true, stale: true, deleted: false }
+        ]);
+    });
+
+    it('lists only items with a published, live translation into the language', async () => {
+        service.registerType(noteType(database), 'test');
+        const published = await service.create<INote>('test:note', { text: 'A', paths: ['/a'] }, curator);
+        const draft = await service.create<INote>('test:note', { text: 'B', paths: ['/b'] }, curator);
+        const deleted = await service.create<INote>('test:note', { text: 'C', paths: ['/c'] }, curator);
+        await service.translations().saveTranslation('test:note', published.id, 'zh', { values: { text: '甲' }, published: true }, curator);
+        await service.translations().saveTranslation('test:note', draft.id, 'zh', { values: { text: '乙' }, published: false }, curator);
+        await service.translations().saveTranslation('test:note', deleted.id, 'zh', { values: { text: '丙' }, published: true }, curator);
+        await service.translations().deleteTranslation('test:note', deleted.id, 'zh', curator);
+
+        expect(await service.translations().listPublishedTranslationIds('test:note', 'zh')).toEqual([published.id]);
+        expect(await service.translations().listPublishedTranslationIds('test:note', 'en')).toEqual([]);
+    });
+
     it('tells the content type when a translation changes', async () => {
         const type = noteType(database);
         const onChanged = vi.fn(async () => undefined);

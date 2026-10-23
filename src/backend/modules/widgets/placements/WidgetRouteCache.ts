@@ -20,6 +20,7 @@
  */
 
 import type { IWidgetData } from '@/types';
+import { DEFAULT_LANGUAGE } from '@/types';
 
 /**
  * How long a resolved route stays fresh. Short enough that live widget data
@@ -90,14 +91,17 @@ export class WidgetRouteCache {
      *   key because a fetcher may use them.
      * @param resolve - Performs the uncached resolution; called at most once
      *   per key while a resolution is running.
+     * @param language - Language of the page; part of the key because a
+     *   fetcher may serve content in that language. Defaults to English.
      * @returns The route's widget data, from the cache or freshly resolved.
      */
     async get(
         route: string,
         params: Record<string, string>,
-        resolve: () => Promise<IWidgetData[]>
+        resolve: () => Promise<IWidgetData[]>,
+        language: string = DEFAULT_LANGUAGE
     ): Promise<IWidgetData[]> {
-        const key = WidgetRouteCache.keyFor(route, params);
+        const key = WidgetRouteCache.keyFor(route, params, language);
         const cached = this.entries.get(key);
         let widgets: IWidgetData[];
 
@@ -186,19 +190,20 @@ export class WidgetRouteCache {
     }
 
     /**
-     * Build the cache key for a route and its params.
+     * Build the cache key for a route, its params, and the page language.
      *
      * Params are sorted by name so the same params in a different order map
      * to the same entry.
      *
      * @param route - Request path.
      * @param params - Route params.
-     * @returns A string that is equal for equal route and params.
+     * @param language - Page language.
+     * @returns A string that is equal for equal route, params, and language.
      */
-    private static keyFor(route: string, params: Record<string, string>): string {
+    private static keyFor(route: string, params: Record<string, string>, language: string): string {
         const sortedParams = Object.keys(params)
             .sort()
             .map(name => [name, params[name]]);
-        return JSON.stringify([route, sortedParams]);
+        return JSON.stringify([route, sortedParams, language]);
     }
 }

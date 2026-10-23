@@ -22,6 +22,7 @@ import type {
     IWidgetPlacement,
     IWidgetTypeRegistry
 } from '@/types';
+import { DEFAULT_LANGUAGE } from '@/types';
 
 /**
  * Per-widget data-fetch timeout. Matches the legacy
@@ -68,12 +69,15 @@ export class PlacementResolver {
      * @param params - Route params extracted by the host (e.g.
      *   `{ slug }` on `/[...slug]`). Forwarded to each widget
      *   type's data fetcher.
+     * @param language - Language of the page, forwarded to each fetcher as
+     *   `placement.language`. Defaults to English.
      * @returns Top-level widget data ready for the frontend, in render
      *   order, with container children nested.
      */
     async resolveForRoute(
         route: string,
-        params: Record<string, string> = {}
+        params: Record<string, string> = {},
+        language: string = DEFAULT_LANGUAGE
     ): Promise<IWidgetData[]> {
         const placements = await this.placementService.findByRoute(route);
         if (placements.length === 0) return [];
@@ -95,7 +99,7 @@ export class PlacementResolver {
         // can read `parentId` (which `IWidgetData` does not carry).
         const fetched = await Promise.all(
             fetchable.map(async p => {
-                const widget = await this.fetchOne(p, route, params);
+                const widget = await this.fetchOne(p, route, params, language);
                 return widget ? { placement: p, widget } : null;
             })
         );
@@ -164,11 +168,18 @@ export class PlacementResolver {
      * guards. Returns `null` when the type is not registered, the
      * fetcher throws, the fetcher exceeds the timeout, or the
      * returned data is not JSON-serialisable.
+     *
+     * @param placement - The placement to render.
+     * @param route - Request path.
+     * @param params - Route params for the fetcher.
+     * @param language - Page language for the fetcher.
+     * @returns The widget data, or null when the placement is skipped.
      */
     private async fetchOne(
         placement: IWidgetPlacement,
         route: string,
-        params: Record<string, string>
+        params: Record<string, string>,
+        language: string
     ): Promise<IWidgetData | null> {
         const type = this.widgetTypeRegistry.get(placement.typeId);
         if (!type) {
@@ -188,7 +199,8 @@ export class PlacementResolver {
             // without null-guards on every access.
             const placementContext = {
                 id: placement.id,
-                instanceConfig: placement.instanceConfig ?? {}
+                instanceConfig: placement.instanceConfig ?? {},
+                language
             };
             const raw = await Promise.race([
                 type.defaultDataFetcher(route, params, placementContext),

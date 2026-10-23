@@ -10,10 +10,10 @@ import { Select } from '../../../../../../../components/ui/Select';
 import { StatTile, StatGrid } from '../../../../../../../components/ui/StatTile';
 import { ClientTime } from '../../../../../../../components/ui/ClientTime';
 import { Plus, Edit, Trash2, Eye, EyeOff, Search, RotateCcw, Clock, XCircle, Archive, Languages } from 'lucide-react';
-import type { IPage } from '@/types';
+import type { IContentTranslationStatus, IPage } from '@/types';
 import styles from './PagesTab.module.scss';
 import { PageEditor } from '../components/PageEditor';
-import { ContentTranslations } from '../../../../../../../modules/content';
+import { ContentTranslations, getTranslationStatuses, TranslationStatusBadges } from '../../../../../../../modules/content';
 
 /**
  * Page counts returned with the list. Published and draft counts describe the
@@ -89,6 +89,25 @@ export function PagesTab() {
     const [editingPage, setEditingPage] = useState<IPage | null>(null);
     const [isCreating, setIsCreating] = useState(false);
     const [translatingPage, setTranslatingPage] = useState<(IPage & { contentId: string }) | null>(null);
+    // Null until loaded, and left null when the request fails, so a row never
+    // claims a page has no translations when the answer is unknown.
+    const [translationStatuses, setTranslationStatuses] = useState<Record<string, IContentTranslationStatus[]> | null>(null);
+
+    /**
+     * Load the translation status of every listed page, so the list shows
+     * which languages each page is live in without opening its editor. Runs
+     * after the list itself, and a failure only hides the status rows.
+     *
+     * @param listed - The pages just loaded.
+     */
+    const loadTranslationStatuses = useCallback(async (listed: IPage[]) => {
+        const ids = listed.map((page) => page.contentId).filter((id): id is string => Boolean(id));
+        try {
+            setTranslationStatuses(await getTranslationStatuses('core:page', ids));
+        } catch {
+            setTranslationStatuses(null);
+        }
+    }, []);
 
     /**
      * Fetch pages list from API.
@@ -117,12 +136,13 @@ export function PagesTab() {
             setPages(data.pages);
             setStats(data.stats);
             setError(null);
+            void loadTranslationStatuses(data.pages);
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to fetch pages');
         } finally {
             setLoading(false);
         }
-    }, [searchQuery, listFilter]);
+    }, [searchQuery, listFilter, loadTranslationStatuses]);
 
     /**
      * Soft-delete a page by content id.
@@ -355,6 +375,11 @@ export function PagesTab() {
                                     </Link>
                                     {page.description && (
                                         <p className={styles.page_description}>{page.description}</p>
+                                    )}
+                                    {page.contentId && (
+                                        <TranslationStatusBadges
+                                            statuses={translationStatuses ? (translationStatuses[page.contentId] ?? []) : undefined}
+                                        />
                                     )}
                                     {(page.curation === 'pending' || page.curation === 'rejected') && page.hasApprovedVersion && (
                                         <p className={styles.page_notice}>

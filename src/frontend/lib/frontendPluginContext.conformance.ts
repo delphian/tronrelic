@@ -74,6 +74,8 @@ import type { CollectionBrowser as Impl_CollectionBrowser } from '../modules/dat
 import type { ClickHouseTableBrowser as Impl_ClickHouseTableBrowser } from '../modules/database';
 import type { SystemLogsMonitor as Impl_SystemLogsMonitor } from '../modules/logs';
 import type { AiToolSchemaView as Impl_AiToolSchemaView } from '../modules/ai-tools';
+import type { ContentTranslations as Impl_ContentTranslations } from '../modules/content';
+import type { TranslationStatusBadges as Impl_TranslationStatusBadges } from '../modules/content';
 
 /**
  * The props a declaration exposes to plugins that the implementation would
@@ -146,5 +148,7 @@ type _Conformance_CollectionBrowser = AssertConformant<NoPhantomProps<ComponentP
 type _Conformance_ClickHouseTableBrowser = AssertConformant<NoPhantomProps<ComponentProps<ISystemComponents['ClickHouseTableBrowser']>, ComponentProps<typeof Impl_ClickHouseTableBrowser>>>;
 type _Conformance_SystemLogsMonitor = AssertConformant<NoPhantomProps<ComponentProps<ISystemComponents['SystemLogsMonitor']>, ComponentProps<typeof Impl_SystemLogsMonitor>>>;
 type _Conformance_AiToolSchemaView = AssertConformant<NoPhantomProps<ComponentProps<ISystemComponents['AiToolSchemaView']>, ComponentProps<typeof Impl_AiToolSchemaView>>>;
+type _Conformance_ContentTranslations = AssertConformant<NoPhantomProps<ComponentProps<ISystemComponents['ContentTranslations']>, ComponentProps<typeof Impl_ContentTranslations>>>;
+type _Conformance_TranslationStatusBadges = AssertConformant<NoPhantomProps<ComponentProps<ISystemComponents['TranslationStatusBadges']>, ComponentProps<typeof Impl_TranslationStatusBadges>>>;
 
 export type {};
