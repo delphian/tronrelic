@@ -17,6 +17,8 @@
  *   is not running, so it is refused rather than written unreviewed.
  * `superseded` — a curator approved a queue item that no longer holds the
  *   item's current edit, so nothing was promoted.
+ * `forbidden` — the actor may not perform the operation, such as a
+ *   non-curator importing an item as already approved.
  */
 export type ContentErrorCode =
     | 'unknown-type'
@@ -25,4 +27,5 @@ export type ContentErrorCode =
     | 'not-deleted'
     | 'vetoed'
     | 'curation-unavailable'
-    | 'superseded';
+    | 'superseded'
+    | 'forbidden';

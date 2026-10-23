@@ -106,6 +106,7 @@ The service throws an Error carrying a `code` from `ContentErrorCode`, so a call
 | `vetoed` | A `content.before*` handler stopped the operation | 403 |
 | `curation-unavailable` | The change needs review and curation is not running | 503 |
 | `superseded` | A curator approved a queue item that no longer holds the current edit | 409 |
+| `forbidden` | The actor may not perform the operation, such as a non-curator importing an approved item | 403 |
 
 An error the author throws (a validation failure such as a slug conflict) passes through unchanged.
 
@@ -114,6 +115,7 @@ An error the author throws (a validation failure such as a slug conflict) passes
 | Surface | Value |
 |---|---|
 | Service registry name | `'content'` → `IContentService` |
+| Moving records in | `importItem(typeId, input, state, actor)` — creates an item already `approved`, `pending`, or `rejected`; see [Adopting an Existing Type](#adopting-an-existing-type) |
 | Constructed | `bootstrapInit` (`src/backend/services/content-service.ts`), before module init |
 | Core collection | `content_items` |
 | Author contract | `IManagedContentType<T, TCreate, TUpdate>` — `classification`, `reviewedFields`, optional `publishesToSinks`, `describe`, `create`, `discardCreate`, `read`, `update`, `delete`, `restore`, `approve` |
@@ -125,6 +127,8 @@ An error the author throws (a validation failure such as a slug conflict) passes
 ## Adopting an Existing Type
 
 Adopting a type that already has records takes a migration, because every existing record needs a core-issued id and a core row. The pages migration `module:pages:007_adopt_pages_as_managed_content` is the reference: it assigns each record a `contentId`, snapshots currently published content as its approved version so nothing live disappears, and upserts a core row per record, recording live content as `approved` and everything else with no review state. Migrations run when an operator starts them, so the author must keep serving its not-yet-adopted records by their old rules until then.
+
+A plugin cannot write `content_items`, so it cannot adopt records the way that migration does. A plugin moving records in from elsewhere, such as an older plugin it replaces, calls `IContentService.importItem(typeId, input, state, actor)` once per record instead. It writes the item as `create` does, runs the same `content.beforeCreate` hooks, and then places it in the state the record already had rather than deciding again: `approved` goes live, `pending` is held in the curation queue, and `rejected` is stored hidden. Nothing is sent to a publish sink and `content.published` does not fire, because the record was already reviewed where it came from. Only a curator may import an item as `approved`, and a type with no reviewed fields cannot be imported, since `create` already makes its items live.
 
 ## Further Reading
 

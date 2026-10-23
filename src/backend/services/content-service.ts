@@ -221,28 +221,10 @@ export class ContentService implements IContentService {
         // there is no queue to hold it in — never create it unreviewed.
         const curation = reviewed && (!actor.isCurator || curatorQueued) ? this.requireCuration() : undefined;
 
-        const now = new Date();
         // An item that will be held starts out `pending`, so public readers
         // never see it between the author's write and the hold — and still
         // don't if the hold fails.
-        const row: IContent = {
-            id,
-            typeId,
-            providerId: entry.providerId,
-            hasApprovedVersion: false,
-            ...(curation ? { curation: 'pending' as const } : {}),
-            createdAt: now,
-            createdBy: actor.id,
-            updatedAt: now,
-            updatedBy: actor.id
-        };
-        await this.collection().insertOne({ ...row });
-        try {
-            await entry.type.create(id, input, actor);
-        } catch (error) {
-            await this.collection().deleteOne({ id });
-            throw error;
-        }
+        await this.insertNewItem(entry, id, input, actor, curation ? 'pending' : undefined);
 
         try {
             if (reviewed && actor.isCurator && !curatorQueued) {
@@ -257,6 +239,112 @@ export class ContentService implements IContentService {
         this.logger.info({ typeId, id, actor: actor.id }, 'Managed content created');
 
         return this.readOneAdmin<T>(entry, id);
+    }
+
+    /**
+     * Create an item in a review state another system already decided, such
+     * as a record moved from a plugin that predates managed content. Without
+     * this, a moved record could only arrive through `create`, which decides
+     * the state again: an item that was live would be held for review, and a
+     * rejected one could come back as pending.
+     *
+     * The item is written the same way `create` writes it, including the
+     * `content.beforeCreate` veto hooks, and then placed in the given state:
+     * `approved` is promoted to its approved version, `pending` is held in the
+     * curation queue, and `rejected` is stored hidden with no approved
+     * version. Nothing is published to a sink and `content.published` does
+     * not fire, because the item already went through its review elsewhere.
+     * A failure after the author's write removes both records, as in `create`.
+     *
+     * @param typeId - The managed content type.
+     * @param input - The type's creation input.
+     * @param state - The review state the item held in the system it came from.
+     * @param actor - Who is running the import. Only a curator may import an
+     *   item as `approved`, since that makes it live without review.
+     * @returns The imported item, working version.
+     * @throws ContentError `forbidden` when a non-curator imports an approved
+     *   item, or `curation-unavailable` when a pending item has no queue to go to.
+     * @throws Error when the type declares no reviewed fields, since such a
+     *   type has no review state to import and `create` already makes it live.
+     */
+    async importItem<T extends IContent>(
+        typeId: string,
+        input: unknown,
+        state: ContentCurationState,
+        actor: IContentActor
+    ): Promise<T> {
+        const entry = this.requireType(typeId);
+        if (entry.type.reviewedFields.length === 0) {
+            throw new Error(`${entry.type.label} declares no reviewed fields, so it has no review state to import; create it instead`);
+        }
+        if (state === 'approved' && !actor.isCurator) {
+            throw new ContentError('forbidden', `Only a curator may import a ${entry.type.label} as approved`);
+        }
+        const id = randomUUID();
+        await this.runVeto(HOOKS.content.beforeCreate, { operation: 'create', typeId, id, actor, input });
+        // Refuse before writing anything, as `create` does.
+        const curation = state === 'pending' ? this.requireCuration() : undefined;
+
+        // An approved item starts `pending` so it stays hidden until its
+        // approved version exists; a rejected one is stored as rejected.
+        await this.insertNewItem(entry, id, input, actor, state === 'rejected' ? 'rejected' : 'pending');
+
+        try {
+            if (state === 'approved') {
+                await this.markApproved(entry, id);
+            } else if (curation) {
+                await this.holdForReview(curation, entry, id, actor);
+            }
+        } catch (error) {
+            await this.discardCreate(entry, id);
+            throw error;
+        }
+        this.logger.info({ typeId, id, actor: actor.id, state }, 'Managed content imported');
+
+        return this.readOneAdmin<T>(entry, id);
+    }
+
+    /**
+     * Write a new item's core row and then call the author's `create`. Shared
+     * by `create` and `importItem` so both write a new item the same way. If
+     * the author refuses the input, the core row is removed again, so nothing
+     * is left behind.
+     *
+     * @param entry - The managed type.
+     * @param id - The core-issued content id.
+     * @param input - The type's creation input.
+     * @param actor - Who is creating the item, recorded on the row.
+     * @param curation - The review state the row starts in, or undefined for
+     *   an item that never enters review.
+     */
+    private async insertNewItem(
+        entry: IRegisteredManagedType,
+        id: string,
+        input: unknown,
+        actor: IContentActor,
+        curation: ContentCurationState | undefined
+    ): Promise<void> {
+        const now = new Date();
+        const row: IContent = {
+            id,
+            typeId: entry.type.typeId,
+            providerId: entry.providerId,
+            hasApprovedVersion: false,
+            ...(curation ? { curation } : {}),
+            createdAt: now,
+            createdBy: actor.id,
+            updatedAt: now,
+            updatedBy: actor.id
+        };
+        await this.collection().insertOne({ ...row });
+        try {
+            await entry.type.create(id, input, actor);
+        } catch (error) {
+            await this.collection().deleteOne({ id });
+            throw error;
+        }
+
+        return;
     }
 
     /**
