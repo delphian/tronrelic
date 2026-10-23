@@ -17,6 +17,9 @@
  * the type-specific fields and keeps two versions of them (working and
  * approved), so an approved item stays live while an edit waits for review.
  *
+ * Translations of items are reached through `translations()`, which returns
+ * the `ContentTranslationService` built here; see that file.
+ *
  * @see ../../../docs/system/system-content.md — the managed content model.
  * @module backend/services/content-service
  */
@@ -30,21 +33,28 @@ import type {
     IContentActor,
     IContentListQuery,
     IContentReadRequest,
+    IAiProviderRegistry,
     IContentService,
+    IContentTranslationService,
     IContentWriteContext,
     ICurationService,
     IDatabaseService,
     IHookRegistry,
+    ILocalizationService,
     IManagedContentType,
     IServiceRegistry,
     ISystemLogService,
-    HookDescriptor
+    HookDescriptor,
+    TranslatableFieldKind
 } from '@/types';
-import { isHookAbortError } from '@/types';
 import { HOOKS } from '../hooks/registry.js';
 import { assertValidClassification } from './content-classification.js';
 import { createContentCurationType } from './content-curation-adapter.js';
 import { ContentError } from './content-error.js';
+import { ContentTranslationService } from './content-translation-service.js';
+import { ContentTranslationSettingsService } from './content-translation-settings.js';
+import { ContentTranslationSuggestionService } from './content-translation-suggestion.js';
+import { runContentVeto } from './content-veto.js';
 
 /** Service-registry name the content service is published under. */
 export const CONTENT_SERVICE = 'content';
@@ -54,6 +64,17 @@ export const CONTENT_COLLECTION = 'content_items';
 
 /** Service-registry name of the curation queue the service holds changes in. */
 const CURATION_SERVICE = 'curation';
+
+/**
+ * Service-registry names the translation Suggest request resolves per call.
+ * Written out rather than imported, because importing the modules that own
+ * them would load those whole modules into core.
+ */
+const AI_PROVIDERS_SERVICE = 'ai-providers';
+const LOCALIZATION_SERVICE = 'localization';
+
+/** The field kinds a translatable type may declare. */
+const TRANSLATABLE_FIELD_KINDS: ReadonlyArray<TranslatableFieldKind> = ['text', 'multiline', 'markdown', 'string-list', 'url'];
 
 /** Default and maximum page sizes for `list`. */
 const DEFAULT_LIST_LIMIT = 50;
@@ -77,6 +98,7 @@ interface IRegisteredManagedType {
 export class ContentService implements IContentService {
     private static instance: ContentService | undefined;
     private readonly types = new Map<string, IRegisteredManagedType>();
+    private readonly translationService: ContentTranslationService;
 
     /**
      * @param database - Core database holding the `content_items` collection.
@@ -84,13 +106,59 @@ export class ContentService implements IContentService {
      * @param serviceRegistry - Resolves the curation service lazily, since
      *   curation initializes after this service is constructed.
      * @param logger - Scoped logger for registration and decision diagnostics.
+     * @param onLocalizedRoutesChanged - Called after a translation change that
+     *   can alter which addresses are served in which language, so the
+     *   localization snapshot is rebuilt.
      */
     private constructor(
         private readonly database: IDatabaseService,
         private readonly hookRegistry: IHookRegistry,
         private readonly serviceRegistry: IServiceRegistry,
-        private readonly logger: ISystemLogService
-    ) {}
+        private readonly logger: ISystemLogService,
+        onLocalizedRoutesChanged: () => void
+    ) {
+        const settings = new ContentTranslationSettingsService(database);
+        this.translationService = new ContentTranslationService({
+            database,
+            hookRegistry,
+            reader: this,
+            /**
+             * Find a registered type, so translations follow registrations
+             * made after construction and drop types that unregister.
+             *
+             * @param typeId - The managed content type id.
+             * @returns The type, or undefined when none is registered.
+             */
+            getType: (typeId) => this.types.get(typeId)?.type,
+            /**
+             * List the types registered right now, for the translated-address list.
+             *
+             * @returns Every registered managed type.
+             */
+            listTypes: () => Array.from(this.types.values()).map((entry) => entry.type),
+            suggestions: new ContentTranslationSuggestionService({
+                settings,
+                /**
+                 * Resolve the AI provider registry per request; provider
+                 * plugins publish it after core starts and come and go.
+                 *
+                 * @returns The registry, or null when none is published.
+                 */
+                getProviderRegistry: () => serviceRegistry.get<IAiProviderRegistry>(AI_PROVIDERS_SERVICE) ?? null,
+                /**
+                 * Resolve the localization service per request, for language
+                 * names; that module publishes it after core starts.
+                 *
+                 * @returns The service, or null when it is not published.
+                 */
+                getLocalization: () => serviceRegistry.get<ILocalizationService>(LOCALIZATION_SERVICE) ?? null,
+                logger
+            }),
+            settings,
+            onRoutesChanged: onLocalizedRoutesChanged,
+            logger
+        });
+    }
 
     /**
      * Configure the singleton. The first call wins; later calls are ignored so
@@ -100,15 +168,19 @@ export class ContentService implements IContentService {
      * @param hookRegistry - Core hook registry.
      * @param serviceRegistry - Core service registry.
      * @param logger - Scoped logger.
+     * @param onLocalizedRoutesChanged - Called after a translation change that
+     *   can alter which addresses are served in which language. Defaults to
+     *   doing nothing, for callers such as tests with no localization snapshot.
      */
     public static setDependencies(
         database: IDatabaseService,
         hookRegistry: IHookRegistry,
         serviceRegistry: IServiceRegistry,
-        logger: ISystemLogService
+        logger: ISystemLogService,
+        onLocalizedRoutesChanged: () => void = () => undefined
     ): void {
         if (!ContentService.instance) {
-            ContentService.instance = new ContentService(database, hookRegistry, serviceRegistry, logger);
+            ContentService.instance = new ContentService(database, hookRegistry, serviceRegistry, logger, onLocalizedRoutesChanged);
         }
     }
 
@@ -144,6 +216,17 @@ export class ContentService implements IContentService {
         await this.database.createIndex(CONTENT_COLLECTION, { id: 1 }, { unique: true });
         await this.database.createIndex(CONTENT_COLLECTION, { typeId: 1, curation: 1, createdAt: -1 });
         await this.database.createIndex(CONTENT_COLLECTION, { typeId: 1, deletedAt: 1, createdAt: -1 });
+        await this.translationService.ensureIndexes();
+    }
+
+    /**
+     * Translations of managed content, for every type whose registration sets
+     * `translation`.
+     *
+     * @returns The content translation service.
+     */
+    translations(): IContentTranslationService {
+        return this.translationService;
     }
 
     // ------------------------------------------------------------ registration
@@ -688,6 +771,43 @@ export class ContentService implements IContentService {
                 throw new Error(`Managed content type '${type.typeId}' must implement ${method}()`);
             }
         }
+        if (type.translation !== undefined) {
+            this.assertValidTranslation(type);
+        }
+
+        return;
+    }
+
+    /**
+     * Reject a malformed translation side at registration, so a broken field
+     * list fails at boot rather than in the editor. Field names must be unique
+     * because stored translations are keyed by them.
+     *
+     * @param type - The type being registered, known to set `translation`.
+     * @throws Error naming the first problem found.
+     */
+    private assertValidTranslation<T extends IContent, TCreate, TUpdate>(type: IManagedContentType<T, TCreate, TUpdate>): void {
+        const translation = type.translation;
+        const fields = translation?.translatableFields;
+        if (!Array.isArray(fields) || fields.length === 0) {
+            throw new Error(`Managed content type '${type.typeId}' sets translation but declares no translatableFields`);
+        }
+        const names = new Set<string>();
+        for (const field of fields) {
+            if (typeof field.name !== 'string' || field.name === '' || names.has(field.name)) {
+                throw new Error(`Managed content type '${type.typeId}' declares a missing or repeated translatable field name '${String(field.name)}'`);
+            }
+            if (!TRANSLATABLE_FIELD_KINDS.includes(field.kind)) {
+                throw new Error(`Translatable field '${field.name}' of '${type.typeId}' has unknown kind '${String(field.kind)}'`);
+            }
+            names.add(field.name);
+        }
+        const methods = ['extractTranslatable', 'listPublicPaths', 'readTranslations', 'writeTranslation', 'onTranslationChanged'] as const;
+        for (const method of methods) {
+            if (typeof translation?.[method] !== 'function') {
+                throw new Error(`Managed content type '${type.typeId}' translation must implement ${method}()`);
+            }
+        }
 
         return;
     }
@@ -1058,8 +1178,7 @@ export class ContentService implements IContentService {
     }
 
     /**
-     * Run one of the `content.before*` veto hooks, translating a handler's
-     * `HookAbortError` into a `vetoed` refusal.
+     * Run one of the `content.before*` veto hooks for a write to an item.
      *
      * @param descriptor - The hook to run.
      * @param context - What is about to happen.
@@ -1069,14 +1188,7 @@ export class ContentService implements IContentService {
         descriptor: HookDescriptor<IContentWriteContext, void, 'series'>,
         context: IContentWriteContext
     ): Promise<void> {
-        try {
-            await this.hookRegistry.invoke(descriptor, context);
-        } catch (error) {
-            if (isHookAbortError(error)) {
-                throw new ContentError('vetoed', error.message || `A content hook refused the ${context.operation}`);
-            }
-            throw error;
-        }
+        await runContentVeto(this.hookRegistry, descriptor, context);
 
         return;
     }

@@ -1,6 +1,6 @@
 # Managed Content
 
-Managed content is content whose every create, read, update, delete, and restore passes through the core content service first. Every managed item extends one base type, `IContent`, and gets review, audit, soft deletion, and veto hooks from core without implementing any of them itself. Core pages (`core:page`) are the first managed type.
+Managed content is content whose every create, read, update, delete, and restore passes through the core content service first. Every managed item extends one base type, `IContent`, and gets review, audit, soft deletion, veto hooks, and, when the type opts in, translations from core without implementing any of them itself. Core pages (`core:page`) are the first managed type.
 
 **Every new content type must be managed content**, whether a module or a plugin owns it. Content means an item the platform stores and publishes, on its own pages or to an external destination, such as a page, post, article, or draft. Implement `IManagedContentType`, register it on the `'content'` service, and send every operation through `IContentService`. Do not implement `ICurationType` for a content type, and do not write your own review states, visibility rules, or hard deletes. `ICurationType` remains the contract for holding an effect that is not content.
 
@@ -14,7 +14,7 @@ Managed content moves those decisions into core. An owner declares which of its 
 
 ### Storage is split in two
 
-Core stores the fields every content type shares — the `IContent` fields — in its own `content_items` collection. The content author (a module or plugin) stores only its type-specific fields in its own collection, keyed by the same `id`. Core never writes into an author's collection, and an author never writes a core field.
+Core stores the fields every content type shares — the `IContent` fields — in its own `content_items` collection. The content author (a module or plugin) stores only its type-specific fields in its own collection, keyed by the same `id`. Core never writes into an author's collection, and an author never writes a core field. Translations follow the same split; see [Translations](#translations).
 
 A reader never joins the two by hand. `IContentService` reads the core row, asks the author for the type-specific fields, and returns one merged object. A page read through core is an `IPageContent`: `IContent` plus the page's own fields.
 
@@ -91,7 +91,48 @@ The curation queue records a decision before it asks core to apply it. If applyi
 
 ### Veto hooks
 
-`content.beforeCreate`, `content.beforeUpdate`, `content.beforeDelete`, and `content.beforeRestore` are `series` hooks carrying an `IContentWriteContext` (`operation`, `typeId`, `id`, `actor`, and the caller's `input` for create and update). A handler that throws `HookAbortError` stops the operation, and the service refuses it with the `vetoed` code and the handler's message. Modules register as `'core'` and plugins through `context.hooks`. See [system-hooks.md](./system-hooks.md).
+`content.beforeCreate`, `content.beforeUpdate`, `content.beforeDelete`, and `content.beforeRestore` are `series` hooks carrying an `IContentWriteContext` (`operation`, `typeId`, `id`, `actor`, and the caller's `input` for create and update). A handler that throws `HookAbortError` stops the operation, and the service refuses it with the `vetoed` code and the handler's message. Writes to an item's translations fire the same hooks with `language` set on the context; see [Translations](#translations). Modules register as `'core'` and plugins through `context.hooks`. See [system-hooks.md](./system-hooks.md).
+
+## Translations
+
+Any managed type can be translated, and core runs the workflow for all of them, so a content type does not build its own copy of the stale check, the AI Suggest request, the editor, or the list of translated addresses. A type opts in by setting `translation` on its `IManagedContentType` to an `ITranslatableContentType`. An item is served in a language only while it has a published, live translation into it. There is no fallback to English under a translated address, because serving English text under a translated `<html lang>` and `hreflang` links is what translations exist to prevent.
+
+### Storage is split the same way
+
+Core keeps each translation's state in its own `content_translations` collection: the item and language, `published`, `sourceHash` (a fingerprint of the English text it was saved against), who changed it and when, and soft deletion. It stores no translated text. The content type keeps the translated values in a collection of its own, usually through the store `IContentService.translations().createValueStore(database, collectionName)` hands out, which is bound to the type's own database so a plugin's collection is prefixed like the rest of its storage. Core never writes into that collection; the type's `writeTranslation` and `readTranslations` call the store.
+
+### What the content type supplies
+
+| Member | Purpose |
+|---|---|
+| `translatableFields` | The fields a translation carries, as `ITranslatableField` (`name`, `label`, `kind`, `required`, optional `hint`). The kind is `text`, `multiline`, `markdown`, `string-list`, or `url`. A `url` field, such as a social image, is never sent to the model and never counts toward the stale check. Append new fields rather than reordering: the order fixes the fingerprint |
+| `extractTranslatable(item)` | The English values of those fields, read from an item. Pages strips the frontmatter from its body here |
+| `listPublicPaths(item)` | The exact paths an item is served at, or an empty list when the type's own rules hide it. Core drops any path containing `:` or `*`, which the localization snapshot would read as a route pattern |
+| `readTranslations`, `writeTranslation` | Load and store translated values, normally by calling the store |
+| `onTranslationChanged(id, language)` | Drop anything the type caches for the translated address, such as a rendered page. Must not throw for a cache failure |
+
+### What core does
+
+Translations are not reviewed. Only a curator may save, delete, or restore one, and the change is live at once; anyone else is refused with `forbidden`. A save validates the values against the field list, runs `content.beforeUpdate` with `language` set and the `IContentTranslationWrite` as `input`, stores the values through the type, and records the English fingerprint, which clears the stale flag. Deleting and restoring run `content.beforeDelete` and `content.beforeRestore`. Every change calls the type's `onTranslationChanged` and asks the localization snapshot to rebuild.
+
+The English text translators work from is the version visitors are served, or the latest edit when nothing is served yet. An English edit waiting for review is never shown to translators, because a curator may reject it; the editor is told a `pendingEdit` exists instead. A translation is `stale` when the English fingerprint has changed since it was saved. A stale translation is still served.
+
+`readPublicTranslation(typeId, id, language)` returns the item at its served version with the translated values, or null when either is not served. The type applies its own visibility rule, such as a page's `published` flag, and lays the values over the item itself. `listLocalizedRoutes()` collects every published, live translation's paths across all translatable types; bootstrap hands it to the localization module as `listContentRoutes`.
+
+The Suggest request sends the English values of every non-`url` field to the AI provider chosen in the content translation settings, as JSON data the prompt tells the model not to follow, with no tools and no `{%variable%}` expansion. A stale existing translation goes along so the model updates it. The result is never saved; `url` fields carry over from the existing translation. One settings document serves every type and is edited on the System → Localization Settings tab, next to the separate settings for interface text.
+
+### Admin routes and editor
+
+| Method | Path under `/api/admin/content` | Notes |
+|---|---|---|
+| GET | `/:typeId/:id/translations` | `IContentTranslationOverview`: the English source with its field list, and every translation including deleted ones |
+| PUT | `/:typeId/:id/translations/:language` | Body `IContentTranslationWrite` (`{ values, published }`). Creates or replaces. `forbidden` 403 for the service token |
+| DELETE | `/:typeId/:id/translations/:language` | 204, soft delete |
+| POST | `/:typeId/:id/translations/:language/restore` | `{ translation }` |
+| POST | `/:typeId/:id/translations/:language/suggest` | `IContentTranslationSuggestion`; saves nothing. 503 with no AI provider, 502 for an unusable answer. 20 a minute |
+| GET, PATCH | `/translation-settings` | `{ settings }` (`IContentTranslationSettings`) |
+
+The editor is `ContentTranslations` from `src/frontend/modules/content`: one input per declared field with the English value beside it. A type's admin page mounts it for one item and may pass `renderPreview` for its Markdown field; `/system/pages` is the reference.
 
 ## Errors
 
@@ -120,9 +161,10 @@ An error the author throws (a validation failure such as a slug conflict) passes
 | Core collection | `content_items` |
 | Author contract | `IManagedContentType<T, TCreate, TUpdate>` — `classification`, `reviewedFields`, optional `publishesToSinks`, `describe`, `create`, `discardCreate`, `read`, `update`, `delete`, `restore`, `approve` |
 | Actor for admin routes | `actorFromAdminRequest(req)` (`src/backend/services/content-actor.ts`): a signed-in admin is a curator; the service token is `system:service-token` and is not |
-| Hooks | `content.beforeCreate` / `beforeUpdate` / `beforeDelete` / `beforeRestore` (series) |
-| Types | `@delphian/tronrelic-types` → `IContent`, `IManagedContentType`, `IContentService`, `IContentActor`, `IContentPayloadRecord`, `ContentCurationState`, `ContentVersion`, `ContentErrorCode` |
-| Managed types today | `core:page` and `core:page-translation` (Pages module) |
+| Hooks | `content.beforeCreate` / `beforeUpdate` / `beforeDelete` / `beforeRestore` (series); translation writes set `language` |
+| Translations | `IContentService.translations()` → `IContentTranslationService`; state in `content_translations`, values in the type's own collection; settings in `content_translation_settings`; admin routes at `/api/admin/content` |
+| Types | `@delphian/tronrelic-types` → `IContent`, `IManagedContentType`, `IContentService`, `IContentActor`, `IContentPayloadRecord`, `ContentCurationState`, `ContentVersion`, `ContentErrorCode`, `ITranslatableContentType`, `ITranslatableField`, `IContentTranslationService` |
+| Managed types today | `core:page` (Pages module), translatable |
 
 ## Adopting an Existing Type
 

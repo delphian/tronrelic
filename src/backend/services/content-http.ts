@@ -1,21 +1,22 @@
 /**
  * @fileoverview The HTTP response for a failed write to managed content.
  *
- * Pages and page translations are both managed content, so their admin routes
- * fail in the same ways and must report those failures with the same statuses.
- * Keeping the mapping here means the two controllers cannot drift apart.
+ * Pages, their translations, and every later content type's admin routes fail
+ * in the same ways, through the same core content service, and must report
+ * those failures with the same statuses. Keeping the mapping here means the
+ * routes cannot drift apart.
  *
- * @module backend/modules/pages/api/sendContentWriteError
+ * @module backend/services/content-http
  */
 
 import type { Response } from 'express';
 import type { ContentErrorCode } from '@/types';
-import { isContentError } from '../../../services/content-error.js';
+import { isContentError } from './content-error.js';
 
 /**
- * HTTP status for each content service refusal. `vetoed` is a policy refusal
- * (403); `curation-unavailable` means the change needs a reviewer the server
- * cannot reach right now (503).
+ * HTTP status for each content service refusal. `vetoed` and `forbidden` are
+ * policy refusals (403); `curation-unavailable` means the change needs a
+ * reviewer the server cannot reach right now (503).
  */
 export const CONTENT_ERROR_STATUS: Record<ContentErrorCode, number> = {
     'unknown-type': 500,
@@ -31,7 +32,7 @@ export const CONTENT_ERROR_STATUS: Record<ContentErrorCode, number> = {
 /**
  * Send a write failure with the status its cause deserves: the mapped status
  * for a content service refusal, 400 for a validation error the content type
- * threw.
+ * or the content service threw.
  *
  * @param res - The response to write.
  * @param label - The `error` field, naming the operation that failed.

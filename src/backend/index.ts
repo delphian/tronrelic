@@ -30,11 +30,13 @@ import { ContentRegistry, CONTENT_TYPES_SERVICE } from './services/content-regis
 import { ContentTypesController, createContentTypesAdminRouter } from './services/content-types-admin.js';
 import { ContentRouter, CONTENT_ROUTER_SERVICE } from './services/content-router.js';
 import { ContentService, CONTENT_SERVICE } from './services/content-service.js';
+import { ContentTranslationsController, createContentTranslationsAdminRouter } from './services/content-translations-admin.js';
 import { ClassificationGate, AllowAllRoutingPolicy } from './services/content-routing-gate.js';
 import { ContentRouterController, createContentRouterAdminRouter } from './services/content-router-admin.js';
 import { createInternalPublishSink } from './services/internal-publish-sink.js';
 import { HookRegistry, HooksController, createHooksAdminRouter, SsrHeadFragmentsController, SsrHtmlAttributesController, createSsrRouter } from './hooks/index.js';
 import { requireAdmin } from './api/middleware/admin-auth.js';
+import { createAdminRateLimiter } from './api/middleware/rate-limit.js';
 import { SchedulerModule } from './modules/scheduler/index.js';
 import { MenuModule, MAIN_SYSTEM_CONTAINER_ID } from './modules/menu/index.js';
 import { LogsModule } from './modules/logs/index.js';
@@ -408,7 +410,17 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     // `content_items` collection, runs the `content.before*` veto hooks, and
     // holds reviewed changes in curation (resolved lazily — curation inits
     // later). Published before module init so pages can register `core:page`.
-    ContentService.setDependencies(coreDatabase, hookRegistry, serviceRegistry, logger);
+    // Translations of managed content run here too, and a translation change
+    // asks the localization snapshot to rebuild. Resolved at call time: the
+    // localization service is configured further down, and translation
+    // changes only arrive through requests after startup.
+    ContentService.setDependencies(
+        coreDatabase,
+        hookRegistry,
+        serviceRegistry,
+        logger,
+        () => LocalizationService.getInstance().invalidate()
+    );
     const contentService = ContentService.getInstance();
     await contentService.ensureIndexes();
     serviceRegistry.register(CONTENT_SERVICE, contentService);
@@ -476,9 +488,9 @@ async function bootstrapInit(): Promise<BootstrapContext> {
 
     await logsModule.init({ pinoLogger, database: coreDatabase, app, serviceRegistry });
     // Translated CMS pages appear in the localization snapshot, so a change to
-    // a page or translation asks for a rebuild. Resolved at call time: the
-    // localization service is configured further down, and these changes only
-    // arrive through requests after startup.
+    // a page asks for a rebuild. Resolved at call time: the localization
+    // service is configured further down, and these changes only arrive
+    // through requests after startup.
     await pagesModule.init({
         ...sharedDeps,
         contentService,
@@ -547,9 +559,10 @@ async function bootstrapInit(): Promise<BootstrapContext> {
             'core',
             ...PluginManagerService.getInstance().getAllManifests().map(manifest => manifest.id)
         ],
-        // CMS pages opt into a language by having a published translation in
-        // it; their addresses join the snapshot's routes.
-        listContentRoutes: () => pagesModule.getPageTranslationService().listLocalizedRoutes()
+        // Managed content, such as a CMS page, opts into a language by having
+        // a published translation in it; its addresses join the snapshot's
+        // routes, whatever module or plugin owns the content.
+        listContentRoutes: () => contentService.translations().listLocalizedRoutes()
     });
     await toolsModule.init(sharedDeps);
     // Notifications module: builds the category/channel registries, preference,
@@ -762,6 +775,20 @@ async function bootstrapRun(ctx: BootstrapContext): Promise<void> {
     const contentRouterController = new ContentRouterController(contentRouter);
     app.use('/api/admin/system/content-router', requireAdmin, createContentRouterAdminRouter(contentRouterController));
     logger.info('Content-router introspection router mounted at /api/admin/system/content-router');
+
+    // Content translations: the editor's reads and writes, AI suggestions, and
+    // their settings, for every translatable managed content type.
+    const contentTranslationsController = new ContentTranslationsController(
+        ContentService.getInstance().translations(),
+        logger.child({ module: 'content-translations' })
+    );
+    app.use(
+        '/api/admin/content',
+        createAdminRateLimiter('content-admin'),
+        requireAdmin,
+        createContentTranslationsAdminRouter(contentTranslationsController)
+    );
+    logger.info('Content translation admin router mounted at /api/admin/content');
 
     // Mount the public SSR hook endpoints. The frontend SSR layer POSTs
     // to /api/ssr/* once per page render with the request context; each

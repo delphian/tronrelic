@@ -8,20 +8,13 @@ import { ObjectId } from 'mongodb';
  * module — see `IFilesSettingsDocument`. Migration
  * `module:pages:005_strip_file_fields_from_page_settings` removed the
  * file fields after `module:files:001_files_settings` copied them into
- * the new collection.
+ * the new collection. The AI translation settings that briefly lived here
+ * moved to the core `content_translation_settings` collection in migration
+ * `module:pages:010_move_page_translations_to_core`.
  */
 export interface IPageSettingsDocument {
     _id: ObjectId;
     blacklistedRoutes: string[];
-    /**
-     * System prompt for page translation suggestions. Absent until an
-     * administrator saves one, which means the built-in default applies.
-     */
-    translationSystemPrompt?: string;
-    /** AI provider for page translation suggestions; absent or null for the active provider. */
-    translationProviderId?: string | null;
-    /** Model on that provider; absent or null for the provider's default. */
-    translationModel?: string | null;
     updatedAt: Date;
 }
 

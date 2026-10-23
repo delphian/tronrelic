@@ -12,31 +12,18 @@ import type {
     ICacheService,
     IDatabaseService,
     ISystemLogService,
+    ITranslationValueStore,
 } from '@/types';
 import type {
     IPageDocument,
     IPageSettingsDocument,
 } from '../database/index.js';
-import { DEFAULT_PAGE_SETTINGS } from '../database/index.js';
+import { DEFAULT_PAGE_SETTINGS, PAGE_TRANSLATION_VALUES_COLLECTION } from '../database/index.js';
 import { MarkdownService } from './markdown.service.js';
 import { PageContentType, PAGE_CONTENT_TYPE_ID } from './page-content-type.js';
 import type { IPageWriteInput } from './page-content-type.js';
-import { DEFAULT_PAGE_TRANSLATION_SYSTEM_PROMPT } from './page-translation-prompt.js';
-import { normalizeAiSystemPrompt } from '../../../services/normalizeAiSystemPrompt.js';
-import { normalizeAiId } from '../../../services/normalizeAiId.js';
+import { PageTranslatable } from './page-translatable.js';
 import { ObjectId } from 'mongodb';
-
-/** Longest page translation system prompt accepted. Long enough for a sizeable glossary. */
-const MAX_TRANSLATION_SYSTEM_PROMPT_LENGTH = 8000;
-
-/**
- * Build the plain error a settings validation failure throws, which the
- * controller answers with 400.
- *
- * @param message - Explanation shown to the administrator.
- * @returns The error to throw.
- */
-const invalidSetting = (message: string): Error => new Error(message);
 
 /** Pages returned by `listPublicPages` when the caller does not say how many. */
 const PUBLIC_LIST_DEFAULT_LIMIT = 20;
@@ -104,6 +91,7 @@ export class PageService implements IPageService {
     private readonly pagesCollection;
     private readonly settingsCollection;
     private readonly contentType: PageContentType;
+    private readonly translationValues: ITranslationValueStore;
 
     /**
      * @param database - Core database holding `pages` and `page_settings`.
@@ -126,13 +114,41 @@ export class PageService implements IPageService {
         this.markdownService = new MarkdownService(cacheService);
         this.pagesCollection = database.getCollection<IPageDocument>('pages');
         this.settingsCollection = database.getCollection<IPageSettingsDocument>('page_settings');
+        // Translated text stays in this module's storage; core hands out the
+        // store and keeps each translation's state in its own collection.
+        this.translationValues = contentService.translations().createValueStore(database, PAGE_TRANSLATION_VALUES_COLLECTION);
         this.contentType = new PageContentType(
             this.pagesCollection,
             this.markdownService,
             this,
             logger,
-            onPublicPagesChanged
+            onPublicPagesChanged,
+            new PageTranslatable(
+                this.translationValues,
+                this.markdownService,
+                /**
+                 * Find the slugs whose render caches a translation change
+                 * must drop.
+                 *
+                 * @param pageId - Core content id of the page.
+                 * @returns The page's working and approved slugs.
+                 */
+                (pageId) => this.listSlugsForPage(pageId),
+                logger
+            )
         );
+    }
+
+    /**
+     * Create the unique index the translation values collection relies on.
+     * Called once from the module's `init()`; safe to repeat.
+     *
+     * @returns Resolves once the index exists.
+     */
+    async ensureTranslationIndexes(): Promise<void> {
+        await this.translationValues.ensureIndexes();
+
+        return;
     }
 
     /**
@@ -609,26 +625,6 @@ export class PageService implements IPageService {
         if (updates.blacklistedRoutes !== undefined) {
             updateDoc.blacklistedRoutes = updates.blacklistedRoutes;
         }
-        if (updates.translationSystemPrompt !== undefined) {
-            updateDoc.translationSystemPrompt = normalizeAiSystemPrompt(
-                updates.translationSystemPrompt,
-                MAX_TRANSLATION_SYSTEM_PROMPT_LENGTH,
-                invalidSetting
-            );
-        }
-        if (updates.translationProviderId !== undefined) {
-            updateDoc.translationProviderId = normalizeAiId(updates.translationProviderId, 'provider', invalidSetting);
-            // A model id only means something on the provider that offers it,
-            // so switching provider without naming a model clears the model
-            // rather than sending the old provider's id to the new one.
-            if (updates.translationModel === undefined
-                && updateDoc.translationProviderId !== (settings.translationProviderId ?? null)) {
-                updateDoc.translationModel = null;
-            }
-        }
-        if (updates.translationModel !== undefined) {
-            updateDoc.translationModel = normalizeAiId(updates.translationModel, 'model', invalidSetting);
-        }
 
         await this.settingsCollection.updateOne({ _id: settings._id }, { $set: updateDoc });
 
@@ -894,9 +890,6 @@ export class PageService implements IPageService {
         return {
             _id: doc._id.toString(),
             blacklistedRoutes: doc.blacklistedRoutes,
-            translationSystemPrompt: doc.translationSystemPrompt ?? DEFAULT_PAGE_TRANSLATION_SYSTEM_PROMPT,
-            translationProviderId: doc.translationProviderId ?? null,
-            translationModel: doc.translationModel ?? null,
             updatedAt: doc.updatedAt,
         };
     }

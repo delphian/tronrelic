@@ -1,13 +1,13 @@
-@use '../../../../../../breakpoints' as *;
+@use '../../../../app/breakpoints' as *;
 
-/* The panel adapts to the width it is given, so it reads the same full-width
- * on /system/pages and inside a narrower admin container. */
+/* The editor adapts to the width it is given, so it reads the same full-width
+ * on an admin page and inside a narrower container. */
 .container {
     display: flex;
     flex-direction: column;
     gap: var(--gap-md);
     container-type: inline-size;
-    container-name: page-translations;
+    container-name: content-translations;
 }
 
 .header {
@@ -28,7 +28,16 @@
 .actions {
     display: flex;
     flex-wrap: wrap;
+    align-items: center;
     gap: var(--gap-sm);
+}
+
+.published {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text);
 }
 
 .error {
@@ -40,13 +49,6 @@
     margin: 0;
     font-size: var(--font-size-body-sm);
     color: var(--color-warning-text);
-}
-
-.help {
-    margin: 0;
-    font-size: var(--font-size-body-sm);
-    color: var(--color-text-muted);
-    line-height: var(--line-height-relaxed);
 }
 
 .list {
@@ -85,37 +87,36 @@
     color: var(--color-text-muted);
 }
 
-/* English and translation side by side, stacked when the panel is narrow. */
-.panes {
+/* English beside the translation for each field, stacked when narrow. */
+.field_row {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: var(--gap-md);
+    align-items: start;
 }
 
-.pane {
+.field_side {
     display: flex;
     flex-direction: column;
-    gap: var(--gap-sm);
+    gap: var(--field-gap);
     min-width: 0;
 }
 
-.pane_title {
-    margin: 0;
-    font-size: var(--font-size-body-lg);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text);
+/* Sits level with the <Field> label on the translation side. */
+.side_label {
+    font-size: var(--field-label-font-size);
+    font-weight: var(--field-label-font-weight);
+    color: var(--color-text-muted);
 }
 
 /* Shared <Textarea> supplies the control styling; this keeps only the
- * pane-filling height and the monospace face markdown editing needs. */
-.textarea {
-    flex: 1;
+ * editing height and the monospace face Markdown editing needs. */
+.markdown {
     min-height: var(--markdown-editor-min-height);
     font-family: var(--font-mono);
 }
 
 .preview {
-    flex: 1;
     min-height: var(--markdown-editor-min-height);
     padding: var(--padding-md);
     border: var(--border-width-thin) solid var(--color-border);
@@ -125,8 +126,8 @@
     line-height: var(--line-height-relaxed);
 }
 
-@container page-translations (max-width: #{$breakpoint-mobile-lg}) {
-    .panes {
+@container content-translations (max-width: #{$breakpoint-mobile-lg}) {
+    .field_row {
         grid-template-columns: 1fr;
     }
 

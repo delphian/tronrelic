@@ -80,7 +80,7 @@ export type {
     IClickHouseReader,
     IClickHouseReadResult
 } from './clickhouse/index.js';
-export type { IPage, IPageContent, IPublicPage, IPageSettings, IPageService, IMarkdownService, IFrontmatterData, IParsedMarkdown, IPublicPageRender, IPageTranslationContent, IPageTranslation, IPageTranslationSource, IPublicPageTranslationMetadata, IPageTranslationService, IPageTranslationSuggestionResult } from './pages/index.js';
+export type { IPage, IPageContent, IPublicPage, IPageSettings, IPageService, IMarkdownService, IFrontmatterData, IParsedMarkdown, IPublicPageRender, IPublicPageTranslationMetadata, IPageTranslationService } from './pages/index.js';
 export type { IStorageProvider, IStorageObjectStat, IFileService, IFileRecord, IFileSource, IFileUploadOptions, IFileListFilter, IVariantOptions, IVariantFit, IFileVariant, ICropRegion, ICropOptions, IFilesSettings, IFilesSettingsService } from './files/index.js';
 export { FILE_SOURCE_KINDS, FileValidationError, FileSizeExceededError } from './files/index.js';
 export type { IModule, IModuleMetadata } from './module/index.js';
@@ -226,7 +226,22 @@ export type {
     IContentReadRequest,
     IContentListQuery,
     IManagedContentType,
-    IContentService
+    IContentService,
+    TranslatableFieldKind,
+    ITranslatableField,
+    TranslationValues,
+    IContentTranslationKey,
+    ITranslationValueRecord,
+    ITranslationValueStore,
+    ITranslatableContentType,
+    IContentTranslation,
+    IContentTranslationSource,
+    IContentTranslationOverview,
+    IContentTranslationWrite,
+    IServedContentTranslation,
+    IContentTranslationSuggestion,
+    IContentTranslationSettings,
+    IContentTranslationService
 } from './content/index.js';
 export type {
     ICurationPreview,

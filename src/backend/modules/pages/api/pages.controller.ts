@@ -1,7 +1,7 @@
 import type { Request, Response } from 'express';
 import type { ContentCurationState, IPage, IPageService, ISystemLogService } from '@/types';
 import { actorFromAdminRequest } from '../../../services/content-actor.js';
-import { sendContentWriteError } from './sendContentWriteError.js';
+import { sendContentWriteError } from '../../../services/content-http.js';
 
 /** Review states the admin list accepts as a `curation` filter. */
 const CURATION_FILTERS: ReadonlyArray<ContentCurationState> = ['pending', 'approved', 'rejected'];

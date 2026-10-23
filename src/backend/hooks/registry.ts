@@ -275,8 +275,9 @@ export const HOOKS = {
         }),
         /**
          * Series seam fired by the core content service before it changes a
-         * managed content item. A handler throws `HookAbortError` to refuse
-         * the change; nothing is written.
+         * managed content item, or saves one of its translations (with
+         * `language` set). A handler throws `HookAbortError` to refuse the
+         * change; nothing is written.
          */
         beforeUpdate: defineHook<IContentWriteContext, void, 'series'>({
             id: 'content.beforeUpdate',
@@ -284,13 +285,14 @@ export const HOOKS = {
             phase: 'content.lifecycle',
             order: 30,
             description:
-                'Inspect a change to a managed content item before the core content service applies it. Carries ' +
-                'the type, the id, the actor, and the change input. Throw HookAbortError to refuse the change.'
+                'Inspect a change to a managed content item, or a save of one of its translations, before the core ' +
+                'content service applies it. Carries the type, the id, the actor, the change input, and the ' +
+                'language for a translation. Throw HookAbortError to refuse the change.'
         }),
         /**
          * Series seam fired by the core content service before it soft-deletes
-         * a managed content item. A handler throws `HookAbortError` to refuse
-         * the delete.
+         * a managed content item or, with `language` set, one of its
+         * translations. A handler throws `HookAbortError` to refuse the delete.
          */
         beforeDelete: defineHook<IContentWriteContext, void, 'series'>({
             id: 'content.beforeDelete',
@@ -298,13 +300,14 @@ export const HOOKS = {
             phase: 'content.lifecycle',
             order: 40,
             description:
-                'Inspect a managed content item before the core content service soft-deletes it. Carries the type, ' +
-                'the id, and the actor. Throw HookAbortError to refuse the delete.'
+                'Inspect a managed content item, or one of its translations, before the core content service ' +
+                'soft-deletes it. Carries the type, the id, the actor, and the language for a translation. Throw ' +
+                'HookAbortError to refuse the delete.'
         }),
         /**
          * Series seam fired by the core content service before it restores a
-         * soft-deleted managed content item. A handler throws `HookAbortError`
-         * to keep the item deleted.
+         * soft-deleted managed content item or, with `language` set, one of its
+         * translations. A handler throws `HookAbortError` to keep it deleted.
          */
         beforeRestore: defineHook<IContentWriteContext, void, 'series'>({
             id: 'content.beforeRestore',
@@ -312,8 +315,9 @@ export const HOOKS = {
             phase: 'content.lifecycle',
             order: 50,
             description:
-                'Inspect a soft-deleted managed content item before the core content service restores it. Carries ' +
-                'the type, the id, and the actor. Throw HookAbortError to keep it deleted.'
+                'Inspect a soft-deleted managed content item, or one of its translations, before the core content ' +
+                'service restores it. Carries the type, the id, the actor, and the language for a translation. ' +
+                'Throw HookAbortError to keep it deleted.'
         })
     },
     observer: {} as Record<string, never>
