@@ -59,7 +59,8 @@ describe('PagesModule', () => {
     let mockCache: MockCacheService;
     let mockMenu: MockMenuService;
     let mockApp: MockExpressApp;
-    let mockContent: { registerType: ReturnType<typeof vi.fn> };
+    let mockContent: { registerType: ReturnType<typeof vi.fn>; translations: () => unknown };
+    let ensureValueIndexes: ReturnType<typeof vi.fn>;
     let serviceRegistry: IServiceRegistry;
 
     /**
@@ -89,7 +90,19 @@ describe('PagesModule', () => {
         mockCache = new MockCacheService();
         mockMenu = new MockMenuService();
         mockApp = new MockExpressApp();
-        mockContent = { registerType: vi.fn(() => () => undefined) };
+        ensureValueIndexes = vi.fn(async () => undefined);
+        mockContent = {
+            registerType: vi.fn(() => () => undefined),
+            /**
+             * Stand in for the core translation service; the module only asks
+             * it for the store its translated text is kept in.
+             *
+             * @returns A translation service with a store factory.
+             */
+            translations: () => ({
+                createValueStore: () => ({ ensureIndexes: ensureValueIndexes, read: vi.fn(async () => []), write: vi.fn() })
+            })
+        };
         serviceRegistry = createMockServiceRegistry();
     });
 
@@ -113,6 +126,12 @@ describe('PagesModule', () => {
             const module = new PagesModule();
             await module.init(deps());
             expect(mockApp.use).not.toHaveBeenCalled();
+        });
+
+        it('creates the translation values index during init()', async () => {
+            const module = new PagesModule();
+            await module.init(deps());
+            expect(ensureValueIndexes).toHaveBeenCalledTimes(1);
         });
 
         it('does not register the page content type during init()', async () => {
@@ -153,15 +172,15 @@ describe('PagesModule', () => {
             );
         });
 
-        it('registers core:page-translation as managed content', async () => {
+        it('registers core:page with a translation side and no separate translation type', async () => {
             const module = new PagesModule();
             await module.init(deps());
             await module.run();
 
-            expect(mockContent.registerType).toHaveBeenCalledWith(
-                expect.objectContaining({ typeId: 'core:page-translation' }),
-                'pages'
-            );
+            expect(mockContent.registerType).toHaveBeenCalledTimes(1);
+            const [type] = mockContent.registerType.mock.calls[0];
+            expect(type.translation.translatableFields.map((field: { name: string }) => field.name))
+                .toEqual(['title', 'description', 'keywords', 'body', 'ogImage']);
         });
 
         it('registers the Pages menu item under the System container', async () => {

@@ -4,7 +4,7 @@ The pages module provides custom content management capabilities, allowing admin
 
 Pages are **managed content** (`core:page`). Every create, read, update, delete, and restore goes through the core content service first, which runs the `content.before*` veto hooks, records who acted, holds a non-curator's change to a reviewed field in `/system/curation`, and serves visitors the last approved version while that change waits. Deletion is soft. See [system-content.md](../../../../docs/system/system-content.md) for the model.
 
-A page can also have **translations** (`core:page-translation`), one per language, which are managed content of their own. A page is served in another language only while it has a published translation into it; see [Translations](#translations).
+A page can also have **translations**, one per language. Translations are a core capability every managed content type shares: the core content service keeps their state and runs the editor, the AI Suggest request, and the list of translated addresses, and this module stores the translated text and renders translated pages. A page is served in another language only while it has a published translation into it; see [Translations](#translations).
 
 File handling is no longer part of this module. The platform-wide file inventory and upload policy live in the `trp-files` plugin ([README](../../../plugins/trp-files/README.md)) and are published on the service registry as `'files'`.
 
@@ -33,28 +33,24 @@ The pages module solves these by providing:
 modules/pages/
 ├── api/
 │   ├── pages.controller.ts   # Page CRUD, preview, settings, public render
-│   ├── page-translations.controller.ts # Translation CRUD and translated public reads
-│   ├── sendContentWriteError.ts # Content-error-to-HTTP-status mapping both controllers share
+│   ├── page-translations.controller.ts # Translated public reads (?language=)
 │   ├── pages.routes.ts       # Admin router factory
 │   └── pages.public-routes.ts # Public router factory
 ├── database/
 │   ├── IPageDocument.ts      # Page model with frontmatter fields
 │   ├── IPageSettingsDocument.ts # Page-only settings (route blacklist)
-│   ├── IPageTranslationDocument.ts # Translation model
-│   ├── ensurePageTranslationIndexes.ts # Translation collection name and boot-time indexes
+│   ├── PAGE_TRANSLATION_VALUES_COLLECTION.ts # Name of the translated-text collection
 │   └── index.ts
 ├── migrations/
 │   ├── 003_add_old_slugs_to_pages.ts
 │   ├── 005_strip_file_fields_from_page_settings.ts
-│   └── 007_adopt_pages_as_managed_content.ts
+│   ├── 007_adopt_pages_as_managed_content.ts
+│   └── 010_move_page_translations_to_core.ts
 ├── services/
 │   ├── page.service.ts       # IPageService singleton; routes page CRUD and public reads through core
 │   ├── page-content-type.ts  # core:page storage callbacks (IManagedContentType)
-│   ├── page-translation.service.ts # IPageTranslationService singleton
-│   ├── page-translation-content-type.ts # core:page-translation storage callbacks
-│   ├── page-translation-suggestion.service.ts # AI Suggest request for the translation editor
-│   ├── page-translation-prompt.ts # Pure prompt builder, reply parser, and markdown assembler
-│   ├── page-translation-errors.ts # Unavailable (503) and provider (502) errors for Suggest
+│   ├── page-translatable.ts  # core:page translation side (ITranslatableContentType)
+│   ├── page-translation.service.ts # IPageTranslationService singleton; renders served translations
 │   └── markdown.service.ts   # Frontmatter parsing and HTML rendering
 ├── __tests__/
 ├── ai-tools.ts               # Read-only AI tools: pages-list, pages-search, pages-get
@@ -63,7 +59,7 @@ modules/pages/
 └── README.md
 ```
 
-**Two-phase lifecycle.** `init()` configures `PageService` and `PageTranslationService` with the injected `IContentService`, creates the translation indexes, and builds the controllers. `run()` registers `core:page` and `core:page-translation` on the core content service, registers the `/system/pages` menu item under the System container, mounts the admin router at `/api/admin/pages` and the public router at `/api/pages`, and watches the service registry for `'ai-tools'` so the page AI tools register whenever that registry is available.
+**Two-phase lifecycle.** `init()` configures `PageService` and `PageTranslationService` with the injected `IContentService`, creates the translation values index, and builds the controllers. `run()` registers `core:page`, which carries its translation side, on the core content service, registers the `/system/pages` menu item under the System container, mounts the admin router at `/api/admin/pages` and the public router at `/api/pages`, and watches the service registry for `'ai-tools'` so the page AI tools register whenever that registry is available.
 
 ## Managed Content Contract
 
@@ -117,10 +113,10 @@ Admin REST API at `/api/admin/pages` (gated by `requireAdmin`):
 - `DELETE /:id` — soft-delete page (invalidates cache)
 - `POST /:id/restore` — restore a soft-deleted page
 - `POST /preview` — render markdown without persisting (live editor preview)
-- `GET /settings` — page settings: the route blacklist and the page translation AI settings
-- `PATCH /settings` — update settings. Changing `translationProviderId` without `translationModel` clears the model, because a model id only means something on its own provider
+- `GET /settings` — page settings: the route blacklist
+- `PATCH /settings` — update settings
 
-Write failures from the core content service map to statuses by their `code`: `not-found` 404, `deleted`/`not-deleted` 409, `vetoed` 403, `curation-unavailable` 503, `superseded` 409; a page validation error is 400.
+Write failures from the core content service map to statuses by their `code` through `sendContentWriteError` in `src/backend/services/content-http.ts`: `not-found` 404, `deleted`/`not-deleted` 409, `vetoed` 403, `forbidden` 403, `curation-unavailable` 503, `superseded` 409; a page validation error is 400.
 
 Public API at `/api/pages`:
 
@@ -147,52 +143,24 @@ Blog posts are not pages. The `trp-blog` plugin has its own `list-blog-posts`, `
 
 A translation holds one page's visitor-facing text in one language. It has no slug of its own: the Chinese translation of `/about` is served at `/zh/about`, which is the address the localization module's prefix rule already gives that path. Translations are the per-page opt-in to a language. A page without a published translation into a language gets no translated address, no `hreflang` link, no translated sitemap entry, and no entry in the language switcher.
 
-| | |
-|---|---|
-| Content type id | `core:page-translation` (`PAGE_TRANSLATION_CONTENT_TYPE_ID`) |
-| Service | `PageTranslationService` (`IPageTranslationService` in `@/types`), singleton. Not published on the service registry |
-| Admin UI | `/system/pages` → a page's **Translations** button: one row per language configured on `/system/localization`, and a side-by-side editor with the English markdown from `getTranslationSource` |
-| Storage | `module_pages_translations`; unique `(pageId, language)` across live and deleted documents, unique `contentId` |
-| Reviewed fields | `content`, `title`, `description`, `keywords`, `ogImage`, `published`. `sourceHash` is not reviewed |
-| Classification ceiling | `{ egress: 'user', audience: 'public' }`, the same as a page |
-| Served when | The page is served at that slug, the translation's served version is `published: true`, and the language is enabled |
-
-**Frontmatter.** A translation is markdown with frontmatter like a page. `title` is required; `description`, `keywords`, `ogImage`, and `published` are optional. Without `ogImage` the page's image is used. `slug` and `oldSlugs` are ignored. The editor starts a new translation from the English frontmatter and body with `published: false`, so saving a half-finished translation never puts it live.
-
-**Stale flag.** Each save stores `sourceHash`, a SHA-256 of the English page's title, description, keywords, and body at the version visitors are served (the latest edit when none is served yet). `IPageTranslation.stale` is true when the English page's current hash differs. Changing only the English slug or `published` flag does not mark translations stale. A stale translation is still served; saving it again, even unchanged, clears the flag.
-
-**One English source.** `getTranslationSource` returns that same English version as an `IPageTranslationSource`, and the editor shows it and starts new drafts from it, so the editor, Suggest, and the stale flag all work from one text. An English edit waiting for review is never shown to translators, because a curator may reject it. Instead `pendingEdit` is true when such an edit changes the title, description, keywords, or body, and the editor warns that translations will be marked stale once it is approved.
-
-**No English fallback.** A translated request for a page with no visible, published translation into that language is a 404, never the English body. Serving English text under a translated `<html lang>` and `hreflang` links is what this feature exists to prevent. The same applies when an administrator publishes a route pattern covering a CMS page on the localization Routes tab: requests in that language now 404 until the page has a translation.
-
-**Localization snapshot.** Bootstrap passes `PageTranslationService.listLocalizedRoutes()` to the localization module as `listContentRoutes`. It returns one route per page slug and per old slug that has a published translation, so a translated link to a renamed page still reaches the redirect. An old slug containing anything but `a-z`, `0-9`, `-`, and `/` is left out, because `:` or `*` would turn the exact address into a route pattern covering other pages. Each page or translation change that can alter what is served calls `onLocalizedRoutesChanged`, which bootstrap points at `LocalizationService.invalidate()`. That includes approvals from the curation queue, which reach the module only through the content types' `approve` step. The localization service also rebuilds a snapshot containing content routes after 60 seconds, which bounds the case where an approval finishes after the rebuild it asked for.
-
-**AI suggestions.** The editor's **Suggest** button sends the English page to an AI model and places the translation it returns in the editor. Nothing is saved: the administrator reviews the text and saves it as usual. It works the same way as the localization module's Suggest buttons, and shares their code for choosing the provider (`src/backend/services/resolveAiProvider.ts`) and for accepting only a finished answer (`src/backend/services/runIsolatedAiQuery.ts`).
+The core content service runs the translation workflow for every translatable type — who may write, the stale fingerprint, published and deleted state, the AI Suggest request, the editor, and the translated addresses. Its contract and admin routes are documented once, in [system-content.md](../../../../docs/system/system-content.md#translations). This section covers only what pages supplies.
 
 | | |
 |---|---|
-| Settings | Pages Settings tab → **AI translation**: the provider and model (`translationProviderId`, `translationModel`; null means the active provider and its default model) and the system prompt (`translationSystemPrompt`, defaulting to `DEFAULT_PAGE_TRANSLATION_SYSTEM_PROMPT`). Stored on the `page_settings` document, separate from the localization module's settings, because articles and interface strings usually want different instructions |
-| What is sent | The English title, description, keywords, and body at the version visitors are served, as JSON data the prompt tells the model not to follow. A stale existing translation is sent as `previousTranslation` so the model updates it; a current one is not, because the model would only copy it |
-| How it runs | `PageTranslationSuggestionService` resolves the provider from the core `'ai-providers'` registry and the language names from `ILocalizationService.getLanguage`, both per request. The call uses `toolAllowlist: []`, `expandVariables: false`, and `thinkingBudget: 0`. Only an `end_turn` or `stop_sequence` stop is parsed; anything else is a 502 |
-| What comes back | `IPageTranslationSuggestionResult`: the translation as markdown (`page-translation-prompt.ts` builds the frontmatter, carrying `published` and `ogImage` over from the existing translation so a suggestion never puts a page live), the model's `notes`, and `providerId`, `model`, `costUsd`, and `usage` |
-| Toast | The same `SuggestionSummary` body the localization Translations tab shows: the model's notes and the cost with token counts. It stays open when the model left notes |
-| Limits | 20 requests a minute on top of the admin limiter, since each one is a paid call. The output budget grows with the page and stops at 16,000 tokens; a page too long for that is reported as a 502 saying so |
-| Audit | Every run is logged under `tronrelic:pages` with the actor, page, language, model, token usage, and cost |
+| Translation side | `PageTranslatable` (`services/page-translatable.ts`), set as `PageContentType.translation` |
+| Fields | `title` (text, required), `description` (multiline), `keywords` (string list), `body` (Markdown, required), `ogImage` (URL; empty means the English page's image) |
+| English values | The page at the version core chose; `body` is its markdown without frontmatter |
+| Public paths | The page's slug and old slugs, while its served version is `published`. An old slug containing anything but `a-z`, `0-9`, `-`, and `/` is left out |
+| Translated text | `module_pages_translation_values`, through the store core hands out; unique on `(contentId, language)`, where `contentId` is the page's id |
+| Admin UI | `/system/pages` → a page's **Translations** button opens the core `ContentTranslations` editor, with the page editor's preview endpoint as its Markdown preview |
+| Who may write | A signed-in admin. The `ADMIN_API_TOKEN` service token is refused with 403, because translations are not reviewed |
+| Served when | The page is served at that slug, the translation is published and not deleted, and the language is enabled |
 
-**Render cache.** A translation's render is cached under `page:render-translation:{language}:{slug}` with the tag `page:translations:{slug}`. `MarkdownService.invalidateAllCaches(slug)` clears that tag along with the English keys, so any change to the page or one of its translations drops every language's render at that slug.
+**No English fallback.** A translated request for a page with no published translation into that language is a 404, never the English body. The same applies when an administrator publishes a route pattern covering a CMS page on the localization Routes tab: requests in that language 404 until the page has a translation.
 
-### Translation REST
+**Rendering.** `PageTranslationService` resolves the English page served at the slug, asks core for the published translation with `readPublicTranslation`, lays the translated values over the page, and renders the translated body. A translation's render is cached under `page:render-translation:{language}:{slug}` with the tag `page:translations:{slug}`. `MarkdownService.invalidateAllCaches(slug)` clears that tag along with the English keys, and both a page change and a translation change (through `onTranslationChanged`) call it, so any change drops every language's render at that slug.
 
-Admin, under `/api/admin/pages` (`requireAdmin`). `:id` is the page's content id. Errors follow the page routes: the content error codes map to statuses, and a validation error is 400.
-
-| Method | Path | Body | Returns |
-|---|---|---|---|
-| GET | `/:id/translations` | — | `{ translations: IPageTranslation[], source: IPageTranslationSource }`. `translations` includes deleted ones, ordered by language; `source` is the English text they follow |
-| POST | `/:id/translations` | `{ language, content }` | `{ translation }` 201. Refused for `en`, a malformed code, a deleted page, or a language the page already has (restore a deleted one instead) |
-| PATCH | `/:id/translations/:language` | `{ content }` | `{ translation }` |
-| DELETE | `/:id/translations/:language` | — | 204, soft delete |
-| POST | `/:id/translations/:language/restore` | — | `{ translation }` |
-| POST | `/:id/translations/:language/suggest` | — | `IPageTranslationSuggestionResult`; saves nothing. 404 for an unknown page or a language not configured on `/system/localization`, 503 when no AI provider can run it, 502 when the model's answer cannot be used. Limited to 20 a minute |
+**Localization snapshot.** Page changes that can alter which addresses are served — an approval, a delete, a restore — call `onLocalizedRoutesChanged`, which bootstrap points at `LocalizationService.invalidate()`. Translation changes ask for the same rebuild through the core content service. The localization service also rebuilds a snapshot containing content routes after 60 seconds, which bounds the case where an approval finishes after the rebuild it asked for.
 
 Public: `GET /api/pages/:slug?language=<code>` and `GET /api/pages/:slug/render?language=<code>` answer with the translation in the same shapes as the English endpoints, following an old slug to the page's current one. Without `language`, or with `language=en`, the request reaches the English handler unchanged. The site's catch-all route adds the parameter on translated requests.
 
@@ -228,29 +196,27 @@ interface IPageDocument {
 
 **Validation rules:** slug must start with `/`, must not match a blacklist pattern, must not collide with another page's `slug` or `oldSlugs`, must not appear in its own `oldSlugs` (no circular redirects). Title is required.
 
-### `module_pages_translations`
+### `module_pages_translation_values`
 
 ```typescript
-interface IPageTranslationDocument {
-    _id: ObjectId;                 // Internal; address by contentId, or by pageId + language
-    contentId: string;             // The translation's own core content id
-    deletedAt: Date | null;        // Soft delete marker
-    approved: IPageTranslationVersionDocument | null; // What visitors see
-    pageId: string;                // Content id of the page translated
-    language: string;              // Language code, never 'en'
-    title: string;                 // Latest edit from here down
-    content: string;               // Full markdown including frontmatter
-    description: string;
-    keywords: string[];
-    published: boolean;
-    ogImage: string | null;
-    sourceHash: string;            // English text this edit was written against
-    createdAt: Date;
+interface ITranslationValueDocument {   // From src/backend/services/content-translation-store.ts
+    _id: ObjectId;
+    contentId: string;                  // Core content id of the page
+    language: string;                   // Language code, never 'en'
+    values: {
+        title: string;
+        description: string;
+        keywords: string[];
+        body: string;                   // Markdown without frontmatter
+        ogImage: string;                // Empty: the English page's image
+    };
     updatedAt: Date;
 }
 ```
 
-**Indexes:** `contentId` (unique) and `(pageId, language)` (unique), created at boot by `ensurePageTranslationIndexes`. Unlike `pages`, this collection was new when it was introduced, so there were no existing documents for a migration to adapt, and creating the indexes at boot makes the uniqueness rule hold from the first write.
+**Indexes:** `(contentId, language)` (unique), created at boot by `PageService.ensureTranslationIndexes`. Whether a translation is published or deleted, its fingerprint, and its audit fields live in the core `content_translations` collection, not here.
+
+`module_pages_translations`, where translations were stored as `core:page-translation` managed content, is no longer read. Migration 010 copied it into the collection above and left it in place for rollback.
 
 ### `page_settings`
 
@@ -258,12 +224,11 @@ interface IPageTranslationDocument {
 interface IPageSettingsDocument {
     _id: ObjectId;
     blacklistedRoutes: string[];  // Regex patterns
-    translationSystemPrompt?: string;      // Absent: the built-in default
-    translationProviderId?: string | null; // Absent or null: the active provider
-    translationModel?: string | null;      // Absent or null: the provider's default
     updatedAt: Date;
 }
 ```
+
+The AI translation settings that briefly lived here moved to the core `content_translation_settings` collection in migration 010.
 
 File-related fields (`maxFileSize`, `allowedFileExtensions`, `filenameSanitizationPattern`, `storageProvider`) were removed by migration `module:pages:005_strip_file_fields_from_page_settings` after `module:files:001_files_settings` copied them into the Files module's settings collection.
 
@@ -284,6 +249,7 @@ A rename held for review adds the live slug to `oldSlugs` before anyone approves
 - `module:pages:007_adopt_pages_as_managed_content` — adopted every existing page as `core:page`: assigned a `contentId`, snapshotted published pages as their approved version, and wrote a core `content_items` row per page (published pages recorded as `approved`, unpublished pages with no review state). Safe to re-run.
 - `module:pages:008_restore_pages_text_index` — restored the `text_search` text index the Mongoose schema used to build, without which the `/system/pages` search fails with "text index required for $text query". One `createIndex` call after read-only checks; a no-op when the same index exists, and refuses, without writing, when a different text index exists.
 - `module:pages:009_restore_pages_slug_unique_index` — restored the unique `slug_1` index the Mongoose schema used to build, so two pages can never be stored under one URL. One `createIndex` call after read-only checks; a no-op when the unique index exists, and refuses, without writing, when pages already share a slug (listing them) or when a non-unique `slug_1` exists.
+- `module:pages:010_move_page_translations_to_core` — moved page translations from the retired `core:page-translation` type to the core content translation service: copied each translation's served text into `module_pages_translation_values`, wrote its state row in `content_translations` (keeping its fingerprint, so stale flags carry over), closed any review item still pending for the old type as rejected, and moved the AI translation settings from `page_settings` to `content_translation_settings`. A translation that only ever existed as a held or rejected edit is moved unpublished. Until it runs, pages are served in English only. Safe to re-run.
 
 ## Related Documents
 

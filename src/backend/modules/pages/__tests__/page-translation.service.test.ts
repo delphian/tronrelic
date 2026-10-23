@@ -1,19 +1,20 @@
 /// <reference types="vitest" />
 
 /**
- * @fileoverview Tests for CMS page translations: the per-page opt-in, the
- * public render that never falls back to English, the stale flag, and the
- * routes handed to the localization snapshot.
+ * @fileoverview Tests for CMS page translations through the core content
+ * translation service: the per-page opt-in, the public render that never falls
+ * back to English, the stale flag, the curator-only rule, and the routes handed
+ * to the localization snapshot.
  *
- * Runs the real core content service against the mock database, the same way
- * the page service tests do, so review and visibility follow the production
- * rules rather than a hand-written stand-in.
+ * Runs the real core content service and page service against the mock
+ * database, so permissions and visibility follow the production rules rather
+ * than a hand-written stand-in.
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { PageService } from '../services/page.service.js';
 import { PageTranslationService } from '../services/page-translation.service.js';
-import type { ICacheService, IContentActor, ICurationService } from '@/types';
+import type { ICacheService, IContentActor, IContentTranslationService, ICurationService, TranslationValues } from '@/types';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 import { createMockServiceRegistry } from '../../../tests/vitest/mocks/service-registry.js';
 import { ContentService } from '../../../services/content-service.js';
@@ -71,14 +72,14 @@ const mockLogger: any = {
     child: () => mockLogger
 };
 
-/** A signed-in admin: a curator whose writes are approved at once. */
+/** A signed-in admin: a curator, the only actor who may change translations. */
 const curator: IContentActor = { id: 'user-admin', kind: 'user', isCurator: true };
 
-/** The shared service token: not a curator, so reviewed changes are held. */
+/** The shared service token: not a curator, so translation writes are refused. */
 const serviceToken: IContentActor = { id: 'system:service-token', kind: 'system', isCurator: false };
 
 /**
- * Build page or translation markdown with frontmatter.
+ * Build English page markdown with frontmatter.
  *
  * @param opts - The frontmatter fields and body to write.
  * @returns Markdown including the frontmatter block.
@@ -93,12 +94,24 @@ function markdown(opts: { title: string; slug?: string; oldSlugs?: string[]; pub
     return lines.join('\n');
 }
 
-describe('PageTranslationService', () => {
+/**
+ * Build translated values for a page.
+ *
+ * @param title - Translated title.
+ * @param body - Translated body.
+ * @returns Values for every page translation field.
+ */
+function values(title: string, body = `# ${title}`): TranslationValues {
+    return { title, description: '', keywords: [], body, ogImage: '' };
+}
+
+describe('page translations', () => {
     let pages: PageService;
-    let translations: PageTranslationService;
+    let rendering: PageTranslationService;
+    let translations: IContentTranslationService;
     let onRoutesChanged: ReturnType<typeof vi.fn<() => void>>;
 
-    beforeEach(() => {
+    beforeEach(async () => {
         PageService.resetForTests();
         PageTranslationService.resetForTests();
         ContentService.resetForTests();
@@ -110,28 +123,23 @@ describe('PageTranslationService', () => {
             hold: vi.fn(async () => ({ id: `item-${Math.random()}`, status: 'pending' })),
             approve: vi.fn(async () => null)
         };
+        onRoutesChanged = vi.fn<() => void>();
         ContentService.setDependencies(
             database,
             new HookRegistry(mockLogger),
             createMockServiceRegistry({ curation: curation as unknown as ICurationService }),
-            mockLogger
+            mockLogger,
+            onRoutesChanged
         );
         const contentService = ContentService.getInstance();
-        onRoutesChanged = vi.fn<() => void>();
+        translations = contentService.translations();
 
-        PageService.setDependencies(database, cache, contentService, mockLogger, onRoutesChanged);
+        PageService.setDependencies(database, cache, contentService, mockLogger);
         pages = PageService.getInstance();
-        PageTranslationService.setDependencies({
-            database,
-            cacheService: cache,
-            contentService,
-            pages,
-            onRoutesChanged,
-            logger: mockLogger
-        });
-        translations = PageTranslationService.getInstance();
+        await pages.ensureTranslationIndexes();
+        PageTranslationService.setDependencies({ cacheService: cache, contentService, pages });
+        rendering = PageTranslationService.getInstance();
         contentService.registerType(pages.getContentType(), 'pages');
-        contentService.registerType(translations.getContentType(), 'pages');
     });
 
     /**
@@ -154,166 +162,150 @@ describe('PageTranslationService', () => {
 
         it('lists the page slug and its old slugs once a published translation exists', async () => {
             const pageId = await createPage('/about', { oldSlugs: ['/company'] });
-            await translations.createTranslation(pageId, 'zh', markdown({ title: '关于', published: true }), curator);
+            await translations.saveTranslation('core:page', pageId, 'zh', { values: values('关于'), published: true }, curator);
 
             expect(await translations.listLocalizedRoutes()).toEqual([
                 { pattern: '/about', languages: ['zh'] },
                 { pattern: '/company', languages: ['zh'] }
             ]);
+            expect(onRoutesChanged).toHaveBeenCalled();
         });
 
         it('does not list a draft translation', async () => {
             const pageId = await createPage('/about');
-            await translations.createTranslation(pageId, 'zh', markdown({ title: '关于' }), curator);
+            await translations.saveTranslation('core:page', pageId, 'zh', { values: values('关于'), published: false }, curator);
 
             expect(await translations.listLocalizedRoutes()).toEqual([]);
         });
 
-        it('does not list a translation still waiting for review', async () => {
+        it('stops listing a translation once it is deleted, and lists it again once restored', async () => {
             const pageId = await createPage('/about');
-            await translations.createTranslation(pageId, 'zh', markdown({ title: '关于', published: true }), serviceToken);
-
+            await translations.saveTranslation('core:page', pageId, 'zh', { values: values('关于'), published: true }, curator);
+            await translations.deleteTranslation('core:page', pageId, 'zh', curator);
             expect(await translations.listLocalizedRoutes()).toEqual([]);
-        });
 
-        it('stops listing a translation once it is deleted', async () => {
-            const pageId = await createPage('/about');
-            await translations.createTranslation(pageId, 'zh', markdown({ title: '关于', published: true }), curator);
-            await translations.deleteTranslation(pageId, 'zh', curator);
-
-            expect(await translations.listLocalizedRoutes()).toEqual([]);
-            expect(onRoutesChanged).toHaveBeenCalled();
+            await translations.restoreTranslation('core:page', pageId, 'zh', curator);
+            expect(await translations.listLocalizedRoutes()).toEqual([{ pattern: '/about', languages: ['zh'] }]);
         });
 
         it('leaves out an old slug that would act as a route pattern', async () => {
             const pageId = await createPage('/about', { oldSlugs: ['/blog/*'] });
-            await translations.createTranslation(pageId, 'zh', markdown({ title: '关于', published: true }), curator);
+            await translations.saveTranslation('core:page', pageId, 'zh', { values: values('关于'), published: true }, curator);
 
             expect(await translations.listLocalizedRoutes()).toEqual([{ pattern: '/about', languages: ['zh'] }]);
         });
     });
 
     describe('renderPublicTranslation', () => {
-        it('renders the translated body and metadata', async () => {
+        it('renders the translated body and metadata, falling back to the English image', async () => {
             const pageId = await createPage('/about', { ogImage: '/uploads/en.png' });
-            await translations.createTranslation(
-                pageId,
-                'zh',
-                markdown({ title: '关于', published: true, body: '你好' }),
-                curator
-            );
+            await translations.saveTranslation('core:page', pageId, 'zh', { values: values('关于', '你好'), published: true }, curator);
 
-            const render = await translations.renderPublicTranslation('/about', 'zh');
+            const render = await rendering.renderPublicTranslation('/about', 'zh');
             expect(render?.html).toContain('你好');
             expect(render?.metadata.title).toBe('关于');
-            // No ogImage in the translation, so the page's image is used.
             expect(render?.metadata.ogImage).toBe('/uploads/en.png');
         });
 
         it('returns null rather than the English body when no translation exists', async () => {
             await createPage('/about');
-            expect(await translations.renderPublicTranslation('/about', 'zh')).toBeNull();
+            expect(await rendering.renderPublicTranslation('/about', 'zh')).toBeNull();
         });
 
         it('returns null for a draft translation', async () => {
             const pageId = await createPage('/about');
-            await translations.createTranslation(pageId, 'zh', markdown({ title: '关于' }), curator);
+            await translations.saveTranslation('core:page', pageId, 'zh', { values: values('关于'), published: false }, curator);
 
-            expect(await translations.renderPublicTranslation('/about', 'zh')).toBeNull();
+            expect(await rendering.renderPublicTranslation('/about', 'zh')).toBeNull();
         });
 
         it('returns null for a malformed language code', async () => {
             await createPage('/about');
-            expect(await translations.renderPublicTranslation('/about', '../x')).toBeNull();
+            expect(await rendering.renderPublicTranslation('/about', '../x')).toBeNull();
         });
     });
 
-    describe('admin management', () => {
+    describe('writes', () => {
+        it('refuses a translation write from anyone but a curator', async () => {
+            const pageId = await createPage('/about');
+            await expect(
+                translations.saveTranslation('core:page', pageId, 'zh', { values: values('关于'), published: true }, serviceToken)
+            ).rejects.toMatchObject({ code: 'forbidden' });
+        });
+
         it('refuses a translation into the default language', async () => {
             const pageId = await createPage('/about');
             await expect(
-                translations.createTranslation(pageId, 'en', markdown({ title: 'About' }), curator)
+                translations.saveTranslation('core:page', pageId, 'en', { values: values('About'), published: true }, curator)
             ).rejects.toThrow(/another language/);
         });
 
-        it('refuses a second translation into the same language', async () => {
+        it('refuses a translation missing a required field', async () => {
             const pageId = await createPage('/about');
-            await translations.createTranslation(pageId, 'zh', markdown({ title: '关于' }), curator);
             await expect(
-                translations.createTranslation(pageId, 'zh', markdown({ title: '关于' }), curator)
-            ).rejects.toThrow(/already has a translation/);
+                translations.saveTranslation('core:page', pageId, 'zh', { values: { title: '关于' }, published: true }, curator)
+            ).rejects.toThrow(/Body is required/);
         });
 
+        it('replaces an existing translation on a second save instead of adding another', async () => {
+            const pageId = await createPage('/about');
+            await translations.saveTranslation('core:page', pageId, 'zh', { values: values('关于'), published: false }, curator);
+            await translations.saveTranslation('core:page', pageId, 'zh', { values: values('关于我们'), published: true }, curator);
+
+            const overview = await translations.getOverview('core:page', pageId);
+            expect(overview.translations).toHaveLength(1);
+            expect(overview.translations[0].values.title).toBe('关于我们');
+            expect(overview.translations[0].published).toBe(true);
+        });
+
+        it('refuses to change a deleted translation until it is restored', async () => {
+            const pageId = await createPage('/about');
+            await translations.saveTranslation('core:page', pageId, 'zh', { values: values('关于'), published: true }, curator);
+            await translations.deleteTranslation('core:page', pageId, 'zh', curator);
+
+            await expect(
+                translations.saveTranslation('core:page', pageId, 'zh', { values: values('关于'), published: true }, curator)
+            ).rejects.toMatchObject({ code: 'deleted' });
+        });
+    });
+
+    describe('stale flag and English source', () => {
         it('flags a translation stale after the English page changes, and clears it on save', async () => {
             const pageId = await createPage('/about');
-            await translations.createTranslation(pageId, 'zh', markdown({ title: '关于' }), curator);
-            expect((await translations.listTranslations(pageId))[0].stale).toBe(false);
+            await translations.saveTranslation('core:page', pageId, 'zh', { values: values('关于'), published: true }, curator);
+            expect((await translations.getOverview('core:page', pageId)).translations[0].stale).toBe(false);
 
             await pages.updatePage(pageId, markdown({ title: 'About us', slug: '/about', published: true }), curator);
-            expect((await translations.listTranslations(pageId))[0].stale).toBe(true);
+            expect((await translations.getOverview('core:page', pageId)).translations[0].stale).toBe(true);
 
-            await translations.updateTranslation(pageId, 'zh', markdown({ title: '关于我们' }), curator);
-            expect((await translations.listTranslations(pageId))[0].stale).toBe(false);
-        });
-
-        it('hands the Suggest button a previous translation only when it is stale', async () => {
-            const pageId = await createPage('/about');
-            await translations.createTranslation(pageId, 'zh', markdown({ title: '关于', published: true }), curator);
-
-            const current = await translations.getSuggestionSource(pageId, 'zh');
-            expect(current.previous).toBeNull();
-            expect(current.published).toBe(true);
-
-            await pages.updatePage(pageId, markdown({ title: 'About us', slug: '/about', published: true }), curator);
-            const stale = await translations.getSuggestionSource(pageId, 'zh');
-            expect(stale.english.title).toBe('About us');
-            expect(stale.previous?.title).toBe('关于');
+            await translations.saveTranslation('core:page', pageId, 'zh', { values: values('关于我们'), published: true }, curator);
+            expect((await translations.getOverview('core:page', pageId)).translations[0].stale).toBe(false);
         });
 
         it('does not flag a translation stale when only the English slug changes', async () => {
             const pageId = await createPage('/about');
-            await translations.createTranslation(pageId, 'zh', markdown({ title: '关于' }), curator);
+            await translations.saveTranslation('core:page', pageId, 'zh', { values: values('关于'), published: true }, curator);
             await pages.updatePage(pageId, markdown({ title: 'About', slug: '/about-us', published: true }), curator);
 
-            expect((await translations.listTranslations(pageId))[0].stale).toBe(false);
+            expect((await translations.getOverview('core:page', pageId)).translations[0].stale).toBe(false);
         });
-    });
 
-    describe('getTranslationSource', () => {
-        it('returns the served English text while an edit waits for review, and flags the pending edit', async () => {
+        it('shows the served English text while an edit waits for review, and flags the pending edit', async () => {
             const pageId = await createPage('/about');
-            await pages.updatePage(
-                pageId,
-                markdown({ title: 'About us', slug: '/about', published: true }),
-                serviceToken
-            );
+            await pages.updatePage(pageId, markdown({ title: 'About us', slug: '/about', published: true }), serviceToken);
 
-            const source = await translations.getTranslationSource(pageId);
-            expect(source.title).toBe('About');
-            expect(source.content).toContain('# About');
+            const { source } = await translations.getOverview('core:page', pageId);
+            expect(source.values.title).toBe('About');
+            expect(source.values.body).toContain('# About');
+            expect(source.values.body).not.toContain('title:');
             expect(source.pendingEdit).toBe(true);
         });
 
         it('does not flag a pending edit that changes only the slug', async () => {
             const pageId = await createPage('/about');
-            await pages.updatePage(
-                pageId,
-                markdown({ title: 'About', slug: '/about-us', published: true }),
-                serviceToken
-            );
+            await pages.updatePage(pageId, markdown({ title: 'About', slug: '/about-us', published: true }), serviceToken);
 
-            expect((await translations.getTranslationSource(pageId)).pendingEdit).toBe(false);
-        });
-
-        it('returns the latest edit when no version is served yet', async () => {
-            const page = await pages.createPage(
-                markdown({ title: 'Draft', slug: '/draft', published: true }),
-                serviceToken
-            );
-
-            const source = await translations.getTranslationSource(page.contentId as string);
-            expect(source.title).toBe('Draft');
-            expect(source.pendingEdit).toBe(false);
+            expect((await translations.getOverview('core:page', pageId)).source.pendingEdit).toBe(false);
         });
     });
 });

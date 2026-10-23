@@ -21,6 +21,7 @@ import type { ContentCurationState } from './ContentCurationState.js';
 import type { IContent } from './IContent.js';
 import type { IContentActor } from './IContentActor.js';
 import type { IContentListQuery } from './IContentListQuery.js';
+import type { IContentTranslationService } from './IContentTranslationService.js';
 import type { IManagedContentType } from './IManagedContentType.js';
 import type { ContentTypeDisposer } from './IContentRegistry.js';
 
@@ -158,4 +159,13 @@ export interface IContentService {
      * @returns The number of matching rows.
      */
     count(query: IContentListQuery): Promise<number>;
+
+    /**
+     * Translations of managed content: the editor's reads and writes, public
+     * reads of translated items, AI suggestions, and their settings. Every
+     * type whose registration sets `translation` takes part.
+     *
+     * @returns The content translation service.
+     */
+    translations(): IContentTranslationService;
 }

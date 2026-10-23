@@ -7,5 +7,4 @@
 export type { IPageDocument, IPageVersionDocument } from './IPageDocument.js';
 export type { IPageSettingsDocument } from './IPageSettingsDocument.js';
 export { DEFAULT_PAGE_SETTINGS } from './IPageSettingsDocument.js';
-export type { IPageTranslationDocument, IPageTranslationVersionDocument } from './IPageTranslationDocument.js';
-export { PAGE_TRANSLATIONS_COLLECTION, ensurePageTranslationIndexes } from './ensurePageTranslationIndexes.js';
+export { PAGE_TRANSLATION_VALUES_COLLECTION } from './PAGE_TRANSLATION_VALUES_COLLECTION.js';

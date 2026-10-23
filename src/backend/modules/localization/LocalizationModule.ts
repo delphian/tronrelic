@@ -102,8 +102,9 @@ export interface ILocalizationModuleDependencies {
     listKnownNamespaces: () => string[];
     /**
      * Lists addresses another module publishes in other languages on its own,
-     * merged into the public snapshot's routes. Bootstrap supplies the pages
-     * module's translated CMS pages. Optional; without it only routes
+     * merged into the public snapshot's routes. Bootstrap supplies the core
+     * content service's translated addresses, which cover every translatable
+     * content type, such as CMS pages. Optional; without it only routes
      * published on the Routes tab are served.
      */
     listContentRoutes?: () => Promise<IPublicLocalizedRoute[]>;

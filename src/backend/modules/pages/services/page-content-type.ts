@@ -19,6 +19,9 @@
  * exists and a restore can never collide. The one removal is `discardCreate`,
  * which undoes a create that never finished.
  *
+ * The type's `translation` property makes pages translatable; the core content
+ * service runs translations and `PageTranslatable` stores their text.
+ *
  * @module backend/modules/pages/services/page-content-type
  */
 
@@ -31,7 +34,8 @@ import type {
     IContentReadRequest,
     IManagedContentType,
     IPageContent,
-    ISystemLogService
+    ISystemLogService,
+    ITranslatableContentType
 } from '@/types';
 import type { IPageDocument, IPageVersionDocument } from '../database/index.js';
 import type { MarkdownService } from './markdown.service.js';
@@ -110,13 +114,17 @@ export class PageContentType implements IManagedContentType<IPageContent, IPageW
      *   approval can change which addresses are served in which language (a
      *   rename or an unpublish going live), including approvals made from the
      *   curation queue that never pass through the page service.
+     * @param translation - The translation side, which makes pages
+     *   translatable through the core content service; see `PageTranslatable`.
+     *   Optional so a test of the storage steps alone can leave it out.
      */
     constructor(
         private readonly pages: Collection<IPageDocument>,
         private readonly markdown: MarkdownService,
         private readonly slugPolicy: IPageSlugPolicy,
         private readonly logger: ISystemLogService,
-        private readonly onApproved: () => void = () => undefined
+        private readonly onApproved: () => void = () => undefined,
+        readonly translation?: ITranslatableContentType<IPageContent>
     ) {}
 
     /**

@@ -13,7 +13,7 @@ import { Plus, Edit, Trash2, Eye, EyeOff, Search, RotateCcw, Clock, XCircle, Arc
 import type { IPage } from '@/types';
 import styles from './PagesTab.module.scss';
 import { PageEditor } from '../components/PageEditor';
-import { PageTranslations } from '../components/PageTranslations';
+import { ContentTranslations } from '../../../../../../../modules/content';
 
 /**
  * Page counts returned with the list. Published and draft counts describe the
@@ -38,6 +38,29 @@ interface IPagesListResponse {
 
 /** The list filters the status dropdown offers. */
 type PageListFilter = 'all' | 'published' | 'drafts' | 'pending' | 'deleted';
+
+/**
+ * Render a translated page body for the translation editor's preview, through
+ * the same endpoint the page editor uses so the two previews cannot disagree.
+ *
+ * @param markdown - The translated body, without frontmatter.
+ * @returns The rendered HTML.
+ * @throws Error with the server's message when rendering fails.
+ */
+async function renderPagePreview(markdown: string): Promise<string> {
+    const response = await fetch('/api/admin/pages/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: markdown })
+    });
+    if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.message || data.error || 'Failed to generate preview');
+    }
+    const data: { html: string } = await response.json();
+
+    return data.html;
+}
 
 /**
  * Pages tab - List and edit pages.
@@ -180,9 +203,19 @@ export function PagesTab() {
         void fetchPages();
     }, [fetchPages]);
 
-    // Show the translations panel for one page
+    // Show the translation editor for one page. Core manages translations of
+    // every content type; pages supplies the preview renderer for its body.
     if (translatingPage) {
-        return <PageTranslations page={translatingPage} onClose={() => setTranslatingPage(null)} />;
+        return (
+            <ContentTranslations
+                typeId="core:page"
+                contentId={translatingPage.contentId}
+                title={translatingPage.title}
+                publicPath={translatingPage.slug}
+                renderPreview={renderPagePreview}
+                onClose={() => setTranslatingPage(null)}
+            />
+        );
     }
 
     // Show editor when creating or editing

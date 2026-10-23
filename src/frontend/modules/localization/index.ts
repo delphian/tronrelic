@@ -10,6 +10,7 @@
 export { LocalizationProvider, ENGLISH_SEED } from './components/LocalizationProvider';
 export { LanguageSwitcher } from './components/LanguageSwitcher';
 export { LanguagesTab, RoutesTab, TranslationsTab, SettingsTab, SwitchesTab, SuggestionSummary } from './components/admin';
+export { listLanguages } from './api/client';
 export { useTranslation } from './hooks/useTranslation';
 export { CORE_TRANSLATION_NAMESPACE } from './lib/CORE_TRANSLATION_NAMESPACE';
 export { useLocalization } from './hooks/useLocalization';

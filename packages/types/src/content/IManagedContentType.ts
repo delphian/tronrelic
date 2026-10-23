@@ -30,6 +30,7 @@ import type { IContentClassification } from './IContentClassification.js';
 import type { IContentReadRequest } from './IContentReadRequest.js';
 import type { IContentType } from './IContentType.js';
 import type { ContentPayload } from './ContentPayload.js';
+import type { ITranslatableContentType } from './ITranslatableContentType.js';
 
 /**
  * A content type whose items core manages.
@@ -73,6 +74,15 @@ export interface IManagedContentType<T extends IContent = IContent, TCreate = un
      * An empty list means the type never enters curation.
      */
     reviewedFields: ReadonlyArray<Exclude<keyof T, keyof IContent> & string>;
+
+    /**
+     * Makes the type's items translatable. Leave it out for a type that is
+     * never translated. When present, core manages each item's translations
+     * through `IContentService.translations()`: it keeps their state and runs
+     * the workflow, and this object stores the translated text and describes
+     * the fields. See `ITranslatableContentType`.
+     */
+    translation?: ITranslatableContentType<T>;
 
     /**
      * Store a new item's type-specific record under the core-issued id. Throw a

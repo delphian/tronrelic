@@ -10,6 +10,8 @@
  * example, refusing text that names a sanctioned wallet — without the content
  * author knowing about it.
  *
+ * Writes to an item's translations fire the same hooks, with `language` set.
+ *
  * @module types/hooks/IContentWriteContext
  */
 
@@ -41,4 +43,14 @@ export interface IContentWriteContext {
      * inspects it must check the `typeId` first. Absent for delete and restore.
      */
     input?: unknown;
+
+    /**
+     * Set when the write is to one of the item's translations rather than the
+     * item itself, naming the translation's language. Saving a translation
+     * fires `content.beforeUpdate` with `input` holding the
+     * `IContentTranslationWrite`; deleting and restoring one fire
+     * `content.beforeDelete` and `content.beforeRestore`. A handler that only
+     * cares about the item itself returns early when this is present.
+     */
+    language?: string;
 }
