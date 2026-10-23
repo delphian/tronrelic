@@ -7,7 +7,8 @@
  * what the content said at that moment, where it was delivered and where it
  * failed, and the identifying details. The content comes from the frozen
  * snapshot taken at decision time, never a live re-read, so it shows exactly
- * what was approved. Read-only by design.
+ * what was approved. Read-only by design. A dismissed item, closed because its
+ * plugin was no longer installed, also shows the recorded reason.
  */
 
 import { useId } from 'react';
@@ -73,6 +74,12 @@ export function DecisionDetailPanel({ item }: { item: ICurationItemView }) {
             <section className={styles.section} aria-labelledby={recordId}>
                 <h3 id={recordId} className={styles.section_title}>Record</h3>
                 <dl className={styles.kv}>
+                    {item.dismissReason && (
+                        <>
+                            <dt>Reason</dt>
+                            <dd>{item.dismissReason}</dd>
+                        </>
+                    )}
                     <dt>Type</dt>
                     <dd>{item.typeId}</dd>
                     <dt>From</dt>

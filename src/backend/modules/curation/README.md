@@ -38,7 +38,7 @@ Curation is a module, not a plugin, because the governed-tool path cannot run wi
 | `services/curation-sink-defaults.ts` | Standing per-type default publish sinks over `module_curation_sink_defaults` — the subset the picker pre-selects |
 | `services/curation-gate-sink.ts` | The `curation:gate` content-router sink; `deliver()` holds by reference |
 | `services/curation-auto-approve-context.ts` | `AsyncLocalStorage` carrying the governor's auto-approve decision into `hold()` — the one runtime primitive shared with ai-tools (`runWithCurationAutoApprove` is imported by the governor) |
-| `api/curation.controller.ts` | Admin handlers: pending list, history, count, inline edit, approve/reject |
+| `api/curation.controller.ts` | Admin handlers: pending list, history, count, inline edit, approve/reject, dismiss |
 | `api/curation.router.ts` | `/api/admin/system/curation` router (`createAdminRateLimiter` + `requireAdmin`) |
 | `migrations/001_migrate_curations_from_ai_tools.ts` | Copy-then-drop `module_ai-tools_curations` → `module_curation_curations` |
 | `migrations/002_rename_curation_held_notification_category.ts` | Rewrite `ai-tools.curation-held` → `curation.held` in notification preferences + policy |
@@ -53,6 +53,7 @@ Curation is a module, not a plugin, because the governed-tool path cannot run wi
 | `hold(input)` | Hold an effect for review (auto-approves when the interactive governor bypass is in scope) |
 | `listPending` / `countPending` / `listHistory` / `get` | Queue reads (pending shows a live `describe()`; history shows the frozen decision-time snapshot) |
 | `approve(id, by?, sinks?)` / `reject` / `edit` | Decide or inline-edit a pending item through its owning type; `approve` fans the approved content to the selected publish subset, recording each outcome. Selection is **required** for a type with eligible sinks — an empty selection throws before the decision records; a type with zero eligible sinks approves to nowhere (no deadlock) |
+| `dismiss(id, by?, reason?)` | Close a pending item whose owning type is **not** registered, recording `dismissed`, `decidedBy`, and `dismissReason` without calling the owner, routing to sinks, or firing `content.published`. Returns null while the type is registered, so it cannot stand in for a reject |
 | `listEligibleSinks(id)` | The gate-admitted `publish` sinks for a sinks-enabled pending item, each flagged `defaultSelected` — the picker's data |
 | `get` / `setSinkDefaults(typeId[, sinkIds])` | Read/write the standing per-type default sinks the picker pre-selects |
 
@@ -64,14 +65,15 @@ All under `/api/admin/system/curation`, gated by `requireAdmin` + the curation a
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET | `/curations` | Pending items (live preview) |
+| GET | `/curations` | Pending items (live preview), each with `ownerAvailable` so the page offers Dismiss when the owner is gone |
 | GET | `/curations/count` | Pending count for the nav badge |
-| GET | `/curations/history` | Decided items, newest decision first (frozen snapshot) |
+| GET | `/curations/history` | Approved, rejected, and dismissed items, newest first (frozen snapshot) |
 | GET | `/curations/:id/sinks` | Eligible publish sinks for a pending item (picker data) |
 | POST | `/curations/:id/sinks/defaults` | Set the standing default sinks for the item's content type (body `{ sinkIds }`) |
 | PATCH | `/curations/:id` | Inline-edit the neutral `body` through the owning type's `applyEdit` |
 | POST | `/curations/:id/approve` | Approve, fan to the selected `sinks` (body `{ sinks? }`), commit via the type; **400** when the item has eligible sinks but no sink is selected |
 | POST | `/curations/:id/reject` | Reject + discard via the type |
+| POST | `/curations/:id/dismiss` | Close an item whose owning provider is not registered; **409** while the owner is registered, **404** when not pending |
 
 ## Lifecycle
 
@@ -79,7 +81,7 @@ All under `/api/admin/system/curation`, gated by `requireAdmin` + the curation a
 
 ## Current Capabilities
 
-What the module does today, as the contract tables above detail: a registry of reviewable content types (`registerType`/`unregisterType`, mirrored into the central `'content-types'` registry), which also holds the types the core content service registers on behalf of each managed content type (`core:page` today — read-only in the queue, decided back through the content service); the held-item lifecycle (`hold` → `approve`/`reject`/`edit`) with an atomic decision gate and disabled-owner blocking; live-preview resolution for pending items and frozen snapshots for decided history; a generic inline body-text editor that writes through the owning type's `applyEdit`; the interactive auto-approve bypass the AI tool governor drives; interactive sink selection for `publishesToSinks` types (the review gate surfaces the gate-admitted `publish` sinks, the curator picks which fire on approval, committed to the durable [`'syndication'`](../syndication/README.md) outbox and delivered by its retrying relay — best-effort inline only when syndication is absent — with live per-sink outcomes overlaid on read; the first selectable outlet being the core `core:internal-publish` sink); a `/system/curation` admin surface with a Pending tab (a queue list beside the item under review, advancing to the next item after each decision), a History tab (decided items, each opening its full record in a slide-over), and a read-only Database tab over the module's own collections; an admin toast per hold (`curation.held`); a `curation:changed` WebSocket refetch cue; and, on an approval that synchronously commits canonical content (the type declares `decisionStatus.approved`), the core `content.published` observer hook fires so downstream reactors act on the live record (see [system-hooks.md](../../../../docs/system/system-hooks.md)). Two reference consumers exercise it — `trp-x-poster` and `trp-telegram-bot`.
+What the module does today, as the contract tables above detail: a registry of reviewable content types (`registerType`/`unregisterType`, mirrored into the central `'content-types'` registry), which also holds the types the core content service registers on behalf of each managed content type (`core:page` today — read-only in the queue, decided back through the content service); the held-item lifecycle (`hold` → `approve`/`reject`/`edit`) with an atomic decision gate and disabled-owner blocking, plus `dismiss` to close an item whose owner is no longer registered; live-preview resolution for pending items and frozen snapshots for decided history; a generic inline body-text editor that writes through the owning type's `applyEdit`; the interactive auto-approve bypass the AI tool governor drives; interactive sink selection for `publishesToSinks` types (the review gate surfaces the gate-admitted `publish` sinks, the curator picks which fire on approval, committed to the durable [`'syndication'`](../syndication/README.md) outbox and delivered by its retrying relay — best-effort inline only when syndication is absent — with live per-sink outcomes overlaid on read; the first selectable outlet being the core `core:internal-publish` sink); a `/system/curation` admin surface with a Pending tab (a queue list beside the item under review, advancing to the next item after each decision), a History tab (decided items, each opening its full record in a slide-over), and a read-only Database tab over the module's own collections; an admin toast per hold (`curation.held`); a `curation:changed` WebSocket refetch cue; and, on an approval that synchronously commits canonical content (the type declares `decisionStatus.approved`), the core `content.published` observer hook fires so downstream reactors act on the live record (see [system-hooks.md](../../../../docs/system/system-hooks.md)). Two reference consumers exercise it — `trp-x-poster` and `trp-telegram-bot`.
 
 ## Vision & Roadmap
 

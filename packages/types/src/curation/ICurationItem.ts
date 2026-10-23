@@ -17,8 +17,14 @@ import type { ICurationSinkOutcome } from './ICurationSink.js';
  * word through its `applyEdit({ status })` seam after the decision is recorded.
  * Downstream states (scheduled, posted, failed) belong to the provider, not to
  * core.
+ *
+ * `dismissed` is the one terminal status that commits nothing. It closes an
+ * item whose owning type is no longer registered — typically because the
+ * plugin that held it was removed — so the item cannot be approved or
+ * rejected. Core records who closed it and why, and never calls the owner,
+ * because there is no owner to call.
  */
-export type CurationItemStatus = 'pending' | 'approved' | 'rejected';
+export type CurationItemStatus = 'pending' | 'approved' | 'rejected' | 'dismissed';
 
 /**
  * One held effect awaiting (or having received) a curator decision.
@@ -69,6 +75,13 @@ export interface ICurationItem {
 
     /** Better Auth user id of the deciding curator; absent while pending. */
     decidedBy?: string;
+
+    /**
+     * Why the item was dismissed rather than decided. Present only on a
+     * `dismissed` item, so the audit trail explains a close that never reached
+     * the owning provider.
+     */
+    dismissReason?: string;
 
     /**
      * The sinks a curator selected at approval, with their delivery outcomes.

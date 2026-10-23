@@ -178,6 +178,20 @@ export interface ICurationService extends ICurationRegistry {
     reject(id: string, decidedBy?: string): Promise<ICurationItem | null>;
 
     /**
+     * Close a pending item whose owning type is not registered, without calling
+     * the owner. Without this, an item left behind by a removed plugin stays
+     * pending forever, because approve and reject both need the owner to commit.
+     * Records the `dismissed` status, who closed it, and why. Returns null when
+     * the item is missing, no longer pending, or its owning type is registered —
+     * an item with a live owner must be approved or rejected instead.
+     *
+     * @param id - The envelope id.
+     * @param decidedBy - Better Auth user id of the admin closing the item.
+     * @param reason - Why the item was closed, kept on the audit trail.
+     */
+    dismiss(id: string, decidedBy?: string, reason?: string): Promise<ICurationItem | null>;
+
+    /**
      * Apply an operator's inline edit to a pending item through its owning type,
      * then re-derive and cache the preview. Returns the updated item, or null
      * when the item is missing, no longer pending, its owner is unregistered, or

@@ -69,7 +69,7 @@ The curation queue decides items through `ICurationType`. For a managed type, co
 
 More than one queue item can end up open for the same content. Two saves can race and each open one, and a curator's own save approves the content directly when the open item cannot be approved through curation. Each hold therefore gets a fresh `holdId`, stored on the core row and carried in the queue item's ref (`{ id, holdId }`). A decision on an item whose `holdId` is no longer on the row is not applied. Approving one fails with `superseded`, and rejecting one changes nothing.
 
-Three existing content types still implement `ICurationType` directly: the blog (`blog:post`), curated memos (`memo-tracker:curated-memo`), and social posts (`core:social-post`). They must migrate to managed content. Do not model new work on them.
+Two existing content types still implement `ICurationType` directly: curated memos (`memo-tracker:curated-memo`) and social posts (`core:social-post`). They must migrate to managed content. Do not model new work on them.
 
 ### Publishing to destinations
 
@@ -165,13 +165,15 @@ An error the author throws (a validation failure such as a slug conflict) passes
 | Hooks | `content.beforeCreate` / `beforeUpdate` / `beforeDelete` / `beforeRestore` (series); translation writes set `language` |
 | Translations | `IContentService.translations()` → `IContentTranslationService`; state in `content_translations`, values in the type's own collection; settings in `content_translation_settings`; admin routes at `/api/admin/content` |
 | Types | `@delphian/tronrelic-types` → `IContent`, `IManagedContentType`, `IContentService`, `IContentActor`, `IContentPayloadRecord`, `ContentCurationState`, `ContentVersion`, `ContentErrorCode`, `ITranslatableContentType`, `ITranslatableField`, `IContentTranslationService` |
-| Managed types today | `core:page` (Pages module), translatable |
+| Managed types today | `core:page` (Pages module), translatable; `blog:post` (`trp-blog` plugin), translatable and publishes to sinks; `relics:relic` (`trp-relics` plugin), publishes to sinks |
 
 ## Adopting an Existing Type
 
 Adopting a type that already has records takes a migration, because every existing record needs a core-issued id and a core row. The pages migration `module:pages:007_adopt_pages_as_managed_content` is the reference: it assigns each record a `contentId`, snapshots currently published content as its approved version so nothing live disappears, and upserts a core row per record, recording live content as `approved` and everything else with no review state. Migrations run when an operator starts them, so the author must keep serving its not-yet-adopted records by their old rules until then.
 
 A plugin cannot write `content_items`, so it cannot adopt records the way that migration does. A plugin moving records in from elsewhere, such as an older plugin it replaces, calls `IContentService.importItem(typeId, input, state, actor)` once per record instead. It writes the item as `create` does, runs the same `content.beforeCreate` hooks, and then places it in the state the record already had rather than deciding again: `approved` goes live, `pending` is held in the curation queue, and `rejected` is stored hidden. Nothing is sent to a publish sink and `content.published` does not fire, because the record was already reviewed where it came from. Only a curator may import an item as `approved`, and a type with no reviewed fields cannot be imported, since `create` already makes its items live.
+
+`trp-blog` is the plugin reference for adopting its own older records this way. On each start, `adoptLegacyPosts` imports every post still in the old format in the state it had, as a `system:` actor that is a curator because the posts were approved before the move. The type's `create` attaches the existing record to the new id rather than copying it, and its `discardCreate` undoes the attachment if core cannot finish, so the next start retries. A record is not served until it is adopted, which takes a few seconds on the first start after an upgrade.
 
 ## Further Reading
 

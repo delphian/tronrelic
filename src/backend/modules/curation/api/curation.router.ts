@@ -34,6 +34,7 @@ export function createCurationAdminRouter(controller: CurationController): Route
     router.patch('/curations/:id', asyncHandler(controller.editCuration));
     router.post('/curations/:id/approve', asyncHandler(controller.approveCuration));
     router.post('/curations/:id/reject', asyncHandler(controller.rejectCuration));
+    router.post('/curations/:id/dismiss', asyncHandler(controller.dismissCuration));
 
     return router;
 }
