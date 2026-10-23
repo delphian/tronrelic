@@ -25,7 +25,9 @@ const X_DEFAULT = 'x-default';
  *
  * A path that exists only in English comes back as the entry it was given,
  * unchanged. A translated path comes back as the English entry plus one entry
- * per published language, all carrying the same alternates. A translated
+ * per published language, all carrying the same alternates. The translated
+ * entries carry no `lastModified`, because the English date says nothing
+ * about when a translation last changed. A translated
  * address already listed by another source, such as a CMS page whose slug
  * happens to start with `/zh/`, is skipped so no URL appears twice.
  *
@@ -48,12 +50,21 @@ export function withLanguageVersions(
     if (alternates.length > 0) {
         const languages = Object.fromEntries(alternates.map(alternate => [alternate.hrefLang, alternate.href]));
         entries = [{ ...entry, alternates: { languages } }];
+        // The date on `entry` belongs to the English version. A translated
+        // version changes on its own schedule — editing a page's Chinese
+        // translation never moves the English page's `updatedAt` — so copying
+        // the date would publish a `<lastmod>` that contradicts the translated
+        // page's own `dateModified`. `app/sitemap.ts` sets the field only where
+        // the source records a real modification time, so drop it rather than
+        // guess.
+        const translated: MetadataRoute.Sitemap[number] = { ...entry, alternates: { languages } };
+        delete translated.lastModified;
         for (const alternate of alternates) {
             if (alternate.hrefLang !== DEFAULT_LANGUAGE && alternate.hrefLang !== X_DEFAULT) {
                 const localizedPath = localizePath(path, alternate.hrefLang);
                 if (!seenPaths.has(localizedPath)) {
                     seenPaths.add(localizedPath);
-                    entries.push({ ...entry, url: alternate.href, alternates: { languages } });
+                    entries.push({ ...translated, url: alternate.href });
                 }
             }
         }
