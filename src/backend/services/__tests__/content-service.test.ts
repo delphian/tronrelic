@@ -541,6 +541,70 @@ describe('ContentService', () => {
         });
     });
 
+    describe('importItem', () => {
+        it('imports an approved item live, without opening a queue item', async () => {
+            const item = await service.importItem<IFakeContent>('test:item', { title: 'A', note: 'n' }, 'approved', curator);
+
+            expect(item.curation).toBe('approved');
+            expect(item.hasApprovedVersion).toBe(true);
+            expect(curation.hold).not.toHaveBeenCalled();
+            const [publicView] = await service.readPublic<IFakeContent>('test:item', [item.id]);
+            expect(publicView.title).toBe('A');
+        });
+
+        it('imports an approved item of a publishing type live, without sending it to the queue', async () => {
+            const publishing = { ...createFakeType().type, typeId: 'test:post', publishesToSinks: true };
+            service.registerType(publishing, 'test');
+
+            const item = await service.importItem<IFakeContent>('test:post', { title: 'A', note: 'n' }, 'approved', curator);
+
+            expect(item.curation).toBe('approved');
+            expect(curation.hold).not.toHaveBeenCalled();
+        });
+
+        it('holds an imported pending item in the queue', async () => {
+            const item = await service.importItem<IFakeContent>('test:item', { title: 'A', note: 'n' }, 'pending', curator);
+
+            expect(item.curation).toBe('pending');
+            expect(item.curationItemId).toBe('item-1');
+            expect(await service.readPublic('test:item', [item.id])).toEqual([]);
+        });
+
+        it('stores an imported rejected item hidden, with no queue item', async () => {
+            const item = await service.importItem<IFakeContent>('test:item', { title: 'A', note: 'n' }, 'rejected', curator);
+
+            expect(item.curation).toBe('rejected');
+            expect(item.hasApprovedVersion).toBe(false);
+            expect(curation.hold).not.toHaveBeenCalled();
+            expect(await service.readPublic('test:item', [item.id])).toEqual([]);
+        });
+
+        it('refuses a non-curator importing an approved item, writing nothing', async () => {
+            await expect(service.importItem('test:item', { title: 'A', note: 'n' }, 'approved', automated))
+                .rejects.toMatchObject({ code: 'forbidden' });
+            expect(fake.type.create).not.toHaveBeenCalled();
+            expect(await database.getCollection(CONTENT_COLLECTION).countDocuments({})).toBe(0);
+        });
+
+        it('refuses a type with no reviewed fields', async () => {
+            const unreviewed = { ...createFakeType().type, typeId: 'test:note', reviewedFields: [] };
+            service.registerType(unreviewed, 'test');
+
+            await expect(service.importItem('test:note', { title: 'A', note: 'n' }, 'approved', curator))
+                .rejects.toThrow(/no reviewed fields/);
+        });
+
+        it('runs the create veto hooks before writing', async () => {
+            hooks.register('core', HOOKS.content.beforeCreate, async () => {
+                throw new HookAbortError('no');
+            });
+
+            await expect(service.importItem('test:item', { title: 'A', note: 'n' }, 'approved', curator))
+                .rejects.toMatchObject({ code: 'vetoed' });
+            expect(fake.type.create).not.toHaveBeenCalled();
+        });
+    });
+
     describe('veto hooks', () => {
         it('stops an update a handler aborts, without calling the author', async () => {
             const item = await service.create<IFakeContent>('test:item', { title: 'A', note: 'n' }, curator);

@@ -17,6 +17,7 @@
  * @see ../../../../docs/system/system-content.md — the managed content model.
  */
 
+import type { ContentCurationState } from './ContentCurationState.js';
 import type { IContent } from './IContent.js';
 import type { IContentActor } from './IContentActor.js';
 import type { IContentListQuery } from './IContentListQuery.js';
@@ -51,6 +52,29 @@ export interface IContentService {
      * @returns The created item, working version.
      */
     create<T extends IContent>(typeId: string, input: unknown, actor: IContentActor): Promise<T>;
+
+    /**
+     * Create an item in a review state another system already decided, such
+     * as a record moved from a plugin that predates managed content. Runs the
+     * `content.beforeCreate` hooks and the type's `create` as `create` does,
+     * then places the item in `state` instead of deciding it again: `approved`
+     * makes it live, `pending` holds it in the curation queue, and `rejected`
+     * stores it hidden. Nothing is published to a sink and `content.published`
+     * does not fire.
+     *
+     * @param typeId - The managed content type; must declare reviewed fields.
+     * @param input - The type's creation input.
+     * @param state - The review state the item held where it came from.
+     * @param actor - Who is running the import; only a curator may import an
+     *   item as `approved`.
+     * @returns The imported item, working version.
+     */
+    importItem<T extends IContent>(
+        typeId: string,
+        input: unknown,
+        state: ContentCurationState,
+        actor: IContentActor
+    ): Promise<T>;
 
     /**
      * Change an item. Runs `content.beforeUpdate`, calls the type's `update`,
