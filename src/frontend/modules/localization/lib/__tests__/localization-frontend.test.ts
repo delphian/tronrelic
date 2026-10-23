@@ -149,6 +149,13 @@ describe('withLanguageVersions', () => {
         expect(entries.map(item => item.url)).toEqual([`${SITE}/markets`]);
     });
 
+    it('keeps the English date on the English entry only', () => {
+        const dated = { ...entry, lastModified: '2026-01-01T00:00:00.000Z' };
+        const entries = withLanguageVersions(CONFIG, SITE, '/markets', dated, new Set(['/markets']));
+        expect(entries[0].lastModified).toBe('2026-01-01T00:00:00.000Z');
+        expect(entries[1]).not.toHaveProperty('lastModified');
+    });
+
     it('records the translated address so a later source cannot repeat it', () => {
         const seen = new Set(['/markets']);
         withLanguageVersions(CONFIG, SITE, '/markets', entry, seen);

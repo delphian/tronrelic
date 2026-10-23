@@ -92,7 +92,7 @@ Pass values as `{name}` placeholders instead of concatenating, so a translator c
 
 **Only text rendered on the server is reported.** Text that only appears after an interaction (a modal, a toast) is translated if a translation exists, but its key is not discovered automatically — add it on the Translations tab.
 
-**CMS pages are translated by the pages module, not here.** Page bodies are content rather than interface text, so each page's translations are managed content stored by the pages module and edited from the page's **Translations** button on `/system/pages`. A page with a published translation into a language joins this module's snapshot automatically; see [Content Routes](#content-routes). Do not publish a CMS page's route on the Routes tab: requests in that language return 404 until the page has a translation of its own.
+**CMS pages are translated by the pages module, not here.** Page bodies are content rather than interface text, so each page's translations are managed content stored by the pages module and edited from the page's **Translations** button on `/system/pages`. A page with a published translation into a language joins this module's snapshot automatically; see [Content Routes](#content-routes). Do not publish a CMS page's route on the Routes tab, and do not publish a broad pattern such as `/*` or `/:slug` that covers one: the snapshot merges every matching pattern's languages, so the middleware, switcher, `hreflang` links, and sitemap would advertise a language the page has no translation in, and requests in that language return 404 until it does.
 
 ## Content Routes
 
