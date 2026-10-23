@@ -653,7 +653,10 @@ export class CurationService implements ICurationService {
      * `applyEdit({ status })` seam; only after that commit succeeds are the
      * sinks handed the content. A commit failure propagates (the item stays
      * decided and won't reappear), and its selected sinks are recorded as not
-     * sent. `applyEdit` must be retry-safe.
+     * sent. A failure to hand the sinks to the syndication outbox after a
+     * successful commit is contained instead: the content is live, so the sinks
+     * are recorded as not sent and `content.published` still fires.
+     * `applyEdit` must be retry-safe.
      *
      * @param id - The envelope id.
      * @param status - The terminal state.
@@ -745,7 +748,7 @@ export class CurationService implements ICurationService {
                         await this.commit(entry.type, resolved);
                     } catch (error) {
                         if (pendingOutcomes) {
-                            await this.markSinksNotSent(id, pendingOutcomes);
+                            await this.markSinksNotSent(id, pendingOutcomes, 'The approval did not commit, so nothing was sent');
                         }
                         throw error;
                     }
@@ -761,14 +764,30 @@ export class CurationService implements ICurationService {
                     if (selected.length > 0) {
                         const syndication = this.syndicationResolver?.();
                         if (syndication) {
-                            await syndication.enqueue({
-                                originId: id,
-                                originKind: 'curation',
-                                typeId: existing.typeId,
-                                ref: existing.ref,
-                                descriptor: decisionPreview,
-                                legs: selected.map((d) => ({ sinkId: d.sink.id, dest: d.dest }))
-                            });
+                            // Contain an enqueue failure the way the inline fan-out
+                            // below contains a delivery failure. The commit above has
+                            // already made the content live, so throwing here would
+                            // skip content.published for a published item and leave
+                            // every leg reading `pending` forever. Record the legs as
+                            // not sent instead: enqueue is idempotent per
+                            // (originId, sinkId), so any leg that did land is still
+                            // delivered by the relay, and the read overlay replaces
+                            // that leg's stored outcome with its live state.
+                            try {
+                                await syndication.enqueue({
+                                    originId: id,
+                                    originKind: 'curation',
+                                    typeId: existing.typeId,
+                                    ref: existing.ref,
+                                    descriptor: decisionPreview,
+                                    legs: selected.map((d) => ({ sinkId: d.sink.id, dest: d.dest }))
+                                });
+                            } catch (error) {
+                                this.logger.error({ error, id }, 'Syndication enqueue failed after commit; recording legs as not sent');
+                                if (pendingOutcomes) {
+                                    await this.markSinksNotSent(id, pendingOutcomes, 'The approval committed, but handing the legs to durable delivery failed');
+                                }
+                            }
                         } else {
                             const outcomes = await this.deliverToSinks(decisionPreview, selected);
                             await this.queue.updateSinkOutcomes(id, outcomes);
@@ -800,21 +819,25 @@ export class CurationService implements ICurationService {
     }
 
     /**
-     * Record every selected sink of an approval whose commit failed as not sent.
-     * Without this the history keeps showing them `pending` forever, because no
-     * syndication leg will ever exist to overlay a real outcome. A failure to
-     * write the outcomes is logged rather than thrown, so the caller still sees
-     * the commit error that actually stopped the approval.
+     * Record every selected sink of an approval that never reached delivery as
+     * not sent — either because the commit was refused, or because handing the
+     * legs to durable delivery failed. Without this the history keeps showing
+     * them `pending` forever, because no syndication leg will ever exist to
+     * overlay a real outcome. A failure to write the outcomes is logged rather
+     * than thrown, so the caller still sees the error that actually stopped the
+     * approval.
      *
      * @param id - The decided envelope id.
      * @param pendingOutcomes - The outcomes recorded with the decision, one per
      *   selected sink.
+     * @param reason - Curator-facing text explaining why nothing was sent, so the
+     *   history tells a refused commit apart from a failed hand-off to delivery.
      */
-    private async markSinksNotSent(id: string, pendingOutcomes: ICurationSinkOutcome[]): Promise<void> {
+    private async markSinksNotSent(id: string, pendingOutcomes: ICurationSinkOutcome[], reason: string): Promise<void> {
         const notSent = pendingOutcomes.map((outcome): ICurationSinkOutcome => ({
             sinkId: outcome.sinkId,
             status: 'failed',
-            error: 'The approval did not commit, so nothing was sent'
+            error: reason
         }));
         try {
             await this.queue.updateSinkOutcomes(id, notSent);

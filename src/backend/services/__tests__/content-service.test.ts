@@ -185,6 +185,16 @@ describe('ContentService', () => {
         expect(() => service.registerType(broken, 'test')).toThrow(/namespaced/);
     });
 
+    it('refuses a type that publishes to sinks but reviews nothing', () => {
+        const unreviewed = {
+            ...createFakeType().type,
+            typeId: 'test:unreviewed',
+            reviewedFields: [],
+            publishesToSinks: true
+        };
+        expect(() => service.registerType(unreviewed, 'test')).toThrow(/publishesToSinks/);
+    });
+
     describe('create', () => {
         it('approves a curator\'s item at once', async () => {
             const item = await service.create<IFakeContent>('test:item', { title: 'A', note: 'n' }, curator);

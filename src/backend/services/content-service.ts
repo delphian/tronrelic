@@ -586,6 +586,14 @@ export class ContentService implements IContentService {
         if (!Array.isArray(type.reviewedFields)) {
             throw new Error(`Managed content type '${type.typeId}' must declare reviewedFields as an array`);
         }
+        // Destinations are only ever picked when a curator decides a queue
+        // item, so a type with nothing to review could never reach a sink.
+        if (type.publishesToSinks === true && type.reviewedFields.length === 0) {
+            throw new Error(
+                `Managed content type '${type.typeId}' sets publishesToSinks but declares no reviewedFields, `
+                + 'so its items never enter curation and could never reach a publish sink'
+            );
+        }
         const methods = ['describe', 'create', 'discardCreate', 'read', 'update', 'delete', 'restore', 'approve'] as const;
         for (const method of methods) {
             if (typeof type[method] !== 'function') {
