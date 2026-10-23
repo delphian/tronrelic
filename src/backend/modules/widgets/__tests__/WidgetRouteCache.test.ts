@@ -102,6 +102,18 @@ describe('WidgetRouteCache', () => {
         expect(resolve).toHaveBeenCalledTimes(3);
     });
 
+    it('keys on language, so pages in two languages never share a result', async () => {
+        const cache = new WidgetRouteCache();
+        const resolve = vi.fn(async () => widgetsLabelled('x'));
+
+        await cache.get('/', {}, resolve);
+        await cache.get('/', {}, resolve, 'en');
+        expect(resolve).toHaveBeenCalledTimes(1);
+
+        await cache.get('/', {}, resolve, 'zh');
+        expect(resolve).toHaveBeenCalledTimes(2);
+    });
+
     it('resolves again after clear()', async () => {
         const cache = new WidgetRouteCache();
         const resolve = vi.fn(async () => widgetsLabelled('x'));

@@ -117,7 +117,7 @@ Translations are not reviewed. Only a curator may save, delete, or restore one, 
 
 The English text translators work from is the version visitors are served, or the latest edit when nothing is served yet. An English edit waiting for review is never shown to translators, because a curator may reject it; the editor is told a `pendingEdit` exists instead. A translation is `stale` when the English fingerprint has changed since it was saved. A stale translation is still served.
 
-`readPublicTranslation(typeId, id, language)` returns the item at its served version with the translated values, or null when either is not served. The type applies its own visibility rule, such as a page's `published` flag, and lays the values over the item itself. `listLocalizedRoutes()` collects every published, live translation's paths across all translatable types; bootstrap hands it to the localization module as `listContentRoutes`.
+`readPublicTranslation(typeId, id, language)` returns the item at its served version with the translated values, or null when either is not served. `listPublishedTranslationIds(typeId, language)` returns the ids of items with a published, live translation into a language, so a translated index page, such as a blog's `/zh/blog`, can list, page, and search just those in the type's own storage. The type applies its own visibility rule, such as a page's `published` flag, and lays the values over the item itself. `listLocalizedRoutes()` collects every published, live translation's paths across all translatable types; bootstrap hands it to the localization module as `listContentRoutes`.
 
 The Suggest request sends the English values of every non-`url` field to the AI provider chosen in the content translation settings, as JSON data the prompt tells the model not to follow, with no tools and no `{%variable%}` expansion. A stale existing translation goes along so the model updates it. The result is never saved; `url` fields carry over from the existing translation. One settings document serves every type and is edited on the System → Localization Settings tab, next to the separate settings for interface text.
 
@@ -125,6 +125,7 @@ The Suggest request sends the English values of every non-`url` field to the AI 
 
 | Method | Path under `/api/admin/content` | Notes |
 |---|---|---|
+| GET | `/:typeId/translation-status?ids=a,b` | `{ statuses }`: each listed item's `IContentTranslationStatus[]` (language, published, stale, deleted), for an admin list. Reads no translated text; at most `MAX_TRANSLATION_STATUS_IDS` (200) ids |
 | GET | `/:typeId/:id/translations` | `IContentTranslationOverview`: the English source with its field list, and every translation including deleted ones |
 | PUT | `/:typeId/:id/translations/:language` | Body `IContentTranslationWrite` (`{ values, published }`). Creates or replaces. `forbidden` 403 for the service token |
 | DELETE | `/:typeId/:id/translations/:language` | 204, soft delete |
@@ -132,7 +133,7 @@ The Suggest request sends the English values of every non-`url` field to the AI 
 | POST | `/:typeId/:id/translations/:language/suggest` | `IContentTranslationSuggestion`; saves nothing. 503 with no AI provider, 502 for an unusable answer. 20 a minute |
 | GET, PATCH | `/translation-settings` | `{ settings }` (`IContentTranslationSettings`) |
 
-The editor is `ContentTranslations` from `src/frontend/modules/content`: one input per declared field with the English value beside it. A type's admin page mounts it for one item and may pass `renderPreview` for its Markdown field; `/system/pages` is the reference.
+The editor is `ContentTranslations` from `src/frontend/modules/content`: one input per declared field with the English value beside it. A type's admin page mounts it for one item and may pass `renderPreview` for its Markdown field. The type's admin list shows `TranslationStatusBadges` beside each item, fed by `getTranslationStatuses`, so how much is translated is visible where the content is managed rather than on the localization page. `/system/pages` is the reference for both.
 
 ## Errors
 

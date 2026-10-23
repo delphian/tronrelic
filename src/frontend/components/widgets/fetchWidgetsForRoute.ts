@@ -1,6 +1,9 @@
+import { headers } from 'next/headers';
 import type { IZoneLayoutConfig } from '@/types';
+import { DEFAULT_LANGUAGE } from '@/types';
 import type { WidgetData } from './types';
 import { getServerSideApiUrl } from '../../lib/api-url';
+import { LANGUAGE_REQUEST_HEADER } from '../../modules/localization';
 
 /**
  * SSR widget bundle: the resolved widgets for a route plus the effective
@@ -23,6 +26,9 @@ export interface IWidgetBundle {
  *
  * Uses internal Docker URL (SITE_BACKEND) for container-to-container communication
  * during SSR. The external apiUrl doesn't resolve from inside containers.
+ *
+ * The page's language is read from the request and forwarded, so each
+ * widget's data fetcher receives it as `placement.language`.
  *
  * @param route - URL path to fetch widgets for (e.g., '/', '/tools/energy-estimator')
  * @param params - Optional route parameters (e.g., { slug: 'about-us' })
@@ -72,6 +78,15 @@ export async function fetchWidgetsForRoute(
         // Add params if provided
         if (Object.keys(params).length > 0) {
             url += `&params=${encodeURIComponent(JSON.stringify(params))}`;
+        }
+
+        // The page's language, so a widget whose content is translated
+        // serves it in that language. Read from the header the middleware
+        // sets on every request it routes (it always overwrites a value the
+        // visitor sends), which spares every caller from passing it.
+        const language = (await headers()).get(LANGUAGE_REQUEST_HEADER);
+        if (language && language !== DEFAULT_LANGUAGE) {
+            url += `&language=${encodeURIComponent(language)}`;
         }
 
         const response = await fetch(url, {

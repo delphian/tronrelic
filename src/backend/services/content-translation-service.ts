@@ -34,6 +34,7 @@ import type {
     IContentTranslationOverview,
     IContentTranslationService,
     IContentTranslationSettings,
+    IContentTranslationStatus,
     IContentTranslationSuggestion,
     IContentTranslationWrite,
     IContentWriteContext,
@@ -49,7 +50,7 @@ import type {
     ITranslationValueStore,
     TranslationValues
 } from '@/types';
-import { DEFAULT_LANGUAGE, LANGUAGE_CODE_PATTERN } from '@/types';
+import { DEFAULT_LANGUAGE, LANGUAGE_CODE_PATTERN, MAX_TRANSLATION_STATUS_IDS } from '@/types';
 import { HOOKS } from '../hooks/registry.js';
 import { ContentError } from './content-error.js';
 import { runContentVeto } from './content-veto.js';
@@ -144,6 +145,7 @@ export class ContentTranslationService implements IContentTranslationService {
     async ensureIndexes(): Promise<void> {
         await this.deps.database.createIndex(CONTENT_TRANSLATIONS_COLLECTION, { contentId: 1, language: 1 }, { unique: true });
         await this.deps.database.createIndex(CONTENT_TRANSLATIONS_COLLECTION, { typeId: 1, published: 1, deletedAt: 1 });
+        await this.deps.database.createIndex(CONTENT_TRANSLATIONS_COLLECTION, { typeId: 1, language: 1, published: 1 });
 
         return;
     }
@@ -183,6 +185,44 @@ export class ContentTranslationService implements IContentTranslationService {
             },
             translations: states.map((state) => this.toTranslation(state, records, englishHash))
         };
+    }
+
+    /**
+     * Summarize the translations of a batch of items for an admin list. The
+     * state rows come from core's own collection in one query; the English
+     * text is read only for items that have translations, so the stale flag
+     * can be worked out, and the translated text is never read.
+     *
+     * @param typeId - The managed content type.
+     * @param ids - Core content ids of the listed items; at most
+     *   `MAX_TRANSLATION_STATUS_IDS` are summarized.
+     * @returns Each translated item's statuses, keyed by content id, ordered by language.
+     */
+    async summarizeTranslations(
+        typeId: string,
+        ids: ReadonlyArray<string>
+    ): Promise<Record<string, IContentTranslationStatus[]>> {
+        const entry = this.requireTranslatable(typeId);
+        const wanted = Array.from(new Set(ids.map((id) => String(id)))).slice(0, MAX_TRANSLATION_STATUS_IDS);
+        const states = wanted.length > 0
+            ? await this.collection().find({ contentId: { $in: wanted } }).sort({ language: 1 }).toArray()
+            : [];
+        const translatedIds = Array.from(new Set(states.map((state) => state.contentId)));
+        const englishHashes = await this.englishHashes(entry, translatedIds);
+
+        const summary: Record<string, IContentTranslationStatus[]> = {};
+        for (const state of states) {
+            const statuses = summary[state.contentId] ?? [];
+            statuses.push({
+                language: state.language,
+                published: state.published,
+                stale: state.sourceHash !== englishHashes.get(state.contentId),
+                deleted: Boolean(state.deletedAt)
+            });
+            summary[state.contentId] = statuses;
+        }
+
+        return summary;
     }
 
     /**
@@ -353,6 +393,30 @@ export class ContentTranslationService implements IContentTranslationService {
         }
 
         return served;
+    }
+
+    /**
+     * List the items of one type with a published, live translation into a
+     * language, for a translated index page.
+     *
+     * @param typeId - The managed content type.
+     * @param language - Language code.
+     * @returns Core content ids, in no particular order.
+     */
+    async listPublishedTranslationIds(typeId: string, language: string): Promise<string[]> {
+        this.requireTranslatable(typeId);
+        let ids: string[] = [];
+        if (LANGUAGE_CODE_PATTERN.test(language) && language !== DEFAULT_LANGUAGE) {
+            const states = await this.collection()
+                .find(
+                    { typeId, language, published: true, deletedAt: { $exists: false } },
+                    { projection: { contentId: 1 } }
+                )
+                .toArray();
+            ids = states.map((state) => state.contentId);
+        }
+
+        return ids;
     }
 
     /**
@@ -575,6 +639,30 @@ export class ContentTranslationService implements IContentTranslationService {
         const english = entry.translation.extractTranslatable(await this.loadEnglish(entry, id));
 
         return this.hashValues(entry.translation.translatableFields, english);
+    }
+
+    /**
+     * Fingerprint the English text of a batch of items in two reads, the same
+     * version rule `loadEnglish` applies one item at a time: the version
+     * visitors are served, else the latest edit.
+     *
+     * @param entry - The managed type.
+     * @param ids - Core content ids of the items.
+     * @returns Each found item's fingerprint, keyed by content id.
+     */
+    private async englishHashes(entry: ITranslatableEntry, ids: ReadonlyArray<string>): Promise<Map<string, string>> {
+        const hashes = new Map<string, string>();
+        if (ids.length > 0) {
+            const served = await this.deps.reader.readPublic(entry.type.typeId, ids);
+            const servedIds = new Set(served.map((item) => item.id));
+            const unserved = ids.filter((id) => !servedIds.has(id));
+            const latest = unserved.length > 0 ? await this.deps.reader.readAdmin(entry.type.typeId, unserved) : [];
+            for (const item of [...served, ...latest]) {
+                hashes.set(item.id, this.hashValues(entry.translation.translatableFields, entry.translation.extractTranslatable(item)));
+            }
+        }
+
+        return hashes;
     }
 
     /**

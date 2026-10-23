@@ -6,6 +6,8 @@ import type { ICollectionBrowserProps } from '../ui/ICollectionBrowserProps.js';
 import type { IClickHouseTableBrowserProps } from '../ui/IClickHouseTableBrowserProps.js';
 import type { ISystemLogsMonitorProps } from '../ui/ISystemLogsMonitorProps.js';
 import type { IAiToolSchemaViewProps } from '../ui/IAiToolSchemaViewProps.js';
+import type { IContentTranslationsProps } from '../ui/IContentTranslationsProps.js';
+import type { ITranslationStatusBadgesProps } from '../ui/ITranslationStatusBadgesProps.js';
 import type { IPanelProps } from '../ui/IPanelProps.js';
 import type { IFigureListProps } from '../ui/IFigureListProps.js';
 import type { IPriceRailProps } from '../ui/IPriceRailProps.js';
@@ -1196,6 +1198,44 @@ export interface ISystemComponents {
      * ```
      */
     AiToolSchemaView: ComponentType<IAiToolSchemaViewProps>;
+
+    /**
+     * The core translation editor for one managed content item.
+     *
+     * Translations of managed content are run by core for every type whose
+     * registration sets `translation`, so a plugin owning such a type mounts
+     * this editor from its own admin page rather than building one. It lists
+     * the languages configured on `/system/localization`, shows the item's
+     * translation into each, and edits one at a time with the English beside
+     * every field. Only a signed-in admin may save. Pass `renderPreview` to
+     * offer a preview of the type's Markdown field.
+     *
+     * @example
+     * ```tsx
+     * <context.system.ContentTranslations
+     *   typeId="blog:post"
+     *   contentId={post.contentId}
+     *   title={post.title}
+     *   publicPath={`/blog/${post.slug}`}
+     *   onClose={() => setTranslating(null)}
+     * />
+     * ```
+     */
+    ContentTranslations: ComponentType<IContentTranslationsProps>;
+
+    /**
+     * A compact row of one item's translations for an admin list: one badge
+     * per live translation, green when published, amber when the English
+     * changed, neutral for a draft. Fetch the statuses for the whole list in
+     * one request to `/api/admin/content/<typeId>/translation-status?ids=...`
+     * and pass each item's entry, or an empty array when it has none.
+     *
+     * @example
+     * ```tsx
+     * <context.system.TranslationStatusBadges statuses={statuses?.[post.contentId] ?? []} />
+     * ```
+     */
+    TranslationStatusBadges: ComponentType<ITranslationStatusBadgesProps>;
 }
 
 /**

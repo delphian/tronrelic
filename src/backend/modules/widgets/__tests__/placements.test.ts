@@ -621,7 +621,7 @@ describe('PlacementResolver', () => {
         );
     });
 
-    it('forwards { id, instanceConfig } to the data fetcher', async () => {
+    it('forwards { id, instanceConfig, language } to the data fetcher', async () => {
         const fetcher = vi.fn(async () => ({ ok: true }));
         (typeRegistry as any).__types.set('plugin:type', buildType('plugin:type', fetcher));
         (placementService.findByRoute as ReturnType<typeof vi.fn>).mockResolvedValue([
@@ -632,13 +632,13 @@ describe('PlacementResolver', () => {
             })
         ]);
 
-        await resolver.resolveForRoute('/markets', { foo: 'bar' });
+        await resolver.resolveForRoute('/markets', { foo: 'bar' }, 'zh');
 
         expect(fetcher).toHaveBeenCalledTimes(1);
         expect(fetcher).toHaveBeenCalledWith(
             '/markets',
             { foo: 'bar' },
-            { id: 'p-cfg', instanceConfig: { maxPosts: 3, theme: 'compact' } }
+            { id: 'p-cfg', instanceConfig: { maxPosts: 3, theme: 'compact' }, language: 'zh' }
         );
     });
 
@@ -654,7 +654,7 @@ describe('PlacementResolver', () => {
         expect(fetcher).toHaveBeenCalledWith(
             '/',
             {},
-            { id: 'p-empty', instanceConfig: {} }
+            { id: 'p-empty', instanceConfig: {}, language: 'en' }
         );
     });
 

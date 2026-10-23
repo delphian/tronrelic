@@ -50,6 +50,8 @@ export type { ICollectionBrowserProps } from './ui/ICollectionBrowserProps.js';
 export type { IClickHouseTableBrowserProps } from './ui/IClickHouseTableBrowserProps.js';
 export type { ISystemLogsMonitorProps } from './ui/ISystemLogsMonitorProps.js';
 export type { IAiToolSchemaViewProps } from './ui/IAiToolSchemaViewProps.js';
+export type { IContentTranslationsProps } from './ui/IContentTranslationsProps.js';
+export type { ITranslationStatusBadgesProps } from './ui/ITranslationStatusBadgesProps.js';
 export type { IPanelProps } from './ui/IPanelProps.js';
 export type { IFigureListRow } from './ui/IFigureListRow.js';
 export type { IFigureListProps } from './ui/IFigureListProps.js';
@@ -199,7 +201,8 @@ export {
     CONTENT_AUDIENCE_LEVELS,
     CONTENT_DESCRIPTOR_FEATURES,
     CONTENT_SINK_KINDS,
-    readContentField
+    readContentField,
+    MAX_TRANSLATION_STATUS_IDS
 } from './content/index.js';
 export type {
     ContentEgress,
@@ -241,7 +244,8 @@ export type {
     IServedContentTranslation,
     IContentTranslationSuggestion,
     IContentTranslationSettings,
-    IContentTranslationService
+    IContentTranslationService,
+    IContentTranslationStatus
 } from './content/index.js';
 export type {
     ICurationPreview,

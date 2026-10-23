@@ -24,6 +24,7 @@ import type { IContentActor } from './IContentActor.js';
 import type { IContentTranslation } from './IContentTranslation.js';
 import type { IContentTranslationOverview } from './IContentTranslationOverview.js';
 import type { IContentTranslationSettings } from './IContentTranslationSettings.js';
+import type { IContentTranslationStatus } from './IContentTranslationStatus.js';
 import type { IContentTranslationSuggestion } from './IContentTranslationSuggestion.js';
 import type { IContentTranslationWrite } from './IContentTranslationWrite.js';
 import type { IServedContentTranslation } from './IServedContentTranslation.js';
@@ -47,6 +48,21 @@ export interface IContentTranslationService {
      *   translatable, `not-found` when no item has that id.
      */
     getOverview(typeId: string, id: string): Promise<IContentTranslationOverview>;
+
+    /**
+     * Summarize the translations of a batch of items for an admin list: each
+     * translation's language, published and deleted state, and whether it is
+     * stale. No translated text is loaded.
+     *
+     * @param typeId - The managed content type.
+     * @param ids - Core content ids of the items in the list. At most
+     *   `MAX_TRANSLATION_STATUS_IDS` are summarized; any beyond are left out.
+     * @returns The statuses of each item that has translations, keyed by
+     *   content id and ordered by language code. Items with none are left out.
+     * @throws ContentError `unknown-type` when the type is not registered or
+     *   not translatable.
+     */
+    summarizeTranslations(typeId: string, ids: ReadonlyArray<string>): Promise<Record<string, IContentTranslationStatus[]>>;
 
     /**
      * Create or replace an item's translation into one language. Saving also
@@ -122,6 +138,23 @@ export interface IContentTranslationService {
         id: string,
         language: string
     ): Promise<IServedContentTranslation<T> | null>;
+
+    /**
+     * List the items of one type that have a published, live translation
+     * into a language. A content type's translated index page, such as a
+     * blog's `/zh/blog`, lists only these, and pages, sorts, and searches
+     * them in its own storage. Whether each item itself is visible is not
+     * checked here; read the items through `readPublic` or apply the type's
+     * own visibility rule as usual.
+     *
+     * @param typeId - The managed content type.
+     * @param language - Language code; the default language and malformed
+     *   codes return an empty list.
+     * @returns Core content ids, in no particular order.
+     * @throws ContentError `unknown-type` when the type is not registered or
+     *   not translatable.
+     */
+    listPublishedTranslationIds(typeId: string, language: string): Promise<string[]>;
 
     /**
      * List every address with a published, live translation, across all

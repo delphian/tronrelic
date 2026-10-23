@@ -42,6 +42,14 @@ export interface IWidgetPlacementContext {
      * fetchers can trust the shape on read.
      */
     readonly instanceConfig: Record<string, unknown>;
+    /**
+     * Language of the page being rendered, such as `en` or `zh`. A fetcher
+     * whose content exists in other languages, such as a list of translated
+     * posts, serves this one; any other fetcher ignores it. Always set, to
+     * `en` on English pages. The route cache keys on it, so pages in two
+     * languages never share a cached result.
+     */
+    readonly language: string;
 }
 
 /**

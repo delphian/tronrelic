@@ -67,3 +67,5 @@ export type { IServedContentTranslation } from './IServedContentTranslation.js';
 export type { IContentTranslationSuggestion } from './IContentTranslationSuggestion.js';
 export type { IContentTranslationSettings } from './IContentTranslationSettings.js';
 export type { IContentTranslationService } from './IContentTranslationService.js';
+export type { IContentTranslationStatus } from './IContentTranslationStatus.js';
+export { MAX_TRANSLATION_STATUS_IDS } from './MAX_TRANSLATION_STATUS_IDS.js';
