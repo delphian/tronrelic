@@ -28,6 +28,7 @@ import type {
     IPageTranslation,
     IPageTranslationContent,
     IPageTranslationService,
+    IPageTranslationSource,
     IPublicLocalizedRoute,
     IPublicPageRender,
     IPublicPageTranslationMetadata,
@@ -214,6 +215,28 @@ export class PageTranslationService implements IPageTranslationService {
         ]);
 
         return translations.map((translation) => this.toTranslation(translation, englishHash));
+    }
+
+    /** @inheritdoc */
+    async getTranslationSource(pageId: string): Promise<IPageTranslationSource> {
+        const [source, [latest]] = await Promise.all([
+            this.loadEnglishSource(pageId),
+            this.contentService.readAdmin<IPageContent>(PAGE_CONTENT_TYPE_ID, [pageId])
+        ]);
+        // A pending edit counts only when it changes what translators
+        // translate. One that only renames the page or flips its published
+        // flag leaves every translation current once it is approved.
+        const pendingEdit = latest?.curation === 'pending'
+            && this.hashFields(this.toFields(latest)) !== this.hashFields(this.toFields(source));
+
+        return {
+            title: source.title,
+            description: source.description,
+            keywords: source.keywords,
+            ogImage: source.ogImage ?? null,
+            content: source.content,
+            pendingEdit
+        };
     }
 
     /** @inheritdoc */
@@ -495,9 +518,10 @@ export class PageTranslationService implements IPageTranslationService {
 
     /**
      * Load the English text a translator works from: the version visitors are
-     * served, or the latest edit when no version is served yet. The stale flag
-     * and the Suggest button both use this, so a suggestion is written against
-     * the same text the stale check compares with.
+     * served, or the latest edit when no version is served yet. The stale
+     * flag, the Suggest button, and the editor's English pane (through
+     * `getTranslationSource`) all use this, so a translator works from the
+     * same text the stale check compares with.
      *
      * @param pageId - The page's core content id.
      * @returns The page at that version.

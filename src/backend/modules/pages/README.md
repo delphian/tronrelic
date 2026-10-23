@@ -151,7 +151,7 @@ A translation holds one page's visitor-facing text in one language. It has no sl
 |---|---|
 | Content type id | `core:page-translation` (`PAGE_TRANSLATION_CONTENT_TYPE_ID`) |
 | Service | `PageTranslationService` (`IPageTranslationService` in `@/types`), singleton. Not published on the service registry |
-| Admin UI | `/system/pages` → a page's **Translations** button: one row per language configured on `/system/localization`, and a side-by-side editor with the English markdown |
+| Admin UI | `/system/pages` → a page's **Translations** button: one row per language configured on `/system/localization`, and a side-by-side editor with the English markdown from `getTranslationSource` |
 | Storage | `module_pages_translations`; unique `(pageId, language)` across live and deleted documents, unique `contentId` |
 | Reviewed fields | `content`, `title`, `description`, `keywords`, `ogImage`, `published`. `sourceHash` is not reviewed |
 | Classification ceiling | `{ egress: 'user', audience: 'public' }`, the same as a page |
@@ -160,6 +160,8 @@ A translation holds one page's visitor-facing text in one language. It has no sl
 **Frontmatter.** A translation is markdown with frontmatter like a page. `title` is required; `description`, `keywords`, `ogImage`, and `published` are optional. Without `ogImage` the page's image is used. `slug` and `oldSlugs` are ignored. The editor starts a new translation from the English frontmatter and body with `published: false`, so saving a half-finished translation never puts it live.
 
 **Stale flag.** Each save stores `sourceHash`, a SHA-256 of the English page's title, description, keywords, and body at the version visitors are served (the latest edit when none is served yet). `IPageTranslation.stale` is true when the English page's current hash differs. Changing only the English slug or `published` flag does not mark translations stale. A stale translation is still served; saving it again, even unchanged, clears the flag.
+
+**One English source.** `getTranslationSource` returns that same English version as an `IPageTranslationSource`, and the editor shows it and starts new drafts from it, so the editor, Suggest, and the stale flag all work from one text. An English edit waiting for review is never shown to translators, because a curator may reject it. Instead `pendingEdit` is true when such an edit changes the title, description, keywords, or body, and the editor warns that translations will be marked stale once it is approved.
 
 **No English fallback.** A translated request for a page with no visible, published translation into that language is a 404, never the English body. Serving English text under a translated `<html lang>` and `hreflang` links is what this feature exists to prevent. The same applies when an administrator publishes a route pattern covering a CMS page on the localization Routes tab: requests in that language now 404 until the page has a translation.
 
@@ -185,7 +187,7 @@ Admin, under `/api/admin/pages` (`requireAdmin`). `:id` is the page's content id
 
 | Method | Path | Body | Returns |
 |---|---|---|---|
-| GET | `/:id/translations` | — | `{ translations: IPageTranslation[] }`, including deleted ones, ordered by language |
+| GET | `/:id/translations` | — | `{ translations: IPageTranslation[], source: IPageTranslationSource }`. `translations` includes deleted ones, ordered by language; `source` is the English text they follow |
 | POST | `/:id/translations` | `{ language, content }` | `{ translation }` 201. Refused for `en`, a malformed code, a deleted page, or a language the page already has (restore a deleted one instead) |
 | PATCH | `/:id/translations/:language` | `{ content }` | `{ translation }` |
 | DELETE | `/:id/translations/:language` | — | 204, soft delete |

@@ -646,13 +646,14 @@ export class CurationService implements ICurationService {
     }
 
     /**
-     * Record a terminal decision, deliver to any selected sinks, then commit the
-     * decision declaratively through the owning type. The decision is persisted
-     * (with the selected sinks as `pending`) and broadcast first; sinks are then
-     * delivered best-effort and their outcomes recorded; finally the decision
-     * commits by writing the type's declared `decisionStatus` word via its
-     * `applyEdit({ status })` seam. A commit failure propagates (the item stays
-     * decided and won't reappear). `applyEdit` must be retry-safe.
+     * Record a terminal decision, commit it declaratively through the owning
+     * type, then deliver to any selected sinks. The decision is persisted (with
+     * the selected sinks as `pending`) and broadcast first; it then commits by
+     * writing the type's declared `decisionStatus` word via its
+     * `applyEdit({ status })` seam; only after that commit succeeds are the
+     * sinks handed the content. A commit failure propagates (the item stays
+     * decided and won't reappear), and its selected sinks are recorded as not
+     * sent. `applyEdit` must be retry-safe.
      *
      * @param id - The envelope id.
      * @param status - The terminal state.
@@ -730,17 +731,31 @@ export class CurationService implements ICurationService {
                     : undefined;
                 const resolved = await this.queue.resolve(id, status, decidedBy, decisionPreview, pendingOutcomes);
                 if (resolved) {
-                    // The decision is recorded; broadcast it before delivering or
-                    // committing so the queue badge updates regardless of outcome.
+                    // The decision is recorded; broadcast it before committing or
+                    // delivering so the queue badge updates regardless of outcome.
                     await this.notifyChanged();
+                    // Commit before any sink is handed the content. The owning type
+                    // can refuse an approval here — managed content refuses one
+                    // whose hold was superseded or whose item was deleted — and a
+                    // refusal must not leave a post on X or Telegram for content the
+                    // platform never made live. A failure propagates to the caller:
+                    // the item has left the pending queue and won't reappear, so the
+                    // curator must be told the provider-side effect did not complete.
+                    try {
+                        await this.commit(entry.type, resolved);
+                    } catch (error) {
+                        if (pendingOutcomes) {
+                            await this.markSinksNotSent(id, pendingOutcomes);
+                        }
+                        throw error;
+                    }
                     // Hand the selected sinks to durable delivery. When the
                     // syndication service is wired, commit the publish legs to its
                     // transactional outbox: the intent is now durable, the relay
                     // delivers each leg with idempotent retry and dead-lettering,
                     // and the recorded outcomes stay `pending` — live leg state is
-                    // overlaid on read. External delivery is asynchronous and must
-                    // not block the decision, so the declarative `applyEdit` commit
-                    // that follows never waits on where the content lands. Absent
+                    // overlaid on read. External delivery is asynchronous, so the
+                    // decision never waits on where the content lands. Absent
                     // syndication (a test boot), fall back to the in-process best-
                     // effort fan-out, recording settled outcomes inline.
                     if (selected.length > 0) {
@@ -760,10 +775,6 @@ export class CurationService implements ICurationService {
                             resolved.sinks = outcomes;
                         }
                     }
-                    // A commit failure propagates to the caller: the item has left
-                    // the pending queue and won't reappear, so the curator must be
-                    // told the provider-side effect did not complete.
-                    await this.commit(entry.type, resolved);
 
                     // Fire content.published only when the approval actually made
                     // canonical content live — i.e. the type declares an approved
@@ -786,6 +797,32 @@ export class CurationService implements ICurationService {
             }
         }
         return result;
+    }
+
+    /**
+     * Record every selected sink of an approval whose commit failed as not sent.
+     * Without this the history keeps showing them `pending` forever, because no
+     * syndication leg will ever exist to overlay a real outcome. A failure to
+     * write the outcomes is logged rather than thrown, so the caller still sees
+     * the commit error that actually stopped the approval.
+     *
+     * @param id - The decided envelope id.
+     * @param pendingOutcomes - The outcomes recorded with the decision, one per
+     *   selected sink.
+     */
+    private async markSinksNotSent(id: string, pendingOutcomes: ICurationSinkOutcome[]): Promise<void> {
+        const notSent = pendingOutcomes.map((outcome): ICurationSinkOutcome => ({
+            sinkId: outcome.sinkId,
+            status: 'failed',
+            error: 'The approval did not commit, so nothing was sent'
+        }));
+        try {
+            await this.queue.updateSinkOutcomes(id, notSent);
+        } catch (error) {
+            this.logger.error({ error, id }, 'Failed to record unsent sinks after a failed commit');
+        }
+
+        return;
     }
 
     /**

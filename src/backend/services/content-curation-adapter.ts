@@ -39,8 +39,14 @@ type ContentDecisionFn = (
  * the veto hooks and the reviewed-field check would not run. The generated
  * type therefore reports every item as not editable and refuses a body edit.
  *
+ * A type that sets `publishesToSinks` keeps that setting here, so the queue
+ * offers its publish destinations on approval exactly as it does for an older
+ * curation type. The queue commits the decision through `applyEdit` before it
+ * hands anything to a destination, so a refused approval, such as a
+ * `superseded` hold, never publishes.
+ *
  * @param type - The managed content type to make reviewable; supplies the id,
- *   label, classification ceiling, and `describe`.
+ *   label, classification ceiling, whether it publishes to sinks, and `describe`.
  * @param onDecision - Where a curator's approve or reject is sent; core's
  *   content service records it and promotes the working version on approval.
  * @returns The curation type to register on the `'curation'` service.
@@ -53,7 +59,7 @@ export function createContentCurationType<T extends IContent, TCreate, TUpdate>(
         typeId: type.typeId,
         label: type.label,
         classification: type.classification,
-        publishesToSinks: false,
+        publishesToSinks: type.publishesToSinks === true,
         decisionStatus: { approved: 'approved', rejected: 'rejected' },
 
         /**

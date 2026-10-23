@@ -15,6 +15,7 @@ export type { IPageService } from './IPageService.js';
 export type { IPublicPageRender } from './IPublicPageRender.js';
 export type { IPageTranslationContent } from './IPageTranslationContent.js';
 export type { IPageTranslation } from './IPageTranslation.js';
+export type { IPageTranslationSource } from './IPageTranslationSource.js';
 export type { IPublicPageTranslationMetadata } from './IPublicPageTranslationMetadata.js';
 export type { IPageTranslationService } from './IPageTranslationService.js';
 export type { IPageTranslationSuggestionResult } from './IPageTranslationSuggestionResult.js';

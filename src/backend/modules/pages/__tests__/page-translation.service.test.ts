@@ -278,4 +278,42 @@ describe('PageTranslationService', () => {
             expect((await translations.listTranslations(pageId))[0].stale).toBe(false);
         });
     });
+
+    describe('getTranslationSource', () => {
+        it('returns the served English text while an edit waits for review, and flags the pending edit', async () => {
+            const pageId = await createPage('/about');
+            await pages.updatePage(
+                pageId,
+                markdown({ title: 'About us', slug: '/about', published: true }),
+                serviceToken
+            );
+
+            const source = await translations.getTranslationSource(pageId);
+            expect(source.title).toBe('About');
+            expect(source.content).toContain('# About');
+            expect(source.pendingEdit).toBe(true);
+        });
+
+        it('does not flag a pending edit that changes only the slug', async () => {
+            const pageId = await createPage('/about');
+            await pages.updatePage(
+                pageId,
+                markdown({ title: 'About', slug: '/about-us', published: true }),
+                serviceToken
+            );
+
+            expect((await translations.getTranslationSource(pageId)).pendingEdit).toBe(false);
+        });
+
+        it('returns the latest edit when no version is served yet', async () => {
+            const page = await pages.createPage(
+                markdown({ title: 'Draft', slug: '/draft', published: true }),
+                serviceToken
+            );
+
+            const source = await translations.getTranslationSource(page.contentId as string);
+            expect(source.title).toBe('Draft');
+            expect(source.pendingEdit).toBe(false);
+        });
+    });
 });

@@ -63,15 +63,20 @@ export class PageTranslationsController {
     // ============================================================================
 
     /**
-     * List a page's translations, including soft-deleted ones.
+     * List a page's translations, including soft-deleted ones, together with
+     * the English text they are written against, so the editor shows and
+     * starts drafts from the same text the stale flags are computed from.
      *
      * @param req - Params: `id`, the page's core content id.
-     * @param res - Receives `{ translations }`.
+     * @param res - Receives `{ translations, source }`.
      */
     async listTranslations(req: Request, res: Response): Promise<void> {
         try {
-            const translations = await this.translationService.listTranslations(req.params.id);
-            res.json({ translations });
+            const [translations, source] = await Promise.all([
+                this.translationService.listTranslations(req.params.id),
+                this.translationService.getTranslationSource(req.params.id)
+            ]);
+            res.json({ translations, source });
         } catch (error) {
             // A read has no validation step, so anything but a content
             // refusal (an unknown page id) is a server failure.
