@@ -79,6 +79,71 @@ export interface IRawHtmlWidgetData {
     content: string;
     /** Render mode: `html` injects raw markup, `text` escapes it. */
     mode: 'html' | 'text';
+    /**
+     * Operator-chosen translation key, or null when the block is not
+     * translated. The component renders the content through the
+     * localization module's `t()` under {@link RAW_HTML_TRANSLATION_KEY_PREFIX}
+     * plus this key, so the block appears on the Translations tab of
+     * `/system/localization` like any other interface text.
+     */
+    translationKey: string | null;
+}
+
+/**
+ * Prefix the component puts in front of an operator's translation key.
+ * Groups every raw-html block together on the Translations tab and keeps
+ * an operator's key from colliding with a key core code renders. The
+ * frontend `RawHtmlWidget` repeats this string, because it cannot import
+ * backend module internals.
+ */
+export const RAW_HTML_TRANSLATION_KEY_PREFIX = 'widgets.rawHtml.';
+
+/**
+ * Characters an operator's translation key may contain. The localization
+ * module drops any key outside `^[A-Za-z0-9_.:-]{1,200}$` without an
+ * error, so the schema refuses anything else up front rather than letting
+ * a block silently never reach the Translations tab. The empty string is
+ * allowed so a cleared form field saves as "not translated".
+ */
+const RAW_HTML_TRANSLATION_KEY_PATTERN = '^[A-Za-z0-9_.:-]*$';
+
+/**
+ * Longest translation key an operator may choose. With the prefix added,
+ * this stays well inside the localization module's 200-character limit.
+ */
+const RAW_HTML_TRANSLATION_KEY_MAX_LENGTH = 100;
+
+/**
+ * Longest content a translated block may hold. The localization module
+ * drops any reported English text over 2,000 characters
+ * (`MAX_SOURCE_LENGTH` in `translation-key-rules.ts`), so a longer block
+ * would never appear on the Translations tab. The schema applies this
+ * limit only when a translation key is set.
+ */
+const RAW_HTML_TRANSLATED_CONTENT_MAX_LENGTH = 2000;
+
+/** Compiled once, because the raw-html fetcher checks the key on every page render. */
+const RAW_HTML_TRANSLATION_KEY_REGEX = new RegExp(RAW_HTML_TRANSLATION_KEY_PATTERN);
+
+/**
+ * Read the placement's translation key, or null when it has none.
+ *
+ * The placement API already checked the value against
+ * {@link RAW_HTML_CONFIG_SCHEMA}, but a row edited in the database by hand
+ * may not match it. A key the localization module would refuse is
+ * dropped here, so the block renders untranslated instead of reporting a
+ * key that never reaches the Translations tab.
+ *
+ * @param raw - The `translationKey` value from the placement's instance config.
+ * @returns The trimmed key, or null so the block renders its English content.
+ */
+function normalizeRawHtmlTranslationKey(raw: unknown): string | null {
+    const trimmed = typeof raw === 'string' ? raw.trim() : '';
+    const usable = trimmed !== ''
+        && trimmed.length <= RAW_HTML_TRANSLATION_KEY_MAX_LENGTH
+        && RAW_HTML_TRANSLATION_KEY_REGEX.test(trimmed);
+
+    return usable ? trimmed : null;
 }
 
 /**
@@ -92,12 +157,14 @@ export interface IRawHtmlWidgetData {
  * already-serialisable object keeps the resolver's round-trip guard a
  * no-op. Defaults `mode` to `'html'` and `content` to an empty string
  * so a freshly-created placement with no config renders nothing rather
- * than throwing.
+ * than throwing. The payload carries the English content even when a
+ * translation key is set, because the frontend translator falls back to
+ * it and reports it as the key's source text.
  *
  * @param _route - Unused; content is route-independent.
  * @param _params - Unused; content is route-independent.
  * @param placement - Placement context carrying the operator config.
- * @returns The content and render mode for the frontend component.
+ * @returns The content, render mode, and translation key for the frontend component.
  */
 async function fetchRawHtmlData(
     _route: string,
@@ -107,8 +174,9 @@ async function fetchRawHtmlData(
     const config = placement?.instanceConfig ?? {};
     const content = typeof config.content === 'string' ? config.content : '';
     const mode = config.mode === 'text' ? 'text' : 'html';
+    const translationKey = normalizeRawHtmlTranslationKey(config.translationKey);
 
-    return { content, mode };
+    return { content, mode, translationKey };
 }
 
 /**
@@ -118,7 +186,9 @@ async function fetchRawHtmlData(
  * and patch, so an operator cannot save a placement without `content`
  * or with an unknown field. `additionalProperties: false` keeps the
  * shape tight; the flat string/enum top level is the cleanest path for
- * the admin config form.
+ * the admin config form. The `if`/`then` pair limits `content` to the
+ * localization module's source length only when `translationKey` is set
+ * to a non-empty value, so an untranslated block keeps no length limit.
  */
 export const RAW_HTML_CONFIG_SCHEMA: JSONSchema7 = {
     type: 'object',
@@ -128,7 +198,7 @@ export const RAW_HTML_CONFIG_SCHEMA: JSONSchema7 = {
         content: {
             type: 'string',
             title: 'Content',
-            description: 'Raw HTML or plain text to render in the zone.',
+            description: `Raw HTML or plain text to render in the zone. Limited to ${RAW_HTML_TRANSLATED_CONTENT_MAX_LENGTH} characters when a translation key is set.`,
             // Annotation only: AJV does not validate it. The placement form
             // reads it to offer a multiline editor instead of a one-line input.
             contentMediaType: 'text/html'
@@ -140,7 +210,22 @@ export const RAW_HTML_CONFIG_SCHEMA: JSONSchema7 = {
             title: 'Render mode',
             description:
                 "'html' injects the content as raw markup; 'text' renders it as escaped plain text with line breaks preserved."
+        },
+        translationKey: {
+            type: 'string',
+            title: 'Translation key',
+            description:
+                'Set a key such as footer.legal to translate this block on the Translations tab of /system/localization, where it is listed as widgets.rawHtml.<key>. Letters, digits, and . _ : - only. Leave empty for a block that should stay the same in every language, such as an embed. In html mode a translation is injected as raw markup, just like the content.',
+            maxLength: RAW_HTML_TRANSLATION_KEY_MAX_LENGTH,
+            pattern: RAW_HTML_TRANSLATION_KEY_PATTERN
         }
+    },
+    if: {
+        required: ['translationKey'],
+        properties: { translationKey: { minLength: 1 } }
+    },
+    then: {
+        properties: { content: { maxLength: RAW_HTML_TRANSLATED_CONTENT_MAX_LENGTH } }
     }
 };
 
