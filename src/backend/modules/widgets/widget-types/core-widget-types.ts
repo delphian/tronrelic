@@ -115,12 +115,14 @@ const RAW_HTML_TRANSLATION_KEY_MAX_LENGTH = 100;
 
 /**
  * Longest content a translated block may hold. The localization module
- * drops any reported English text over 2,000 characters
+ * drops any reported English text over 4,000 characters
  * (`MAX_SOURCE_LENGTH` in `translation-key-rules.ts`), so a longer block
  * would never appear on the Translations tab. The schema applies this
- * limit only when a translation key is set.
+ * limit only when a translation key is set. Repeated here rather than
+ * imported because one module does not import another's internals; change
+ * the two together.
  */
-const RAW_HTML_TRANSLATED_CONTENT_MAX_LENGTH = 2000;
+const RAW_HTML_TRANSLATED_CONTENT_MAX_LENGTH = 4000;
 
 /** Compiled once, because the raw-html fetcher checks the key on every page render. */
 const RAW_HTML_TRANSLATION_KEY_REGEX = new RegExp(RAW_HTML_TRANSLATION_KEY_PATTERN);

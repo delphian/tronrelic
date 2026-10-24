@@ -12,11 +12,15 @@ export const CORE_NAMESPACE = 'core';
 /** Shape of a key: dotted words such as `markets.table.price`. */
 export const KEY_PATTERN = /^[A-Za-z0-9_.:-]{1,200}$/;
 
-/** Longest English source text stored for a key. */
-export const MAX_SOURCE_LENGTH = 2000;
+/**
+ * Longest English source text stored for a key. Sized to fit a raw-html
+ * widget block, the longest interface text the site renders through `t()`;
+ * the widgets module's raw-html schema repeats this figure.
+ */
+export const MAX_SOURCE_LENGTH = 4000;
 
 /** Longest translated text accepted. Longer than the source cap because some languages run longer. */
-export const MAX_TRANSLATION_LENGTH = 4000;
+export const MAX_TRANSLATION_LENGTH = 8000;
 
 /** How many distinct paths a key remembers it was rendered on. */
 export const MAX_ROUTES_PER_KEY = 20;
