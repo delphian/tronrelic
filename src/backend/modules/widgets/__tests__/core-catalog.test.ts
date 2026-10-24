@@ -15,6 +15,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
+import Ajv from 'ajv';
 import type { ISystemConfig, ISystemConfigService, ISystemLogService } from '@/types';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 import { createMockServiceRegistry } from '../../../tests/vitest/mocks/service-registry.js';
@@ -33,6 +34,7 @@ import {
     buildCoreWidgetTypeDescriptors,
     LANGUAGE_SWITCHER_TYPE_ID,
     MENU_TYPE_ID,
+    RAW_HTML_CONFIG_SCHEMA,
     RAW_HTML_TYPE_ID,
     SITE_LOGO_TYPE_ID,
     TAB_BAR_TYPE_ID
@@ -205,7 +207,61 @@ describe('Core widget-type catalog (raw-html)', () => {
         const resolved = await widgets.fetchWidgetsForRoute('/');
         const widget = resolved.find(w => w.id === RAW_HTML_TYPE_ID);
         expect(widget?.zone).toBe('footer');
-        expect(widget?.data).toEqual({ content: '<p>hi</p>', mode: 'html' });
+        expect(widget?.data).toEqual({ content: '<p>hi</p>', mode: 'html', translationKey: null });
+    });
+
+    /**
+     * Resolve the raw-html SSR payload for one placement config, through a
+     * real placement in the `footer` zone.
+     *
+     * @param instanceConfig - The placement settings under test.
+     * @returns The widget data the resolver produced.
+     */
+    async function resolveRawHtml(instanceConfig: Record<string, unknown>): Promise<unknown> {
+        const { widgets } = buildWidgetsService();
+        widgets.registerZone(CORE_ZONE_DESCRIPTORS.find(z => z.id === 'footer')!, 'core');
+        for (const descriptor of coreWidgetTypeDescriptors) {
+            widgets.registerType(descriptor, 'core');
+        }
+        await widgets.createPlacement({ typeId: RAW_HTML_TYPE_ID, zoneId: 'footer', routes: [], instanceConfig });
+        const resolved = await widgets.fetchWidgetsForRoute('/');
+        return resolved.find(w => w.id === RAW_HTML_TYPE_ID)?.data;
+    }
+
+    it('carries a usable translation key, trimmed', async () => {
+        await expect(resolveRawHtml({ content: '<p>hi</p>', translationKey: ' footer.legal ' }))
+            .resolves.toEqual({ content: '<p>hi</p>', mode: 'html', translationKey: 'footer.legal' });
+    });
+
+    it('drops a translation key the localization module would refuse', async () => {
+        // A row edited by hand never went through the schema. A key with a
+        // space would be dropped by the localization module without an
+        // error, so the block renders untranslated instead.
+        await expect(resolveRawHtml({ content: '<p>hi</p>', translationKey: 'footer legal' }))
+            .resolves.toEqual({ content: '<p>hi</p>', mode: 'html', translationKey: null });
+        await expect(resolveRawHtml({ content: '<p>hi</p>', translationKey: '' }))
+            .resolves.toEqual({ content: '<p>hi</p>', mode: 'html', translationKey: null });
+    });
+
+    describe('config schema', () => {
+        const ajv = new Ajv({ allErrors: true, strict: false });
+        const validate = ajv.compile(RAW_HTML_CONFIG_SCHEMA);
+        const longContent = 'x'.repeat(2001);
+
+        it('limits content to 2,000 characters only when a translation key is set', () => {
+            // The localization module drops English text over 2,000
+            // characters, so a longer translated block would never reach
+            // the Translations tab.
+            expect(validate({ content: longContent, translationKey: 'footer.legal' })).toBe(false);
+            expect(validate({ content: 'x'.repeat(2000), translationKey: 'footer.legal' })).toBe(true);
+            expect(validate({ content: longContent })).toBe(true);
+            expect(validate({ content: longContent, translationKey: '' })).toBe(true);
+        });
+
+        it('refuses a translation key with characters a key cannot hold', () => {
+            expect(validate({ content: '<p>hi</p>', translationKey: 'footer legal' })).toBe(false);
+            expect(validate({ content: '<p>hi</p>', translationKey: 'footer.legal_2:a-b' })).toBe(true);
+        });
     });
 });
 
