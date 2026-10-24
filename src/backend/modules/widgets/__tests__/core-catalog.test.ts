@@ -246,14 +246,14 @@ describe('Core widget-type catalog (raw-html)', () => {
     describe('config schema', () => {
         const ajv = new Ajv({ allErrors: true, strict: false });
         const validate = ajv.compile(RAW_HTML_CONFIG_SCHEMA);
-        const longContent = 'x'.repeat(2001);
+        const longContent = 'x'.repeat(4001);
 
-        it('limits content to 2,000 characters only when a translation key is set', () => {
-            // The localization module drops English text over 2,000
+        it('limits content to 4,000 characters only when a translation key is set', () => {
+            // The localization module drops English text over 4,000
             // characters, so a longer translated block would never reach
             // the Translations tab.
             expect(validate({ content: longContent, translationKey: 'footer.legal' })).toBe(false);
-            expect(validate({ content: 'x'.repeat(2000), translationKey: 'footer.legal' })).toBe(true);
+            expect(validate({ content: 'x'.repeat(4000), translationKey: 'footer.legal' })).toBe(true);
             expect(validate({ content: longContent })).toBe(true);
             expect(validate({ content: longContent, translationKey: '' })).toBe(true);
         });
