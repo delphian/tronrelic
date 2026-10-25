@@ -1,15 +1,19 @@
 /**
  * Unit tests for the pages AI tools.
  *
- * They pin what the tools promise a model: they are public reads, list and
- * search return summaries without bodies, `pages-get` accepts ids, slugs, and
- * URLs and caps each body, and a bad argument comes back as an input error the
- * model can correct from rather than as a failure. Which pages are visible is
- * the service's rule and is covered in `page.service.test.ts`.
+ * They pin what the tools promise a model: the three reads are public reads,
+ * list and search return summaries without bodies, `pages-get` accepts ids,
+ * slugs, and URLs and caps each body, and a bad argument comes back as an
+ * input error the model can correct from rather than as a failure. The edit
+ * tool declares its curation binding, checks the page id, and reports the
+ * service's refusals. Which pages are visible, and how an edit is held for
+ * review, are the service's rules and are covered in `page.service.test.ts`.
  */
 import { describe, it, expect, vi } from 'vitest';
 import type { IPageService, IPublicPage, ISystemLogService } from '@/types';
 import { AI_TOOL_NAMES, buildPageAiTools } from '../ai-tools.js';
+import { PageEditInputError } from '../services/PageEditInputError.js';
+import { ContentError } from '../../../services/content-error.js';
 
 /** A content id in the shape core issues. */
 const PAGE_ID = '3f2b8c1e-9d4a-4e7b-8a1c-5d6e7f809a1b';
@@ -46,13 +50,32 @@ function buildTools(service: Partial<IPageService>): Record<string, ReturnType<t
 }
 
 describe('pages AI tools', () => {
-    it('are named after the module and classified as public reads', () => {
+    it('are named after the module, with the three reads classified as public reads', () => {
         const tools = buildTools({});
 
         expect(Object.keys(tools).sort()).toEqual(Object.values(AI_TOOL_NAMES).sort());
         for (const tool of Object.values(tools)) {
             expect(tool.name.startsWith('pages-')).toBe(true);
-            expect(tool.capability).toEqual({ sideEffect: 'read', reversible: true, sensitivity: 'public' });
+        }
+        for (const name of [AI_TOOL_NAMES.list, AI_TOOL_NAMES.search, AI_TOOL_NAMES.get]) {
+            expect(tools[name].capability).toEqual({ sideEffect: 'read', reversible: true, sensitivity: 'public' });
+        }
+    });
+
+    it('keeps every input example valid against its own schema', () => {
+        // The provider rejects a whole tool definition whose example does not
+        // conform, so every tool that ships examples is checked.
+        for (const tool of Object.values(buildTools({}))) {
+            const required = (tool.inputSchema.required as string[] | undefined) ?? [];
+            const properties = tool.inputSchema.properties as Record<string, unknown>;
+            for (const example of tool.inputExamples ?? []) {
+                for (const field of required) {
+                    expect(Object.keys(example)).toContain(field);
+                }
+                for (const key of Object.keys(example)) {
+                    expect(properties[key]).toBeDefined();
+                }
+            }
         }
     });
 
@@ -162,5 +185,66 @@ describe('pages AI tools', () => {
 
         expect(result).toMatchObject({ success: false, errorKind: 'failed' });
         expect(result.error).not.toContain('mongo');
+    });
+});
+
+describe('pages-propose-edit AI tool', () => {
+    it('declares the verifiable curation binding for core:page', () => {
+        const tool = buildTools({})[AI_TOOL_NAMES.proposeEdit];
+
+        expect(tool.capability).toEqual({
+            sideEffect: 'external',
+            reversible: false,
+            sensitivity: 'public',
+            forcesCuratorReview: true,
+            curationTypeId: 'core:page'
+        });
+        expect(tool.inputSchema.required).toEqual(['pageId']);
+        const properties = Object.keys(tool.inputSchema.properties as Record<string, unknown>);
+        expect(properties).not.toContain('slug');
+        expect(properties).not.toContain('published');
+    });
+
+    it('forwards the edit to the service with the tool as its source', async () => {
+        const proposeEdit = vi.fn(async () => ({ pageId: PAGE_ID, slug: '/about', pendingReview: true, curationId: 'item-1' }));
+        const tool = buildTools({ proposeEdit })[AI_TOOL_NAMES.proposeEdit];
+
+        const result = await tool.handler({ pageId: PAGE_ID.toUpperCase(), title: 'About Us' }) as Record<string, any>;
+
+        expect(proposeEdit).toHaveBeenCalledWith(PAGE_ID, expect.objectContaining({ title: 'About Us', source: 'ai-tool:pages-propose-edit' }));
+        expect(result).toEqual({ success: true, pageId: PAGE_ID, slug: '/about', pendingReview: true });
+    });
+
+    it('refuses a malformed page id without calling the service', async () => {
+        const proposeEdit = vi.fn();
+        const tool = buildTools({ proposeEdit })[AI_TOOL_NAMES.proposeEdit];
+
+        const result = await tool.handler({ pageId: '/about', title: 'About Us' }) as Record<string, any>;
+
+        expect(result).toMatchObject({ success: false, errorKind: 'input' });
+        expect(proposeEdit).not.toHaveBeenCalled();
+    });
+
+    it('returns the service\'s field refusals and an unknown page as input errors', async () => {
+        const proposeEdit = vi.fn()
+            .mockRejectedValueOnce(new PageEditInputError('Provide at least one of title, body, description, keywords, or ogImage.'))
+            .mockRejectedValueOnce(new ContentError('not-found', `No page has id ${PAGE_ID}`));
+        const tool = buildTools({ proposeEdit })[AI_TOOL_NAMES.proposeEdit];
+
+        const empty = await tool.handler({ pageId: PAGE_ID }) as Record<string, any>;
+        const unknown = await tool.handler({ pageId: PAGE_ID, title: 'X' }) as Record<string, any>;
+
+        expect(empty).toMatchObject({ success: false, errorKind: 'input', error: expect.stringContaining('at least one') });
+        expect(unknown).toMatchObject({ success: false, errorKind: 'input', error: expect.stringContaining('No page') });
+    });
+
+    it('tells the model nothing was stored when curation is unavailable', async () => {
+        const proposeEdit = vi.fn(async () => { throw new ContentError('curation-unavailable', 'queue down'); });
+        const tool = buildTools({ proposeEdit })[AI_TOOL_NAMES.proposeEdit];
+
+        const result = await tool.handler({ pageId: PAGE_ID, title: 'X' }) as Record<string, any>;
+
+        expect(result).toMatchObject({ success: false, errorKind: 'failed' });
+        expect(result.error).toContain('not stored');
     });
 });

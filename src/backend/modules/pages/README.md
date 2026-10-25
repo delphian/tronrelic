@@ -48,13 +48,14 @@ modules/pages/
 │   ├── 010_move_page_translations_to_core.ts
 │   └── 011_remove_legacy_page_translations.ts
 ├── services/
-│   ├── page.service.ts       # IPageService singleton; routes page CRUD and public reads through core
+│   ├── page.service.ts       # IPageService singleton; routes page CRUD, public reads, and proposed edits through core
+│   ├── PageEditInputError.ts # Refusal of a proposed edit's input, shown to the caller
 │   ├── page-content-type.ts  # core:page storage callbacks (IManagedContentType)
 │   ├── page-translatable.ts  # core:page translation side (ITranslatableContentType)
 │   ├── page-translation.service.ts # IPageTranslationService singleton; renders served translations
 │   └── markdown.service.ts   # Frontmatter parsing and HTML rendering
 ├── __tests__/
-├── ai-tools.ts               # Read-only AI tools: pages-list, pages-search, pages-get
+├── ai-tools.ts               # AI tools: pages-list, pages-search, pages-get, and the review-held pages-propose-edit
 ├── PagesModule.ts            # IModule implementation
 ├── index.ts
 └── README.md
@@ -89,6 +90,7 @@ Singleton implementing `IPageService`. Owns the `pages` and `page_settings` coll
 - Page create, update, soft delete, and restore through `IContentService`, carrying the actor
 - Public reads (`getPublicPageBySlug`, `findPublicPageByOldSlug`, `renderPublicPageBySlug`, `listSitemapPages`, `listPublicPages`, `getPublicPages`) resolved through `readPublic`, so a page with only a pending edit or a deleted page never reaches a visitor, the sitemap, or an AI tool
 - `listPublicPages` and `getPublicPages` return `IPublicPage` from `@/types`: the served version reduced to id, slug, title, description, keywords, Open Graph image, and the markdown body with its frontmatter, HTML comments, and scripts removed. The listing loads every visible page and filters in memory, because only core knows which of a page's two stored versions a visitor is served, so a database search could match text no visitor sees
+- `proposeEdit`, for automated callers: applies a field-level edit as a non-curator so core always holds it for review; see [`pages-propose-edit`](#pages-propose-edit)
 - Admin listing decorated with review state; filtering by review state asks core for the ids first
 - Settings management (route blacklist only)
 - Markdown rendering with Redis cache, including a public-render fast path that hits cache before the database
@@ -128,7 +130,7 @@ Both public endpoints answer an unexpected failure with a 500 carrying only a ge
 
 ## AI Tools
 
-`ai-tools.ts` registers three read-only tools on the core `'ai-tools'` registry under provider id `pages`. They read through `listPublicPages` and `getPublicPages`, so they return only what a visitor sees: drafts, edits waiting for review, and deleted pages never reach them.
+`ai-tools.ts` registers four tools on the core `'ai-tools'` registry under provider id `pages`: three reads and one edit tool whose every change is held for review. The reads go through `listPublicPages` and `getPublicPages`, so they return only what a visitor sees: drafts, edits waiting for review, and deleted pages never reach them.
 
 | Tool | Input | Returns |
 |---|---|---|
@@ -137,6 +139,27 @@ Both public endpoints answer an unexpected failure with a 500 carrying only a ge
 | `pages-get` | `pages`: 1–5 entries, each a content id, a slug starting with `/`, or a full URL reduced to its path | `pages[]` of `{ requested, found, page }` in the order asked. `page` carries the markdown body without frontmatter, HTML comments, or scripts, cut to 20,000 characters with `truncated` and `totalCharacters` when cut, or is null when no published page answers. An old slug resolves to the page at its current slug |
 
 All three declare `{ sideEffect: 'read', reversible: true, sensitivity: 'public' }`. That passes the MCP safety floor, so an admin can grant them to any user group on `/system/mcp`, and they may run in scheduled prompts. They do not declare `surfacesUntrustedContent`, because every served version was written or approved by a curator. A page not yet adopted by migration 007 has a null `id` and is read by slug.
+
+### `pages-propose-edit`
+
+Edits an existing page and never publishes the change itself. The handler checks the `pageId` shape and calls `IPageService.proposeEdit` (input `IPageEditProposal`, result `IPageEditProposalResult`, all in `@/types`), which builds the page's new markdown and saves it through `updatePage`, the same method the admin editor uses, as `system:ai-tool:pages-propose-edit`, a non-curator. `updatePage` is the only place a page change is sent to `IContentService.update`. Core holds the change in `/system/curation`, and visitors keep seeing the approved version until a curator approves it. An edit to a page that already has a pending edit is applied on top of it and joins the same queue item.
+
+Capability: `{ sideEffect: 'external', reversible: false, sensitivity: 'public', forcesCuratorReview: true, curationTypeId: 'core:page' }`. Because every effect lands in the queue, the governor treats it as safe on unattended paths. It does not pass the MCP safety floor, so granting it on `/system/mcp` needs a group cleared for restricted tools.
+
+| Input | Rule |
+|---|---|
+| `pageId` | Required; a content id |
+| `title` | 1–200 characters. The page keeps its slug |
+| `body` | Markdown without a frontmatter block, 1–20,000 characters. Replaces the whole body |
+| `description` | Up to 500 characters; an empty string clears it |
+| `keywords` | Up to 20 entries of 1–64 characters; replaces the list, duplicates dropped |
+| `ogImage` | A path starting with `/` (not `//`) or an `https` URL, up to 1,024 characters; an empty string clears it |
+
+Returns `{ success, pageId, slug, pendingReview }`. A refused field, an unknown or deleted page, or a vetoed change comes back as `errorKind: 'input'` with a message the model can act on.
+
+**What it cannot change, and why.** The `slug` and `oldSlugs` are out of reach because a slug change moves the page's address. The `published` flag is out of reach because publishing is a curator's decision. Pages store everything as one markdown string, so `proposeEdit` rebuilds the content from the page's latest version with `MarkdownService.editFrontmatter`: the changed keys are laid over the stored frontmatter, every other key is kept, and the stored slug is written back explicitly so a retitle cannot move a page whose slug was derived from its title. A body that opens with its own frontmatter block is refused, so a body edit cannot carry new metadata in with it. Rebuilding writes the frontmatter in gray-matter's YAML layout, so quoting and key order can change even where no value did.
+
+**When a body cannot be replaced.** `pages-get` cuts bodies at 20,000 characters (`MAX_PROPOSED_BODY_CHARACTERS`, shared by both tools) and strips HTML comments and scripts. A model replacing the whole body of a page it did not see in full would delete what it missed, so `proposeEdit` refuses a body edit when the stored body is longer than that or holds a comment or script. The other fields stay editable on such a page.
 
 Blog posts are not pages. The `trp-blog` plugin has its own `list-blog-posts`, `search-blog-posts`, and `get-blog-post` tools. The tools return English pages only; translations are not exposed to them.
 

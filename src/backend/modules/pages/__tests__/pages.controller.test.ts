@@ -9,6 +9,7 @@ import { ContentError } from '../../../services/content-error.js';
 class MockPageService implements IPageService {
     createPage = vi.fn();
     updatePage = vi.fn();
+    proposeEdit = vi.fn();
     getPageById = vi.fn();
     getPublicPageBySlug = vi.fn();
     findPublicPageByOldSlug = vi.fn();

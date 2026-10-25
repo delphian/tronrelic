@@ -2,6 +2,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { PageService } from '../services/page.service.js';
+import { PageEditInputError } from '../services/PageEditInputError.js';
 import type { ICacheService, IContentActor, ICurationService } from '@/types';
 import { ObjectId } from 'mongodb';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
@@ -199,6 +200,66 @@ describe('PageService', () => {
             const render = await service.renderPublicPageBySlug('/live');
             expect(render?.html).toContain('Approved body.');
             expect(render?.html).not.toContain('Proposed body.');
+        });
+    });
+
+    describe('proposeEdit', () => {
+        it('holds the edit for review while visitors keep the approved page', async () => {
+            const created = await service.createPage(
+                makePageMarkdown({ title: 'Guide', slug: '/guide', published: true, body: 'Approved body.' }),
+                curator
+            );
+
+            const result = await service.proposeEdit(created.contentId!, {
+                title: 'Guide, Corrected',
+                body: '# Guide\n\nProposed body.',
+                source: 'ai-tool:pages-propose-edit'
+            });
+
+            expect(result).toMatchObject({ pageId: created.contentId, slug: '/guide', pendingReview: true });
+            expect(curation.hold).toHaveBeenCalledWith(expect.objectContaining({ typeId: 'core:page', source: 'system:ai-tool:pages-propose-edit' }));
+            const render = await service.renderPublicPageBySlug('/guide');
+            expect(render?.html).toContain('Approved body.');
+            expect(render?.html).not.toContain('Proposed body.');
+
+            const working = await service.getPageById(created.contentId!);
+            expect(working).toMatchObject({ title: 'Guide, Corrected', slug: '/guide', published: true });
+        });
+
+        it('keeps the address of a page whose slug comes from its title', async () => {
+            const created = await service.createPage(makePageMarkdown({ title: 'Energy Basics', published: true }), curator);
+            expect(created.slug).toBe('/energy-basics');
+
+            await service.proposeEdit(created.contentId!, { title: 'Energy Rental Basics' });
+
+            expect((await service.getPageById(created.contentId!))?.slug).toBe('/energy-basics');
+        });
+
+        it('refuses an empty edit, a body carrying frontmatter, and an unsafe image URL', async () => {
+            const created = await service.createPage(makePageMarkdown({ title: 'Stable', slug: '/stable', published: true }), curator);
+            const id = created.contentId!;
+
+            await expect(service.proposeEdit(id, {})).rejects.toBeInstanceOf(PageEditInputError);
+            await expect(service.proposeEdit(id, { body: '---\nslug: "/moved"\npublished: false\n---\n# Moved' })).rejects.toBeInstanceOf(PageEditInputError);
+            await expect(service.proposeEdit(id, { ogImage: 'javascript:alert(1)' })).rejects.toBeInstanceOf(PageEditInputError);
+            await expect(service.proposeEdit(id, { ogImage: '//evil.example/x.png' })).rejects.toBeInstanceOf(PageEditInputError);
+            expect(curation.hold).not.toHaveBeenCalled();
+        });
+
+        it('refuses to replace a body holding HTML comments the read tools do not show', async () => {
+            const created = await service.createPage(
+                makePageMarkdown({ title: 'Noted', slug: '/noted', published: true, body: 'Text.\n\n<!-- editor note -->' }),
+                curator
+            );
+
+            await expect(service.proposeEdit(created.contentId!, { body: '# Noted\n\nNew text.' })).rejects.toBeInstanceOf(PageEditInputError);
+            await expect(service.proposeEdit(created.contentId!, { description: 'Still editable.' })).resolves.toMatchObject({ pendingReview: true });
+        });
+
+        it('rejects an unknown page with the not-found code', async () => {
+            await expect(
+                service.proposeEdit('3f2b8c1e-9d4a-4e7b-8a1c-5d6e7f809a1b', { title: 'Nobody' })
+            ).rejects.toMatchObject({ code: 'not-found' });
         });
     });
 

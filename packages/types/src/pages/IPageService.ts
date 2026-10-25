@@ -2,6 +2,8 @@ import type { IPage } from './IPage';
 import type { IPageSettings } from './IPageSettings';
 import type { IPublicPage } from './IPublicPage.js';
 import type { IPublicPageRender } from './IPublicPageRender.js';
+import type { IPageEditProposal } from './IPageEditProposal.js';
+import type { IPageEditProposalResult } from './IPageEditProposalResult.js';
 import type { IContentActor } from '../content/IContentActor.js';
 import type { ContentCurationState } from '../content/ContentCurationState.js';
 
@@ -40,6 +42,24 @@ export interface IPageService {
      * @param actor - Who is making the change.
      */
     updatePage(id: string, content: string, actor: IContentActor): Promise<IPage>;
+
+    /**
+     * Propose an edit to an existing page for human review. An automated
+     * caller, such as an AI tool, must not change what visitors read without
+     * a person seeing it first, so the edit is always applied as a
+     * non-curator: core holds it in the curation queue and visitors keep
+     * seeing the approved version until a curator decides. Only the title,
+     * body, description, keywords, and social image can change; the slug,
+     * redirect history, and published flag are never changed by this path.
+     *
+     * @param pageId - The page's core content id.
+     * @param input - The fields to change; at least one must be present.
+     * @returns The page's id and slug, whether the edit waits for review, and
+     *   the curation item id holding it.
+     * @throws When the input breaks a field rule, when the page is unknown,
+     *   deleted, or vetoed, or when curation is unavailable.
+     */
+    proposeEdit(pageId: string, input: IPageEditProposal): Promise<IPageEditProposalResult>;
 
     /**
      * Soft-delete a page. Its slug and redirects stay reserved, and it can be

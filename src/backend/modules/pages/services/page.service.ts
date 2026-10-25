@@ -6,6 +6,8 @@ import type {
     IPageService,
     IPage,
     IPageContent,
+    IPageEditProposal,
+    IPageEditProposalResult,
     IPageSettings,
     IPublicPage,
     IPublicPageRender,
@@ -23,7 +25,38 @@ import { MarkdownService } from './markdown.service.js';
 import { PageContentType, PAGE_CONTENT_TYPE_ID } from './page-content-type.js';
 import type { IPageWriteInput } from './page-content-type.js';
 import { PageTranslatable } from './page-translatable.js';
+import { PageEditInputError } from './PageEditInputError.js';
+import { ContentError } from '../../../services/content-error.js';
 import { ObjectId } from 'mongodb';
+
+/**
+ * Longest body a proposed edit may carry, and the longest stored body it may
+ * replace. Equal to what the `pages-get` AI tool returns per page, because a
+ * caller can only safely replace a whole body it was able to read in full.
+ */
+export const MAX_PROPOSED_BODY_CHARACTERS = 20000;
+
+/** Longest title a proposed edit may set. */
+const MAX_PROPOSED_TITLE_LENGTH = 200;
+
+/** Longest meta description a proposed edit may set. */
+const MAX_PROPOSED_DESCRIPTION_LENGTH = 500;
+
+/** Most keywords a proposed edit may set, and the longest each may be. */
+const MAX_PROPOSED_KEYWORDS = 20;
+const MAX_PROPOSED_KEYWORD_LENGTH = 64;
+
+/** Longest social image URL a proposed edit may set. */
+const MAX_PROPOSED_OG_IMAGE_LENGTH = 1024;
+
+/** The fields of a proposed edit, checked and in the shape the stored frontmatter takes. */
+interface IValidatedPageEdit {
+    /** Frontmatter keys to set; a `null` value removes the key. */
+    frontmatter: Record<string, unknown>;
+
+    /** Replacement body, or undefined to keep the stored one. */
+    body?: string;
+}
 
 /** Pages returned by `listPublicPages` when the caller does not say how many. */
 const PUBLIC_LIST_DEFAULT_LIMIT = 20;
@@ -236,6 +269,192 @@ export class PageService implements IPageService {
         const updated = await this.contentService.update<IPageContent>(PAGE_CONTENT_TYPE_ID, id, patch, actor);
 
         return this.toIPageFromContent(updated);
+    }
+
+    /**
+     * Propose an edit to an existing page for human review. An automated
+     * caller such as an AI tool must not be able to change what visitors read
+     * without a person seeing it first, so the edit is always applied as a
+     * non-curator: core compares the reviewed fields, holds the change in the
+     * curation queue, and keeps serving the approved version until a curator
+     * decides.
+     *
+     * A page is stored as one markdown string, so the edit is built from the
+     * page's latest version: the changed frontmatter keys are laid over the
+     * stored frontmatter, and every other key, including `published` and
+     * `oldSlugs`, is kept as stored. The slug is written back explicitly,
+     * because a page whose frontmatter has no slug takes its slug from the
+     * title, and a retitle would otherwise move the page's address.
+     *
+     * A body replacement is refused when the stored body is longer than
+     * `MAX_PROPOSED_BODY_CHARACTERS` or holds HTML comments or scripts. The
+     * pages AI tools return neither in full, so a caller replacing the whole
+     * body would silently delete text it never saw.
+     *
+     * @param pageId - The page's core content id.
+     * @param input - The fields to change; at least one must be present.
+     * @returns The page's id and slug, whether the edit waits for review, and
+     *   the curation item id holding it.
+     * @throws PageEditInputError when the input breaks a field rule or the
+     *   stored body cannot be safely replaced.
+     * @throws ContentError when the page is unknown, deleted, or vetoed, or
+     *   curation is unavailable.
+     */
+    async proposeEdit(pageId: string, input: IPageEditProposal): Promise<IPageEditProposalResult> {
+        const edit = this.validatePageEdit(input);
+        const [current] = await this.contentService.readAdmin<IPageContent>(PAGE_CONTENT_TYPE_ID, [String(pageId)]);
+        if (!current) {
+            throw new ContentError('not-found', `No page has id ${pageId}`);
+        }
+        if (edit.body !== undefined) {
+            this.assertBodyReplaceable(current.content);
+        }
+        const content = this.markdownService.editFrontmatter(
+            current.content,
+            { ...edit.frontmatter, slug: current.slug },
+            edit.body
+        );
+        const actor: IContentActor = { id: `system:${input.source ?? 'pages-service'}`, kind: 'system', isCurator: false };
+        // The write itself is updatePage's, so a page has exactly one method
+        // that sends a change to core; this method only builds the markdown
+        // and fixes the actor as a non-curator.
+        const updated = await this.updatePage(current.id, content, actor);
+        const pendingReview = updated.curation === 'pending';
+        this.logger.info(
+            { contentId: updated.contentId, pendingReview, curationId: updated.curationItemId },
+            pendingReview ? 'Page edit proposed and held for curation' : 'Page edit proposed with no change to hold'
+        );
+
+        return { pageId: updated.contentId ?? current.id, slug: updated.slug, pendingReview, curationId: updated.curationItemId ?? '' };
+    }
+
+    /**
+     * Check the fields of a proposed edit and turn them into frontmatter keys.
+     *
+     * The caller may be a model, and a JSON schema only suggests what it
+     * sends, so every field is checked here for type, length, and shape. The
+     * rules live in the service rather than in the tool so that any future
+     * caller of `proposeEdit` gets the same ones.
+     *
+     * @param input - The fields the caller sent.
+     * @returns The frontmatter keys to set and the replacement body, if any.
+     * @throws PageEditInputError describing the first field that is wrong, or
+     *   when no field was supplied.
+     */
+    private validatePageEdit(input: IPageEditProposal): IValidatedPageEdit {
+        const frontmatter: Record<string, unknown> = {};
+        let body: string | undefined;
+
+        if (input.title !== undefined) {
+            const title = typeof input.title === 'string' ? input.title.trim() : '';
+            if (!title || title.length > MAX_PROPOSED_TITLE_LENGTH) {
+                throw new PageEditInputError(`title must be text of 1 to ${MAX_PROPOSED_TITLE_LENGTH} characters.`);
+            }
+            frontmatter.title = title;
+        }
+        if (input.description !== undefined) {
+            const description = typeof input.description === 'string' ? input.description.trim() : null;
+            if (description === null || description.length > MAX_PROPOSED_DESCRIPTION_LENGTH) {
+                throw new PageEditInputError(`description must be text of at most ${MAX_PROPOSED_DESCRIPTION_LENGTH} characters; an empty string clears it.`);
+            }
+            frontmatter.description = description || null;
+        }
+        if (input.keywords !== undefined) {
+            frontmatter.keywords = this.validateKeywords(input.keywords);
+        }
+        if (input.ogImage !== undefined) {
+            frontmatter.ogImage = this.validateOgImage(input.ogImage);
+        }
+        if (input.body !== undefined) {
+            if (typeof input.body !== 'string' || !input.body.trim() || input.body.length > MAX_PROPOSED_BODY_CHARACTERS) {
+                throw new PageEditInputError(`body must be markdown of 1 to ${MAX_PROPOSED_BODY_CHARACTERS} characters.`);
+            }
+            if (this.markdownService.hasFrontmatter(input.body)) {
+                throw new PageEditInputError('body must not start with a frontmatter block; send only the markdown that follows it.');
+            }
+            body = input.body;
+        }
+        if (Object.keys(frontmatter).length === 0 && body === undefined) {
+            throw new PageEditInputError('Provide at least one of title, body, description, keywords, or ogImage.');
+        }
+
+        return { frontmatter, body };
+    }
+
+    /**
+     * Check a proposed keyword list. Keywords are page metadata shown to
+     * search engines, so each must be short plain text, and duplicates are
+     * dropped rather than refused.
+     *
+     * @param value - The list the caller sent.
+     * @returns The trimmed keywords without duplicates.
+     * @throws PageEditInputError when the value is not a list of short strings.
+     */
+    private validateKeywords(value: unknown): string[] {
+        if (!Array.isArray(value) || value.length > MAX_PROPOSED_KEYWORDS) {
+            throw new PageEditInputError(`keywords must be a list of at most ${MAX_PROPOSED_KEYWORDS} strings.`);
+        }
+        const keywords: string[] = [];
+        for (const entry of value) {
+            const keyword = typeof entry === 'string' ? entry.trim() : '';
+            if (!keyword || keyword.length > MAX_PROPOSED_KEYWORD_LENGTH) {
+                throw new PageEditInputError(`Each keyword must be text of 1 to ${MAX_PROPOSED_KEYWORD_LENGTH} characters.`);
+            }
+            if (!keywords.includes(keyword)) {
+                keywords.push(keyword);
+            }
+        }
+
+        return keywords;
+    }
+
+    /**
+     * Check a proposed social image URL. The value lands in the page's
+     * `og:image` tag, so it must be a path on this site or an https URL, never
+     * another scheme or a protocol-relative address.
+     *
+     * @param value - The URL the caller sent; an empty string clears the image.
+     * @returns The trimmed URL, or null to remove the image.
+     * @throws PageEditInputError when the value is not an acceptable URL.
+     */
+    private validateOgImage(value: unknown): string | null {
+        const url = typeof value === 'string' ? value.trim() : null;
+        const acceptable = url !== null
+            && url.length <= MAX_PROPOSED_OG_IMAGE_LENGTH
+            && !/\s/.test(url)
+            && (url === '' || /^\/(?!\/)/.test(url) || /^https:\/\/[^/]/i.test(url));
+        if (!acceptable) {
+            throw new PageEditInputError(
+                `ogImage must be a path on this site starting with / or an https URL, at most ${MAX_PROPOSED_OG_IMAGE_LENGTH} characters; an empty string clears it.`
+            );
+        }
+
+        return url || null;
+    }
+
+    /**
+     * Refuse a whole-body replacement that would delete text the caller could
+     * not have read. The pages AI tools cut bodies at
+     * `MAX_PROPOSED_BODY_CHARACTERS` and strip HTML comments and scripts, so a
+     * body that is longer, or that holds either, was never shown in full.
+     *
+     * @param content - The page's stored markdown, including frontmatter.
+     * @throws PageEditInputError when the stored body cannot be safely replaced.
+     */
+    private assertBodyReplaceable(content: string): void {
+        const { body } = this.markdownService.parseMarkdown(content);
+        if (body.length > MAX_PROPOSED_BODY_CHARACTERS) {
+            throw new PageEditInputError(
+                `This page's body is longer than ${MAX_PROPOSED_BODY_CHARACTERS} characters, so it cannot be replaced through this path; ask an admin to edit it.`
+            );
+        }
+        if (this.markdownService.stripHiddenMarkup(body) !== body) {
+            throw new PageEditInputError(
+                'This page\'s body holds HTML comments or scripts that the page tools do not show, so replacing it would delete them; ask an admin to edit it.'
+            );
+        }
+
+        return;
     }
 
     /**
@@ -873,6 +1092,7 @@ export class PageService implements IPageService {
             ogImage: page.ogImage,
             authorId: page.authorId,
             curation: page.curation,
+            curationItemId: page.curationItemId,
             hasApprovedVersion: page.hasApprovedVersion,
             deletedAt: page.deletedAt,
             createdAt: page.createdAt,
