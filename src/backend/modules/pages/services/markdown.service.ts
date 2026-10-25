@@ -14,6 +14,43 @@ import type {
 } from '@/types';
 
 /**
+ * Options every `gray-matter` call in this service passes.
+ *
+ * Gray-matter registers a `javascript` frontmatter engine by default, and that
+ * engine evaluates the block with `eval`. Markdown reaches this service from
+ * callers that must never run code in the backend process, including the
+ * `pages-propose-edit` AI tool, so a body opening with `---javascript` would
+ * execute before any field rule or curation hold could stop it. Replacing the
+ * engine with one that throws leaves YAML and JSON frontmatter working and
+ * turns an executable block into an ordinary parse failure.
+ */
+const MATTER_OPTIONS = {
+    engines: {
+        javascript: {
+            /**
+             * Refuse an executable frontmatter block instead of evaluating it,
+             * so untrusted markdown cannot reach `eval`.
+             *
+             * @returns Never; the call always throws, so no caller can come to
+             *   depend on JavaScript frontmatter being readable.
+             */
+            parse: (): never => {
+                throw new Error('JavaScript frontmatter is not supported');
+            },
+            /**
+             * Refuse to write an executable frontmatter block, so rebuilt page
+             * markdown can only ever carry YAML.
+             *
+             * @returns Never; the call always throws.
+             */
+            stringify: (): never => {
+                throw new Error('JavaScript frontmatter is not supported');
+            }
+        }
+    }
+};
+
+/**
  * Raw HTML the sanitizer removes from the rendered page together with its
  * contents: comments, and `<script>` elements. An unclosed one runs to the end
  * of the HTML it appears in, matching how CommonMark reads it.
@@ -205,7 +242,7 @@ export class MarkdownService implements IMarkdownService {
      */
     parseMarkdown(content: string): IParsedMarkdown {
         try {
-            const { data, content: body } = matter(content);
+            const { data, content: body } = matter(content, MATTER_OPTIONS);
 
             return {
                 frontmatter: {
@@ -306,9 +343,8 @@ export class MarkdownService implements IMarkdownService {
      * only some of those must keep every other key exactly as stored,
      * including keys this module does not read. So the stored frontmatter is
      * parsed in full, the changes are laid over a copy of it, and the result
-     * is written back. The copy matters: gray-matter caches parse results by
-     * input text, so changing the parsed object in place would change what
-     * later parses of the same text return.
+     * is written back to a copy, so the parsed object is never changed in
+     * place.
      *
      * The frontmatter is written back in gray-matter's own YAML layout, so
      * quoting and key order can differ from what the author typed even where
@@ -322,7 +358,7 @@ export class MarkdownService implements IMarkdownService {
      * @returns The rebuilt markdown.
      */
     editFrontmatter(content: string, changes: Record<string, unknown>, body?: string): string {
-        const parsed = matter(content);
+        const parsed = matter(content, MATTER_OPTIONS);
         const data: Record<string, unknown> = { ...parsed.data };
         for (const [key, value] of Object.entries(changes)) {
             if (value === null) {
@@ -332,7 +368,7 @@ export class MarkdownService implements IMarkdownService {
             }
         }
 
-        return matter.stringify(body ?? parsed.content, data);
+        return matter.stringify(body ?? parsed.content, data, MATTER_OPTIONS);
     }
 
     /**
@@ -345,10 +381,20 @@ export class MarkdownService implements IMarkdownService {
      *
      * @param text - The markdown to check.
      * @returns True when the text starts with a frontmatter block that holds
-     *   at least one key.
+     *   at least one key, or one this service refuses to parse at all.
      */
     hasFrontmatter(text: string): boolean {
-        return Object.keys(matter(text).data).length > 0;
+        let present: boolean;
+        try {
+            present = Object.keys(matter(text, MATTER_OPTIONS).data).length > 0;
+        } catch {
+            // Gray-matter only attempts a parse when the text opens with a
+            // delimiter, so a refused engine or broken YAML still means the
+            // caller sent a frontmatter block, which is what this reports.
+            present = true;
+        }
+
+        return present;
     }
 
     /**

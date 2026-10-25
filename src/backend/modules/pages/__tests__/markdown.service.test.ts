@@ -264,6 +264,42 @@ function hello() {
         });
     });
 
+    describe('JavaScript frontmatter', () => {
+        // A body supplied by an AI tool reaches gray-matter, whose default
+        // `javascript` engine runs the block through `eval`. Each case below
+        // would set this variable if that engine ran.
+        const probe = '---javascript\n(() => { process.env.PAGES_JS_FRONTMATTER_PROBE = "executed"; return { title: "x" }; })()\n---\nText';
+
+        afterEach(() => {
+            delete process.env.PAGES_JS_FRONTMATTER_PROBE;
+        });
+
+        it('reports a JavaScript block as frontmatter without running it', () => {
+            expect(markdownService.hasFrontmatter(probe)).toBe(true);
+            expect(process.env.PAGES_JS_FRONTMATTER_PROBE).toBeUndefined();
+        });
+
+        it('refuses to rebuild a page around a JavaScript body without running it', () => {
+            expect(() => markdownService.editFrontmatter('---\ntitle: Home\n---\nOld', { title: 'New' }, probe)).toThrow();
+            expect(process.env.PAGES_JS_FRONTMATTER_PROBE).toBeUndefined();
+        });
+
+        it('never runs a JavaScript block while parsing a page', () => {
+            try {
+                markdownService.parseMarkdown(probe);
+            } catch {
+                // Refusing the block is the expected outcome.
+            }
+            expect(process.env.PAGES_JS_FRONTMATTER_PROBE).toBeUndefined();
+        });
+
+        it('still reads ordinary YAML frontmatter', () => {
+            expect(markdownService.hasFrontmatter('---\ntitle: Home\n---\nBody')).toBe(true);
+            expect(markdownService.hasFrontmatter('Plain body')).toBe(false);
+            expect(markdownService.editFrontmatter('---\ntitle: Home\n---\nBody', { title: 'New' })).toBe('---\ntitle: New\n---\nBody\n');
+        });
+    });
+
     describe('stripHiddenMarkup', () => {
         it('removes block and inline HTML comments that the rendered page hides', () => {
             const markdown = '# Title\n\n<!-- private note -->\n\nText <!-- inline --> more.\n';
