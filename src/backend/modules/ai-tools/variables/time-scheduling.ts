@@ -59,6 +59,41 @@ function formatIsoUtc(date: Date): string {
 }
 
 /**
+ * Render an instant as whole-second epoch milliseconds, for sources that stamp
+ * their records with an integer instead of a date string — TronGrid's proposal
+ * `create_time` and `expiration_time`, for one. Without this a prompt has to ask
+ * the model to convert the window into milliseconds itself, which is the
+ * arithmetic this file exists to remove. The sub-second part is dropped so the
+ * value names the same instant as the ISO form beside it, and a record never
+ * qualifies under one form while failing under the other.
+ *
+ * @param date - The instant to render.
+ * @returns The instant as a 13-digit integer string such as `1787627991000`.
+ */
+function formatEpochMsUtc(date: Date): string {
+    const wholeSecondMs = Math.floor(date.getTime() / 1000) * 1000;
+    const formatted = String(wholeSecondMs);
+    return formatted;
+}
+
+/**
+ * Render the UTC calendar date of an instant in the `YYYY/MM/DD` shape that
+ * GlobeNewswire embeds in its release URLs. That source carries no time of day,
+ * so a prompt can only filter it by date, and matching the URL's own shape lets
+ * the model compare the two as plain text rather than reformat either one.
+ *
+ * @param date - The instant whose UTC date is wanted.
+ * @returns The date as `2026/08/08`.
+ */
+function formatSlashDateUtc(date: Date): string {
+    const year = date.getUTCFullYear();
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(date.getUTCDate()).padStart(2, '0');
+    const formatted = `${year}/${month}/${day}`;
+    return formatted;
+}
+
+/**
  * Register all "Time & Scheduling" built-in variables on the given registry.
  *
  * @param registry - The core prompt-variable registry.
@@ -67,10 +102,10 @@ export function registerTimeSchedulingVariables(registry: IPromptVariableRegistr
     registry.registerVariable({
         name: 'run-window-24',
         category: 'Time & Scheduling',
-        description: 'Trailing 24-hour reporting window: both bounds in citation and ISO-8601 form. Use it in only one prompt per query — system or user, not both, since each expands on its own clock read',
+        description: 'Trailing 24-hour reporting window: both bounds in citation, ISO-8601, and epoch-millisecond form, plus the start date as YYYY/MM/DD. Use it in only one prompt per query — system or user, not both, since each expands on its own clock read',
         sensitivity: 'public',
         resolve: async () => {
-            // All four lines derive from one clock read, so the bounds cannot
+            // Every line derives from one clock read, so the bounds cannot
             // straddle a second boundary and disagree — which they could if
             // these were separate variables, since the registry resolves those
             // concurrently.
@@ -86,12 +121,21 @@ export function registerTimeSchedulingVariables(registry: IPromptVariableRegistr
             const now = new Date();
             const start = new Date(now.getTime() - WINDOW_MS);
 
+            //
+            // The millisecond and slash-date lines serve sources whose
+            // timestamps are not ISO-8601: epoch integers and dates embedded in
+            // URLs. Both millisecond bounds are published because a value such
+            // as a proposal's `expiration_time` can lie in the future, and a
+            // lower bound alone would let a still-open item pass as decided.
             const lines = [
                 `Reporting window (trailing ${WINDOW_HOURS} hours):`,
                 `  RUN_TIME:         ${formatCitationUtc(now)}`,
                 `  RUN_TIME_ISO:     ${formatIsoUtc(now)}`,
+                `  RUN_TIME_MS:      ${formatEpochMsUtc(now)}`,
                 `  WINDOW_START:     ${formatCitationUtc(start)}`,
-                `  WINDOW_START_ISO: ${formatIsoUtc(start)}`
+                `  WINDOW_START_ISO: ${formatIsoUtc(start)}`,
+                `  WINDOW_START_MS:  ${formatEpochMsUtc(start)}`,
+                `  WINDOW_START_DATE: ${formatSlashDateUtc(start)}`
             ];
 
             return lines.join('\n');

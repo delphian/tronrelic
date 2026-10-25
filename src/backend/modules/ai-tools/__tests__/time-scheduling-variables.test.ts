@@ -147,5 +147,29 @@ describe('Time & Scheduling prompt variables', () => {
 
             expect(resolved).toContain('Reporting window (trailing 24 hours):');
         });
+
+        it('publishes both bounds as epoch milliseconds naming the same instants as the ISO forms', async () => {
+            // TronGrid stamps proposals with epoch integers. If the millisecond
+            // bound kept the sub-second part the ISO bound drops, a record at
+            // the boundary could pass one comparison and fail the other.
+            const resolved = await resolveAt('run-window-24', '2026-08-09T11:52:25.123Z');
+
+            expect(resolved).toContain(`RUN_TIME_MS:      ${Date.parse('2026-08-09T11:52:25Z')}`);
+            expect(resolved).toContain(`WINDOW_START_MS:  ${Date.parse('2026-08-08T11:52:25Z')}`);
+        });
+
+        it('renders the window start date in the YYYY/MM/DD shape used in release URLs', async () => {
+            const resolved = await resolveAt('run-window-24', '2026-08-09T11:52:25.000Z');
+
+            expect(resolved).toContain('WINDOW_START_DATE: 2026/08/08');
+        });
+
+        it('takes the start date from the window start, not the run time, across a month and a year boundary', async () => {
+            const acrossMonth = await resolveAt('run-window-24', '2026-09-01T00:30:00.000Z');
+            const acrossYear = await resolveAt('run-window-24', '2027-01-01T09:05:00.000Z');
+
+            expect(acrossMonth).toContain('WINDOW_START_DATE: 2026/08/31');
+            expect(acrossYear).toContain('WINDOW_START_DATE: 2026/12/31');
+        });
     });
 });
