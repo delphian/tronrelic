@@ -20,20 +20,25 @@ import type {
     IAddressTag,
     IAddressTagAssertion,
     IAddressTagCount,
+    IAddressTagDefinition,
+    IAddressTagDefinitionSyncResult,
     IAddressTagDeleteByTagResult,
     IAddressTagGroup,
     IAddressTagListQuery,
     IAddressTagPair,
+    IAddressTagPrefixQuery,
     IAddressTagRename,
     IAddressTagSearchQuery,
     IAddressTagService,
     IAddressTagSource,
+    IAddressTagSourceDefinition,
     IAddressTagSummary,
     IAddressTagSummaryQuery,
     IAddressTagSyncResult,
     IDatabaseService,
     ISystemLogService
 } from '@/types';
+import { AddressTagDefinitionStore } from './AddressTagDefinitionStore.js';
 
 /** Physical collection name, following the `module_{id}_{collection}` convention. */
 export const ADDRESS_TAGS_COLLECTION = 'module_address-tags_tags';
@@ -47,11 +52,13 @@ export const ADDRESS_TAGS_COLLECTION = 'module_address-tags_tags';
  * reading identically to the reserved form.
  *
  * `market:` belongs to the `trp-resource-markets` plugin, which publishes
- * `market:<slug>` and `market:<slug>:<role>` on the addresses its rental
- * market examiners watch, under the source id `rental-markets`. It is a
+ * `market:<slug>:<role>` on the addresses its rental market examiners
+ * watch, under the source id `rental-markets`. It is a
  * label rather than a risk marker, so unlike the other three it earns no
  * warning on the address chip; it is reserved so a hand-written tag cannot
- * claim an address belongs to a market the pipeline never found it in.
+ * claim an address takes part in a market the pipeline never found it in.
+ * The tag records that observed association only, never who owns the
+ * address.
  */
 export const RESERVED_TAG_PREFIXES: readonly string[] = ['ofac:', 'usdt:', 'chainalysis:', 'market:'];
 
@@ -70,6 +77,13 @@ const UNATTRIBUTED_ACTOR = 'unattributed';
 
 /** Hard ceiling on batch sizes so one request cannot stall the collection. */
 const MAX_BATCH = 1000;
+
+/**
+ * Longest tag meaning accepted. A meaning is returned beside every tag an AI
+ * tool reports, so a long one costs context on every call; two or three
+ * plain sentences fit well inside this.
+ */
+const MAX_MEANING_LENGTH = 500;
 
 /**
  * How many pair writes a delete keeps in flight at once. A tag-wide delete
@@ -210,6 +224,7 @@ export class AddressTagService implements IAddressTagService {
 
     private readonly database: IDatabaseService;
     private readonly logger: ISystemLogService;
+    private readonly definitions: AddressTagDefinitionStore;
 
     /**
      * Private so construction can only happen through `setDependencies`,
@@ -220,6 +235,7 @@ export class AddressTagService implements IAddressTagService {
     private constructor(deps: IAddressTagServiceDependencies) {
         this.database = deps.database;
         this.logger = deps.logger;
+        this.definitions = new AddressTagDefinitionStore(deps.database);
     }
 
     /**
@@ -267,12 +283,15 @@ export class AddressTagService implements IAddressTagService {
      * without scanning the collection. The old `{ tag, address }` index is
      * dropped by the `001_add_provenance_fields` migration rather than here,
      * because index removal on a populated production collection belongs on
-     * the operator's clock like every other migration.
+     * the operator's clock like every other migration. The definitions
+     * collection's indexes are created here too, so one call covers the
+     * module's storage.
      */
     public async ensureIndexes(): Promise<void> {
         await this.database.createIndex(ADDRESS_TAGS_COLLECTION, { address: 1, tag: 1 }, { unique: true });
         await this.database.createIndex(ADDRESS_TAGS_COLLECTION, { tag: 1, active: 1, address: 1 }, {});
         await this.database.createIndex(ADDRESS_TAGS_COLLECTION, { 'sources.id': 1, address: 1 }, {});
+        await this.definitions.ensureIndexes();
     }
 
     /**
@@ -357,6 +376,24 @@ export class AddressTagService implements IAddressTagService {
         // index, since one popular tag can carry many addresses.
         const docs = await collection.find({ tag: { $in: cleaned }, active: true })
             .sort({ tag: 1, address: 1 })
+            .toArray();
+        return docs.map((doc) => this.toTag(doc));
+    }
+
+    /** @inheritdoc */
+    public async getAddressesByTagPrefix(query: IAddressTagPrefixQuery): Promise<IAddressTag[]> {
+        // The prefix passes the same shape check as a tag, so it can never
+        // be longer than any stored tag or carry the delimiter `/by-tag`
+        // splits on. Reserved prefixes are allowed: finding every address a
+        // machine source tagged is the point of the lookup.
+        const prefix = this.requireTag(query?.prefix, { allowReserved: true });
+        const collection = this.database.getCollection<IAddressTagDocument>(ADDRESS_TAGS_COLLECTION);
+        // A regex anchored with `^` and free of other special characters is
+        // answered as a range scan on the `{ tag, active, address }` index,
+        // the same index the exact lookup uses, so the cap bounds the read.
+        const docs = await collection.find({ tag: { $regex: `^${escapeRegex(prefix)}` }, active: true })
+            .sort({ tag: 1, address: 1 })
+            .limit(this.clampLimit(query?.limit))
             .toArray();
         return docs.map((doc) => this.toTag(doc));
     }
@@ -779,6 +816,71 @@ export class AddressTagService implements IAddressTagService {
 
         this.logger.info(result, 'Source reconcile applied');
         return result;
+    }
+
+    /** @inheritdoc */
+    public async syncDefinitions(source: string, definitions: IAddressTagDefinition[]): Promise<IAddressTagDefinitionSyncResult> {
+        const sourceId = String(source ?? '').trim();
+        if (sourceId.length === 0) {
+            throw new Error('syncDefinitions requires a non-empty source id');
+        }
+        if (definitions.length > MAX_BATCH) {
+            throw new Error(`Batch exceeds ${MAX_BATCH} definitions`);
+        }
+        const result: IAddressTagDefinitionSyncResult = { source: sourceId, defined: 0, removed: 0, rejected: 0 };
+        const valid = this.validateDefinitions(definitions, sourceId, result);
+        result.removed = await this.definitions.replace(sourceId, valid, new Date());
+        result.defined = valid.length;
+        this.logger.info(result, 'Tag definitions synced');
+        return result;
+    }
+
+    /** @inheritdoc */
+    public async getTagDefinitions(tags: string[]): Promise<IAddressTagSourceDefinition[]> {
+        return this.definitions.findByTags(this.normalizeTagValues(tags));
+    }
+
+    /**
+     * Validate one source's definitions, counting failures into the running
+     * result instead of throwing, as `validateAssertions` does for tags.
+     *
+     * The tag goes through `requireTag` with the reserved prefixes allowed,
+     * because a definition explains a tag only a machine source can write.
+     * A second definition of a tag already in the batch is refused rather
+     * than overwriting the first, so the stored meaning never depends on the
+     * order a source happened to send them in.
+     *
+     * @param definitions - Raw definitions from the source.
+     * @param sourceId - The source being synced, for the rejection log line.
+     * @param result - Running counts; `rejected` is incremented in place.
+     * @returns The definitions that passed, trimmed, one per tag.
+     */
+    private validateDefinitions(
+        definitions: IAddressTagDefinition[],
+        sourceId: string,
+        result: IAddressTagDefinitionSyncResult
+    ): IAddressTagDefinition[] {
+        const byTag = new Map<string, IAddressTagDefinition>();
+        for (const definition of definitions) {
+            try {
+                const tag = this.requireTag(definition.tag, { allowReserved: true });
+                const meaning = String(definition.meaning ?? '').trim();
+                if (meaning.length === 0 || meaning.length > MAX_MEANING_LENGTH) {
+                    throw new Error(`Invalid meaning: must be 1-${MAX_MEANING_LENGTH} characters`);
+                }
+                if (byTag.has(tag)) {
+                    throw new Error(`Duplicate definition of '${tag}' in one batch`);
+                }
+                byTag.set(tag, { tag, meaning });
+            } catch (error) {
+                result.rejected += 1;
+                this.logger.warn(
+                    { source: sourceId, tag: definition.tag, error: error instanceof Error ? error.message : String(error) },
+                    'Rejected tag definition'
+                );
+            }
+        }
+        return [...byTag.values()];
     }
 
     /**
