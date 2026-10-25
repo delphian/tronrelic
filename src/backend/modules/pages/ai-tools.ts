@@ -1,5 +1,6 @@
 /**
- * @fileoverview Read-only AI tools over the published CMS pages.
+ * @fileoverview AI tools over the CMS pages: three reads and one edit that is
+ * always held for review.
  *
  * Pages are the admin-authored content at addresses such as `/about` or
  * `/guides/energy`. An agent answering a question about the site, or drafting
@@ -18,6 +19,11 @@
  * `public` sensitivity: they can be granted to any MCP user and run in
  * scheduled prompts without exposing anything a visitor could not already read.
  *
+ * The fourth tool, `pages-propose-edit`, changes an existing page. It writes
+ * through `IPageService.proposeEdit`, which applies the change as a
+ * non-curator, so core holds every edit in the curation queue and visitors keep
+ * seeing the approved version until a curator approves it.
+ *
  * @module backend/modules/pages/ai-tools
  */
 
@@ -31,6 +37,10 @@ import type {
     ISystemLogService,
     ServiceWatchDisposer
 } from '@/types';
+import { isContentError } from '../../services/content-error.js';
+import { PageEditInputError } from './services/PageEditInputError.js';
+import { PAGE_CONTENT_TYPE_ID } from './services/page-content-type.js';
+import { MAX_PROPOSED_BODY_CHARACTERS } from './services/page.service.js';
 
 /** Provider id passed to `registerTool`, so the admin page groups these under this module. */
 const PROVIDER_ID = 'pages';
@@ -44,8 +54,33 @@ const PROVIDER_ID = 'pages';
 export const AI_TOOL_NAMES = {
     list: 'pages-list',
     search: 'pages-search',
-    get: 'pages-get'
+    get: 'pages-get',
+    proposeEdit: 'pages-propose-edit'
 } as const;
+
+/**
+ * The classification of `pages-propose-edit`.
+ *
+ * External and irreversible because an approved edit changes what every
+ * visitor reads, and published text has been seen once it is live.
+ * `forcesCuratorReview: true` bound to `core:page` describes what the tool
+ * does: every edit goes through the core content service as a non-curator, so
+ * core holds it in the curation queue. The binding lets the governor check that
+ * claim against the live curation registration instead of trusting it.
+ */
+const PAGE_EDIT_CAPABILITY: IAiToolCapability = {
+    sideEffect: 'external',
+    reversible: false,
+    sensitivity: 'public',
+    forcesCuratorReview: true,
+    curationTypeId: PAGE_CONTENT_TYPE_ID
+};
+
+/**
+ * Content service refusals that the model caused or can act on, so their
+ * message is returned to it as an input error rather than hidden.
+ */
+const INPUT_CONTENT_ERROR_CODES: ReadonlySet<string> = new Set(['not-found', 'deleted', 'vetoed', 'forbidden']);
 
 /**
  * The classification all three tools declare.
@@ -74,9 +109,10 @@ const MAX_GET_PAGES = 5;
 /**
  * Longest markdown body returned per page. Five pages at this size is about
  * 100,000 characters, which bounds how much of the model's context one call
- * can spend.
+ * can spend. It is the same figure as the longest body `pages-propose-edit`
+ * may replace, because a model can only safely replace a body it read in full.
  */
-const MAX_BODY_CHARACTERS = 20000;
+const MAX_BODY_CHARACTERS = MAX_PROPOSED_BODY_CHARACTERS;
 
 /** Length of the plain-text opening each summary carries. */
 const EXCERPT_CHARACTERS = 240;
@@ -251,6 +287,12 @@ function normalizeIdentifier(value: unknown): string {
  * Run one tool call, turning an input refusal into an answer the model can act
  * on and any other failure into a generic one that is logged in full.
  *
+ * A page edit can also be refused by the page service's field rules or by the
+ * core content service. Those refusals describe the model's request (an
+ * unknown or deleted page, a vetoed change), so their message is returned as an
+ * input error. When curation is unavailable the edit was not stored, and the
+ * model is told so, since retrying later is the right response.
+ *
  * @param logger - Where unexpected failures are recorded.
  * @param toolName - The tool's name, for the log line.
  * @param body - The tool's work.
@@ -265,8 +307,12 @@ async function runPageTool(
     try {
         response = { success: true, ...(await body()) };
     } catch (error) {
-        if (error instanceof PageToolInputError) {
+        if (error instanceof PageToolInputError || error instanceof PageEditInputError) {
             response = { success: false, error: error.message, errorKind: 'input' };
+        } else if (isContentError(error) && INPUT_CONTENT_ERROR_CODES.has(error.code)) {
+            response = { success: false, error: error.message, errorKind: 'input' };
+        } else if (isContentError(error) && error.code === 'curation-unavailable') {
+            response = { success: false, error: 'The review queue is unavailable, so the edit was not stored. Retrying later may work.', errorKind: 'failed' };
         } else {
             logger.error({ error, tool: toolName }, 'Pages AI tool failed unexpectedly');
             response = { success: false, error: 'The page lookup failed. This is not caused by your input; retrying later may work.', errorKind: 'failed' };
@@ -276,10 +322,12 @@ async function runPageTool(
 }
 
 /**
- * Build the three tools against the page service.
+ * Build the four tools against the page service.
  *
- * @param service - The page service the tools read through; it owns the rule
- *   that only published, visitor-visible pages are returned.
+ * @param service - The page service the tools go through. Its reads own the
+ *   rule that only published, visitor-visible pages are returned, and its
+ *   `proposeEdit` owns the edit's field rules and the non-curator actor that
+ *   makes core hold every edit for review.
  * @param logger - Module-scoped logger for unexpected failures.
  * @returns The tools, in the order the admin page lists them.
  */
@@ -409,7 +457,71 @@ export function buildPageAiTools(service: IPageService, logger: ISystemLogServic
         })
     };
 
-    return [list, search, get];
+    const proposeEdit: IAiTool = {
+        name: AI_TOOL_NAMES.proposeEdit,
+        description:
+            'Propose an edit to an existing site page for human review. The edit is NOT applied to the live page immediately: it is held in the central curation queue, ' +
+            'and visitors keep seeing the current published version until an admin approves the edit. ' +
+            'Use when asked to correct, update, or improve a page that already exists. This tool cannot create pages, delete them, publish or unpublish them, or change their address. ' +
+            `BEFORE editing, find the page with ${AI_TOOL_NAMES.search} or ${AI_TOOL_NAMES.list} and read it in full with ${AI_TOOL_NAMES.get}, so the edit is based on what the page actually says. ` +
+            'Send only the fields you are changing; an absent field keeps its current value. ' +
+            `Parameters: pageId (required) is the page id (a UUID) those tools return. ` +
+            'title (optional, plain text, at most 200 characters) replaces the page title; the page keeps its address. ' +
+            `body (optional, markdown, at most ${MAX_PROPOSED_BODY_CHARACTERS} characters) replaces the WHOLE body, so send the complete corrected markdown that ${AI_TOOL_NAMES.get} returned with your changes applied, never just the changed passage, and never a frontmatter block. ` +
+            'A body edit is refused for a page whose body was cut short by the read tool or holds hidden HTML comments or scripts, because replacing it would delete text you never saw; ask an admin instead. ' +
+            'description (optional, at most 500 characters) replaces the search-result summary; keep it accurate to the page. An empty string clears it. ' +
+            'keywords (optional, up to 20 short strings) replaces the whole keyword list. ' +
+            'ogImage (optional) replaces the social image and must be a path on this site starting with / or an https URL. An empty string clears it. ' +
+            'If the page already has an edit waiting for review, your change is applied on top of that pending edit and joins the same review. ' +
+            'Returns { success, pageId, slug, pendingReview }. pendingReview is false only when the page did not change at all. ' +
+            'Never use this to answer the user or relay findings; write those as normal text in the conversation.',
+        capability: PAGE_EDIT_CAPABILITY,
+        inputSchema: {
+            type: 'object',
+            description: 'The page to edit and the fields to change, held for curator review.',
+            properties: {
+                pageId: { type: 'string', description: `The id (a UUID) of the page to edit, as returned by ${AI_TOOL_NAMES.list}, ${AI_TOOL_NAMES.search}, or ${AI_TOOL_NAMES.get}.` },
+                title: { type: 'string', description: 'Replacement title, at most 200 characters. The page keeps its address.' },
+                body: { type: 'string', description: `Replacement markdown body without frontmatter, at most ${MAX_PROPOSED_BODY_CHARACTERS} characters. Replaces the whole body.` },
+                description: { type: 'string', description: 'Replacement search-result summary, at most 500 characters. An empty string clears it.' },
+                keywords: {
+                    type: 'array',
+                    items: { type: 'string', description: 'One keyword, at most 64 characters.' },
+                    maxItems: 20,
+                    description: 'Replacement keyword list, up to 20 entries. Replaces the whole list.'
+                },
+                ogImage: { type: 'string', description: 'Replacement social image: a path on this site starting with /, or an https URL. An empty string clears it.' }
+            },
+            required: ['pageId'],
+            additionalProperties: false
+        },
+        // A metadata-only correction, a retitle with keywords, and a full-body
+        // replacement. Each sends only the fields it changes, which is the
+        // habit the description asks for.
+        inputExamples: [
+            { pageId: '3f2b8c1e-9d4a-4e7b-8a1c-5d6e7f809a1b', description: 'How energy rental works on TRON, and when renting beats staking TRX.' },
+            { pageId: '3f2b8c1e-9d4a-4e7b-8a1c-5d6e7f809a1b', title: 'Renting Energy on TRON', keywords: ['energy', 'rental', 'tron'] },
+            { pageId: '3f2b8c1e-9d4a-4e7b-8a1c-5d6e7f809a1b', body: '# Renting Energy on TRON\n\nRenting energy avoids the upfront cost of staking TRX...\n\n## When to rent\n\nRent when...' }
+        ],
+        handler: async (input) => runPageTool(logger, AI_TOOL_NAMES.proposeEdit, async () => {
+            const pageId = typeof input.pageId === 'string' ? input.pageId.trim() : '';
+            if (!CONTENT_ID_PATTERN.test(pageId)) {
+                throw new PageToolInputError(`pageId must be a page id (a UUID) as returned by ${AI_TOOL_NAMES.list}.`);
+            }
+            // Field rules belong to the service; the raw values are forwarded.
+            const outcome = await service.proposeEdit(pageId.toLowerCase(), {
+                title: input.title as string | undefined,
+                body: input.body as string | undefined,
+                description: input.description as string | undefined,
+                keywords: input.keywords as string[] | undefined,
+                ogImage: input.ogImage as string | undefined,
+                source: `ai-tool:${AI_TOOL_NAMES.proposeEdit}`
+            });
+            return { pageId: outcome.pageId, slug: outcome.slug, pendingReview: outcome.pendingReview };
+        })
+    };
+
+    return [list, search, get, proposeEdit];
 }
 
 /**
@@ -423,7 +535,7 @@ export function buildPageAiTools(service: IPageService, logger: ISystemLogServic
  * and must not stop pages from being served.
  *
  * @param serviceRegistry - The registry to watch for `'ai-tools'`.
- * @param service - The page service the tools read through.
+ * @param service - The page service the tools read and propose edits through.
  * @param logger - Module-scoped logger.
  * @returns Disposer that removes the watch subscription.
  */

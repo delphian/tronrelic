@@ -41,7 +41,8 @@ export interface IPagesModuleDependencies {
     contentService: IContentService;
     /**
      * The service registry, watched for the core `'ai-tools'` registry so the
-     * read-only page tools are registered whenever it is available.
+     * page tools (three reads and the review-held edit tool) are registered
+     * whenever it is available.
      */
     serviceRegistry: IServiceRegistry;
     app: Express;
@@ -66,7 +67,7 @@ export interface IPagesModuleDependencies {
  *   and build the controllers.
  * - `run()` — register the `core:page` managed content type (which carries its
  *   translation side), register the `/system/pages` menu item, mount admin and
- *   public routers, and register the read-only page AI tools.
+ *   public routers, and register the page AI tools.
  *
  * No file dependencies — uploads go through the Files module's
  * `/api/admin/files` admin surface, which is registered before Pages so

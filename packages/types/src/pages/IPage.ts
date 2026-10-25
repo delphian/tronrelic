@@ -33,6 +33,13 @@ export interface IPage {
     curation?: ContentCurationState;
 
     /**
+     * Id of the curation queue item holding the page's pending edit. Present
+     * only while `curation` is `pending`, so a caller that just saved a change
+     * can say which queue item a curator will decide it in.
+     */
+    curationItemId?: string;
+
+    /**
      * Whether a curator has approved some version of the page. When true and
      * `curation` is `pending` or `rejected`, visitors keep seeing the approved
      * version while the latest edit waits or is reworked.

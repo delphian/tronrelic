@@ -298,6 +298,60 @@ export class MarkdownService implements IMarkdownService {
     }
 
     /**
+     * Rebuild a page's markdown with some frontmatter keys replaced and,
+     * optionally, a new body.
+     *
+     * A page is stored as one markdown string whose frontmatter holds its
+     * title, slug, published flag, and other metadata. An edit that changes
+     * only some of those must keep every other key exactly as stored,
+     * including keys this module does not read. So the stored frontmatter is
+     * parsed in full, the changes are laid over a copy of it, and the result
+     * is written back. The copy matters: gray-matter caches parse results by
+     * input text, so changing the parsed object in place would change what
+     * later parses of the same text return.
+     *
+     * The frontmatter is written back in gray-matter's own YAML layout, so
+     * quoting and key order can differ from what the author typed even where
+     * no value changed.
+     *
+     * @param content - The stored markdown, including its frontmatter.
+     * @param changes - Keys to set. A `null` value removes the key; a key not
+     *   listed is left as stored.
+     * @param body - Replacement body without frontmatter, or undefined to keep
+     *   the stored body.
+     * @returns The rebuilt markdown.
+     */
+    editFrontmatter(content: string, changes: Record<string, unknown>, body?: string): string {
+        const parsed = matter(content);
+        const data: Record<string, unknown> = { ...parsed.data };
+        for (const [key, value] of Object.entries(changes)) {
+            if (value === null) {
+                delete data[key];
+            } else {
+                data[key] = value;
+            }
+        }
+
+        return matter.stringify(body ?? parsed.content, data);
+    }
+
+    /**
+     * Whether a piece of markdown opens with a frontmatter block.
+     *
+     * A body supplied on its own is placed after the page's own frontmatter,
+     * so a frontmatter block inside it would never be read as metadata. It
+     * would still look like metadata to a reviewer reading the source, so a
+     * caller refuses such a body rather than storing something misleading.
+     *
+     * @param text - The markdown to check.
+     * @returns True when the text starts with a frontmatter block that holds
+     *   at least one key.
+     */
+    hasFrontmatter(text: string): boolean {
+        return Object.keys(matter(text).data).length > 0;
+    }
+
+    /**
      * Get cached HTML for a page slug.
      *
      * Checks Redis for previously rendered HTML. Returns null if not cached.
