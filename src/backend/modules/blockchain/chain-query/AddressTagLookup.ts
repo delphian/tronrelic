@@ -24,7 +24,9 @@ export interface IAddressTagsResult {
      * What the asserting source says each tag means, keyed by tag text, for
      * the tags in `tags` that have one. Absent when none do. A model reads
      * `market:catfee:pool-wallet` as ownership unless the source's own
-     * meaning travels with it.
+     * meaning travels with it. The map cannot name the address a meaning
+     * belongs to, so a tag only gets one when a single source asserts it on
+     * every address listed as carrying it.
      */
     meanings?: Record<string, string>;
 }
@@ -88,13 +90,12 @@ export class AddressTagLookup {
                 for (const record of await service.getTagsByAddresses(unique)) {
                     if (record.active) {
                         (result.tags[record.address] ??= []).push(record.tag);
-                        const sources = liveSources.get(record.tag) ?? new Set<string>();
-                        for (const source of record.sources ?? []) {
-                            if (!source.withdrawnAt) {
-                                sources.add(source.id);
-                            }
-                        }
-                        liveSources.set(record.tag, sources);
+                        // Kept as the sources asserting the tag on every address
+                        // so far, not on any, because the response's one meaning
+                        // per tag cannot say which address it belongs to.
+                        const live = new Set((record.sources ?? []).filter(source => !source.withdrawnAt).map(source => source.id));
+                        const asserted = liveSources.get(record.tag);
+                        liveSources.set(record.tag, asserted === undefined ? live : new Set([...asserted].filter(id => live.has(id))));
                     }
                 }
             } catch (error) {
@@ -115,14 +116,17 @@ export class AddressTagLookup {
      * Read the meaning of each tag from a source that asserts it.
      *
      * One meaning per tag, not per address, keeps the response small: every
-     * address carrying the tag shares it. A definition counts only when its
-     * source asserts the tag on at least one of the addresses, so a human-typed
-     * tag never borrows a machine source's meaning. A failed read leaves the
-     * tags without meanings rather than failing the call, because a meaning
-     * adds to a tag but is not the tag.
+     * address carrying the tag shares it. Because the response has no room to
+     * say which address a meaning applies to, a definition counts only when its
+     * source asserts the tag on every address the response returns it on. A
+     * human-typed `exchange` on one address therefore keeps a source's
+     * `exchange` meaning out of the whole response, instead of lending that
+     * meaning to a tag the source never asserted. A failed read leaves the tags
+     * without meanings rather than failing the call, because a meaning adds to
+     * a tag but is not the tag.
      *
      * @param service - The address-tags service.
-     * @param liveSources - For each tag found, the sources asserting it on some address.
+     * @param liveSources - For each tag found, the sources asserting it on every address that carries it.
      * @returns Meanings keyed by tag text; empty when none apply or the read failed.
      */
     private async readMeanings(service: IAddressTagService, liveSources: Map<string, Set<string>>): Promise<Record<string, string>> {

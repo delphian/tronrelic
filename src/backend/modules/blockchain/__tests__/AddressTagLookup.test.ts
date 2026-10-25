@@ -3,9 +3,9 @@
  *
  * Models read `market:catfee:pool-wallet` as "CatFee's pool wallet" unless the
  * source's own meaning travels with the tag. These tests pin when a meaning is
- * given: only from a source asserting the tag on one of the response's
- * addresses, never for a tag only a human typed, and never at the cost of the
- * tags themselves when the definition read fails.
+ * given: only from a source asserting the tag on every address the response
+ * returns it on, never for a tag only a human typed, and never at the cost of
+ * the tags themselves when the definition read fails.
  */
 import { describe, it, expect, vi } from 'vitest';
 import type { IAddressTag, IAddressTagService, IAddressTagSourceDefinition } from '@/types';
@@ -76,6 +76,23 @@ describe('AddressTagLookup meanings', () => {
         expect(getTagDefinitions).toHaveBeenCalledWith(['market:catfee:pool-wallet']);
         expect(result.meanings).toEqual({ 'market:catfee:pool-wallet': POOL_MEANING });
         expect(result.tags).toEqual({ [WALLET]: ['market:catfee:pool-wallet'], [PEER]: ['market:catfee:pool-wallet', 'exchange'] });
+    });
+
+    it('gives no meaning when the defining source does not assert every returned assignment of the tag', async () => {
+        const { lookup } = buildLookup(
+            [
+                assignment(WALLET, 'exchange', ['rental-markets']),
+                assignment(PEER, 'exchange', [])
+            ],
+            [{ source: 'rental-markets', tag: 'exchange', meaning: 'Observed operating as an exchange.', updatedAt: new Date() }]
+        );
+
+        const result = await lookup.lookup([WALLET, PEER]);
+
+        // One `exchange` is the source's claim and the other is a human's, and a
+        // single meaning per tag cannot say which, so neither carries it.
+        expect(result.meanings).toBeUndefined();
+        expect(result.tags).toEqual({ [WALLET]: ['exchange'], [PEER]: ['exchange'] });
     });
 
     it('ignores a definition written by a source that does not assert the tag here', async () => {
