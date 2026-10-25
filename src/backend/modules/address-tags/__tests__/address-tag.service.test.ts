@@ -282,4 +282,92 @@ describe('AddressTagService', () => {
                 .rejects.toThrow(/Batch exceeds/);
         });
     });
+
+    describe('tag definitions', () => {
+        it('stores a source\'s definitions and returns them by tag, naming the source', async () => {
+            const result = await service.syncDefinitions('rental-markets', [
+                { tag: 'market:catfee', meaning: ' Observed in the catfee market. ' },
+                { tag: 'market:catfee:treasury', meaning: 'Observed as the catfee treasury.' }
+            ]);
+
+            expect(result).toEqual({ source: 'rental-markets', defined: 2, removed: 0, rejected: 0 });
+            const definitions = await service.getTagDefinitions(['market:catfee', 'unknown']);
+            expect(definitions).toEqual([
+                expect.objectContaining({ source: 'rental-markets', tag: 'market:catfee', meaning: 'Observed in the catfee market.' })
+            ]);
+        });
+
+        it('replaces the source\'s whole set, leaving other sources\' definitions alone', async () => {
+            await service.syncDefinitions('rental-markets', [
+                { tag: 'market:catfee', meaning: 'First wording.' },
+                { tag: 'market:catfee:treasury', meaning: 'Treasury.' }
+            ]);
+            await service.syncDefinitions('ofac-sdn', [{ tag: 'ofac:sdn', meaning: 'On the OFAC SDN list.' }]);
+
+            const result = await service.syncDefinitions('rental-markets', [{ tag: 'market:catfee', meaning: 'Second wording.' }]);
+
+            expect(result).toMatchObject({ defined: 1, removed: 1 });
+            const definitions = await service.getTagDefinitions(['market:catfee', 'market:catfee:treasury', 'ofac:sdn']);
+            expect(definitions.map((definition) => [definition.tag, definition.meaning])).toEqual([
+                ['market:catfee', 'Second wording.'],
+                ['ofac:sdn', 'On the OFAC SDN list.']
+            ]);
+        });
+
+        it('rejects a bad tag, an empty or oversized meaning, and a repeated tag without failing the batch', async () => {
+            const result = await service.syncDefinitions('rental-markets', [
+                { tag: 'market:catfee', meaning: 'Kept.' },
+                { tag: 'market:catfee', meaning: 'A second definition of the same tag.' },
+                { tag: 'bad,tag', meaning: 'Commas are not allowed in tags.' },
+                { tag: 'market:netts', meaning: '   ' },
+                { tag: 'market:sohu', meaning: 'x'.repeat(501) }
+            ]);
+
+            expect(result).toEqual({ source: 'rental-markets', defined: 1, removed: 0, rejected: 4 });
+            const definitions = await service.getTagDefinitions(['market:catfee']);
+            expect(definitions.map((definition) => definition.meaning)).toEqual(['Kept.']);
+        });
+
+        it('requires a source id', async () => {
+            await expect(service.syncDefinitions('  ', [])).rejects.toThrow(/non-empty source id/);
+        });
+    });
+
+    describe('getAddressesByTagPrefix', () => {
+        it('returns live assignments whose tag starts with the prefix, matched from the start and literally', async () => {
+            await service.syncSource('rental-markets', [
+                { address: ADDRESS_A, tag: 'market:catfee:pool-wallet' },
+                { address: ADDRESS_B, tag: 'market:catfee:treasury' },
+                { address: ADDRESS_A, tag: 'market:catfee-pro:treasury' },
+                { address: ADDRESS_B, tag: 'old:market:catfee:x' }
+            ], 'snapshot');
+
+            const result = await service.getAddressesByTagPrefix({ prefix: 'market:catfee:' });
+
+            expect(result.map((record) => [record.address, record.tag])).toEqual([
+                [ADDRESS_A, 'market:catfee:pool-wallet'],
+                [ADDRESS_B, 'market:catfee:treasury']
+            ]);
+            // A regex character in the prefix matches only itself.
+            expect(await service.getAddressesByTagPrefix({ prefix: 'market:catfee.' })).toEqual([]);
+        });
+
+        it('leaves out a withdrawn assignment and stops at the limit', async () => {
+            await service.syncSource('rental-markets', [
+                { address: ADDRESS_A, tag: 'market:netts:operator' },
+                { address: ADDRESS_B, tag: 'market:netts:pool-wallet' }
+            ], 'snapshot');
+            await service.syncSource('rental-markets', [], 'delta', [{ address: ADDRESS_A, tag: 'market:netts:operator' }]);
+
+            expect((await service.getAddressesByTagPrefix({ prefix: 'market:netts:' })).map((record) => record.tag))
+                .toEqual(['market:netts:pool-wallet']);
+            await service.syncSource('rental-markets', [{ address: ADDRESS_A, tag: 'market:netts:treasury' }], 'delta');
+            expect(await service.getAddressesByTagPrefix({ prefix: 'market:netts:', limit: 1 })).toHaveLength(1);
+        });
+
+        it('refuses an empty or comma-bearing prefix', async () => {
+            await expect(service.getAddressesByTagPrefix({ prefix: ' ' })).rejects.toThrow(/Invalid tag/);
+            await expect(service.getAddressesByTagPrefix({ prefix: 'a,b' })).rejects.toThrow(/commas/);
+        });
+    });
 });

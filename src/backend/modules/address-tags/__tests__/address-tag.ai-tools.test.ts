@@ -86,6 +86,92 @@ describe('address tag AI tools', () => {
         ]);
     });
 
+    it('gives a tag the meaning of a source still asserting it, and none to a human or withdrawn claim', async () => {
+        const marketMeaning = 'Observed taking part in the catfee market in the pool-wallet role.';
+        const getTagsByAddresses = vi.fn(async () => [
+            tagRecord({ tag: 'market:catfee:pool-wallet', manual: false, sources: [{ id: 'rental-markets', observedAt: new Date('2026-10-01T00:00:00Z') }] }),
+            tagRecord({ address: PEER, tag: 'market:catfee:pool-wallet', manual: true, sources: [{ id: 'rental-markets', observedAt: new Date('2026-09-01T00:00:00Z'), withdrawnAt: new Date('2026-09-02T00:00:00Z') }] })
+        ]);
+        const getTagDefinitions = vi.fn(async () => [
+            { source: 'rental-markets', tag: 'market:catfee:pool-wallet', meaning: marketMeaning, updatedAt: new Date('2026-10-01T00:00:00Z') }
+        ]);
+        const tool = buildTools({ getTagsByAddresses, getTagDefinitions })[AI_TOOL_NAMES.getTags];
+
+        const result = await tool.handler({ addresses: [WALLET, PEER] }) as { addresses: Array<{ address: string; tags: Array<Record<string, unknown>> }> };
+
+        expect(getTagDefinitions).toHaveBeenCalledWith(['market:catfee:pool-wallet']);
+        expect(result.addresses[0].tags[0]).toEqual(expect.objectContaining({ tag: 'market:catfee:pool-wallet', meaning: marketMeaning }));
+        // The human claim on PEER outlived the source's withdrawn one, so the source's meaning does not apply to it.
+        expect(result.addresses[1].tags[0]).not.toHaveProperty('meaning');
+    });
+
+    it('answers without meanings when the definition read fails', async () => {
+        const getAddressesByTags = vi.fn(async () => [
+            tagRecord({ tag: 'market:catfee:treasury', manual: false, sources: [{ id: 'rental-markets', observedAt: new Date('2026-10-01T00:00:00Z') }] })
+        ]);
+        const getTagDefinitions = vi.fn(async () => {
+            throw new Error('definitions unavailable');
+        });
+        const tool = buildTools({ getAddressesByTags, getTagDefinitions })[AI_TOOL_NAMES.findByTag];
+
+        const result = await tool.handler({ tags: ['market:catfee:treasury'] }) as Record<string, unknown>;
+
+        expect(result).toEqual(expect.objectContaining({ success: true, totalAddresses: 1 }));
+        expect((result.addresses as Array<{ tags: Array<Record<string, unknown>> }>)[0].tags[0]).not.toHaveProperty('meaning');
+    });
+
+    it('finds every address carrying a tag that starts with a prefix, capped and saying so', async () => {
+        const getAddressesByTagPrefix = vi.fn(async () => [
+            tagRecord({ tag: 'market:catfee:pool-wallet', manual: false, sources: [{ id: 'rental-markets', observedAt: new Date('2026-10-01T00:00:00Z') }] }),
+            tagRecord({ address: PEER, tag: 'market:catfee:treasury', manual: false, sources: [{ id: 'rental-markets', observedAt: new Date('2026-10-01T00:00:00Z') }] })
+        ]);
+        const getAddressesByTags = vi.fn();
+        const tool = buildTools({ getAddressesByTagPrefix, getAddressesByTags, getTagDefinitions: vi.fn(async () => []) })[AI_TOOL_NAMES.findByTag];
+
+        const result = await tool.handler({ prefix: 'market:catfee:' }) as Record<string, unknown>;
+
+        expect(getAddressesByTagPrefix).toHaveBeenCalledWith({ prefix: 'market:catfee:', limit: 1000 });
+        expect(getAddressesByTags).not.toHaveBeenCalled();
+        expect(result).toEqual(expect.objectContaining({
+            success: true,
+            prefix: 'market:catfee:',
+            totalAddresses: 2,
+            truncated: false,
+            assignmentsCapped: false
+        }));
+    });
+
+    it('reports a prefix lookup that reached the assignment cap as incomplete', async () => {
+        const capped = Array.from({ length: 1000 }, () => tagRecord({ tag: 'market:catfee:pool-wallet' }));
+        const tool = buildTools({ getAddressesByTagPrefix: vi.fn(async () => capped), getTagDefinitions: vi.fn(async () => []) })[AI_TOOL_NAMES.findByTag];
+
+        const result = await tool.handler({ prefix: 'market:' }) as Record<string, unknown>;
+
+        expect(result).toEqual(expect.objectContaining({ truncated: true, assignmentsCapped: true }));
+    });
+
+    it('refuses tags and prefix together, and neither, without looking anything up', async () => {
+        const getAddressesByTags = vi.fn();
+        const getAddressesByTagPrefix = vi.fn();
+        const tool = buildTools({ getAddressesByTags, getAddressesByTagPrefix })[AI_TOOL_NAMES.findByTag];
+
+        const both = await tool.handler({ tags: ['ofac:sdn'], prefix: 'market:' }) as Record<string, unknown>;
+        const neither = await tool.handler({}) as Record<string, unknown>;
+
+        expect(both).toEqual(expect.objectContaining({ success: false, errorKind: 'input' }));
+        expect(neither).toEqual(expect.objectContaining({ success: false, errorKind: 'input' }));
+        expect(getAddressesByTags).not.toHaveBeenCalled();
+        expect(getAddressesByTagPrefix).not.toHaveBeenCalled();
+    });
+
+    it('tells the model a market tag records an association and not ownership', () => {
+        const tools = buildTools({});
+
+        for (const tool of Object.values(tools)) {
+            expect(tool.description, tool.name).toContain('who owns or controls the address is unknown');
+        }
+    });
+
     it('refuses an address whose checksum is wrong, without looking anything up', async () => {
         const getTagsByAddresses = vi.fn();
         const tool = buildTools({ getTagsByAddresses })[AI_TOOL_NAMES.getTags];

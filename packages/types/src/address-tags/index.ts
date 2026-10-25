@@ -19,3 +19,7 @@ export type {
     IAddressTagDeleteByTagResult,
     IAddressTagService
 } from './IAddressTagService.js';
+export type { IAddressTagDefinition } from './IAddressTagDefinition.js';
+export type { IAddressTagSourceDefinition } from './IAddressTagSourceDefinition.js';
+export type { IAddressTagDefinitionSyncResult } from './IAddressTagDefinitionSyncResult.js';
+export type { IAddressTagPrefixQuery } from './IAddressTagPrefixQuery.js';

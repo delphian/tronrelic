@@ -10,6 +10,11 @@
  * implementation.
  */
 
+import type { IAddressTagDefinition } from './IAddressTagDefinition.js';
+import type { IAddressTagDefinitionSyncResult } from './IAddressTagDefinitionSyncResult.js';
+import type { IAddressTagPrefixQuery } from './IAddressTagPrefixQuery.js';
+import type { IAddressTagSourceDefinition } from './IAddressTagSourceDefinition.js';
+
 /**
  * The identity of one tag assignment — a `(address, tag)` pair. Used both as
  * the stored record's key and as the input shape for create/delete calls.
@@ -300,6 +305,19 @@ export interface IAddressTagService {
     getAddressesByTags(tags: string[]): Promise<IAddressTag[]>;
 
     /**
+     * Reverse lookup by the start of a tag: the live assignments whose tag
+     * begins with the prefix, such as every `market:catfee:` role tag.
+     *
+     * Unlike the exact lookup this one is capped, because a short prefix can
+     * match a whole source's holdings. A caller that receives `limit`
+     * assignments should treat the answer as possibly incomplete.
+     *
+     * @param query - The prefix and the most assignments to return.
+     * @returns Matching live assignments, ordered by tag then address.
+     */
+    getAddressesByTagPrefix(query: IAddressTagPrefixQuery): Promise<IAddressTag[]>;
+
+    /**
      * Every assignment one machine source currently asserts, whatever the
      * tag text. A source that publishes tags through `syncSource` needs this
      * to find what it holds before withdrawing what it no longer wants,
@@ -450,4 +468,35 @@ export interface IAddressTagService {
         mode: 'snapshot' | 'delta',
         withdrawn?: IAddressTagAssertion[]
     ): Promise<IAddressTagSyncResult>;
+
+    /**
+     * Replace everything one machine source says its tags mean.
+     *
+     * The definitions are the source's complete current set: a stored
+     * definition the batch does not repeat is removed, so a source that stops
+     * writing a tag stops explaining it too, and an empty batch clears the
+     * source's definitions. Only this source's definitions are touched.
+     *
+     * Invalid definitions, and a second definition of a tag already in the
+     * batch, are counted as `rejected` and skipped rather than failing the
+     * batch, the same as `syncSource` does with assertions.
+     *
+     * @param source - The source id, as passed to `syncSource`.
+     * @param definitions - What each tag the source writes means.
+     * @returns Counts of what the pass changed, for the source's log line.
+     */
+    syncDefinitions(source: string, definitions: IAddressTagDefinition[]): Promise<IAddressTagDefinitionSyncResult>;
+
+    /**
+     * Look up what the sources that define them say the given tags mean.
+     *
+     * A tag may be defined by more than one source, so each result names its
+     * source. A reader should show a meaning only beside an assignment that
+     * source still asserts, because a definition explains the source's own
+     * claim and nothing a human or another source wrote.
+     *
+     * @param tags - Tag values to look up; an undefined tag simply contributes nothing.
+     * @returns Every stored definition of the given tags, ordered by tag then source.
+     */
+    getTagDefinitions(tags: string[]): Promise<IAddressTagSourceDefinition[]>;
 }

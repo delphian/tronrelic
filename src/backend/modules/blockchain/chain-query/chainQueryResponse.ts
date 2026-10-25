@@ -15,6 +15,8 @@
  * - The tool's own payload, with `truncated` and `nextCursor` where it pages.
  * - `tokens`: metadata for every token mentioned, so rows carry only the key.
  * - `addressTags`: active tags on every address mentioned that has one.
+ * - `tagMeanings`: what the asserting source says each of those tags means,
+ *   present only when at least one has a meaning.
  * - `notes`: plain-language caveats that apply to this particular answer.
  *
  * @module backend/modules/blockchain/chain-query/chainQueryResponse
@@ -99,6 +101,7 @@ export function buildChainResponse(parts: IChainResponseParts, payload: Record<s
         ...payload,
         tokens: Object.fromEntries(parts.tokens),
         addressTags: parts.tags.tags,
+        ...(parts.tags.meanings ? { tagMeanings: parts.tags.meanings } : {}),
         notes
     };
 }
