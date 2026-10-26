@@ -13,7 +13,7 @@
 
 ## Pipeline status
 
-`SystemMonitorService.getPipelineStatus()` builds the `/system` Pipeline tab's payload (`IPipelineStatus`) from the blockchain module's `PipelineTelemetry`, the running emitter and committer, the `blockchain:sync` job's own scheduler state, the TronGrid receipts switch, and the sync state document. **It never calls TronGrid.** `getBlockchainSyncStatus()` asks TronGrid for the chain head on every request through the queue block sync shares, so a console polling it competed with sync and slowed down most when TronGrid was struggling. Lags here are measured from each block's own header timestamp instead, the same way sync classifies a block as live work. Payload reference: [system-api-blockchain.md](../../../../docs/system/system-api-blockchain.md#get-blockchainpipeline--pipeline-payload).
+`SystemMonitorService.getPipelineStatus()` builds the `/system` Pipeline tab's payload (`IPipelineStatus`) from the blockchain module's `PipelineTelemetry`, the running emitter and committer, the `blockchain:sync` job's own scheduler state, the TronGrid receipts switch, the sync state document, and the chain data repair job's last result, which is held in memory so the poll adds no ClickHouse query. **It never calls TronGrid.** `getBlockchainSyncStatus()` asks TronGrid for the chain head on every request through the queue block sync shares, so a console polling it competed with sync and slowed down most when TronGrid was struggling. Lags here are measured from each block's own header timestamp instead, the same way sync classifies a block as live work. Payload reference: [system-api-blockchain.md](../../../../docs/system/system-api-blockchain.md#get-blockchainpipeline--pipeline-payload).
 
 ## Container metrics contract
 

@@ -39,10 +39,10 @@
  * whose drain timed out — leaves the block committed in MongoDB, missing from
  * these tables, and absent from `_ingest_gap`. Nothing fetches it again,
  * because the missing-block scan only looks for a block document and MongoDB
- * already has one. Closing that needs a startup check comparing
- * `_ingest_state` with the MongoDB cursor, which this writer does not do
- * today. The cost is bounded because this is a short-term copy rather than a
- * system of record.
+ * already has one. The writer does not close that itself: the chain data
+ * repair job (`ChainDataReconciler.ts`) finds such blocks in ClickHouse every
+ * few minutes and refetches them, so they are missing for minutes rather than
+ * for good.
  *
  * @module backend/modules/blockchain/chain-data/ChainDataWriter
  */

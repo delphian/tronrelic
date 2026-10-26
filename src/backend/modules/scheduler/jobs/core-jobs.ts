@@ -29,13 +29,14 @@ import { SchedulerService } from '../services/scheduler.service.js';
 /**
  * Register all core scheduler jobs.
  *
- * This function registers the 9 built-in jobs:
+ * This function registers the 10 built-in jobs:
  * - chain-parameters:fetch - Fetch TRON chain parameters every 10 minutes
  * - usdt-parameters:fetch - Fetch USDT transfer energy cost every 10 minutes
  * - blockchain:sync - Sync latest blocks every 15 seconds
  * - blockchain:prune-transactions - Remove expired transactions in small batches every minute
  * - blockchain:prune - Remove old blocks every hour
  * - blockchain:token-metadata - Resolve active TRC-20 token metadata into ClickHouse every hour
+ * - blockchain:chain-data-reconcile - Refetch blocks missing from the ClickHouse chain data every 5 minutes
  * - network-activity:rollup - Pre-aggregate the network-activity widget every 5 minutes
  * - cache:cleanup - Clean expired cache entries every hour
  * - system-logs:cleanup - Clean old system logs every hour
@@ -133,6 +134,18 @@ export async function registerCoreJobs(
     // without ClickHouse.
     scheduler.register('blockchain:token-metadata', '17 * * * *', async () => {
         await blockchainService.refreshTokenMetadata();
+    }, { logger: blockchainLogger });
+
+    // Chain data repair: every five minutes, one minute after the
+    // network-activity rollup. ClickHouse receives each block once, as a side
+    // effect of the MongoDB commit, so a block that missed that hand-off stays
+    // missing unless something looks for it. Each run asks ClickHouse locally
+    // for holes and partly written blocks and makes no TronGrid call when it
+    // finds none; each missing block costs two calls on the queue block sync
+    // shares, so repairs wait while sync is behind and are capped per run.
+    // Does nothing without ClickHouse.
+    scheduler.register('blockchain:chain-data-reconcile', '1,6,11,16,21,26,31,36,41,46,51,56 * * * *', async () => {
+        await blockchainService.reconcileChainData();
     }, { logger: blockchainLogger });
 
     // Network-activity rollup: every 5 minutes. Pre-aggregates the

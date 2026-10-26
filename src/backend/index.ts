@@ -79,6 +79,20 @@ import type { Express } from 'express';
 import type { IDatabaseService, IMenuService, IMenuNode, IPluginManifest, IServiceRegistry, IHookRegistry, IContentRegistry, IContentRouter, IClickHouseService } from '@/types';
 import axios from 'axios';
 
+/**
+ * How long shutdown waits for blocks already committed to MongoDB to reach the
+ * ClickHouse chain data before the process exits.
+ *
+ * Five seconds was too short in production: a deploy while sync was behind left
+ * hundreds of blocks waiting and the drain timed out, so they were missing from
+ * ClickHouse with no gap recorded. The chain data repair job refills such blocks
+ * now, but every block written here is one it does not have to refetch. The
+ * backend container's `stop_grace_period` in `docker-compose.yml` is 30 seconds,
+ * which leaves time after this for the rest of shutdown before Docker kills the
+ * process; raise the two together.
+ */
+const CHAIN_DATA_SHUTDOWN_DRAIN_MS = 20_000;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Port Diagnostics
 // ─────────────────────────────────────────────────────────────────────────────
@@ -244,7 +258,7 @@ async function bootstrap(): Promise<void> {
             // waits a bounded time for blocks already committed to MongoDB to
             // finish their ClickHouse chain data write. The order of those steps
             // lives inside the service that owns the pipeline.
-            await BlockchainService.getInstance().shutdown(5000);
+            await BlockchainService.getInstance().shutdown(CHAIN_DATA_SHUTDOWN_DRAIN_MS);
             ctx.server.close();
             await disconnectRedis();
             process.exit(0);

@@ -32,6 +32,7 @@ The full shape is `IPipelineStatus` in `packages/types/src/pipeline/`, documente
 | `commit` | Commit queue, failures since boot, and commit rate |
 | `receipts` | Whether `fetchBlockReceipts` is on, and outcome counts and coverage over recent blocks |
 | `stages` | Median, 95th percentile, and max per stage over recent blocks |
+| `chainData` | The chain data repair job's last run (`IPipelineChainData`): status, blocks missing from ClickHouse and written only in part, how many it refetched, how many remain, and how many runs in a row found a gap. Held in memory, so reading it adds no ClickHouse query; `null` without ClickHouse. A gap that outlasts two runs is a `chain-data` health reason |
 | `backfill`, `errors`, `recentBlocks`, `observers` | Backfill queue size and sample, recent failures newest first, recent blocks with receipt outcome and decoded event counts, and observer statistics |
 
 ```bash

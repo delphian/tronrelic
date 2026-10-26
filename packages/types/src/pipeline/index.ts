@@ -7,6 +7,7 @@
 export type { IPipelineStatus } from './IPipelineStatus.js';
 export type { IPipelineHealth } from './IPipelineHealth.js';
 export type { IPipelineHealthReason } from './IPipelineHealthReason.js';
+export type { IPipelineChainData } from './IPipelineChainData.js';
 export type { IPipelineError } from './IPipelineError.js';
 export type { IPipelineBlockRecord } from './IPipelineBlockRecord.js';
 export type { IPipelineStageTiming } from './IPipelineStageTiming.js';

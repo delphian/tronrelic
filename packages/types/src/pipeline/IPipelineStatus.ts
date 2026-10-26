@@ -1,4 +1,5 @@
 import type { IObserverStats } from '../observer/IObserverStats.js';
+import type { IPipelineChainData } from './IPipelineChainData.js';
 import type { IPipelineBlockRecord } from './IPipelineBlockRecord.js';
 import type { IPipelineError } from './IPipelineError.js';
 import type { IPipelineHealth } from './IPipelineHealth.js';
@@ -147,6 +148,12 @@ export interface IPipelineStatus {
 
     /** Median and 95th percentile per stage over recent blocks, in pipeline order. */
     stages: IPipelineStageTiming[];
+
+    /**
+     * The ClickHouse chain data copy, as the repair job last checked it, or
+     * null when the deployment has no ClickHouse.
+     */
+    chainData: IPipelineChainData | null;
 
     /** Blocks waiting to be fetched again after a failure or a gap. */
     backfill: {

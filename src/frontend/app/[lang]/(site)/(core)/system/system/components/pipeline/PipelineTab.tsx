@@ -12,7 +12,8 @@
  * 1. Is it healthy? — the status banner, with reasons.
  * 2. Where is it stuck? — the heights flow from chain head to committed.
  * 3. Which stage, and why? — one card per stage with its figures, timings,
- *    and the control that acts on it.
+ *    and the control that acts on it, ending with the ClickHouse chain data
+ *    copy when the deployment has one.
  * 4. What went wrong recently? — error history, backfill, recent blocks.
  * 5. Who is downstream? — the observer table.
  *
@@ -32,6 +33,7 @@ import { FetchStage } from './FetchStage';
 import { EnrichStage } from './EnrichStage';
 import { BufferStage } from './BufferStage';
 import { CommitStage } from './CommitStage';
+import { ChainDataStage } from './ChainDataStage';
 import { PipelineErrors } from './PipelineErrors';
 import { RecentBlocksTable } from './RecentBlocksTable';
 import { ObserverTable } from './ObserverTable';
@@ -132,6 +134,7 @@ export function PipelineTab({ initialPipeline, onOpenSettings }: IPipelineTabPro
                     <EnrichStage pipeline={pipeline} onChanged={handleChanged} />
                     <BufferStage pipeline={pipeline} onOpenSettings={onOpenSettings} />
                     <CommitStage pipeline={pipeline} />
+                    <ChainDataStage pipeline={pipeline} />
                 </div>
 
                 <PipelineErrors pipeline={pipeline} />
