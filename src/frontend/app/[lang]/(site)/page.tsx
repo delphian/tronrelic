@@ -90,7 +90,10 @@ export default async function HomePage(): Promise<JSX.Element> {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }}
       />
-      {/* Widget zone for plugin-injected content below main homepage content */}
+      {/* The home page has no fixed content of its own, so the two zones
+          are its whole body. Both are drawn so a widget placed in either
+          zone on `/` renders here, as it does on every other core page. */}
+      <WidgetZone name="main-before" widgets={widgets} layout={zones['main-before']} route="/" params={{}} />
       <WidgetZone name="main-after" widgets={widgets} layout={zones['main-after']} route="/" params={{}} />
     </Page>
   );
