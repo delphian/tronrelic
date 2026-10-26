@@ -933,6 +933,9 @@ export class SystemMonitorService {
         coverageTone: resolveCoverageTone(receiptsEnabled, coveragePercent)
       },
       stages: telemetry.stages,
+      // The repair job's last result, held in memory, so this poll adds no
+      // ClickHouse query; the figures are at most one repair run old.
+      chainData: blockchain.getChainDataStatus(),
       backfill: {
         size: backfillQueue.length,
         oldest: backfillQueue[0] ?? null,

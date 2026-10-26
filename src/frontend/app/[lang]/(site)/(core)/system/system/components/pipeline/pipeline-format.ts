@@ -8,7 +8,7 @@
  * and a server locale that differed from the browser's would change the text
  * between the two renders and break hydration.
  */
-import type { PipelineReceiptOutcome, PipelineReleaseMode, PipelineTone } from '@/types';
+import type { IPipelineChainData, PipelineReceiptOutcome, PipelineReleaseMode, PipelineTone } from '@/types';
 
 /** Locale used for every number on the tab, so server and browser render the same text. */
 const NUMBER_LOCALE = 'en-US';
@@ -105,6 +105,16 @@ export const RECEIPT_OUTCOME_DISPLAY: Record<PipelineReceiptOutcome, { label: st
     partial: { label: 'Partial', tone: 'warning', hint: 'Some receipts were missing, so the block carries no decoded events' },
     failed: { label: 'Failed', tone: 'danger', hint: 'Receipts were on but none came back' },
     disabled: { label: 'Off', tone: 'neutral', hint: 'Receipts were switched off for this block' }
+};
+
+/** What each chain data repair outcome means, for the Chain data card. */
+export const CHAIN_DATA_STATUS_DISPLAY: Record<IPipelineChainData['status'], { label: string; tone: BadgeTone; hint: string }> = {
+    'never-run': { label: 'Not checked yet', tone: 'neutral', hint: 'The repair job has not run since the backend started' },
+    clean: { label: 'Complete', tone: 'success', hint: 'No block is missing from the checked window' },
+    repaired: { label: 'Repaired', tone: 'success', hint: 'Every missing block found was refetched' },
+    incomplete: { label: 'Repairing', tone: 'warning', hint: 'Some missing blocks remain for the next runs' },
+    skipped: { label: 'Waiting for sync', tone: 'info', hint: 'Sync is behind, so missing blocks were counted but not refetched' },
+    failed: { label: 'Check failed', tone: 'danger', hint: 'The repair job could not read ClickHouse' }
 };
 
 /** What each buffer release mode means, for the Buffer stage card. */

@@ -6,7 +6,7 @@
  * is, and which levels make the pipeline "stalled" rather than "degraded".
  */
 import { describe, it, expect } from 'vitest';
-import type { IPipelineStatus } from '@/types';
+import type { IPipelineChainData, IPipelineStatus } from '@/types';
 import {
     resolveCoverageTone,
     resolveFeedLagTone,
@@ -66,6 +66,7 @@ function healthyStatus(): Omit<IPipelineStatus, 'health'> {
         commit: { queued: 0, failures: 0, commitBlocksPerMinute: 20 },
         receipts: { enabled: true, window: 300, complete: 300, partial: 0, failed: 0, disabled: 0, empty: 0, coveragePercent: 100, coverageTone: 'success' },
         stages: [],
+        chainData: null,
         backfill: { size: 0, oldest: null, newest: null, sample: [] },
         errors: [],
         recentBlocks: [],
@@ -161,6 +162,66 @@ describe('resolvePipelineHealth', () => {
         }];
 
         expect(resolvePipelineHealth(status, NOW)).toMatchObject({ level: 'degraded', reasons: [{ stage: 'observers' }] });
+    });
+
+    it('reports blocks missing from the chain data only once they outlast a repair run', () => {
+        /**
+         * Build a chain data snapshot with blocks still missing.
+         *
+         * @param consecutiveRunsWithGaps - Runs in a row that found the gap.
+         * @returns The snapshot.
+         */
+        const withGap = (consecutiveRunsWithGaps: number): IPipelineChainData => ({
+            status: 'incomplete',
+            message: null,
+            lastRunAt: new Date(NOW - 60_000).toISOString(),
+            lastRunDurationMs: 1200,
+            windowDays: 13,
+            missingBlocks: 920,
+            partialBlocks: 0,
+            missingLast24h: 920,
+            oldestMissing: 87426729,
+            newestMissing: 87427650,
+            repaired: 100,
+            repairFailures: 0,
+            remaining: 820,
+            consecutiveRunsWithGaps
+        });
+
+        const first = healthyStatus();
+        first.chainData = withGap(1);
+        expect(resolvePipelineHealth(first, NOW).level).toBe('healthy');
+
+        const second = healthyStatus();
+        second.chainData = withGap(2);
+        const health = resolvePipelineHealth(second, NOW);
+        expect(health).toMatchObject({ level: 'degraded', reasons: [{ level: 'warning', stage: 'chain-data' }] });
+        expect(health.reasons[0].message).toContain('820 blocks are still missing');
+    });
+
+    it('reports a failed chain data check without calling the pipeline stalled', () => {
+        const status = healthyStatus();
+        status.chainData = {
+            status: 'failed',
+            message: 'The chain data check failed: connection refused',
+            lastRunAt: new Date(NOW - 60_000).toISOString(),
+            lastRunDurationMs: 10,
+            windowDays: 13,
+            missingBlocks: 0,
+            partialBlocks: 0,
+            missingLast24h: 0,
+            oldestMissing: null,
+            newestMissing: null,
+            repaired: 0,
+            repairFailures: 0,
+            remaining: 0,
+            consecutiveRunsWithGaps: 0
+        };
+
+        expect(resolvePipelineHealth(status, NOW)).toMatchObject({
+            level: 'degraded',
+            reasons: [{ stage: 'chain-data', message: 'The chain data check failed: connection refused' }]
+        });
     });
 
     it('lists danger reasons before warnings', () => {

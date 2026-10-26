@@ -45,6 +45,13 @@ export const BACKFILL_WARNING_SIZE = 20;
 export const OBSERVER_QUEUE_WARNING_FRACTION = 0.5;
 
 /**
+ * Repair runs in a row that must find blocks missing from the ClickHouse chain
+ * data before it counts against health. One run can always find a block that
+ * went missing moments before it, so only a gap that outlasts a run is reported.
+ */
+export const CHAIN_DATA_GAP_RUNS = 2;
+
+/**
  * Tone for ingestion lag: how many blocks old the newest fetched block is.
  *
  * Healthy ingestion keeps the newest fetched block within a sync tick of the
@@ -135,7 +142,7 @@ export function resolveCoverageTone(enabled: boolean, coveragePercent: number | 
  */
 export function resolvePipelineHealth(status: Omit<IPipelineStatus, 'health'>, now: number, uptimeMs: number = 0): IPipelineHealth {
     const reasons: IPipelineHealthReason[] = [];
-    const { heights, sync, buffer, commit, receipts, backfill, errors, observers, config } = status;
+    const { heights, sync, buffer, commit, receipts, backfill, errors, observers, config, chainData } = status;
 
     /**
      * Whether an ISO timestamp falls inside the recent window.
@@ -242,6 +249,20 @@ export function resolvePipelineHealth(status: Omit<IPipelineStatus, 'health'>, n
             stage: 'commit',
             message: `${recentCommitErrors.length} commit${recentCommitErrors.length === 1 ? '' : 's'} failed in the last 10 minutes; those blocks reached no surface.`
         });
+    }
+
+    // Chain data: is the ClickHouse copy complete?
+    if (chainData) {
+        if (chainData.status === 'failed') {
+            reasons.push({ level: 'warning', stage: 'chain-data', message: chainData.message ?? 'The last chain data check failed.' });
+        } else if (chainData.remaining > 0 && chainData.consecutiveRunsWithGaps >= CHAIN_DATA_GAP_RUNS) {
+            reasons.push({
+                level: 'warning',
+                stage: 'chain-data',
+                message: `${chainData.remaining} block${chainData.remaining === 1 ? ' is' : 's are'} still missing from the ClickHouse chain data after ${chainData.consecutiveRunsWithGaps} repair runs`
+                    + (chainData.message ? `: ${chainData.message}` : '.')
+            });
+        }
     }
 
     // Observers: is anyone falling behind?

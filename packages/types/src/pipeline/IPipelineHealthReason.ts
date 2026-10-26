@@ -12,9 +12,10 @@ export interface IPipelineHealthReason {
     /**
      * The pipeline stage the reason belongs to, matching the stage cards on
      * the console: fetching blocks, enriching them with receipts, holding them
-     * in the buffer, committing them, or delivering them to observers.
+     * in the buffer, committing them, copying them into ClickHouse, or
+     * delivering them to observers.
      */
-    stage: 'fetch' | 'enrich' | 'buffer' | 'commit' | 'observers';
+    stage: 'fetch' | 'enrich' | 'buffer' | 'commit' | 'chain-data' | 'observers';
 
     /** Plain-English explanation, including the figure that triggered it. */
     message: string;

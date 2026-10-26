@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { AnyBulkWriteOperation } from 'mongoose';
 import type { Redis as RedisClient } from 'ioredis';
 import type { TronTransactionDocument } from '@/shared';
-import type { ITransaction, ITransactionPersistencePayload, ITransactionCategoryFlags, IDatabaseService, IBlockchainService, IActivatingTransaction, IActivationAncestry, ActivationClimbStopReason, IActivationClimbOptions, IBlockData, IClickHouseService } from '@/types';
+import type { ITransaction, ITransactionPersistencePayload, ITransactionCategoryFlags, IDatabaseService, IBlockchainService, IActivatingTransaction, IActivationAncestry, ActivationClimbStopReason, IActivationClimbOptions, IBlockData, IClickHouseService, IPipelineChainData } from '@/types';
 import { ProcessedTransaction } from '@/types';
 import { TransactionModel, type TransactionDoc, type TransactionFields } from '../../database/models/transaction-model.js';
 import { SyncStateModel, type SyncStateDoc, type SyncStateFields } from '../../database/models/sync-state-model.js';
@@ -31,6 +31,8 @@ import { PipelineTelemetry, resolveReceiptOutcome } from './pipeline-telemetry.j
 import { ChainDataWriter } from './chain-data/ChainDataWriter.js';
 import { TokenMetadataRefresher } from './chain-data/TokenMetadataRefresher.js';
 import { buildChainDataRows, type IChainDataRows } from './chain-data/buildChainDataRows.js';
+import { ChainDataReconciler } from './chain-data/ChainDataReconciler.js';
+import { normalizeBlockTimestamp } from './normalizeBlockTimestamp.js';
 import { WebSocketService } from '../../services/websocket.service.js';
 import { logger } from './logger.js';
 import { env } from '../../config/env.js';
@@ -143,6 +145,19 @@ interface TransactionBuildContext {
     receiptsFetched: boolean;
 }
 
+/**
+ * What fetching one block's receipts came to, as block sync and the chain data
+ * repair job both need it.
+ */
+interface IBlockReceiptLoad {
+    /** Whether an operator has the receipts switch on. */
+    enabled: boolean;
+    /** The receipts that came back, keyed by transaction id; empty when the switch is off. */
+    receipts: Map<string, TronGridTransactionInfo>;
+    /** Whether every transaction in the block got a receipt, or the block is empty. */
+    complete: boolean;
+}
+
 
 type TransactionAddress = TransactionDoc['from'];
 type TransactionResource = TransactionDoc['energy'];
@@ -234,6 +249,13 @@ export class BlockchainService implements IBlockchainService {
      * with the chain data writer, since it reads the ledger that writer fills.
      */
     private tokenMetadata: TokenMetadataRefresher | null = null;
+
+    /**
+     * Finds blocks missing from the ClickHouse chain data and refetches them,
+     * or null when the deployment has no ClickHouse. Attached with the writer,
+     * because the rows it refetches go through that writer.
+     */
+    private chainDataReconciler: ChainDataReconciler | null = null;
 
     /**
      * The pacing mode of the most recently processed block, kept separate from
@@ -413,7 +435,8 @@ export class BlockchainService implements IBlockchainService {
      * silently leave the chain data copy off for the life of the process. A
      * second call keeps the existing writer, because replacing it would drop
      * the blocks it is holding. The token metadata refresher is attached at the
-     * same moment, because it reads the transfer ledger the writer fills.
+     * same moment, because it reads the transfer ledger the writer fills, and so
+     * is the repair job, because it writes refetched blocks through that writer.
      *
      * @param clickhouse - The ClickHouse service the writer creates its tables
      *                     and writes blocks through.
@@ -422,8 +445,42 @@ export class BlockchainService implements IBlockchainService {
         if (this.chainData === null) {
             this.chainData = new ChainDataWriter(clickhouse, { provider: 'trongrid' });
             this.tokenMetadata = new TokenMetadataRefresher(clickhouse, this.tronClient, { provider: 'trongrid' });
+            this.chainDataReconciler = new ChainDataReconciler(clickhouse, this, this.chainData, {
+                // Repairs share the TronGrid queue with sync, so they wait
+                // until sync is treating blocks as live work again. Unknown,
+                // as right after a restart, counts as not caught up.
+                isSyncCaughtUp: () => this.getSyncMode() === 'live'
+            });
             logger.info('ClickHouse chain data copy is on');
         }
+    }
+
+    /**
+     * Find blocks missing from the ClickHouse chain data and refetch them.
+     *
+     * Run by the `blockchain:chain-data-reconcile` job. A deployment without
+     * ClickHouse has no chain data to check, so the run does nothing there.
+     *
+     * @returns Resolves when the run finishes; rejects when the check itself
+     *          failed, so the scheduler records the run as failed.
+     */
+    public async reconcileChainData(): Promise<void> {
+        if (this.chainDataReconciler) {
+            await this.chainDataReconciler.run();
+        } else {
+            logger.debug('Chain data repair skipped: ClickHouse chain data is off');
+        }
+    }
+
+    /**
+     * What the chain data repair job last found and did, for the `/system`
+     * Pipeline tab.
+     *
+     * @returns The repair job's snapshot, or null when the deployment has no
+     *          ClickHouse and so no chain data to check.
+     */
+    public getChainDataStatus(): IPipelineChainData | null {
+        return this.chainDataReconciler ? this.chainDataReconciler.getSnapshot() : null;
     }
 
     /**
@@ -2298,29 +2355,10 @@ export class BlockchainService implements IBlockchainService {
 
             // Parse and normalize block timestamp
             const transactions = block.transactions ?? [];
-            let blockTime: Date;
-            try {
-                const rawTimestamp = block.block_header.raw_data.timestamp;
-                let normalizedTimestamp = rawTimestamp;
-
-                if (typeof rawTimestamp === 'number') {
-                    if (rawTimestamp > 9_999_999_999_999) {
-                        normalizedTimestamp = Math.floor(rawTimestamp / 1_000);
-                    }
-
-                    if (normalizedTimestamp > 9_999_999_999_999) {
-                        normalizedTimestamp = Math.floor(normalizedTimestamp / 1_000);
-                    }
-                }
-
-                blockTime = new Date(normalizedTimestamp);
-
-                if (isNaN(blockTime.getTime())) {
-                    throw new Error('Invalid normalized block timestamp');
-                }
-            } catch (dateError) {
-                logger.fatal({ blockNumber, timestamp: block.block_header.raw_data.timestamp, dateError }, 'Invalid block timestamp');
-                throw new Error(`Invalid timestamp in block ${blockNumber}: ${block.block_header.raw_data.timestamp} (${dateError instanceof Error ? dateError.message : String(dateError)})`);
+            const blockTime = normalizeBlockTimestamp(block.block_header.raw_data.timestamp);
+            if (blockTime === null) {
+                logger.fatal({ blockNumber, timestamp: block.block_header.raw_data.timestamp }, 'Invalid block timestamp');
+                throw new Error(`Invalid timestamp in block ${blockNumber}: ${block.block_header.raw_data.timestamp}`);
             }
 
             // Stage 2: Get TRX price
@@ -2340,21 +2378,8 @@ export class BlockchainService implements IBlockchainService {
             // shape of the documents it writes. Off by default, so a deployment
             // that never touches the switch behaves exactly as it always has.
             stageStart = Date.now();
-            const receiptsEnabled = await this.shouldFetchBlockReceipts();
-            const receipts = receiptsEnabled
-                ? await this.fetchBlockReceipts(blockNumber, transactions.length)
-                : new Map<string, TronGridTransactionInfo>();
+            const { enabled: receiptsEnabled, receipts, complete: receiptsFetched } = await this.loadBlockReceipts(blockNumber, transactions.length);
             timings.fetchReceipts = Date.now() - stageStart;
-
-            // Recorded on the block so a consumer can tell a measured zero from
-            // an unmeasured one. A block holding no transactions is complete
-            // however the switch is set: there was nothing to retrieve, and every
-            // receipt-derived total is zero because the block is empty rather
-            // than because nobody looked. Any other block needs the switch on and
-            // a receipt for every transaction, because a fetch that failed or came
-            // back short leaves totals that undercount, and an undercount is not a
-            // measurement.
-            const receiptsFetched = transactions.length === 0 || (receiptsEnabled && receipts.size === transactions.length);
 
             const buildContext: TransactionBuildContext = {
                 priceUSD,
@@ -2770,6 +2795,78 @@ export class BlockchainService implements IBlockchainService {
         }
 
         return enabled;
+    }
+
+    /**
+     * Fetch a block's receipts when the switch is on, and judge whether they
+     * are complete.
+     *
+     * Block sync and the chain data repair job both need the same answer, and
+     * a block the repair job rewrites has to carry the same `_receipts_fetched`
+     * flag sync would have given it, so the rule lives here once.
+     *
+     * The completeness flag is recorded on the block so a consumer can tell a
+     * measured zero from an unmeasured one. A block holding no transactions is
+     * complete however the switch is set: there was nothing to retrieve, and
+     * every receipt-derived total is zero because the block is empty rather
+     * than because nobody looked. Any other block needs the switch on and a
+     * receipt for every transaction, because a fetch that failed or came back
+     * short leaves totals that undercount, and an undercount is not a
+     * measurement.
+     *
+     * @param blockNumber - The block whose receipts to fetch.
+     * @param transactionCount - How many transactions the block holds, which
+     *                           decides both whether a fetch is needed and
+     *                           whether the answer is complete.
+     * @returns Whether the switch was on, the receipts keyed by transaction id,
+     *          and whether every transaction got one.
+     */
+    private async loadBlockReceipts(blockNumber: number, transactionCount: number): Promise<IBlockReceiptLoad> {
+        const enabled = await this.shouldFetchBlockReceipts();
+        const receipts = enabled
+            ? await this.fetchBlockReceipts(blockNumber, transactionCount)
+            : new Map<string, TronGridTransactionInfo>();
+        const complete = transactionCount === 0 || (enabled && receipts.size === transactionCount);
+
+        return { enabled, receipts, complete };
+    }
+
+    /**
+     * Fetch one block from TronGrid and build its ClickHouse rows, touching
+     * nothing else.
+     *
+     * The chain data repair job calls this to refill a block missing from
+     * ClickHouse. It deliberately does not write MongoDB, move the cursor,
+     * notify observers, or record telemetry, because the block was already
+     * committed or deliberately skipped there; only its copy is missing. The
+     * rows are built exactly the way sync builds them, so a repaired block is
+     * indistinguishable from one written live.
+     *
+     * Costs one TronGrid call for the block and, when receipts are switched on
+     * and the block is not empty, one more for its receipts, both on the queue
+     * block sync shares.
+     *
+     * @param blockNumber - The block to fetch.
+     * @returns The block's rows, or a failure marker when they could not be
+     *          built, which the writer records as a gap.
+     * @throws When TronGrid does not return the block or its header has no
+     *         usable timestamp, so the caller can count the block as not repaired.
+     */
+    public async fetchChainDataRows(blockNumber: number): Promise<IChainDataRows> {
+        const block = await this.tronClient.getBlockByNumber(blockNumber);
+        const rawTimestamp = block?.block_header?.raw_data?.timestamp;
+        if (rawTimestamp === undefined || rawTimestamp === null) {
+            throw new Error(`TronGrid returned block ${blockNumber} without a header timestamp`);
+        }
+
+        const blockTime = normalizeBlockTimestamp(rawTimestamp);
+        if (blockTime === null) {
+            throw new Error(`Invalid timestamp in block ${blockNumber}: ${rawTimestamp}`);
+        }
+
+        const transactions = block.transactions ?? [];
+        const { receipts, complete } = await this.loadBlockReceipts(blockNumber, transactions.length);
+        return this.buildChainData(blockNumber, block, [...receipts.values()], blockTime, complete);
     }
 
     /**

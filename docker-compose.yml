@@ -167,6 +167,11 @@ services:
         image: ghcr.io/${GITHUB_USERNAME}/tronrelic-backend:${IMAGE_TAG:-production}
         container_name: tronrelic-backend
         restart: always
+        # Docker's default is 10 seconds before it kills the process. Shutdown
+        # waits up to 20 seconds for committed blocks to reach the ClickHouse
+        # chain data (CHAIN_DATA_SHUTDOWN_DRAIN_MS in src/backend/index.ts), so
+        # the backend needs longer than the default. Raise the two together.
+        stop_grace_period: 30s
         ports:
             # Bind to localhost only - accessible to Nginx but not external connections
             # Docker bypasses UFW, so binding to 127.0.0.1 is critical for security

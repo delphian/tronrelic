@@ -44,6 +44,7 @@ const STAGE_NAMES: Record<IPipelineHealthReason['stage'], string> = {
     enrich: 'Enrich',
     buffer: 'Buffer',
     commit: 'Commit',
+    'chain-data': 'Chain data',
     observers: 'Observers'
 };
 
