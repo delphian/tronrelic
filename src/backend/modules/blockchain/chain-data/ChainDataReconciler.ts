@@ -192,6 +192,31 @@ LIMIT ${QUERY_LIMIT}`;
 const NEWEST_SQL = `SELECT max(block_number) AS newest FROM ${CHAIN_DATA_DATABASE}.block`;
 
 /**
+ * Which of the blocks just handed to the writer ClickHouse actually holds.
+ *
+ * The same test the partial-block check uses, applied to a named list: a block
+ * counts only when its newest stored row is newer than the newest gap recorded
+ * for it, so a block the writer refused or failed to insert during this very
+ * chunk is not credited. Written as one grouped union rather than a join so the
+ * comparison does not depend on how an unmatched side is filled.
+ */
+const CONFIRM_SQL = `
+SELECT block_number
+FROM (
+    SELECT block_number, max(_ingested_at) AS written_at, toDateTime64(0, 3, 'UTC') AS gapped_at
+    FROM ${CHAIN_DATA_DATABASE}.block
+    WHERE block_number IN ({blocks:Array(UInt64)})
+    GROUP BY block_number
+    UNION ALL
+    SELECT block_number, toDateTime64(0, 3, 'UTC') AS written_at, max(recorded_at) AS gapped_at
+    FROM ${CHAIN_DATA_DATABASE}._ingest_gap
+    WHERE block_number IN ({blocks:Array(UInt64)})
+    GROUP BY block_number
+)
+GROUP BY block_number
+HAVING max(written_at) > max(gapped_at)`;
+
+/**
  * Finds blocks missing from the `tron` tables and refetches them.
  *
  * A utility rather than a singleton service: `BlockchainService` constructs the
@@ -455,8 +480,8 @@ export class ChainDataReconciler {
      *
      * @param candidates - Blocks to refetch, newest first.
      * @param startedAtMs - When the run started, for the time budget.
-     * @returns How many were handed to the writer, how many failed, and why the
-     *          run stopped early, if it did.
+     * @returns How many ClickHouse confirmed it now holds, how many failed, and
+     *          why the run stopped early, if it did.
      */
     private async repair(
         candidates: number[],
@@ -468,6 +493,7 @@ export class ChainDataReconciler {
         let stopReason: string | null = null;
 
         for (let index = 0; index < candidates.length && stopReason === null; index += this.repairChunkSize) {
+            const submitted: number[] = [];
             for (const blockNumber of candidates.slice(index, index + this.repairChunkSize)) {
                 if (stopReason !== null) {
                     break;
@@ -483,7 +509,7 @@ export class ChainDataReconciler {
                     this.sink.submit(rows);
                     consecutiveFailures = 0;
                     if (rows.failure === undefined) {
-                        repaired += 1;
+                        submitted.push(blockNumber);
                     } else {
                         failures += 1;
                     }
@@ -497,9 +523,49 @@ export class ChainDataReconciler {
                 }
             }
             await this.sink.drain();
+            const written = await this.confirmWritten(submitted);
+            repaired += written;
+            failures += submitted.length - written;
         }
 
         return { repaired, failures, stopReason };
+    }
+
+    /**
+     * Ask ClickHouse which of the blocks just handed over are really stored.
+     *
+     * Handing rows to the writer is not the same as writing them: the writer
+     * refuses a block when its queue is full and records a gap instead, and an
+     * insert that fails every attempt becomes a gap too. `drain()` resolves in
+     * both cases, so counting a submission as a repair let a run report
+     * `repaired` with nothing remaining while every block was still missing,
+     * which is the state the health banner needs to see. The writer's inserts
+     * finish before the drain returns, so a block it wrote is already queryable,
+     * and this costs one local query per chunk.
+     *
+     * A confirmation query that fails leaves its blocks uncounted, because an
+     * unconfirmed repair has to read as a repair that did not happen. The next
+     * run finds them again either way.
+     *
+     * @param blockNumbers - Blocks handed to the writer in this chunk.
+     * @returns How many of them ClickHouse now holds.
+     */
+    private async confirmWritten(blockNumbers: number[]): Promise<number> {
+        let written = 0;
+
+        if (blockNumbers.length > 0) {
+            try {
+                const rows = await this.clickhouse.query<{ block_number: string | number }>(CONFIRM_SQL, { blocks: blockNumbers });
+                written = rows.length;
+            } catch (error) {
+                logger.warn(
+                    { error, blockCount: blockNumbers.length },
+                    'Could not confirm which repaired blocks reached ClickHouse; they are counted as still missing'
+                );
+            }
+        }
+
+        return written;
     }
 
     /**

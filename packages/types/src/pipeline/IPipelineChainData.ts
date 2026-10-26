@@ -51,7 +51,7 @@ export interface IPipelineChainData {
     /** Highest block number still needing repair when the last run started, or null when none did. */
     newestMissing: number | null;
 
-    /** Blocks the last run refetched and handed to the writer. */
+    /** Blocks the last run refetched and ClickHouse confirmed it now holds. */
     repaired: number;
 
     /** Blocks the last run tried to refetch and could not. */
