@@ -65,7 +65,7 @@ export const CORE_ZONE_DESCRIPTORS: ReadonlyArray<IRegisterZoneInput> = [
         id: 'main-before',
         label: 'Above main content',
         description:
-            'Above the primary page content on core pages, menu category landing pages such as /tools, and markdown pages. Front-of-house pages only.',
+            'Above the primary page content on the home page, core pages, menu category landing pages such as /tools, and markdown pages. Front-of-house pages only.',
         host: 'core',
         layout: 'vertical',
         order: 10
@@ -74,7 +74,7 @@ export const CORE_ZONE_DESCRIPTORS: ReadonlyArray<IRegisterZoneInput> = [
         id: 'main-after',
         label: 'Below main content',
         description:
-            'Below the primary page content on core pages, menu category landing pages such as /tools, and markdown pages. Common destination for feeds and related-content widgets.',
+            'Below the primary page content on the home page, core pages, menu category landing pages such as /tools, and markdown pages. Common destination for feeds and related-content widgets.',
         host: 'core',
         layout: 'vertical',
         order: 20
