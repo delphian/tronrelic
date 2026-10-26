@@ -29,21 +29,30 @@ interface IFakeChainData {
     partial?: number[];
     /** An error every query throws, to stand in for an unreachable ClickHouse. */
     failWith?: Error;
+    /** Blocks the writer never stored, so the confirmation query leaves them out. */
+    unwritten?: number[];
 }
 
 /**
- * Build a ClickHouse fake that answers each of the reconciler's three queries.
+ * Build a ClickHouse fake that answers each of the reconciler's four queries.
  *
- * @param data - What the newest-block, hole, and partial-block queries return.
+ * The confirmation query is matched first because it also names `_ingest_gap`.
+ *
+ * @param data - What the newest-block, hole, partial-block, and confirmation
+ *               queries return.
  * @returns The fake, with a spy on `query` for assertions.
  */
 function buildClickHouse(data: IFakeChainData): { clickhouse: IClickHouseService; query: ReturnType<typeof vi.fn> } {
-    const query = vi.fn(async (sql: string) => {
+    const query = vi.fn(async (sql: string, params?: Record<string, unknown>) => {
         let rows: Record<string, unknown>[] = [];
         if (data.failWith) {
             throw data.failWith;
         }
-        if (sql.includes('AS newest')) {
+        if (sql.includes('written_at')) {
+            rows = ((params?.blocks as number[] | undefined) ?? [])
+                .filter(blockNumber => !(data.unwritten ?? []).includes(blockNumber))
+                .map(blockNumber => ({ block_number: String(blockNumber) }));
+        } else if (sql.includes('AS newest')) {
             rows = [{ newest: String(data.newest ?? NEWEST) }];
         } else if (sql.includes('lagInFrame')) {
             rows = (data.holes ?? []).map(([start, end, recent]) => ({ gap_start: String(start), gap_end: String(end), recent: recent ? 1 : 0 }));
@@ -239,6 +248,17 @@ describe('ChainDataReconciler', () => {
 
         expect(sink.submit).toHaveBeenCalledTimes(1);
         expect(snapshot).toMatchObject({ repaired: 0, repairFailures: 1, remaining: 1 });
+    });
+
+    it('does not count a submitted block as repaired when ClickHouse does not hold it', async () => {
+        const { clickhouse } = buildClickHouse({ holes: [[500, 501, true]], unwritten: [500, 501] });
+        const sink = buildSink();
+        const reconciler = new ChainDataReconciler(clickhouse, buildSource(), sink, { isSyncCaughtUp: () => true });
+
+        const snapshot = await reconciler.run();
+
+        expect(sink.submit).toHaveBeenCalledTimes(2);
+        expect(snapshot).toMatchObject({ status: 'incomplete', repaired: 0, repairFailures: 2, remaining: 2 });
     });
 
     it('resets the run streak once a run finds nothing missing', async () => {

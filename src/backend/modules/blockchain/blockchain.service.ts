@@ -2849,8 +2849,13 @@ export class BlockchainService implements IBlockchainService {
      * @param blockNumber - The block to fetch.
      * @returns The block's rows, or a failure marker when they could not be
      *          built, which the writer records as a gap.
-     * @throws When TronGrid does not return the block or its header has no
-     *         usable timestamp, so the caller can count the block as not repaired.
+     * @throws When TronGrid does not return the block, its header has no usable
+     *         timestamp, or receipts are switched on and came back short, so the
+     *         caller can count the block as not repaired. A short receipt answer
+     *         must fail the repair rather than write the block without its
+     *         receipt rows, because that rewrite would stamp a newer
+     *         `_ingested_at` than the gap recorded for it and the repair job
+     *         would stop selecting the block.
      */
     public async fetchChainDataRows(blockNumber: number): Promise<IChainDataRows> {
         const block = await this.tronClient.getBlockByNumber(blockNumber);
@@ -2865,7 +2870,19 @@ export class BlockchainService implements IBlockchainService {
         }
 
         const transactions = block.transactions ?? [];
-        const { receipts, complete } = await this.loadBlockReceipts(blockNumber, transactions.length);
+        const { enabled, receipts, complete } = await this.loadBlockReceipts(blockNumber, transactions.length);
+        if (enabled && !complete) {
+            // The receipt call answers `[]` instead of throwing when it fails, so
+            // a short answer looks like a successful one here. Writing the block
+            // anyway would store it without its `transaction_info`, `log`, and
+            // `internal_transaction` rows and stamp an `_ingested_at` newer than
+            // the gap waiting for it, which makes the partial-block query stop
+            // selecting it, so the missing rows would never be repaired. Failing
+            // the refetch leaves the hole or the gap as it was for the next run.
+            throw new Error(
+                `Receipts for block ${blockNumber} came back incomplete (${receipts.size} of ${transactions.length}); the repair is left pending`
+            );
+        }
         return this.buildChainData(blockNumber, block, [...receipts.values()], blockTime, complete);
     }
 
