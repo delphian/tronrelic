@@ -1,9 +1,9 @@
 import type { ComponentType, CSSProperties } from 'react';
-import Link from 'next/link';
 import type { IZoneLayoutConfig, ZoneGapSize } from '@/types';
 import type { WidgetData } from './types';
 import { getWidgetComponent } from './getWidgetComponent';
 import { WidgetWithContext } from './WidgetWithContext';
+import { WidgetTitle } from './WidgetTitle';
 import { cn } from '../../lib/cn';
 import styles from './WidgetZone.module.scss';
 
@@ -329,20 +329,12 @@ function WidgetItem({ widget, route, params }: WidgetRendererProps) {
                 <ScopedStyle selector={`[data-placement-id="${placementId}"]`} css={widget.customCss} />
             )}
             {widget.title && (
-                <h2 className={cn(styles.item_title, TITLE_SIZE_CLASS[widget.titleSize ?? 'heading-md'] ?? styles.item_title_md)}>
-                    {/* The bare `a` rule in globals.scss is deliberately neutral —
-                        inherited color, no underline — so a linked heading would
-                        otherwise look identical to a plain one and offer nothing to
-                        click on until the pointer is already over it. `link` is the
-                        site's global utility class for text that has to read as a
-                        link, so apply it here rather than adding an anchor rule to
-                        this module and inventing a second treatment. */}
-                    {widget.titleUrl ? (
-                        <Link href={widget.titleUrl} className="link">{widget.title}</Link>
-                    ) : (
-                        widget.title
-                    )}
-                </h2>
+                <WidgetTitle
+                    title={widget.title}
+                    titleUrl={widget.titleUrl}
+                    placementId={placementId}
+                    className={cn(styles.item_title, TITLE_SIZE_CLASS[widget.titleSize ?? 'heading-md'] ?? styles.item_title_md)}
+                />
             )}
             {widget.id === LAYOUT_GROUP_TYPE_ID ? (
                 <LayoutGroupContainer widget={widget} route={route} params={params} />

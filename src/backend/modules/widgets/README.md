@@ -124,8 +124,8 @@ The placement service emits via a callback `WidgetsModule.init()` wires to `WebS
 | `order` | number | Sort key within zone (lower renders first); plugin default `100` |
 | `layoutWeight` | number? | Relative row width as a flex weight (`flex-grow` against a zero basis) when the container lays out in a row; absent means auto width. Bounded 1–12 at the admin boundary. Cleared on restore-defaults alongside `parentId` |
 | `showOn` | `'mobile'` \| `'desktop'`? | Limits the row to pages 768px wide or narrower, or to wider ones. Absent means every screen. Survives restore-defaults. See [Screen-class limits](#screen-class-limits) |
-| `title` | string? | Operator override of widget heading |
-| `titleUrl` | string? | Operator-only root-relative URL that links the heading; only renders when `title` is set |
+| `title` | string? | Operator override of widget heading. Rendered by `WidgetTitle` through `t()` as `core` key `widgets.placement.<placementId>.title`, so it is translatable on `/system/localization` with no setup. Recreating a placement gives it a new id, and its translation does not follow |
+| `titleUrl` | string? | Operator-only root-relative URL that links the heading; only renders when `title` is set. Passed through `useLocalizedHref`, so on a translated page it keeps the language prefix when the target is published in that language |
 | `titleSize` | string? | Operator-only heading-size token (`heading-xs`\|`sm`\|`md`\|`lg`\|`xl`) for the chrome title; absent renders `heading-md` |
 | `customCss` | string? | Operator-only CSS scoped to this placement's element, up to 4,000 characters. Survives restore-defaults. See [Custom CSS](#custom-css) |
 | `instanceConfig` | object? | Per-instance config; the type's data fetcher consumes it |
