@@ -127,6 +127,24 @@ describe('ChainDataReconciler', () => {
         expect(query).toHaveBeenCalledWith(expect.stringContaining('_ingest_gap'), { windowDays: 7, ceiling: NEWEST - 50 });
     });
 
+    it('never names an aggregate after the column it reads', async () => {
+        const { clickhouse, query } = buildClickHouse({ holes: [[500, 500, true]], partial: [700] });
+        const reconciler = new ChainDataReconciler(clickhouse, buildSource(), buildSink(), { isSyncCaughtUp: () => true });
+
+        await reconciler.run();
+
+        // ClickHouse resolves a name in WHERE to a SELECT alias first, so
+        // `max(recorded_at) AS recorded_at` puts an aggregate in WHERE and the
+        // server rejects the query. A fake cannot catch that, so check the text.
+        const shadowing = query.mock.calls
+            .map(call => call[0] as string)
+            .flatMap(sql => [...sql.matchAll(/\w+\(\s*([\w.]+)\s*\)\s+AS\s+(\w+)/g)])
+            .filter(match => match[1].split('.').pop() === match[2])
+            .map(match => match[0]);
+        expect(query.mock.calls.length).toBeGreaterThanOrEqual(4);
+        expect(shadowing).toEqual([]);
+    });
+
     it('skips the hole and partial queries when the block table is empty', async () => {
         const { clickhouse, query } = buildClickHouse({ newest: 0 });
         const reconciler = new ChainDataReconciler(clickhouse, buildSource(), buildSink(), { isSyncCaughtUp: () => true });

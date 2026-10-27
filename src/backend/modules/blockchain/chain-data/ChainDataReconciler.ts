@@ -168,11 +168,17 @@ LIMIT ${QUERY_LIMIT}`;
  * Blocks stored only in part: the writer recorded a failure for the block after
  * its block row was last written, so some of its tables may be missing rows.
  * A block rewritten after the failure has a newer `_ingested_at` and drops out.
+ *
+ * The aggregate is named `gap_recorded_at` rather than `recorded_at` on
+ * purpose. ClickHouse resolves a name in `WHERE` to a `SELECT` alias before a
+ * table column, so reusing the column name turns the window filter into
+ * `max(recorded_at) >= ...` and the server rejects the query as an aggregate in
+ * `WHERE`, failing every run of the repair job.
  */
 const PARTIAL_SQL = `
 SELECT gap.block_number AS block_number
 FROM (
-    SELECT block_number, max(recorded_at) AS recorded_at
+    SELECT block_number, max(recorded_at) AS gap_recorded_at
     FROM ${CHAIN_DATA_DATABASE}._ingest_gap
     WHERE recorded_at >= now64(3) - INTERVAL {windowDays:UInt32} DAY
     GROUP BY block_number
@@ -183,7 +189,7 @@ INNER JOIN (
     WHERE timestamp >= now64(3) - INTERVAL {windowDays:UInt32} DAY
     GROUP BY block_number
 ) AS stored ON gap.block_number = stored.block_number
-WHERE stored.ingested_at < gap.recorded_at
+WHERE stored.ingested_at < gap.gap_recorded_at
   AND gap.block_number <= {ceiling:UInt64}
 ORDER BY block_number DESC
 LIMIT ${QUERY_LIMIT}`;
