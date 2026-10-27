@@ -33,12 +33,20 @@ function clip(text: string, max: number): string {
 /**
  * Render one held item's content.
  *
+ * The summary is shown on its own, labelled, whenever it differs from the
+ * body, because it is the text short-form publish sinks such as X and
+ * Telegram send in place of the body. Approving the item approves that text
+ * too, so the curator has to be able to read it. When the summary repeats the
+ * body, as it does for a short social post, it is not shown twice.
+ *
  * @param props.preview - The content descriptor from the curation envelope.
  * @returns The proof and its fields.
  */
 export function CurationPreview({ preview }: { preview: ICurationItemView['preview'] }) {
     const [expanded, setExpanded] = useState(false);
     const body = preview.body ?? '';
+    const summary = preview.summary ?? '';
+    const showSummary = summary.length > 0 && summary !== body;
     const isLong = body.length > COLLAPSE_AT;
     const shownBody = expanded || !isLong ? body : clip(body, COLLAPSE_AT);
     const image = preview.media?.find(media => media.kind !== 'link');
@@ -49,6 +57,13 @@ export function CurationPreview({ preview }: { preview: ICurationItemView['previ
 
     return (
         <div className={styles.preview}>
+            {showSummary && (
+                <div className={styles.summary}>
+                    <span className={styles.summary_label}>Summary sent to short-form channels</span>
+                    <p className={styles.summary_text}>{summary}</p>
+                </div>
+            )}
+
             {(body || image) ? (
                 <div className={styles.proof}>
                     {body && <p className={styles.body}>{shownBody}</p>}
@@ -64,7 +79,7 @@ export function CurationPreview({ preview }: { preview: ICurationItemView['previ
                         <img src={image.url} alt={image.alt ?? 'Attached media'} className={styles.image} loading="lazy" />
                     )}
                 </div>
-            ) : (
+            ) : !showSummary && (
                 <p className={styles.empty}>This item has no text or media to show.</p>
             )}
 

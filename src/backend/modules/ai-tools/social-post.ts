@@ -85,6 +85,10 @@ export function createSocialPostCurationType(store: SocialPostStore, logger: ISy
             }
             return {
                 title: draft.title ?? 'Social Post',
+                // A social post is short by design, so its text is already the
+                // publishable summary that X and Telegram accept. Without it the
+                // draft would not be offered to those sinks at all.
+                summary: draft.body,
                 body: draft.body,
                 media: draft.mediaUrl ? [{ url: draft.mediaUrl, kind: 'image', alt: 'Attached image' }] : undefined,
                 editable: true

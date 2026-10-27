@@ -10,7 +10,8 @@
  * stay generic while content types remain plugin-defined.
  *
  * It is deliberately the lowest common denominator across surfaces: a short
- * heading, primary body text, inline media, and supplementary facts. Surface-
+ * heading, a short publishable summary, primary body text, inline media, and
+ * supplementary facts. Surface-
  * specific concerns (a notification's severity, a curation item's decision
  * state) belong to the consuming pipeline's own envelope, never here.
  */
@@ -55,6 +56,17 @@ export interface IContentDescriptorMedia {
 export interface IContentDescriptor {
     /** One-line heading for a queue row or notification title. */
     title?: string;
+
+    /**
+     * Short plain-text version of the content, written to stand alone as a
+     * social post: a few sentences at most, no markup. Publish sinks with tight
+     * length limits, such as X and Telegram, accept `summary` rather than
+     * `body`, so content is offered to them only when it has short text to
+     * send. A type whose body is already short may repeat it here; a type whose
+     * body is long, such as a blog article, supplies its own summary or leaves
+     * this out, in which case those sinks are not offered the content.
+     */
+    summary?: string;
 
     /** Primary content — the text a curator reviews or a channel delivers. */
     body?: string;

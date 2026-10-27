@@ -24,6 +24,7 @@ import type {
 import { readContentField } from '@/types';
 import { ContentRouter } from '../content-router.js';
 import { ClassificationGate, AllowAllRoutingPolicy } from '../content-routing-gate.js';
+import { presentDescriptorFeatures } from '../content-classification.js';
 
 /** No-op logger satisfying ISystemLogService, mirroring the content-types test. */
 function silentLogger(): ISystemLogService {
@@ -257,9 +258,7 @@ describe('Graceful degradation — a sink renders a content type authored after 
             describe: (): IContentDescriptor => ({ body: 'Mainnet upgrade shipped' })
         };
         const descriptor = await announcement.describe({});
-        const present = (Object.keys(descriptor) as ContentDescriptorFeature[]).filter(
-            (k): k is ContentDescriptorFeature => ['title', 'body', 'media', 'details'].includes(k) && descriptor[k as keyof IContentDescriptor] != null
-        );
+        const present = presentDescriptorFeatures(descriptor);
 
         const candidates = router.route({ egress: 'external', audience: 'public' }, present);
         expect(candidates.map((s) => s.id)).toEqual(['twitter']);
@@ -267,6 +266,25 @@ describe('Graceful degradation — a sink renders a content type authored after 
         await candidates[0].deliver(descriptor, { handle: '@tronrelic' });
         expect(deliveredBody).toBe('Mainnet upgrade shipped');
         expect(deliveredHandle).toBe('@tronrelic');
+    });
+
+    it('offers a summary-accepting sink only content that carries a summary', () => {
+        const router = makeRouter();
+        router.register(makeSink('short-form', ['summary'], { egress: 'external', audience: 'public' }), 'trp-x-poster');
+        router.register(makeSink('long-form', ['title', 'body'], { egress: 'external', audience: 'public' }), 'trp-blog');
+        const ceiling: IContentClassification = { egress: 'external', audience: 'public' };
+
+        // A long article with no summary reaches only the long-form sink.
+        const article: IContentDescriptor = { title: 'Weekly report', body: 'A very long article body' };
+        expect(router.route(ceiling, presentDescriptorFeatures(article)).map((s) => s.id)).toEqual(['long-form']);
+
+        // The same article with a summary reaches both.
+        const summarized: IContentDescriptor = { ...article, summary: 'The week in two lines.' };
+        expect(router.route(ceiling, presentDescriptorFeatures(summarized)).map((s) => s.id).sort()).toEqual(['long-form', 'short-form']);
+
+        // A blank summary does not count as present.
+        const blank: IContentDescriptor = { ...article, summary: '' };
+        expect(presentDescriptorFeatures(blank)).not.toContain('summary');
     });
 });
 
