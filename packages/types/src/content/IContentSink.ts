@@ -29,13 +29,16 @@ import type { IContentClassification } from './IContentClassification.js';
  * predicate. `summary` is the short publishable text, distinct from `body`
  * because a body may be a whole article while a social post needs a few lines:
  * a sink with a tight length limit accepts `summary` so it is offered only
- * content that has short text to send. `details` is the human-readable facts
+ * content that has short text to send. `canonicalUrl` is the content's own
+ * public page: a sink that is meaningless without a page to link to, such as a
+ * link-card sink, accepts it, while a sink that only adds a link when one
+ * exists reads it without accepting it. `details` is the human-readable facts
  * table; the governed typed `fields` map is deliberately absent, because it is
  * enrichment a sink reads by key via `readContentField`, never a slot whose
  * presence gates routing. Derived from the tuple so the type and the runtime
  * feature list stay aligned.
  */
-export const CONTENT_DESCRIPTOR_FEATURES = ['title', 'summary', 'body', 'media', 'details'] as const;
+export const CONTENT_DESCRIPTOR_FEATURES = ['title', 'summary', 'body', 'canonicalUrl', 'media', 'details'] as const;
 
 /**
  * One renderable descriptor feature. A sink's `accepts` is a list of these.

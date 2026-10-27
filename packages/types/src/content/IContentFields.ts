@@ -3,7 +3,7 @@
  *
  * The governed typed key registry — the sanctioned escape hatch a content type
  * uses to carry machine-readable enrichment a sink reads programmatically, when
- * the four descriptor slots cannot. It exists to close the stringly-typed trap:
+ * the descriptor slots cannot. It exists to close the stringly-typed trap:
  * the moment one sink reads `fields['threadId']` and another reads
  * `fields['recipientGroup']`, those magic-string keys become invisible
  * point-to-point dependencies — the exact `typeId` coupling the router removes,
@@ -16,7 +16,8 @@
  * two unrelated types and a sink converge on the same key, that convergence is
  * the signal to promote it to a first-class descriptor slot or a typed
  * sub-shape — adding a key here is a small, reviewed change, never an open
- * grab-bag.
+ * grab-bag. `canonicalUrl` began here as the seed key and was promoted to a
+ * slot, because a reader sees it and a link-card sink may need to route on it.
  *
  * This is distinct from the descriptor's `details` array (of
  * {@link IContentDescriptorField}): `details` is a free-form, human-readable
@@ -36,15 +37,6 @@
  * sink inventing a string.
  */
 export interface IContentFields {
-    /**
-     * The canonical public URL of the content, when it has a stable home a sink
-     * can link back to (a published page, a permalink). Generic across publish
-     * sinks — a tweet, a Telegram post, and a Reddit submission all benefit from
-     * linking to the source — which is why it was the seed key rather than a
-     * sink-specific one.
-     */
-    canonicalUrl?: string;
-
     /**
      * The reserved URL slug the content should publish at, when its type
      * reserved one before review (a blog draft holding `/blog/<slug>`). A

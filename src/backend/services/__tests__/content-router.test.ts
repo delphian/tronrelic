@@ -286,21 +286,36 @@ describe('Graceful degradation — a sink renders a content type authored after 
         const blank: IContentDescriptor = { ...article, summary: '' };
         expect(presentDescriptorFeatures(blank)).not.toContain('summary');
     });
+
+    it('routes on canonicalUrl only for a sink that accepts it, and never requires it of others', () => {
+        const router = makeRouter();
+        router.register(makeSink('link-card', ['title', 'canonicalUrl'], { egress: 'external', audience: 'public' }), 'link-card-plugin');
+        router.register(makeSink('short-form', ['summary'], { egress: 'external', audience: 'public' }), 'trp-x-poster');
+        const ceiling: IContentClassification = { egress: 'external', audience: 'public' };
+
+        // A social post with no page of its own still reaches the short-form sink.
+        const socialPost: IContentDescriptor = { title: 'Social Post', summary: 'Energy prices dropped 18%.' };
+        expect(router.route(ceiling, presentDescriptorFeatures(socialPost)).map((s) => s.id)).toEqual(['short-form']);
+
+        // Content with its own page reaches both.
+        const article: IContentDescriptor = { ...socialPost, canonicalUrl: 'https://tronrelic.com/blog/weekly' };
+        expect(router.route(ceiling, presentDescriptorFeatures(article)).map((s) => s.id).sort()).toEqual(['link-card', 'short-form']);
+    });
 });
 
 describe('Governed fields key registry', () => {
     it('reads a declared key through the typed accessor', () => {
-        const descriptor: IContentDescriptor = { body: 'see more', fields: { canonicalUrl: 'https://tronrelic.com/x' } };
-        expect(readContentField(descriptor.fields, 'canonicalUrl')).toBe('https://tronrelic.com/x');
+        const descriptor: IContentDescriptor = { body: 'see more', fields: { slug: 'weekly-report' } };
+        expect(readContentField(descriptor.fields, 'slug')).toBe('weekly-report');
     });
 
     it('returns undefined for an absent map or an unset declared key', () => {
-        expect(readContentField(undefined, 'canonicalUrl')).toBeUndefined();
-        expect(readContentField({}, 'canonicalUrl')).toBeUndefined();
+        expect(readContentField(undefined, 'slug')).toBeUndefined();
+        expect(readContentField({}, 'slug')).toBeUndefined();
     });
 
     it('rejects an undeclared key at compile time (governance — undeclared key is a build error)', () => {
-        const descriptor: IContentDescriptor = { fields: { canonicalUrl: 'https://tronrelic.com/x' } };
+        const descriptor: IContentDescriptor = { fields: { slug: 'weekly-report' } };
         // @ts-expect-error 'threadId' is not declared in IContentFields; reading it must fail the build.
         const leaked = readContentField(descriptor.fields, 'threadId');
         expect(leaked).toBeUndefined();

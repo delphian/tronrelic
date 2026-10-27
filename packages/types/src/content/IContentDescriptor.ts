@@ -10,8 +10,8 @@
  * stay generic while content types remain plugin-defined.
  *
  * It is deliberately the lowest common denominator across surfaces: a short
- * heading, a short publishable summary, primary body text, inline media, and
- * supplementary facts. Surface-
+ * heading, a short publishable summary, primary body text, a link to the
+ * content's own page, inline media, and supplementary facts. Surface-
  * specific concerns (a notification's severity, a curation item's decision
  * state) belong to the consuming pipeline's own envelope, never here.
  */
@@ -70,6 +70,16 @@ export interface IContentDescriptor {
 
     /** Primary content — the text a curator reviews or a channel delivers. */
     body?: string;
+
+    /**
+     * Absolute URL of the content's own public page, set by every type whose
+     * content has one and left out when it has none (a social post, for
+     * example, lives only on the platforms it is posted to). Publish sinks show
+     * it so a reader can follow a post back to the source: the Telegram and X
+     * sinks add it when present without requiring it, while a sink that is
+     * meaningless without a link may list it in `accepts`.
+     */
+    canonicalUrl?: string;
 
     /** Media rendered inline, with provider-resolved public URLs. */
     media?: IContentDescriptorMedia[];
