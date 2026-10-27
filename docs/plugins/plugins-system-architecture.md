@@ -8,7 +8,7 @@ Plugins ship backend and frontend from one workspace and load through generated 
 
 ## Plugin Package Layout
 
-Every plugin lives at `src/plugins/trp-<plugin-id>/`, colocating backend and frontend because a feature almost always spans both runtimes. Naming is three-layered: the repo and directory carry a `trp-` prefix (`trp-memo-tracker`), the manifest `id` drops it (`memo-tracker`), and the workspace name is `@tronrelic/plugin-<plugin-id>`. The manifest `id` is authoritative — the registry generators read it from `src/manifest.ts` (falling back to the `package.json` name suffix), never from the directory name — and it drives all runtime surfaces: the `plugin_<plugin-id>_` collection prefix, `/api/plugins/<plugin-id>/` routes, and `/system/plugins/<plugin-id>` admin pages.
+Every plugin lives at `src/plugins/trp-<plugin-id>/`, colocating backend and frontend because a feature almost always spans both runtimes. Naming is three-layered: the repo and directory carry a `trp-` prefix (`trp-whale-alerts`), the manifest `id` drops it (`whale-alerts`), and the workspace name is `@tronrelic/plugin-<plugin-id>`. The manifest `id` is authoritative — the registry generators read it from `src/manifest.ts` (falling back to the `package.json` name suffix), never from the directory name — and it drives all runtime surfaces: the `plugin_<plugin-id>_` collection prefix, `/api/plugins/<plugin-id>/` routes, and `/system/plugins/<plugin-id>` admin pages.
 
 ### Directory Essentials
 

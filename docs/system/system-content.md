@@ -69,7 +69,7 @@ The curation queue decides items through `ICurationType`. For a managed type, co
 
 More than one queue item can end up open for the same content. Two saves can race and each open one, and a curator's own save approves the content directly when the open item cannot be approved through curation. Each hold therefore gets a fresh `holdId`, stored on the core row and carried in the queue item's ref (`{ id, holdId }`). A decision on an item whose `holdId` is no longer on the row is not applied. Approving one fails with `superseded`, and rejecting one changes nothing.
 
-Two existing content types still implement `ICurationType` directly: curated memos (`memo-tracker:curated-memo`) and social posts (`core:social-post`). They must migrate to managed content. Do not model new work on them.
+One existing content type still implements `ICurationType` directly: social posts (`core:social-post`). It must migrate to managed content. Do not model new work on it. (Curated memos, `memo-tracker:curated-memo`, were the other; the `trp-memo-tracker` plugin has been retired and replaced by `trp-relics`, whose `relics:relic` is managed content.)
 
 ### Publishing to destinations
 
