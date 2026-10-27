@@ -101,7 +101,7 @@ Treat the values in `IRegisterWidgetInput` as *defaults*, not invariants. Anythi
 
 Patterns must start with `/`, contain no whitespace, and place glob markers only at the trailing position (`/*/markets` is rejected). The matcher is `routeMatches` in `src/backend/modules/widgets/placements/route-matcher.ts`; the admin API validates inputs through `normaliseRoutePattern` before reaching the placement service.
 
-Cross-plugin injection works by targeting another plugin's page slug — `defaultRoutes: ['/whales']` from a memo-tracker widget places it on the whale-alerts page without coupling the two plugins.
+Cross-plugin injection works by targeting another plugin's page slug — `defaultRoutes: ['/whales']` from a relics widget places it on the whale-alerts page without coupling the two plugins.
 
 ## Ordering
 
