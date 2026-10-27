@@ -9,6 +9,10 @@
 # The blog RSS feed lives under /api/, so every group carves it out with an
 # Allow — the longest-match rule (RFC 9309) lets crawlers and answer engines
 # fetch the advertised feed while the rest of /api/ stays blocked.
+#
+# /_next/ is deliberately not disallowed. Next.js serves every page's CSS and
+# JavaScript from there, and Google renders pages with them; blocking it makes
+# Googlebot see unstyled pages and misjudge mobile layout.
 
 User-agent: *
 Allow: /
@@ -18,7 +22,6 @@ Disallow: /system
 Disallow: /system/
 Allow: /api/plugins/blog/rss
 Disallow: /api/
-Disallow: /_next/
 
 # --- AI crawlers (training and answer engines) — allowed on public content ---
 
@@ -28,7 +31,6 @@ Disallow: /system
 Disallow: /system/
 Allow: /api/plugins/blog/rss
 Disallow: /api/
-Disallow: /_next/
 
 User-agent: OAI-SearchBot
 Allow: /
@@ -36,7 +38,6 @@ Disallow: /system
 Disallow: /system/
 Allow: /api/plugins/blog/rss
 Disallow: /api/
-Disallow: /_next/
 
 User-agent: ClaudeBot
 Allow: /
@@ -44,7 +45,6 @@ Disallow: /system
 Disallow: /system/
 Allow: /api/plugins/blog/rss
 Disallow: /api/
-Disallow: /_next/
 
 User-agent: PerplexityBot
 Allow: /
@@ -52,7 +52,6 @@ Disallow: /system
 Disallow: /system/
 Allow: /api/plugins/blog/rss
 Disallow: /api/
-Disallow: /_next/
 
 User-agent: Google-Extended
 Allow: /
@@ -60,7 +59,6 @@ Disallow: /system
 Disallow: /system/
 Allow: /api/plugins/blog/rss
 Disallow: /api/
-Disallow: /_next/
 
 User-agent: CCBot
 Allow: /
@@ -68,7 +66,6 @@ Disallow: /system
 Disallow: /system/
 Allow: /api/plugins/blog/rss
 Disallow: /api/
-Disallow: /_next/
 
 # Sitemap location
 Sitemap: https://tronrelic.com/sitemap.xml
