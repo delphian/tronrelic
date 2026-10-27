@@ -218,6 +218,9 @@ export function presentDescriptorFeatures(descriptor: IContentDescriptor): Conte
     if (typeof descriptor.body === 'string' && descriptor.body.length > 0) {
         present.push('body');
     }
+    if (typeof descriptor.canonicalUrl === 'string' && descriptor.canonicalUrl.length > 0) {
+        present.push('canonicalUrl');
+    }
     if (Array.isArray(descriptor.media) && descriptor.media.length > 0) {
         present.push('media');
     }
