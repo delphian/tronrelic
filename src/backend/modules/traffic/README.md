@@ -77,6 +77,8 @@ Canonical definitions every dashboard, query, and AI tool must conform to. Metri
 
 **Two attribution doctrines, on purpose.** *Per-visitor* surfaces are first-touch: the `tronrelic_ref` cookie is never overwritten and the Visitors tab reads the tid's earliest row, so a visitor who arrived direct and returns via a campaign link still shows "direct" — that row answers "where did this person come from". *Aggregate* surfaces (Traffic Sources, Top Landing Pages) are session-scoped, so they answer "what brought traffic in during this window" and returning visitors are visible. `campaign-performance` remains bootstrap-attributed and is the surface that still sees paid tagging, because ad click-IDs are recorded only at first touch.
 
+**Tagging outbound links.** Apps such as Telegram open links without a referrer, so a visit from a channel post would otherwise record as `direct`. Code that posts a link to the site somewhere else tags it with `appendCampaignParams(url, { source, medium, campaign })` from `@/types`, using `CAMPAIGN_MEDIUM_SOCIAL` as the medium so `classifyChannel` files the visit under Social. Publish sinks use `SYNDICATION_CAMPAIGN`, so the campaigns view separates the platform's own posts from links readers share. Never tag a canonical URL, `og:url`, the sitemap, or the feed.
+
 ## Recording the Network (ASN)
 
 Every `traffic_events` row carries `asn`, the autonomous system number (ASN) of the network the request came from, such as a cloud provider or a mobile carrier. It answers "who operates this source", which the address hashes cannot, because the address itself is never stored. Without it, naming the network behind a burst of automated traffic meant reading raw addresses out of the Nginx access log.
