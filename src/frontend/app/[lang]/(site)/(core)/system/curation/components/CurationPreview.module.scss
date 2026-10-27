@@ -24,6 +24,33 @@
     background: var(--color-surface-muted);
 }
 
+/* The short-form summary sits above the full proof as its own labelled block,
+ * so the curator reads it as a separate text that will be published, not as
+ * the opening of the body. */
+.summary {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    padding: var(--card-padding-sm);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+}
+
+.summary_label {
+    font-size: var(--font-size-body-xs);
+    color: var(--color-text-muted);
+}
+
+.summary_text {
+    margin: 0;
+    max-width: var(--max-width-prose);
+    font-size: var(--font-size-body-sm);
+    line-height: var(--line-height-relaxed);
+    color: var(--color-text);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
 .body {
     margin: 0;
     max-width: var(--max-width-prose);

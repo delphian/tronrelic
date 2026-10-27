@@ -212,6 +212,9 @@ export function presentDescriptorFeatures(descriptor: IContentDescriptor): Conte
     if (typeof descriptor.title === 'string' && descriptor.title.length > 0) {
         present.push('title');
     }
+    if (typeof descriptor.summary === 'string' && descriptor.summary.length > 0) {
+        present.push('summary');
+    }
     if (typeof descriptor.body === 'string' && descriptor.body.length > 0) {
         present.push('body');
     }
