@@ -373,7 +373,11 @@ export async function executeSavedPrompt(
         // nothing, surfacing a false "No tool calls in this conversation" on an
         // autonomous run that did use tools. Mode stays 'programmatic' — the id is
         // for audit correlation only and never relaxes the governor's autonomous
-        // default-deny.
+        // default-deny. The run's history record id is passed as `queryId` for the
+        // same reason: the governor stamps it on every audit row, so
+        // `ai-list-tool-invocations` filtered by the id `ai-list-prompt-runs`
+        // reports finds this run's tool calls. Without it the rows carried no
+        // query id and the per-run lookup always came back empty.
         // Resolve the registry's `{%name%}` tokens so the history row below can
         // record what this run was actually asked. A prompt variable reads live
         // data, so re-expanding the template when someone reads the record back
@@ -388,7 +392,7 @@ export async function executeSavedPrompt(
         // suppressing that pass would also stop the provider expanding its own
         // configured system prompt.
         const expandedPromptText = expandPrompt ? await expandPrompt(promptText) : promptText;
-        const result = (await provider.query({ prompt: promptText, model: p.model, mode: 'programmatic', endUser, injectedSystemPrompt, toolAllowlist: p.toolAllowlist, conversationId: historyConversationId })) as IAiQueryResult;
+        const result = (await provider.query({ prompt: promptText, model: p.model, mode: 'programmatic', endUser, injectedSystemPrompt, toolAllowlist: p.toolAllowlist, conversationId: historyConversationId, queryId: historyId })) as IAiQueryResult;
         // A returned result means the transport worked, not that the model
         // answered. Classify before doing anything else with it, because
         // everything below — the log line, the notification, the history row —

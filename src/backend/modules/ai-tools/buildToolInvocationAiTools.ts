@@ -234,7 +234,7 @@ export function buildToolInvocationAiTools(
             'Each record has id, createdAt, toolName, providerId (the plugin or module that owns the tool), aiProviderId, capability, triggerPath, actorKind and actorId (who drove the run), endUserId, clientId (the MCP app, when it arrived over MCP), queryId (the run), conversationId, toolUseId, status, durationMs, costUsd, input, inputTruncated, resultDigest, error, and screen. ' +
             'status is ok when the handler returned, error when it threw or timed out, denied when policy refused it before it ran, and pending-approval when it was held for an admin. A tool that reports its own failure in its answer, such as success false or an HTTP 404, is still ok, so read resultDigest to see what came back. ' +
             `resultDigest is the first 500 characters of the result. input is the arguments, shown as [redacted] for a secret-classified tool; arguments longer than ${MAX_INPUT_CHARS} characters come back as a cut JSON string with inputTruncated true, and the full arguments and result are in the run\'s transcript from ${GET_RUN_TOOL_NAME}, matched by toolUseId. ` +
-            'Parameters, all optional: toolName (exact tool name), status (ok, denied, pending-approval, or error), triggerPath (interactive, scheduled, programmatic, or mcp; scheduled saved prompts record as programmatic), queryId (one run, the id from ai-list-prompt-runs), conversationId, since and until (ISO 8601 timestamps bounding createdAt, inclusive), ' +
+            'Parameters, all optional: toolName (exact tool name), status (ok, denied, pending-approval, or error), triggerPath (interactive, scheduled, programmatic, or mcp; scheduled saved prompts record as programmatic), queryId (one run, the id from ai-list-prompt-runs; saved-prompt and non-streaming runs recorded before per-run correlation existed carry none, so filter those by conversationId instead), conversationId, since and until (ISO 8601 timestamps bounding createdAt, inclusive), ' +
             `limit (default ${DEFAULT_LIMIT}, at most ${MAX_LIMIT}), and offset (records to skip, default 0). Returns total (records matching the filters), offset, limit, returned, nextOffset (null on the last page), and invocations[]. ` +
             'Read-only; never runs, approves, or deletes anything.',
         capability: LIST_CAPABILITY,
@@ -245,7 +245,7 @@ export function buildToolInvocationAiTools(
                 toolName: { type: 'string', description: 'Only calls to this exact tool name, such as tronrelic-fetch-url.' },
                 status: { type: 'string', enum: [...STATUSES], description: 'Only calls that ended with this status.' },
                 triggerPath: { type: 'string', enum: [...TRIGGER_PATHS], description: 'Only calls made on this path. Scheduled saved prompts record as programmatic.' },
-                queryId: { type: 'string', description: 'Only calls made during this one run, the id from ai-list-prompt-runs.' },
+                queryId: { type: 'string', description: 'Only calls made during this one run, the id from ai-list-prompt-runs. Older saved-prompt and non-streaming runs carry no queryId; use conversationId for those.' },
                 conversationId: { type: 'string', description: 'Only calls made during this conversation.' },
                 since: { type: 'string', description: 'Earliest createdAt to include, an ISO 8601 timestamp such as 2026-10-27T00:00:00Z.' },
                 until: { type: 'string', description: 'Latest createdAt to include, an ISO 8601 timestamp.' },

@@ -292,6 +292,8 @@ One built-in AI tool reads the audit trail in `module_ai-tools_invocations` thro
 
 **An `ok` status only means the handler returned.** A tool that reports its own failure in its answer, such as `tronrelic-fetch-url` returning an HTTP 404, is recorded `ok`, so the reason is in `resultDigest`, the first 500 characters of the result. Arguments longer than 2,000 characters of JSON come back as a cut string marked `inputTruncated`; the full arguments and result are in the run's transcript from `ai-get-prompt-run`, matched by `toolUseId`.
 
+**`queryId` joins a call to its run.** Every query path passes its history record id to the provider as `IAiQueryOptions.queryId`, and the governor stamps that id on each audit record, so the `id` `ai-list-prompt-runs` reports finds the run's calls here. The streaming route always did this, because its client-minted id is both. `executeSavedPrompt` and the non-streaming route used to mint the history id separately and pass none, so their audit records carry no `queryId` up to the deployment that fixed it; filter those older runs by `conversationId`.
+
 `since` and `until` are parsed and rewritten in `toISOString()` form before they reach the store, because `createdAt` is stored as that string and `ToolAuditStore.list()` compares the bounds as strings. The store accepts the same two fields for any other caller.
 
 ### Saved Prompts & Triggers

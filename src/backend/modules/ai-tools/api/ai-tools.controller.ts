@@ -948,6 +948,10 @@ export class AiToolsController {
 
         // Non-streaming path: await the result and surface it directly.
         const createdAt = new Date().toISOString();
+        // Minted before the call and used as both the provider's `queryId` and
+        // the history record id, as the streaming branch already does, so the
+        // governor's audit rows for this turn join to its history record.
+        const historyId = randomUUID();
         // Same reasoning as the streaming branch: core resolves the variables to
         // record what this turn was asked, skipping the secret ones because this
         // copy is stored rather than sent, and the provider still receives the
@@ -956,9 +960,9 @@ export class AiToolsController {
         let expandedPrompt = prompt;
         try {
             expandedPrompt = await this.promptVariables.expandAll(prompt, { skipSecret: true });
-            const result = await provider.query({ prompt, model, messages, conversationId, mode: 'programmatic', endUser, injectedSystemPrompt, toolAllowlist });
+            const result = await provider.query({ prompt, model, messages, conversationId, mode: 'programmatic', endUser, injectedSystemPrompt, toolAllowlist, queryId: historyId });
             await this.history.append(
-                buildAiQueryRecord('programmatic', prompt, conversationId, createdAt, randomUUID(), result, null, undefined, {
+                buildAiQueryRecord('programmatic', prompt, conversationId, createdAt, historyId, result, null, undefined, {
                     expandedPrompt,
                     toolAllowlist: toolAllowlist ?? null
                 })
@@ -977,7 +981,7 @@ export class AiToolsController {
                     prompt,
                     conversationId,
                     createdAt,
-                    randomUUID(),
+                    historyId,
                     null,
                     error instanceof Error ? error.message : String(error),
                     model,
