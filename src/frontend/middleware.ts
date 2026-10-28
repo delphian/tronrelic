@@ -21,7 +21,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest, NextFetchEvent } from 'next/server';
 import type { IConsentPublicConfig, IConsentState, ILocalizationPublicConfig } from '@/types';
-import { CONSENT_COOKIE_NAME, DEFAULT_LANGUAGE, resolveConsentState, resolveLocalizedPath } from '@/types';
+import { CONSENT_COOKIE_NAME, DEFAULT_LANGUAGE, readUtmParams, resolveConsentState, resolveLocalizedPath } from '@/types';
 import { getServerSideApiUrl } from './lib/api-url';
 import { createCachedBackendFeed } from './lib/cachedBackendFeed';
 import { LANGUAGE_REQUEST_HEADER } from './modules/localization/lib/LANGUAGE_REQUEST_HEADER';
@@ -105,9 +105,6 @@ const FORWARDED_HEADERS = [
     'x-client-asn'
 ] as const;
 
-/** UTM keys we accept from the URL. Anything else is dropped. */
-const UTM_KEYS = ['source', 'medium', 'campaign', 'term', 'content'] as const;
-
 /**
  * Ad-network click-ID query params that mark a paid landing (auto-tagged ads
  * carry no UTM at all — a Google Ads click arrives with only `gclid`). Only
@@ -134,13 +131,7 @@ const PAID_CLICK_ID_KEYS = ['gclid', 'gbraid', 'wbraid', 'dclid', 'msclkid', 'tt
  * fall back to an empty object so the backend bootstrap still succeeds.
  */
 function buildBootstrapBody(request: NextRequest, tid: string, referralCode: string | null): string {
-    const utm: Record<string, string> = {};
-    for (const key of UTM_KEYS) {
-        const value = request.nextUrl.searchParams.get(`utm_${key}`);
-        if (value) {
-            utm[key] = value;
-        }
-    }
+    const utm = readUtmParams(request.nextUrl.searchParams);
 
     const originalReferrer = request.cookies.get(ORIGINAL_REFERRER_COOKIE)?.value;
 
@@ -151,7 +142,7 @@ function buildBootstrapBody(request: NextRequest, tid: string, referralCode: str
         // cookie, rather than minting a divergent one server-side.
         tid
     };
-    if (Object.keys(utm).length > 0) {
+    if (utm) {
         payload.utm = utm;
     }
     // Forward which paid click-ID param appeared (name only, never the value)

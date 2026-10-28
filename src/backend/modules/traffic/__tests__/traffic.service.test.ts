@@ -914,6 +914,41 @@ describe('TrafficService', () => {
             expect(sql).toContain('session_seq');
         });
 
+        it('getTrafficSources credits a referrer-less session to its utm_source before direct', async () => {
+            // The ChatGPT apps send no referrer but keep utm_source=chatgpt.com
+            // on every cited link. Reading only the referrer filed those
+            // sessions under direct.
+            const captured = captureSql();
+            await TrafficService.getInstance().getTrafficSources(range);
+            const sql = captured.sqls.join('\n');
+            expect(sql).toContain('argMin(tuple(utm_source), timestamp).1 AS entry_utm_source');
+            expect(sql).toContain('lower(entry_utm_source)');
+            // The referrer is tested before the UTM source, so a tagged link
+            // shared onto another site stays credited to that site.
+            expect(sql.indexOf('domain(entry_referer)')).toBeLessThan(sql.indexOf('lower(entry_utm_source)'));
+        });
+
+        it('getTrafficSources classifies a utm_source bucket by its domain and medium', async () => {
+            const ch = createMockClickHouse();
+            ch.query = async <T>(): Promise<T[]> => ([
+                { source: 'chatgpt.com', visitors: '4', count: '4', medium: null },
+                { source: 'telegram', visitors: '2', count: '3', medium: 'social' }
+            ] as T[]);
+            TrafficService.setDependencies(ch, createMockLogger());
+            const out = await TrafficService.getInstance().getTrafficSources(range);
+            expect(out.map(b => b.channel)).toEqual(['ai', 'social']);
+        });
+
+        it('getCampaignPerformance counts visits tagged with a source but no campaign', async () => {
+            // AI assistants tag links with utm_source alone; requiring
+            // utm_campaign left the campaigns view empty for every one of them.
+            const captured = captureSql();
+            await TrafficService.getInstance().getCampaignPerformance(range);
+            const sql = captured.sqls.join('\n');
+            expect(sql).toContain('utm_source IS NOT NULL OR utm_medium IS NOT NULL OR utm_campaign IS NOT NULL');
+            expect(sql).not.toContain('AND utm_campaign IS NOT NULL');
+        });
+
         it('excludes resumed sessions without dropping direct arrivals', async () => {
             // A NULL entry_referer is a genuine direct arrival. `domain(NULL)`
             // is NULL and `NULL NOT IN (...)` is NULL, which SQL treats as
@@ -992,7 +1027,7 @@ describe('TrafficService', () => {
         });
 
         it('only projects acquisition columns when a caller needs them', async () => {
-            // Every session read would otherwise pay for five extra columns to
+            // Every session read would otherwise pay for three extra columns to
             // serve the one caller that breaks a cohort down by them.
             const captured = captureSql();
             await TrafficService.getInstance().getEngagementMetrics(range);

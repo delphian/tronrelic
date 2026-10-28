@@ -68,6 +68,8 @@ const SOCIAL_MEDIUMS = new Set(['social', 'social-network', 'social-media', 'sm'
  * Gemini, DeepSeek, Copilot, Grok) plus Claude, Perplexity (missing from
  * GA4's list as of mid-2026), Mistral, Meta AI, You.com, and Phind.
  * End-anchored so a hostile subdomain suffix cannot spoof its way in.
+ * Also tested against `utm_source`, because an assistant that tags its links
+ * names itself there by domain (`utm_source=chatgpt.com`).
  */
 const AI_DOMAINS = /(^|\.)(chatgpt\.com|chat\.openai\.com|perplexity\.ai|claude\.ai|gemini\.google\.com|copilot\.microsoft\.com|deepseek\.com|grok\.com|x\.ai|meta\.ai|mistral\.ai|you\.com|phind\.com)$/;
 
@@ -155,7 +157,10 @@ export function classifyChannel(inputs: IChannelInputs): TrafficChannel {
         channel = 'email';
     } else if (SOCIAL_MEDIUMS.has(medium)) {
         channel = 'social';
-    } else if (domain && AI_DOMAINS.test(domain)) {
+    } else if ((domain && AI_DOMAINS.test(domain)) || (source && AI_DOMAINS.test(source))) {
+        // The source test is what catches app clicks. ChatGPT tags the links
+        // it cites with `utm_source=chatgpt.com`, but its desktop and mobile
+        // apps send no referrer, so without it those visits read `referral`.
         channel = 'ai';
     } else if (medium === 'organic' || (domain && SEARCH_DOMAINS.test(domain))) {
         channel = 'organic';

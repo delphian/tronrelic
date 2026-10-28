@@ -713,8 +713,10 @@ function buildTools(
         description:
             'Break TronRelic traffic down by one dimension over a window. Use after ' + AI_TOOL_NAMES.overview + ' to ' +
             'explain where traffic came from or what it landed on. ' +
-            'Dimensions: "sources" (referrer domain and acquisition channel), "landing-pages" (first page hit), ' +
-            '"geo" (country), "devices" (device category), "campaigns" (UTM campaign performance). ' +
+            'Dimensions: "sources" (referrer domain, or the entry URL\'s utm_source when the visit had no referrer, ' +
+            'plus acquisition channel), "landing-pages" (first page hit), ' +
+            '"geo" (country), "devices" (device category), "campaigns" (performance of visits carrying any UTM tag; ' +
+            'a source-only tag such as utm_source=chatgpt.com reads campaign "(none)"). ' +
             'Pass `source` WITH dimension "sources" to drill into one referrer instead of listing all of them. ' +
             'Each bucket carries `visitors` (distinct browsers — the primary measure) alongside `count`. ' +
             'ATTRIBUTION DIFFERS BY DIMENSION, and stating the wrong one misleads the operator. ' +
