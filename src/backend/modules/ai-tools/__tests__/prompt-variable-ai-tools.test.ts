@@ -3,7 +3,8 @@
  *
  * Pins what the two prompt-variable AI tools promise a model. The listing runs
  * no resolver and returns no value. The read never returns a secret variable
- * and never runs its resolver. Long values are cut with an honest `truncated`.
+ * and never runs its resolver. Long values are cut with an honest `truncated`
+ * and can be read to the end by following `nextOffset`.
  * One bad name does not fail the others, and a bad argument comes back as an
  * input error the model can correct from.
  */
@@ -102,22 +103,76 @@ describe('prompt variable AI tools', () => {
         expect(resolve).toHaveBeenCalledWith('site-info');
         expect(result.success).toBe(true);
         expect(result.variables).toEqual([
-            { name: 'site-info', status: 'ok', content: 'TronRelic', sizeBytes: 9, truncated: false },
+            { name: 'site-info', status: 'ok', content: 'TronRelic', totalChars: 9, sizeBytes: 9, truncated: false, nextOffset: null },
             { name: 'api-key', status: 'withheld', reason: expect.any(String) },
             { name: 'ghost', status: 'not-found', reason: expect.any(String) }
         ]);
         expect(JSON.stringify(result)).not.toContain('SECRET-VALUE');
     });
 
-    it('cuts a long value and reports the full size', async () => {
+    it('cuts a long value, reports the full size, and points at the next page', async () => {
         const long = 'x'.repeat(12_000);
         const { tools } = buildTools([{ summary: summary({ name: 'log-summary' }), value: long }]);
 
         const result = await tools[AI_TOOL_NAMES.getVariables].handler({ names: ['log-summary'] }) as { variables: Array<Record<string, unknown>> };
 
         expect((result.variables[0].content as string).length).toBe(10_000);
+        expect(result.variables[0].totalChars).toBe(12_000);
         expect(result.variables[0].sizeBytes).toBe(12_000);
         expect(result.variables[0].truncated).toBe(true);
+        expect(result.variables[0].nextOffset).toBe(10_000);
+    });
+
+    it('reads a long value to its end by following nextOffset', async () => {
+        const long = 'a'.repeat(10_000) + 'b'.repeat(10_000) + 'c'.repeat(847);
+        const { tools } = buildTools([{ summary: summary({ name: 'news-source-urls', kind: 'static', sensitivity: 'public' }), value: long }]);
+        const tool = tools[AI_TOOL_NAMES.getVariables];
+
+        let offset: number | null = 0;
+        let assembled = '';
+        let calls = 0;
+        while (offset !== null) {
+            const result = await tool.handler({ names: ['news-source-urls'], offset }) as { variables: Array<Record<string, unknown>> };
+            assembled += result.variables[0].content as string;
+            offset = result.variables[0].nextOffset as number | null;
+            calls += 1;
+        }
+
+        expect(calls).toBe(3);
+        expect(assembled).toBe(long);
+    });
+
+    it('never ends a page between the halves of a surrogate pair', async () => {
+        const value = 'x'.repeat(9_999) + '😀' + 'y';
+        const { tools } = buildTools([{ summary: summary({ name: 'emoji' }), value }]);
+        const tool = tools[AI_TOOL_NAMES.getVariables];
+
+        const first = await tool.handler({ names: ['emoji'] }) as { variables: Array<Record<string, unknown>> };
+        const second = await tool.handler({ names: ['emoji'], offset: first.variables[0].nextOffset }) as { variables: Array<Record<string, unknown>> };
+
+        expect(first.variables[0].content).toBe('x'.repeat(9_999));
+        expect(first.variables[0].nextOffset).toBe(9_999);
+        expect(second.variables[0].content).toBe('😀y');
+        expect(second.variables[0].nextOffset).toBeNull();
+    });
+
+    it('returns an empty last page for an offset past the end of a value', async () => {
+        const { tools } = buildTools([{ summary: summary({ name: 'site-info' }), value: 'TronRelic' }]);
+
+        const result = await tools[AI_TOOL_NAMES.getVariables].handler({ names: ['site-info'], offset: 50 }) as { variables: Array<Record<string, unknown>> };
+
+        expect(result.variables[0]).toEqual(expect.objectContaining({ status: 'ok', content: '', totalChars: 9, truncated: false, nextOffset: null }));
+    });
+
+    it('refuses a bad offset argument as an input error', async () => {
+        const { tools, resolve } = buildTools([{ summary: summary({ name: 'site-info' }), value: 'TronRelic' }]);
+        const tool = tools[AI_TOOL_NAMES.getVariables];
+
+        for (const offset of [-1, 1.5, '10', 1_000_001]) {
+            const result = await tool.handler({ names: ['site-info'], offset }) as Record<string, unknown>;
+            expect(result).toEqual({ success: false, error: expect.any(String), errorKind: 'input' });
+        }
+        expect(resolve).not.toHaveBeenCalled();
     });
 
     it('reports a resolver failure on that entry only, without the underlying error text', async () => {

@@ -315,6 +315,81 @@ describe('GscService', () => {
         });
     });
 
+    describe('getKeywordHistory()', () => {
+        /** Newest delivered day the history tests anchor their window on. */
+        const totalsRows = [
+            { date: new Date('2026-09-29T00:00:00.000Z'), clicks: 2, impressions: 39, fetchedAt: new Date() }
+        ];
+
+        it('zero-fills every day and leaves position null where there were no impressions', async () => {
+            // A chart of one keyword must show quiet days as zero, and a 0
+            // position would plot as better than first place.
+            const { service, totals, queries } = setup();
+            totals.findRows = totalsRows;
+            queries.aggregateRows = [
+                { _id: { date: '2026-09-27', query: 'tronrelic' }, clicks: 1, impressions: 4, weightedPosition: 6 }
+            ];
+
+            const out = await service.getKeywordHistory('  TronRelic ', 72);
+
+            expect(out.keyword).toBe('tronrelic');
+            expect(out.windowStart).toBe('2026-09-27T00:00:00.000Z');
+            expect(out.days).toEqual([
+                { date: '2026-09-27', clicks: 1, impressions: 4, ctr: 0.25, position: 1.5, preliminary: false },
+                { date: '2026-09-28', clicks: 0, impressions: 0, ctr: 0, position: null, preliminary: false },
+                { date: '2026-09-29', clicks: 0, impressions: 0, ctr: 0, position: null, preliminary: false }
+            ]);
+            expect(out.totals).toEqual({ clicks: 1, impressions: 4, ctr: 0.25, position: 1.5 });
+        });
+
+        it('sums contains matches per day and lists the variants by impressions', async () => {
+            const { service, totals, queries } = setup();
+            totals.findRows = totalsRows;
+            queries.aggregateRows = [
+                { _id: { date: '2026-09-29', query: 'tron energy rental' }, clicks: 1, impressions: 2, weightedPosition: 20 },
+                { _id: { date: '2026-09-29', query: 'cheap tron energy' }, clicks: 0, impressions: 5, weightedPosition: 150 }
+            ];
+
+            const out = await service.getKeywordHistory('tron energy', 24, 'contains');
+
+            expect(out.days).toEqual([
+                { date: '2026-09-29', clicks: 1, impressions: 7, ctr: 0.1429, position: 24.3, preliminary: false }
+            ]);
+            expect(out.matchedQueries).toEqual(['cheap tron energy', 'tron energy rental']);
+        });
+
+        it('matches exact keywords by value and contains keywords as escaped literal text', async () => {
+            // A keyword like "trx (tron)" must not be read as a regular expression.
+            const { service, totals, queries } = setup();
+            totals.findRows = totalsRows;
+            const pipelines: unknown[] = [];
+            queries.aggregate = (pipeline: unknown) => {
+                pipelines.push(pipeline);
+                return { toArray: async () => [] };
+            };
+
+            await service.getKeywordHistory('Tron Energy', 24);
+            await service.getKeywordHistory('trx (tron)', 24, 'contains');
+
+            const matchOf = (p: unknown) => (p as Array<{ $match?: { query: unknown } }>)[0]!.$match!.query;
+            expect(matchOf(pipelines[0])).toBe('tron energy');
+            expect(matchOf(pipelines[1])).toEqual({ $regex: 'trx \\(tron\\)', $options: 'i' });
+        });
+
+        it('flags days from the first non-final day onward as preliminary', async () => {
+            const { service, totals } = setup({ 'gsc:firstIncompleteDate': '2026-09-29' });
+            totals.findRows = totalsRows;
+
+            const out = await service.getKeywordHistory('tronrelic', 48);
+
+            expect(out.firstIncompleteDate).toBe('2026-09-29');
+            expect(out.days.map(d => [d.date, d.preliminary])).toEqual([
+                ['2026-09-28', false],
+                ['2026-09-29', true]
+            ]);
+        });
+    });
+
     describe('getKeywordsByDay()', () => {
         it('zero-fills every day in the window when no data exists', async () => {
             // A stalled gsc:fetch job must render as an explicit flat line,

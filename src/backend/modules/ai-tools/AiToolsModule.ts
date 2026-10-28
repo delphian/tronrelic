@@ -67,6 +67,7 @@ import { createWebFetchTool } from './web-fetch.js';
 import { buildPromptVariableAiTools } from './buildPromptVariableAiTools.js';
 import { buildSavedPromptAiTools } from './buildSavedPromptAiTools.js';
 import { buildPromptRunAiTools } from './buildPromptRunAiTools.js';
+import { buildToolInvocationAiTools } from './buildToolInvocationAiTools.js';
 
 /** Service-registry name for the provider-neutral tool registry. */
 export const AI_TOOLS_SERVICE = 'ai-tools';
@@ -490,9 +491,10 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
      * disabled, so registration never depends on socket availability.
      *
      * The same method also registers `propose-social-post`, `tronrelic-fetch-url`, and
-     * six reads over the module's own data: `ai-list-prompt-variables`,
+     * eight reads over the module's own data: `ai-list-prompt-variables`,
      * `ai-get-prompt-variables`, `ai-list-saved-prompts`,
-     * `ai-get-saved-prompts`, `ai-list-prompt-runs`, and `ai-get-prompt-run`.
+     * `ai-get-saved-prompts`, `ai-list-prompt-runs`, `ai-get-prompt-run`,
+     * `ai-summarize-prompt-runs`, and `ai-list-tool-invocations`.
      */
     private registerBuiltinTools(): void {
         const sendToast: IAiTool = {
@@ -602,14 +604,20 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
         // constructed in init() before this method runs.
         //
         // Read-only tools over the query history, also in this group. The
-        // listing is `internal`; the transcript read is `secret`, because a
+        // listing and the summary are `internal`; the transcript read is `secret`, because a
         // stored answer or tool result can hold a secret value — the same
         // reason the admin history routes refuse the service token.
         // `this.queryHistory` is constructed in init() before this runs too.
+        //
+        // A read-only tool over the tool-invocation audit trail, also in this
+        // group. It is `secret` for the same reason as the transcript read: a
+        // record keeps a secret tool's result digest and any argument a model
+        // sent. `this.audit` is constructed in init() before this runs.
         const moduleTools = [
             ...buildPromptVariableAiTools(this.promptVariables, this.logger),
             ...buildSavedPromptAiTools(this.savedPrompts, this.logger),
-            ...buildPromptRunAiTools(this.queryHistory, this.logger)
+            ...buildPromptRunAiTools(this.queryHistory, this.logger),
+            ...buildToolInvocationAiTools(this.audit, this.logger)
         ];
         for (const tool of moduleTools) {
             this.registry.registerTool(tool, this.metadata.id);

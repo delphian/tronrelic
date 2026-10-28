@@ -7,17 +7,22 @@
  * doing, or debugging why a run produced nothing, needs to page through those
  * runs and read what actually happened in one.
  *
- * Two tools:
+ * Three tools:
  *
  * - `ai-list-prompt-runs`: one page of runs, newest first, with status,
- *   outcome, model, cost, and a short preview of the prompt. No answers, no
- *   transcripts, no error text.
+ *   outcome, model, cost, the saved prompt that fired it, and a short preview
+ *   of the prompt, filterable by saved prompt, mode, status, outcome, and time
+ *   window. No answers, no transcripts, no error text.
  * - `ai-get-prompt-run`: the full transcript of one run, by record id (one
  *   turn) or conversation id (every turn, oldest first), returned in pages so
  *   a long agentic run stays readable to the end.
+ * - `ai-summarize-prompt-runs`: counts, cost, and token totals over every run
+ *   the same filters select, so how a saved prompt has done over time is one
+ *   call instead of a page-by-page sum.
  *
- * The two are classified differently on purpose. The listing returns only what
- * an admin typed and figures the service computed, so it is `internal`. The
+ * They are classified differently on purpose. The listing and the summary
+ * return only what an admin typed and figures the service computed, so they
+ * are `internal`. The
  * transcript returns the model's answers and every tool result the model was
  * handed, which can hold a secret: a model asked to repeat a secret variable
  * does so, and a `secret`-classified tool's result is stored verbatim. That is
@@ -30,14 +35,18 @@
  */
 
 import type {
+    AiQueryMode,
+    AiQueryOutcome,
     IAiQueryRecord,
     IAiTool,
     IAiToolCapability,
+    IAiToolInputSchema,
     IAiTranscriptSegment,
     ISystemLogService
 } from '@/types';
-import type { AiQueryHistoryService } from './services/ai-query-history.service.js';
+import type { AiQueryHistoryService, IAiQueryHistoryFilter } from './services/ai-query-history.service.js';
 import { AiToolInputError, runAiToolCall } from './runAiToolCall.js';
+import { readEnum, readInteger, readTimeWindow } from './readAiToolInputs.js';
 
 /**
  * Every tool's name, led by `ai`, the first word of the module id. Renaming one
@@ -46,7 +55,8 @@ import { AiToolInputError, runAiToolCall } from './runAiToolCall.js';
  */
 export const AI_TOOL_NAMES = {
     listRuns: 'ai-list-prompt-runs',
-    getRun: 'ai-get-prompt-run'
+    getRun: 'ai-get-prompt-run',
+    summarizeRuns: 'ai-summarize-prompt-runs'
 } as const;
 
 /**
@@ -76,6 +86,46 @@ const GET_CAPABILITY: IAiToolCapability = {
     sensitivity: 'secret',
     surfacesUntrustedContent: true
 };
+
+/**
+ * Classification of `ai-summarize-prompt-runs`.
+ *
+ * Read-only and free. `internal` for the same reason as the listing: it
+ * returns counts, totals, timestamps, and one run id, never an answer, a tool
+ * result, or an error message.
+ */
+const SUMMARY_CAPABILITY: IAiToolCapability = {
+    sideEffect: 'read',
+    reversible: true,
+    sensitivity: 'internal'
+};
+
+/** Execution modes a run is recorded with, for validating the `mode` filter. */
+const MODES: readonly AiQueryMode[] = ['stream', 'programmatic', 'scheduled'];
+
+/** Statuses a run is recorded with, for validating the `status` filter. */
+const STATUSES: readonly IAiQueryRecord['status'][] = ['completed', 'incomplete', 'failed'];
+
+/** Outcomes a run is classified with, for validating the `outcome` filter. */
+const OUTCOMES: readonly AiQueryOutcome[] = ['answered', 'truncated', 'tool-limit', 'paused', 'refused', 'empty', 'failed'];
+
+/**
+ * The filter parameters the listing and the summary share, described once so
+ * the two schemas cannot drift apart.
+ */
+const FILTER_PROPERTIES: IAiToolInputSchema['properties'] = {
+    savedPromptId: { type: 'string', description: 'Only runs produced by this saved prompt, the id from ai-list-saved-prompts. Runs recorded before this field existed carry no saved prompt id and never match.' },
+    mode: { type: 'string', enum: [...MODES], description: 'Only runs recorded with this mode. scheduled covers every saved-prompt run: cron, hook, and run-now.' },
+    status: { type: 'string', enum: [...STATUSES], description: 'Only runs that ended with this status.' },
+    outcome: { type: 'string', enum: [...OUTCOMES], description: 'Only runs classified with this outcome.' },
+    since: { type: 'string', description: 'Earliest createdAt to include, an ISO 8601 timestamp such as 2026-10-01T00:00:00Z.' },
+    until: { type: 'string', description: 'Latest createdAt to include, an ISO 8601 timestamp.' }
+};
+
+/** The filter parameters in words, for both descriptions. */
+const FILTER_DESCRIPTION =
+    'Filters, all optional and combined: savedPromptId (the id from ai-list-saved-prompts; runs recorded before saved-prompt links existed carry none and never match), mode (stream, programmatic, or scheduled), status (completed, incomplete, or failed), ' +
+    'outcome (answered, truncated, tool-limit, paused, refused, empty, or failed), and since and until (ISO 8601 timestamps bounding createdAt, inclusive). ';
 
 /** Runs per page when the caller does not say, and the most one page may hold. */
 const DEFAULT_LIMIT = 25;
@@ -189,24 +239,29 @@ class TextBudget {
 }
 
 /**
- * Read an optional whole-number argument within a range.
+ * Read the run filters shared by the listing and the summary, refusing
+ * anything the model can correct before the database is touched.
  *
- * @param value - The raw argument, possibly absent.
- * @param field - The parameter name, for the message.
- * @param fallback - The value used when the argument is absent.
- * @param min - The smallest accepted value.
- * @param max - The largest accepted value.
- * @returns An integer from `min` to `max`.
+ * @param input - The raw tool arguments.
+ * @returns The history filter, with absent fields left out.
  */
-function readInteger(value: unknown, field: string, fallback: number, min: number, max: number): number {
-    let result = fallback;
-    if (value !== undefined && value !== null) {
-        if (typeof value !== 'number' || !Number.isInteger(value) || value < min || value > max) {
-            throw new AiToolInputError(`${field} must be a whole number from ${min} to ${max}.`);
+function readFilter(input: Record<string, unknown>): IAiQueryHistoryFilter {
+    let savedPromptId: string | undefined;
+    if (input.savedPromptId !== undefined && input.savedPromptId !== null) {
+        savedPromptId = typeof input.savedPromptId === 'string' ? input.savedPromptId.trim() : '';
+        if (savedPromptId.length === 0 || savedPromptId.length > MAX_ID_CHARS) {
+            throw new AiToolInputError(`savedPromptId must be a saved prompt id from ai-list-saved-prompts: 1 to ${MAX_ID_CHARS} characters. A prompt name is not accepted.`);
         }
-        result = value;
     }
-    return result;
+    const candidate: IAiQueryHistoryFilter = {
+        savedPromptId,
+        mode: readEnum(input.mode, 'mode', MODES),
+        status: readEnum(input.status, 'status', STATUSES),
+        outcome: readEnum(input.outcome, 'outcome', OUTCOMES),
+        ...readTimeWindow(input)
+    };
+    const filter = Object.fromEntries(Object.entries(candidate).filter(([, value]) => value !== undefined)) as IAiQueryHistoryFilter;
+    return filter;
 }
 
 /**
@@ -242,7 +297,9 @@ function toRunMetadata(record: IAiQueryRecord): Record<string, unknown> {
         createdAt: record.createdAt,
         completedAt: record.completedAt,
         costUsd: record.costUsd ?? null,
-        usage: record.usage
+        usage: record.usage,
+        savedPromptId: record.savedPromptId ?? null,
+        triggerId: record.triggerId ?? null
     };
 }
 
@@ -448,9 +505,9 @@ function toTurnPage(
 }
 
 /**
- * Build the two prompt-run tools against the query history service.
+ * Build the three prompt-run tools against the query history service.
  *
- * Takes only the three read methods the tools call, so a test can supply a
+ * Takes only the four read methods the tools call, so a test can supply a
  * small fake and the tools cannot reach `append`.
  *
  * @param history - The query history service the tools read through.
@@ -458,21 +515,23 @@ function toTurnPage(
  * @returns The tools, in the order the admin page lists them.
  */
 export function buildPromptRunAiTools(
-    history: Pick<AiQueryHistoryService, 'list' | 'get' | 'getConversation'>,
+    history: Pick<AiQueryHistoryService, 'list' | 'get' | 'getConversation' | 'summarize'>,
     logger: ISystemLogService
 ): IAiTool[] {
     const listRuns: IAiTool = {
         name: AI_TOOL_NAMES.listRuns,
         description:
-            'List past prompt runs one page at a time, newest first. Each run has id, conversationId, mode, model, status, outcome, stopReason, createdAt, completedAt, costUsd, usage (token counts), promptPreview (the first 200 characters of the prompt as typed, variables unexpanded), promptChars, toolCalls, and hasTranscript. ' +
-            `Use to find a run to open with ${AI_TOOL_NAMES.getRun}, or to see which recent runs failed or stopped early. Answers, transcripts, and error messages are not included. ` +
-            `Parameters: limit (default ${DEFAULT_LIMIT}, at most ${MAX_LIMIT}); offset (runs to skip from the newest, default 0). Returns total, offset, limit, returned, nextOffset (null on the last page), and runs[]. ` +
+            'List past prompt runs one page at a time, newest first. Each run has id, conversationId, mode, model, status, outcome, stopReason, createdAt, completedAt, costUsd, usage (token counts), savedPromptId and triggerId (the saved prompt and trigger that fired it, or null), promptPreview (the first 200 characters of the prompt as typed, variables unexpanded), promptChars, toolCalls, and hasTranscript. ' +
+            `Use to find a run to open with ${AI_TOOL_NAMES.getRun}, or to see which recent runs of one saved prompt failed or stopped early. For totals over many runs, use ${AI_TOOL_NAMES.summarizeRuns} instead of paging. Answers, transcripts, and error messages are not included. ` +
+            FILTER_DESCRIPTION +
+            `Paging: limit (default ${DEFAULT_LIMIT}, at most ${MAX_LIMIT}); offset (runs to skip from the newest, default 0). Returns total (runs matching the filters), offset, limit, returned, nextOffset (null on the last page), and runs[]. ` +
             SHARED_DESCRIPTION,
         capability: LIST_CAPABILITY,
         inputSchema: {
             type: 'object',
-            description: 'Which page of runs to return.',
+            description: 'Optional filters and the page of runs to return.',
             properties: {
+                ...FILTER_PROPERTIES,
                 limit: { type: 'integer', minimum: 1, maximum: MAX_LIMIT, description: `Runs per page. Default ${DEFAULT_LIMIT}, at most ${MAX_LIMIT}.` },
                 offset: { type: 'integer', minimum: 0, maximum: MAX_OFFSET, description: 'Runs to skip from the newest. Pass the previous page\'s nextOffset to continue.' }
             },
@@ -480,12 +539,15 @@ export function buildPromptRunAiTools(
         },
         inputExamples: [
             {},
-            { limit: 50, offset: 50 }
+            { limit: 50, offset: 50 },
+            { savedPromptId: 'c1c4ed1d-05fc-47d5-b989-c706036d342f', status: 'failed' },
+            { mode: 'scheduled', outcome: 'empty', since: '2026-10-01T00:00:00Z' }
         ],
         handler: async (input) => runAiToolCall(logger, AI_TOOL_NAMES.listRuns, FAILURE_MESSAGE, async () => {
+            const filter = readFilter(input);
             const limit = readInteger(input.limit, 'limit', DEFAULT_LIMIT, 1, MAX_LIMIT);
             const offset = readInteger(input.offset, 'offset', 0, 0, MAX_OFFSET);
-            const page = await history.list({ limit, offset });
+            const page = await history.list({ ...filter, limit, offset });
             const nextOffset = offset + page.records.length;
             return {
                 total: page.total,
@@ -560,5 +622,38 @@ export function buildPromptRunAiTools(
         })
     };
 
-    return [listRuns, getRun];
+    const summarizeRuns: IAiTool = {
+        name: AI_TOOL_NAMES.summarizeRuns,
+        description:
+            'Add up every prompt run that matches the filters, in one call: how many runs, how many ended with each status and each outcome, total cost, total tokens, the first and last run times, and the last run that produced a real answer. ' +
+            'Use to judge how one saved prompt has been doing over time, such as how many of its runs this month answered and what they cost, without paging through the runs. ' +
+            `Use ${AI_TOOL_NAMES.listRuns} with the same filters to see the individual runs. ` +
+            FILTER_DESCRIPTION +
+            'Returns filters (as applied, with time bounds normalized), runs, byStatus and byOutcome (count per value; runs recorded before outcomes existed are counted as unrecorded), costUsd (the sum over priced runs), pricedRuns (runs that carry a cost; the rest could not be priced and are not counted as free), averageCostUsd (costUsd divided by pricedRuns, or null), ' +
+            'inputTokens, outputTokens, firstRunAt, lastRunAt, lastAnsweredAt, and lastAnsweredRunId (null when no run answered). ' +
+            SHARED_DESCRIPTION,
+        capability: SUMMARY_CAPABILITY,
+        inputSchema: {
+            type: 'object',
+            description: 'Optional filters selecting the runs to add up.',
+            properties: { ...FILTER_PROPERTIES },
+            additionalProperties: false
+        },
+        inputExamples: [
+            { savedPromptId: 'c1c4ed1d-05fc-47d5-b989-c706036d342f' },
+            { savedPromptId: 'c1c4ed1d-05fc-47d5-b989-c706036d342f', since: '2026-10-01T00:00:00Z', until: '2026-10-31T23:59:59Z' },
+            { mode: 'scheduled', status: 'incomplete' }
+        ],
+        handler: async (input) => runAiToolCall(logger, AI_TOOL_NAMES.summarizeRuns, FAILURE_MESSAGE, async () => {
+            const filter = readFilter(input);
+            const summary = await history.summarize(filter);
+            return {
+                filters: filter,
+                ...summary,
+                averageCostUsd: summary.pricedRuns > 0 ? summary.costUsd / summary.pricedRuns : null
+            };
+        })
+    };
+
+    return [listRuns, getRun, summarizeRuns];
 }

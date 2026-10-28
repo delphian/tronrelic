@@ -169,7 +169,7 @@ Every aggregate tool conforms to the [Metrics Contract](#metrics-contract) above
 | `tronrelic-get-audience-behavior` | `composeConversionFunnel`, `getRetention`, `getDailyVisitors`, plus identity's `countAccounts`/`countDistinctOwners` | read / internal |
 | `tronrelic-get-new-visitor-origins` | `getNewVisitors`, projected | read / internal / untrusted |
 | `tronrelic-get-crawler-activity` | bot-class breakdown, trend, paths, unclassified UAs, `getTopPaths`, `getTopCountries` | read / internal / untrusted |
-| `tronrelic-get-seo-performance` | `GscService` keywords, pages, keyword→page pairs, keywords-by-day, status | read / internal / untrusted |
+| `tronrelic-get-seo-performance` | `GscService` keywords, pages, keyword→page pairs, keywords-by-day, keyword history (`getKeywordHistory`: one keyword's zero-filled daily series, `exact` or escaped-literal `contains` match), status | read / internal / untrusted |
 | `tronrelic-get-redirect-analytics` | `getRedirectAnalytics`, `RedirectService.listRules` | read / internal |
 | `tronrelic-list-traffic-events` | `listTrafficEvents` (view `events`), `getTrafficEventSources` (view `sources`, grouped by `ip`, `subnet`, or `asn`) | read / **secret** / untrusted |
 

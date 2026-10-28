@@ -93,6 +93,9 @@ function createGscServiceStub() {
         // Params declared so a test can assert on the day/topN split the
         // handler derives.
         getKeywordsByDay: vi.fn(async (_days: number, _topN: number) => ({ days: [] })),
+        // Params declared so a test can assert the keyword, window, and match
+        // mode the handler passes through.
+        getKeywordHistory: vi.fn(async (_keyword: string, _periodHours: number, _match?: string) => ({ days: [] })),
         getStatus: vi.fn(async () => ({ configured: true }))
     };
 }
@@ -681,6 +684,35 @@ describe('traffic AI tools', () => {
         it('defaults to excluding bots so counts match the dashboard', async () => {
             const result = await tools.get(AI_TOOL_NAMES.overview)!.handler({}) as { excludeBots: boolean };
             expect(result.excludeBots).toBe(true);
+        });
+
+        it('passes the keyword, window, and match mode to the keyword-history read', async () => {
+            const gsc = createGscServiceStub();
+            const { tools: built } = registerAndCapture(gsc);
+            const seo = built.get(AI_TOOL_NAMES.seo)!;
+
+            await seo.handler({ view: 'keyword-history', keyword: ' tronrelic ', period: '30d' });
+            await seo.handler({ view: 'keyword-history', keyword: 'tron energy', match: 'contains', period: '7d' });
+
+            expect(gsc.getKeywordHistory.mock.calls).toEqual([
+                ['tronrelic', 720, 'exact'],
+                ['tron energy', 168, 'contains']
+            ]);
+        });
+
+        it('rejects keyword-history without a usable keyword or with an unknown match', async () => {
+            const seo = tools.get(AI_TOOL_NAMES.seo)!;
+            await expect(seo.handler({ view: 'keyword-history' })).rejects.toThrow(/keyword/);
+            await expect(seo.handler({ view: 'keyword-history', keyword: '   ' })).rejects.toThrow(/keyword/);
+            await expect(seo.handler({ view: 'keyword-history', keyword: 'x'.repeat(201) })).rejects.toThrow(/keyword/);
+            await expect(seo.handler({ view: 'keyword-history', keyword: 'tron', match: 'fuzzy' })).rejects.toThrow(/match/);
+        });
+
+        it('rejects a keyword on views that would not filter by it', async () => {
+            // Ignoring it would let a model narrate an unfiltered ranking as
+            // if it were about that keyword.
+            await expect(tools.get(AI_TOOL_NAMES.seo)!.handler({ view: 'keywords', keyword: 'tron' }))
+                .rejects.toThrow(/keyword-history/);
         });
 
         it('spreads the keyword-trend row budget across days instead of per-day', async () => {

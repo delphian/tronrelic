@@ -230,6 +230,106 @@ export interface IGscKeywordPagesPeriodResult {
     pairs: IGscKeywordPage[];
 }
 
+/**
+ * How {@link GscService.getKeywordHistory} matches stored queries against the
+ * requested keyword: `exact` is one query, `contains` is every query holding
+ * the keyword as a substring (all the variants of a topic, summed).
+ */
+export type GscKeywordMatch = 'exact' | 'contains';
+
+/**
+ * One day of a single keyword's search performance.
+ */
+export interface IGscKeywordHistoryPoint {
+    /** Calendar day (YYYY-MM-DD, UTC). */
+    date: string;
+    /** Clicks the keyword earned this day. */
+    clicks: number;
+    /** Impressions the keyword earned this day. */
+    impressions: number;
+    /** Click-through rate for the day (0-1); 0 when there were no impressions. */
+    ctr: number;
+    /**
+     * Impression-weighted average position, or null on a day with no
+     * impressions. Null rather than 0, because 0 would plot as a position
+     * better than first place.
+     */
+    position: number | null;
+    /** True when Google had not finalized this day at the last fetch. */
+    preliminary: boolean;
+}
+
+/**
+ * A single keyword's daily search performance over a window, with window
+ * totals — the series behind a per-keyword chart.
+ */
+export interface IGscKeywordHistoryResult {
+    /** The keyword as matched (trimmed and lower-cased). */
+    keyword: string;
+    /** How stored queries were matched against it. */
+    match: GscKeywordMatch;
+    /** Inclusive window start (ISO-8601 UTC). */
+    windowStart: string;
+    /** Inclusive window end (ISO-8601 UTC) — the end of the newest day Google has delivered. */
+    windowEnd: string;
+    /** First non-final day in the window (YYYY-MM-DD), or null when all are final. */
+    firstIncompleteDate: string | null;
+    /** Window totals across every matched query. */
+    totals: { clicks: number; impressions: number; ctr: number; position: number | null };
+    /**
+     * The distinct stored queries that matched, most impressions first and
+     * capped at {@link KEYWORD_HISTORY_MATCHED_QUERY_LIMIT}. With `exact` this
+     * is the keyword itself or empty; with `contains` it shows which variants
+     * were summed.
+     */
+    matchedQueries: string[];
+    /** One point per day in the window, oldest first, zero-filled. */
+    days: IGscKeywordHistoryPoint[];
+}
+
+/** Most matched-query strings {@link GscService.getKeywordHistory} returns alongside the series. */
+const KEYWORD_HISTORY_MATCHED_QUERY_LIMIT = 10;
+
+/**
+ * Escape a string for literal use inside a MongoDB `$regex`.
+ *
+ * A `contains` match must treat the caller's keyword as plain text. Without
+ * escaping, a keyword such as `trx (tron)` would be read as a regular
+ * expression, and a crafted one could make the pattern slow to evaluate.
+ *
+ * @param value - The text to match literally.
+ * @returns The text with every regular-expression metacharacter escaped.
+ */
+function escapeRegex(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Round a click-through rate to four decimal places, or 0 with no impressions.
+ *
+ * Shared by the keyword-history series and its totals so a day and the window
+ * report CTR identically.
+ *
+ * @param clicks - Clicks in the span being rated.
+ * @param impressions - Impressions in the same span.
+ * @returns The rounded click-through rate (0-1).
+ */
+function roundedCtr(clicks: number, impressions: number): number {
+    return impressions > 0 ? Math.round((clicks / impressions) * 10000) / 10000 : 0;
+}
+
+/**
+ * Turn an impression-weighted position sum into an average rounded to one
+ * decimal, or null when there were no impressions to weight.
+ *
+ * @param weightedPosition - Sum of position × impressions over the span.
+ * @param impressions - Impressions over the same span.
+ * @returns The average position, or null for a span with no impressions.
+ */
+function roundedPosition(weightedPosition: number, impressions: number): number | null {
+    return impressions > 0 ? Math.round((weightedPosition / impressions) * 10) / 10 : null;
+}
+
 /** Key-value store keys for GSC configuration. */
 const KV_CREDENTIALS = 'gsc:credentials';
 const KV_SITE_URL = 'gsc:siteUrl';
@@ -1202,6 +1302,118 @@ export class GscService {
             windowEnd: end.toISOString(),
             firstIncompleteDate,
             pairs
+        };
+    }
+
+    /**
+     * Get one keyword's daily search performance for a given time period.
+     *
+     * The other reads rank many keywords, so none of them can chart a single
+     * keyword over time: `keywords-by-day` keeps only each day's top rows, and
+     * a keyword missing from a day's top rows is indistinguishable from a
+     * keyword with no impressions that day. This read filters the stored query
+     * rows to the requested keyword first and then groups by day, so every day
+     * in the window reports that keyword's own figures, and days with nothing
+     * read as zero.
+     *
+     * `exact` matches one query through the `{ query, date }` index. Google
+     * stores queries in lower case, so the keyword is lower-cased to match.
+     * `contains` sums every query holding the keyword, which suits a low-volume
+     * site where any one phrasing earns an impression or two. It is a
+     * case-insensitive regex over the window's rows, with the keyword escaped
+     * so it is matched literally.
+     *
+     * Reads the query-dimensioned collection, so it inherits GSC's low-volume
+     * query anonymization: a keyword too rare for Google to report never
+     * appears here even on days it was searched. The window ends on the newest
+     * delivered day, identically to the sibling reads.
+     *
+     * @param keyword - The search query to chart. Trimmed and lower-cased
+     *   before matching; the caller validates it is non-empty.
+     * @param periodHours - Lookback period in hours; rounded up to whole days.
+     * @param match - `exact` for one query, `contains` for every query holding
+     *   the keyword.
+     * @returns The keyword's zero-filled daily series, window totals, and the
+     *   stored queries that matched.
+     */
+    async getKeywordHistory(keyword: string, periodHours: number, match: GscKeywordMatch = 'exact'): Promise<IGscKeywordHistoryResult> {
+        const normalized = keyword.trim().toLowerCase();
+        const { since, end, firstIncompleteDate } = await this.resolvePeriodWindow(periodHours);
+        const queryFilter = match === 'contains'
+            ? { $regex: escapeRegex(normalized), $options: 'i' }
+            : normalized;
+
+        // Grouped by day and query together, so one pass yields both the daily
+        // series and the per-query totals that rank `matchedQueries`.
+        const rows = await this.collection.aggregate<{
+            _id: { date: string; query: string };
+            clicks: number;
+            impressions: number;
+            weightedPosition: number;
+        }>([
+            { $match: { date: { $gte: since, $lte: end }, query: queryFilter } },
+            {
+                $group: {
+                    _id: {
+                        date: { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
+                        query: '$query'
+                    },
+                    clicks: { $sum: '$clicks' },
+                    impressions: { $sum: '$impressions' },
+                    weightedPosition: { $sum: { $multiply: ['$position', '$impressions'] } }
+                }
+            }
+        ]).toArray();
+
+        const dayMap = new Map<string, { clicks: number; impressions: number; weightedPosition: number }>();
+        const dayCount = Math.round((end.getTime() + 1 - since.getTime()) / DAY_MS);
+        for (let i = 0; i < dayCount; i++) {
+            dayMap.set(new Date(since.getTime() + i * DAY_MS).toISOString().split('T')[0], { clicks: 0, impressions: 0, weightedPosition: 0 });
+        }
+
+        const queryImpressions = new Map<string, number>();
+        const totals = { clicks: 0, impressions: 0, weightedPosition: 0 };
+        for (const row of rows) {
+            const day = dayMap.get(row._id.date);
+            if (day) {
+                day.clicks += row.clicks;
+                day.impressions += row.impressions;
+                day.weightedPosition += row.weightedPosition;
+            }
+            totals.clicks += row.clicks;
+            totals.impressions += row.impressions;
+            totals.weightedPosition += row.weightedPosition;
+            queryImpressions.set(row._id.query, (queryImpressions.get(row._id.query) ?? 0) + row.impressions);
+        }
+
+        const days = Array.from(dayMap.entries()).map(([date, day]) => ({
+            date,
+            clicks: day.clicks,
+            impressions: day.impressions,
+            ctr: roundedCtr(day.clicks, day.impressions),
+            position: roundedPosition(day.weightedPosition, day.impressions),
+            preliminary: firstIncompleteDate !== null && date >= firstIncompleteDate
+        }));
+
+        const matchedQueries = Array.from(queryImpressions.entries())
+            .sort(([qa, a], [qb, b]) => b - a || qa.localeCompare(qb))
+            .slice(0, KEYWORD_HISTORY_MATCHED_QUERY_LIMIT)
+            .map(([query]) => query);
+
+        return {
+            keyword: normalized,
+            match,
+            windowStart: since.toISOString(),
+            windowEnd: end.toISOString(),
+            firstIncompleteDate,
+            totals: {
+                clicks: totals.clicks,
+                impressions: totals.impressions,
+                ctr: roundedCtr(totals.clicks, totals.impressions),
+                position: roundedPosition(totals.weightedPosition, totals.impressions)
+            },
+            matchedQueries,
+            days
         };
     }
 }
