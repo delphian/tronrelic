@@ -68,6 +68,33 @@ describe('chain signatures', () => {
         // A Transfer with its amount missing is not guessed at.
         expect(decodeKnownEvent([transferTopic, addressTopic(WALLET), addressTopic(PEER)], '')).toBeNull();
     });
+
+    it('decodes Tether blacklist events in the layout TRON USDT emits, with the address indexed', () => {
+        /**
+         * Look up an event's topic by its signature, so each case names the
+         * event it builds instead of repeating a 64-character hash.
+         *
+         * @param prefix - The signature up to and including its `(`.
+         * @returns The event's topic0.
+         */
+        const topicFor = (prefix: string) => Object.keys(KNOWN_EVENT_TOPICS).find(topic => KNOWN_EVENT_TOPICS[topic].startsWith(prefix))!;
+
+        // Shapes copied from mainnet USDT logs: the address sits in topics[1]
+        // and the data is empty, or holds only the destroyed amount.
+        expect(decodeKnownEvent([topicFor('AddedBlackList('), addressTopic(PEER)], '')).toEqual({ name: 'AddedBlackList', fields: { user: PEER } });
+        expect(decodeKnownEvent([topicFor('RemovedBlackList('), addressTopic(PEER)], '')).toEqual({ name: 'RemovedBlackList', fields: { user: PEER } });
+        expect(decodeKnownEvent([topicFor('DestroyedBlackFunds('), addressTopic(PEER)], word('6fd5a3c5bc'))).toEqual({
+            name: 'DestroyedBlackFunds',
+            fields: { user: PEER, amount: '480325649852' }
+        });
+        // The unindexed layout Ethereum's Tether contract uses still decodes.
+        expect(decodeKnownEvent([topicFor('DestroyedBlackFunds(')], addressTopic(PEER) + word('6fd5a3c5bc'))).toEqual({
+            name: 'DestroyedBlackFunds',
+            fields: { user: PEER, amount: '480325649852' }
+        });
+        // An indexed DestroyedBlackFunds with no amount is not guessed at.
+        expect(decodeKnownEvent([topicFor('DestroyedBlackFunds('), addressTopic(PEER)], '')).toBeNull();
+    });
 });
 
 describe('blockchain-resource-delegations', () => {

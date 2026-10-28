@@ -138,6 +138,8 @@ export interface IDecodedEvent {
 /**
  * Decode the well-known events whose layout is fixed: TRC-20 and TRC-721
  * `Transfer`, `Approval`, and Tether's issue, redeem, and blacklist events.
+ * Tether's blacklist events come in two layouts, because TRON's USDT indexes
+ * the address and Ethereum's Tether does not, so both are accepted.
  *
  * Anything else, including a known event whose topics or data do not have
  * the expected shape, is left undecoded rather than guessed at. That happens
@@ -171,12 +173,26 @@ export function decodeKnownEvent(topics: readonly string[], data: string): IDeco
         }
     } else if ((name === 'Issue' || name === 'Redeem') && topics.length === 1 && word(0)) {
         decoded = { name, fields: { amount: wordToDecimal(word(0) as string) } };
-    } else if ((name === 'AddedBlackList' || name === 'RemovedBlackList') && topics.length === 1 && word(0)) {
-        const user = topicToAddress(word(0) as string);
-        decoded = user ? { name, fields: { user } } : null;
-    } else if (name === 'DestroyedBlackFunds' && topics.length === 1 && word(0) && word(1)) {
-        const user = topicToAddress(word(0) as string);
-        decoded = user ? { name, fields: { user, amount: wordToDecimal(word(1) as string) } } : null;
+    } else if (name === 'AddedBlackList' || name === 'RemovedBlackList' || name === 'DestroyedBlackFunds') {
+        // TRON's USDT contract indexes the blacklisted address into topics[1],
+        // so its data holds only the destroyed amount. Ethereum's Tether
+        // contract leaves the address unindexed as the first data word, with
+        // the amount after it. Both layouts are read; any other is left alone.
+        let userWord: string | null = null;
+        let amountWord: string | null = null;
+        if (topics.length === 2 && first?.length === WORD_HEX) {
+            userWord = first;
+            amountWord = word(0);
+        } else if (topics.length === 1) {
+            userWord = word(0);
+            amountWord = word(1);
+        }
+        const user = userWord ? topicToAddress(userWord) : null;
+        if (user && name !== 'DestroyedBlackFunds') {
+            decoded = { name, fields: { user } };
+        } else if (user && amountWord) {
+            decoded = { name, fields: { user, amount: wordToDecimal(amountWord) } };
+        }
     }
 
     return decoded;
