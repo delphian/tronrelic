@@ -984,6 +984,50 @@ const DEFAULT_AGGREGATE_LIMIT = 20;
 const HUMAN_ROWS_FILTER = "(bot_class = 'human' OR bot_class IS NULL)";
 
 /**
+ * Build the SQL expression that names a visit's source bucket.
+ *
+ * Apps open links without a referrer. Without a fallback, a visit whose link
+ * said where it came from was filed under `direct`: the ChatGPT apps, for
+ * example, send no referrer but keep the `utm_source=chatgpt.com` tag on every
+ * link they cite. So the referrer's domain wins when there is one, the
+ * lower-cased `utm_source` is used when there is not, and only a visit with
+ * neither reads `direct`. GA4 puts `utm_source` first; the referrer stays first
+ * here so a tagged link shared onto another site is still credited to the site
+ * the visitor actually came from.
+ *
+ * @param refererColumn - Column or alias holding the referrer URL, which
+ *   differs between `bootstrap` rows (`referer`) and derived sessions
+ *   (`entry_referer`).
+ * @param utmSourceColumn - Column or alias holding the same visit's
+ *   `utm_source`.
+ * @returns A SQL expression yielding a referrer domain, a `utm_source`, or
+ *   `'direct'`.
+ */
+function sourceBucketExpr(refererColumn: string, utmSourceColumn: string): string {
+    return `multiIf(
+        ${refererColumn} IS NOT NULL AND ${refererColumn} != '', domain(${refererColumn}),
+        ${utmSourceColumn} IS NOT NULL AND ${utmSourceColumn} != '', lower(${utmSourceColumn}),
+        'direct')`;
+}
+
+/**
+ * Build the WHERE predicate that selects visits carrying any UTM tag.
+ *
+ * Requiring `utm_campaign` hid every visit tagged with a source alone, and
+ * that is how AI assistants tag their links (`utm_source=chatgpt.com` with no
+ * campaign). A visit counts as tagged when any of source, medium, or campaign
+ * is present.
+ *
+ * @param prefix - Column-name prefix, `''` for raw `traffic_events` rows or
+ *   `'entry_'` for derived sessions, which project the entry hit's values as
+ *   `entry_utm_*`.
+ * @returns A parenthesised boolean predicate.
+ */
+function utmTaggedPredicate(prefix: string): string {
+    return `(${prefix}utm_source IS NOT NULL OR ${prefix}utm_medium IS NOT NULL OR ${prefix}utm_campaign IS NOT NULL)`;
+}
+
+/**
  * Inactivity gap that closes a derived session, in seconds. Thirty minutes
  * is the industry-default session definition (GA4, Matomo, Plausible), so
  * TronRelic's session counts stay comparable to external tooling. Sessions
@@ -1996,10 +2040,12 @@ export class TrafficService {
      *   `session_start`, used with the widened scan to attribute each
      *   session to the window containing its start.
      * @param includeAcquisition - Also project the entry hit's geo, device, and
-     *   UTM values. Opt-in because most session callers only need counts and
+     *   UTM campaign. Opt-in because most session callers only need counts and
      *   durations, and every extra column widens the scan for all of them; the
      *   source drill-down needs them to break a session cohort down by
-     *   dimensions that used to be read off `bootstrap` rows.
+     *   dimensions that used to be read off `bootstrap` rows. The entry hit's
+     *   `utm_source` and `utm_medium` are always projected, because
+     *   {@link sessionSourceExpr} needs them to name the session's source.
      * @returns SELECT statement usable as a FROM subquery.
      */
     private derivedSessionsSql(where: string, havingSessionStart?: string, includeAcquisition = false): string {
@@ -2009,8 +2055,6 @@ export class TrafficService {
         const acquisitionAggregates = includeAcquisition ? `,
                 argMin(tuple(country), timestamp).1 AS entry_country,
                 argMin(tuple(device), timestamp).1 AS entry_device,
-                argMin(tuple(utm_source), timestamp).1 AS entry_utm_source,
-                argMin(tuple(utm_medium), timestamp).1 AS entry_utm_medium,
                 argMin(tuple(utm_campaign), timestamp).1 AS entry_utm_campaign` : '';
         // Trailing comma, not leading: this fragment is interpolated *after* a
         // column that already ends in one and *before* the window function, so a
@@ -2023,8 +2067,6 @@ export class TrafficService {
         const acquisitionColumns = includeAcquisition ? `
                     country,
                     device,
-                    utm_source,
-                    utm_medium,
                     utm_campaign,` : '';
         return `
             SELECT
@@ -2035,20 +2077,26 @@ export class TrafficService {
                 count() AS page_count,
                 dateDiff('second', min(timestamp), max(timestamp)) AS duration_s,
                 argMin(path, timestamp) AS entry_path,
-                argMin(tuple(original_referrer), timestamp).1 AS entry_referer${acquisitionAggregates}
+                argMin(tuple(original_referrer), timestamp).1 AS entry_referer,
+                argMin(tuple(utm_source), timestamp).1 AS entry_utm_source,
+                argMin(tuple(utm_medium), timestamp).1 AS entry_utm_medium${acquisitionAggregates}
             FROM (
                 SELECT
                     candidate_uid,
                     timestamp,
                     path,
-                    original_referrer,${acquisitionColumns}
+                    original_referrer,
+                    utm_source,
+                    utm_medium,${acquisitionColumns}
                     sum(is_new) OVER (PARTITION BY candidate_uid ORDER BY timestamp ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS session_seq
                 FROM (
                     SELECT
                         candidate_uid,
                         timestamp,
                         path,
-                        original_referrer,${acquisitionColumns}
+                        original_referrer,
+                        utm_source,
+                        utm_medium,${acquisitionColumns}
                         if(dateDiff('second', lagInFrame(timestamp) OVER (PARTITION BY candidate_uid ORDER BY timestamp ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), timestamp) >= ${SESSION_GAP_SECONDS}, 1, 0) AS is_new
                     FROM ${TABLE_NAME}
                     WHERE ${where} AND event_type = 'page'
@@ -2068,18 +2116,21 @@ export class TrafficService {
      * page's URL, so grouping by it collapses every session to a self-referral.
      * `original_referrer` is the browser's actual referrer for the navigation.
      *
-     * An empty entry referrer is a genuine arrival with no source — typed,
-     * bookmarked, opened from an app — and reads `direct`. Anything else is the
-     * domain that sent them.
+     * An entry hit with a referrer is credited to that referrer's domain. One
+     * without a referrer but carrying `utm_source`, such as a link opened from
+     * the ChatGPT app, is credited to that source. Only an entry hit with
+     * neither reads `direct` (typed, bookmarked, or opened from an untagged
+     * link). See {@link sourceBucketExpr}.
      *
      * Takes no arguments: {@link acquisitionSessionFilter} has already dropped
      * self-referral sessions by the time this expression runs, so no branch for
      * them is needed here.
      *
-     * @returns A SQL expression yielding the source domain or `'direct'`.
+     * @returns A SQL expression yielding the source domain, a `utm_source`, or
+     *   `'direct'`.
      */
     private sessionSourceExpr(): string {
-        return `multiIf(entry_referer IS NULL OR entry_referer = '', 'direct', domain(entry_referer))`;
+        return sourceBucketExpr('entry_referer', 'entry_utm_source');
     }
 
     /**
@@ -2210,11 +2261,17 @@ export class TrafficService {
         const siteHost = await this.resolveSiteHost();
         const acquisitionOnly = this.acquisitionSessionFilter(siteHost);
         const params = { ...sessionWindow.params, ...(siteHost ? { siteHost } : {}) };
+        // `medium` is read only from sessions with no referrer, which are the
+        // ones a bucket named by `utm_source` is made of. It lets a tagged
+        // bucket such as `telegram` (medium `social`) classify as social
+        // rather than referral, while a referrer bucket such as google.com
+        // keeps its domain-only classification.
         const sql = `
             SELECT
                 ${this.sessionSourceExpr()} AS source,
                 uniqExact(candidate_uid) AS visitors,
-                count() AS count
+                count() AS count,
+                anyIf(entry_utm_medium, entry_referer IS NULL OR entry_referer = '') AS medium
             FROM (${this.derivedSessionsSql(sessionWindow.where, sessionWindow.having)})
             ${acquisitionOnly ? `WHERE ${acquisitionOnly}` : ''}
             GROUP BY source
@@ -2222,13 +2279,15 @@ export class TrafficService {
         `;
         try {
             const rows = await this.clickhouse.query<{
-                source: string; visitors: string | number; count: string | number;
+                source: string; visitors: string | number; count: string | number; medium: string | null;
             }>(sql, params);
             return rows.map(r => ({
                 source: r.source,
                 visitors: Number(r.visitors),
                 count: Number(r.count),
-                // Domain-only classification. The stored write-time `channel`
+                // The bucket name is a domain or a `utm_source`, and the
+                // classifier's domain lists match either (ChatGPT tags its
+                // links with its own domain). The stored write-time `channel`
                 // is not reachable here: it lives on `bootstrap` rows, and a
                 // session-scoped read groups `page` rows. The cost is paid
                 // detection — an auto-tagged ad click carries a `gclid` whose
@@ -2236,7 +2295,10 @@ export class TrafficService {
                 // google.com referrer. Campaign Performance stays
                 // bootstrap-attributed and remains the surface that sees paid
                 // tagging.
-                channel: classifyChannel({ refererDomain: r.source === 'direct' ? null : r.source })
+                channel: classifyChannel({
+                    refererDomain: r.source === 'direct' ? null : r.source,
+                    utmMedium: r.medium
+                })
             }));
         } catch (error) {
             this.logger.warn({ error }, 'Failed to read traffic sources');
@@ -2525,6 +2587,11 @@ export class TrafficService {
      * in-window clickstream (the login usually happens on a later `page`
      * row, never on the first touch), via the IN-subquery of logged-in tids.
      *
+     * A row is any first touch carrying a UTM source, medium, or campaign,
+     * not only a campaign. AI assistants tag their links with a source alone
+     * (`utm_source=chatgpt.com`), so those visits read campaign `(none)`
+     * rather than being left out.
+     *
      * @param range - Inclusive date window.
      * @param limit - Max campaigns.
      * @param excludeBots - Restrict to human-classified rows (NULL kept).
@@ -2545,7 +2612,7 @@ export class TrafficService {
                     WHERE ${clause}${botFilter} AND user_id IS NOT NULL
                 )) AS conversions
             FROM ${TABLE_NAME}
-            WHERE ${clause}${botFilter} AND event_type = 'bootstrap' AND utm_campaign IS NOT NULL AND ${this.pageVisitorMembership(clause, botFilter)}
+            WHERE ${clause}${botFilter} AND event_type = 'bootstrap' AND ${utmTaggedPredicate('')} AND ${this.pageVisitorMembership(clause, botFilter)}
             GROUP BY campaign, source, medium
             ORDER BY visitors DESC
             LIMIT {limit:UInt32}
@@ -2762,8 +2829,9 @@ export class TrafficService {
         // visitor-primary convention. Source lives only on the first-touch
         // `bootstrap` row (a `page` row's referrer is the site's own domain), so
         // each bucket's page-viewing visitor is LEFT-joined to their earliest
-        // bootstrap source — `argMin(domain, timestamp)`, matching
-        // getTrafficSources' `domain(referer)`/`direct` derivation. The join is
+        // bootstrap source — `argMin(source, timestamp)` over the same
+        // `sourceBucketExpr` getTrafficSources uses (referrer domain, then
+        // `utm_source`, then `direct`). The join is
         // LEFT (not INNER) so a visitor whose tid has no retained bootstrap row
         // still counts: the middleware bootstrap is best-effort and swallows
         // failures, so outages/deploys and pre-feature tids leave page-only tids
@@ -2788,7 +2856,7 @@ export class TrafficService {
                 ) AS pv
                 LEFT JOIN (
                     SELECT candidate_uid,
-                        argMin(multiIf(referer IS NULL OR referer = '', 'direct', domain(referer)), timestamp) AS source
+                        argMin(${sourceBucketExpr('referer', 'utm_source')}, timestamp) AS source
                     FROM ${TABLE_NAME}
                     WHERE event_type = 'bootstrap' AND ${this.pageVisitorMembership(clause, botFilter)}
                     GROUP BY candidate_uid
@@ -3335,16 +3403,18 @@ export class TrafficService {
                     SELECT entry_device AS device, count() AS count FROM (${sessionCohort})
                     GROUP BY device ORDER BY count DESC
                 `, p),
-                // UTM tagging is recorded at first touch only, so a session
-                // resumed later carries none and this table is usually sparse
-                // relative to the others — campaign-performance remains the
-                // surface with full paid attribution.
-                this.clickhouse.query<{ source: string | null; medium: string | null; campaign: string; count: string | number }>(`
+                // UTM tags come from the entry page's URL, so only a session
+                // that began on a tagged link carries them, and this table is
+                // usually sparse relative to the others. Page rows recorded
+                // before the beacon began sending UTM carry none at all —
+                // campaign-performance remains the surface with full paid
+                // attribution.
+                this.clickhouse.query<{ source: string | null; medium: string | null; campaign: string | null; count: string | number }>(`
                     SELECT
                         entry_utm_source AS source, entry_utm_medium AS medium,
                         entry_utm_campaign AS campaign, count() AS count
                     FROM (${sessionCohort})
-                    WHERE entry_utm_campaign IS NOT NULL
+                    WHERE ${utmTaggedPredicate('entry_')}
                     GROUP BY source, medium, campaign ORDER BY count DESC LIMIT 10
                 `, p)
             ]);
@@ -3358,7 +3428,7 @@ export class TrafficService {
                 utmCampaigns: utmRows.map(r => ({
                     source: r.source ?? '(none)',
                     medium: r.medium ?? '(none)',
-                    campaign: r.campaign,
+                    campaign: r.campaign ?? '(none)',
                     count: Number(r.count)
                 })),
                 searchKeywords: [],

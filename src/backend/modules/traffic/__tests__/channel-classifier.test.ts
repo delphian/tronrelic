@@ -64,6 +64,15 @@ describe('classifyChannel', () => {
         expect(classifyChannel({ refererDomain: 'gemini.google.com' })).toBe('ai');
     });
 
+    it('classifies an AI-assistant utm_source as ai when the app sent no referrer', () => {
+        // The ChatGPT apps open cited links with no referrer but keep the
+        // utm_source=chatgpt.com tag ChatGPT adds to each citation.
+        expect(classifyChannel({ refererDomain: null, utmSource: 'chatgpt.com' })).toBe('ai');
+        expect(classifyChannel({ refererDomain: null, utmSource: 'ChatGPT.com' })).toBe('ai');
+        // End-anchored like the referrer test, so a lookalike source is not ai.
+        expect(classifyChannel({ refererDomain: null, utmSource: 'chatgpt.com.evil.example' })).toBe('referral');
+    });
+
     it('classifies social referrers as social', () => {
         expect(classifyChannel({ refererDomain: 'x.com' })).toBe('social');
         expect(classifyChannel({ refererDomain: 'old.reddit.com' })).toBe('social');

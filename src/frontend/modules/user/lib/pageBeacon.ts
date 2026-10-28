@@ -15,6 +15,7 @@
  * on mount.
  */
 
+import { readUtmParams } from '@/types';
 import { getRuntimeConfig } from '../../../lib/runtimeConfig';
 import { sendJsonBeacon } from '../../../lib/sendJsonBeacon';
 import { isAutomatedBrowser } from '../../../lib/isAutomatedBrowser';
@@ -71,6 +72,13 @@ function resolveNavigationReferrer(): string | null {
  * Send one page-view beacon for the given path. Best-effort: any failure is
  * swallowed so analytics never interferes with navigation.
  *
+ * The beacon carries the UTM tags of the URL being viewed. The middleware
+ * records UTM tags only on a visitor's first touch, so without this a
+ * returning visitor who arrived on a tagged link, such as a link cited in the
+ * ChatGPT app, which sends no referrer, left no trace of where they came from.
+ * Only the URL a visitor landed on normally carries tags, so later
+ * navigations send none.
+ *
  * @param path - The path the visitor navigated to (query string is dropped
  *   server-side; pass the bare pathname).
  * @returns Nothing — the call is fire-and-forget.
@@ -81,10 +89,12 @@ export function sendPageView(path: string): void {
     }
 
     try {
+        const utm = readUtmParams(new URLSearchParams(window.location.search));
         sendJsonBeacon(`${getRuntimeConfig().apiUrl}/user/track`, {
             landingPath: path,
             originalReferrer: resolveNavigationReferrer(),
-            automated: isAutomatedBrowser()
+            automated: isAutomatedBrowser(),
+            ...(utm ? { utm } : {})
         });
     } catch {
         /* never throw into the navigation path */
