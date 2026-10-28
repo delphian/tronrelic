@@ -40,6 +40,16 @@ export interface IToolInvocationQuery {
     conversationId?: string;
     /** Scope to one run's tool calls (a single query turn within a conversation). */
     queryId?: string;
+    /**
+     * Earliest `createdAt` to include, as an ISO 8601 UTC string in the
+     * `toISOString()` shape the records are written in. Records store
+     * `createdAt` as that string, so a plain string comparison orders them by
+     * time. The `ai-list-tool-invocations` tool passes this to look at one
+     * window, such as the last day of scheduled runs.
+     */
+    since?: string;
+    /** Latest `createdAt` to include, in the same shape as `since`. */
+    until?: string;
     limit?: number;
     offset?: number;
 }
@@ -148,6 +158,16 @@ export class ToolAuditStore {
         }
         if (query.queryId) {
             filter.queryId = query.queryId;
+        }
+        if (query.since || query.until) {
+            const range: Record<string, string> = {};
+            if (query.since) {
+                range.$gte = query.since;
+            }
+            if (query.until) {
+                range.$lte = query.until;
+            }
+            filter.createdAt = range;
         }
 
         const limit = Math.min(Math.max(1, query.limit ?? 50), 200);

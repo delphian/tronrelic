@@ -189,6 +189,25 @@ export interface IAiQueryRecord {
     conversationId?: string;
 
     /**
+     * Id of the saved prompt that produced this run, when a saved prompt did:
+     * a cron trigger, a hook trigger, or a manual run-now. Without it nothing
+     * links a run back to its prompt — each autonomous run gets a fresh
+     * `conversationId`, and the prompt text alone stops matching the moment
+     * someone edits the prompt — so a prompt's history, failure rate, and cost
+     * over time could not be read. Absent on interactive runs, and on runs
+     * recorded before this field existed.
+     */
+    savedPromptId?: string;
+
+    /**
+     * Id of the saved-prompt trigger that fired this run, when a trigger did.
+     * Absent on a manual run-now, which has no trigger, on interactive runs,
+     * and on runs recorded before this field existed. Lets a reader tell a
+     * prompt's cron runs from its hook runs.
+     */
+    triggerId?: string;
+
+    /**
      * Ordered transcript of the turn — thinking blocks, visible answer text,
      * tool calls, and tool results in occurrence order — so a reopened
      * conversation replays the whole turn rather than only `responseText`.

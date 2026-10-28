@@ -145,7 +145,17 @@ const BREAKDOWN_DIMENSIONS = ['sources', 'landing-pages', 'geo', 'devices', 'cam
 const CRAWLER_VIEWS = ['summary', 'trend', 'paths', 'unclassified-agents', 'top-paths', 'top-countries'] as const;
 
 /** Views {@link AI_TOOL_NAMES.seo} can return. */
-const SEO_VIEWS = ['keywords', 'pages', 'keyword-pages', 'keywords-by-day', 'status'] as const;
+const SEO_VIEWS = ['keywords', 'pages', 'keyword-pages', 'keywords-by-day', 'keyword-history', 'status'] as const;
+
+/** How the SEO tool's `keyword-history` view matches stored queries. */
+const SEO_KEYWORD_MATCHES = ['exact', 'contains'] as const;
+
+/**
+ * Longest `keyword` the SEO tool accepts. Google rarely reports a query this
+ * long, and the cap keeps a model-supplied string from turning into a large
+ * regular expression in a `contains` match.
+ */
+const MAX_SEO_KEYWORD_LENGTH = 200;
 
 /** Views {@link AI_TOOL_NAMES.redirects} can return. */
 const REDIRECT_VIEWS = ['analytics', 'rules'] as const;
@@ -1120,9 +1130,17 @@ function buildTools(
             'Read TronRelic\'s Google Search Console performance. Views: "keywords" (top search queries with clicks, ' +
             'impressions, CTR, and average position), "pages" (per-page click/impression totals, including pages that were ' +
             'impressed but got zero clicks), "keyword-pages" (which page each query surfaced — the query→page pair with ' +
-            'its own clicks, impressions, CTR, and position), "keywords-by-day" (daily trend buckets), "status" (whether ' +
+            'its own clicks, impressions, CTR, and position), "keywords-by-day" (site-wide daily totals plus only the top ' +
+            'keyword of each day), "keyword-history" (ONE keyword\'s daily series — pass `keyword`), "status" (whether ' +
             'GSC credentials are configured and when data was last fetched). ' +
             'Use for "what are we ranking for", "which pages get search traffic", or "is our search traffic growing". ' +
+            'Use "keyword-history" for "how has keyword X done over time" or to chart one keyword: it returns one point ' +
+            'per day in the window (date, clicks, impressions, ctr, position, preliminary), zero-filled, plus window ' +
+            'totals and matchedQueries. `match` "exact" (default) is that one query; "contains" sums every query holding ' +
+            'the keyword, which suits a low-volume site where each phrasing earns only an impression or two — check ' +
+            'matchedQueries to see what was summed. position is null on a day with no impressions; do not plot it as 0. ' +
+            'Do not use "keywords-by-day" for one keyword: it keeps only each day\'s top rows, so a missing day there ' +
+            'does not mean zero. ' +
             'Use "keyword-pages" for "which query brings traffic to THIS page" or "what does this page rank for" — the ' +
             'pairing "keywords" and "pages" each lose by aggregating the other dimension away. It reads the same ' +
             'query-dimensioned cache as "keywords", so it carries the same anonymization and its clicks will not ' +
@@ -1153,7 +1171,17 @@ function buildTools(
                     type: 'integer',
                     minimum: 1,
                     maximum: MAX_BUCKETS,
-                    description: `Max rows to return. Defaults to ${DEFAULT_BUCKETS}, capped at ${MAX_BUCKETS}. Ignored by view "status". For view "keywords-by-day" this is the total keyword budget spread across the daily buckets (at least one keyword per day), not a per-day count.`
+                    description: `Max rows to return. Defaults to ${DEFAULT_BUCKETS}, capped at ${MAX_BUCKETS}. Ignored by views "status" and "keyword-history" (which always returns one point per day). For view "keywords-by-day" this is the total keyword budget spread across the daily buckets (at least one keyword per day), not a per-day count.`
+                },
+                keyword: {
+                    type: 'string',
+                    maxLength: MAX_SEO_KEYWORD_LENGTH,
+                    description: `Required for view "keyword-history" and rejected by every other view. The search query to chart, e.g. "tron energy rental". Matched case-insensitively; at most ${MAX_SEO_KEYWORD_LENGTH} characters.`
+                },
+                match: {
+                    type: 'string',
+                    enum: [...SEO_KEYWORD_MATCHES],
+                    description: 'Only for view "keyword-history". "exact" (default) charts that one query; "contains" sums every query holding the keyword.'
                 }
             },
             required: ['view'],
@@ -1164,6 +1192,8 @@ function buildTools(
             { view: 'pages', period: '30d', limit: 25 },
             { view: 'keyword-pages', period: '7d', limit: 30 },
             { view: 'keywords-by-day', period: '30d' },
+            { view: 'keyword-history', keyword: 'tronrelic', period: '30d' },
+            { view: 'keyword-history', keyword: 'tron energy', match: 'contains', period: '30d' },
             { view: 'status' }
         ],
         handler: async (input) => {
@@ -1175,8 +1205,25 @@ function buildTools(
             const { period, hours } = resolvePeriod(input.period, WINDOW_PERIODS);
             const limit = resolveLimit(input.limit);
 
+            // Rejected rather than ignored outside keyword-history, so a model
+            // that passes a keyword to "keywords" learns the ranking was not
+            // filtered instead of narrating it as if it were.
+            if (view !== 'keyword-history' && (input.keyword !== undefined || input.match !== undefined)) {
+                throw new Error('Parameters "keyword" and "match" apply only to view "keyword-history".');
+            }
+
             let data: unknown;
-            if (view === 'keywords') {
+            if (view === 'keyword-history') {
+                const keyword = typeof input.keyword === 'string' ? input.keyword.trim() : '';
+                if (!keyword || keyword.length > MAX_SEO_KEYWORD_LENGTH) {
+                    throw new Error(`View "keyword-history" requires a non-empty "keyword" of at most ${MAX_SEO_KEYWORD_LENGTH} characters.`);
+                }
+                const match = input.match === undefined ? 'exact' : String(input.match);
+                if (!(SEO_KEYWORD_MATCHES as readonly string[]).includes(match)) {
+                    throw new Error(`Parameter "match" must be one of: ${SEO_KEYWORD_MATCHES.join(', ')}. Got: ${match}`);
+                }
+                data = await gscService.getKeywordHistory(keyword, hours, match as (typeof SEO_KEYWORD_MATCHES)[number]);
+            } else if (view === 'keywords') {
                 data = await gscService.getKeywordsForPeriod(hours, limit);
             } else if (view === 'pages') {
                 data = await gscService.getPagesForPeriod(hours, limit);

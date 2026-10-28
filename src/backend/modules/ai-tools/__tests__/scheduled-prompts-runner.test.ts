@@ -557,6 +557,38 @@ describe('runScheduledPrompts', () => {
         });
     });
 
+    it('links a recorded run to the saved prompt and trigger that fired it', async () => {
+        // Each autonomous run gets a fresh conversationId, so without these two
+        // fields nothing in the history could find a prompt's runs again.
+        provider.query.mockResolvedValueOnce({ responseText: 'the answer', model: 'claude-x', usage: { inputTokens: 3, outputTokens: 7 } });
+        const savedPrompts = createMockSavedPrompts([
+            makePrompt({ id: 'linked', cron: '* * * * *', lastRunAt: minutesAgo(5), prompt: 'analyze' })
+        ]);
+        const recordQuery = vi.fn(async (_record: IAiQueryRecord) => {});
+
+        await runScheduledPrompts({ savedPrompts: savedPrompts as any, logger: logger as any, resolveProvider: () => provider, recordQuery });
+
+        expect(recordQuery.mock.calls[0]?.[0]).toMatchObject({ savedPromptId: 'linked', triggerId: 't1' });
+    });
+
+    it('links a failed run, and a run skipped for want of a provider, to their saved prompt', async () => {
+        provider.query.mockRejectedValueOnce(new Error('Failed to connect to Anthropic API'));
+        const failing = createMockSavedPrompts([
+            makePrompt({ id: 'failing', cron: '* * * * *', lastRunAt: minutesAgo(5), prompt: 'analyze' })
+        ]);
+        const skipped = createMockSavedPrompts([
+            makePrompt({ id: 'skipped', cron: '* * * * *', lastRunAt: minutesAgo(5), prompt: 'analyze' })
+        ]);
+        const recordFailed = vi.fn(async (_record: IAiQueryRecord) => {});
+        const recordSkipped = vi.fn(async (_record: IAiQueryRecord) => {});
+
+        await runScheduledPrompts({ savedPrompts: failing as any, logger: logger as any, resolveProvider: () => provider, recordQuery: recordFailed });
+        await runScheduledPrompts({ savedPrompts: skipped as any, logger: logger as any, resolveProvider: () => null, recordQuery: recordSkipped });
+
+        expect(recordFailed.mock.calls[0]?.[0]).toMatchObject({ status: 'failed', savedPromptId: 'failing', triggerId: 't1' });
+        expect(recordSkipped.mock.calls[0]?.[0]).toMatchObject({ status: 'failed', savedPromptId: 'skipped', triggerId: 't1' });
+    });
+
     it('records the expanded prompt for a cron-fired run while handing the provider the raw template', async () => {
         // The cron path used to build its own collaborator bundle and leave out
         // the expander, so every cron-fired run was stored without the text it

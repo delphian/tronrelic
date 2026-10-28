@@ -1,9 +1,11 @@
 /**
  * @file prompt-run-ai-tools.test.ts
  *
- * Pins what the two prompt-run AI tools promise a model. The listing pages
- * honestly (a `nextOffset` that stops on the last page) and never carries an
- * answer, transcript, or error text. The transcript read is classified
+ * Pins what the three prompt-run AI tools promise a model. The listing pages
+ * honestly (a `nextOffset` that stops on the last page), passes only validated
+ * filters to the history, names the saved prompt a run came from, and never
+ * carries an answer, transcript, or error text. The summary applies the same
+ * filters and averages cost over priced runs only. The transcript read is classified
  * `secret`, finds a run by its own id or by conversation id, keeps the
  * allowlist's "unknown" state apart from "unrestricted", does not return the
  * answer twice, cuts each text field to the per-field limit, and pages a long
@@ -13,6 +15,22 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { IAiQueryRecord, IAiTool, ISystemLogService } from '@/types';
 import { AI_TOOL_NAMES, buildPromptRunAiTools } from '../buildPromptRunAiTools.js';
+import type { IAiQueryHistoryFilter, IAiQueryRunSummary } from '../services/ai-query-history.service.js';
+
+/** What the history reports when no run matches, the fake's default summary. */
+const EMPTY_SUMMARY: IAiQueryRunSummary = {
+    runs: 0,
+    byStatus: {},
+    byOutcome: {},
+    costUsd: 0,
+    pricedRuns: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    firstRunAt: null,
+    lastRunAt: null,
+    lastAnsweredAt: null,
+    lastAnsweredRunId: null
+};
 
 /**
  * A stored turn with sensible defaults.
@@ -43,10 +61,12 @@ function run(overrides: Partial<IAiQueryRecord> & { id: string }): IAiQueryRecor
  * @param records - Every stored turn, newest first.
  * @returns The tools keyed by name and the fake's spies.
  */
-function buildTools(records: IAiQueryRecord[]): {
+function buildTools(records: IAiQueryRecord[], summary: IAiQueryRunSummary = EMPTY_SUMMARY): {
     tools: Record<string, IAiTool>;
     list: ReturnType<typeof vi.fn>;
+    summarize: ReturnType<typeof vi.fn>;
 } {
+    const summarize = vi.fn(async (_filter: IAiQueryHistoryFilter) => summary);
     const list = vi.fn(async (query: { limit?: number; offset?: number } = {}) => {
         const limit = query.limit ?? 50;
         const offset = query.offset ?? 0;
@@ -57,11 +77,12 @@ function buildTools(records: IAiQueryRecord[]): {
         get: vi.fn(async (id: string) => records.find(record => record.id === id) ?? null),
         getConversation: vi.fn(async (conversationId: string) => records
             .filter(record => record.conversationId === conversationId)
-            .sort((a, b) => a.createdAt.localeCompare(b.createdAt)))
+            .sort((a, b) => a.createdAt.localeCompare(b.createdAt))),
+        summarize
     };
     const logger = { error: vi.fn(), info: vi.fn(), warn: vi.fn() } as unknown as ISystemLogService;
     const tools = Object.fromEntries(buildPromptRunAiTools(history, logger).map(tool => [tool.name, tool]));
-    return { tools, list };
+    return { tools, list, summarize };
 }
 
 const WITH_TRANSCRIPT = run({
@@ -86,6 +107,102 @@ describe('prompt run AI tools', () => {
         expect(Object.keys(tools).sort()).toEqual(Object.values(AI_TOOL_NAMES).sort());
         expect(tools[AI_TOOL_NAMES.listRuns].capability).toEqual({ sideEffect: 'read', reversible: true, sensitivity: 'internal' });
         expect(tools[AI_TOOL_NAMES.getRun].capability).toEqual({ sideEffect: 'read', reversible: true, sensitivity: 'secret', surfacesUntrustedContent: true });
+        expect(tools[AI_TOOL_NAMES.summarizeRuns].capability).toEqual({ sideEffect: 'read', reversible: true, sensitivity: 'internal' });
+    });
+
+    it('passes validated filters to the history, rewriting time bounds into the stored shape', async () => {
+        const { tools, list } = buildTools([]);
+
+        await tools[AI_TOOL_NAMES.listRuns].handler({
+            savedPromptId: ' c1c4ed1d ',
+            mode: 'scheduled',
+            status: 'incomplete',
+            outcome: 'empty',
+            since: '2026-10-01T02:00:00+02:00',
+            until: '2026-10-31T23:59:59Z',
+            limit: 10
+        });
+
+        expect(list).toHaveBeenCalledWith({
+            savedPromptId: 'c1c4ed1d',
+            mode: 'scheduled',
+            status: 'incomplete',
+            outcome: 'empty',
+            since: '2026-10-01T00:00:00.000Z',
+            until: '2026-10-31T23:59:59.000Z',
+            limit: 10,
+            offset: 0
+        });
+    });
+
+    it('returns the saved prompt and trigger a run came from, and null for a run with neither', async () => {
+        const linked = run({ id: 'r-9', savedPromptId: 'news', triggerId: 'cron-1' });
+        const { tools } = buildTools([linked, run({ id: 'r-8', mode: 'stream' })]);
+
+        const result = await tools[AI_TOOL_NAMES.listRuns].handler({}) as { runs: Array<Record<string, unknown>> };
+
+        expect(result.runs[0]).toMatchObject({ id: 'r-9', savedPromptId: 'news', triggerId: 'cron-1' });
+        expect(result.runs[1]).toMatchObject({ id: 'r-8', savedPromptId: null, triggerId: null });
+    });
+
+    it('refuses a bad filter as an input error without reading the history', async () => {
+        const { tools, list, summarize } = buildTools([]);
+
+        const badInputs: Array<Record<string, unknown>> = [
+            { savedPromptId: '' },
+            { savedPromptId: 7 },
+            { mode: 'cron' },
+            { status: 'succeeded' },
+            { outcome: 'timeout' },
+            { since: 'last week' },
+            { since: '2026-10-31T00:00:00Z', until: '2026-10-01T00:00:00Z' }
+        ];
+        for (const input of badInputs) {
+            for (const name of [AI_TOOL_NAMES.listRuns, AI_TOOL_NAMES.summarizeRuns]) {
+                const result = await tools[name].handler(input) as Record<string, unknown>;
+                expect(result).toEqual({ success: false, error: expect.any(String), errorKind: 'input' });
+            }
+        }
+        expect(list).not.toHaveBeenCalled();
+        expect(summarize).not.toHaveBeenCalled();
+    });
+
+    it('summarizes with the applied filters and an average over priced runs only', async () => {
+        const summary: IAiQueryRunSummary = {
+            ...EMPTY_SUMMARY,
+            runs: 30,
+            byStatus: { completed: 26, failed: 4 },
+            byOutcome: { answered: 25, empty: 1, failed: 4 },
+            costUsd: 6,
+            pricedRuns: 24,
+            firstRunAt: '2026-10-01T23:45:00.000Z',
+            lastRunAt: '2026-10-27T23:46:00.000Z',
+            lastAnsweredAt: '2026-10-25T23:45:00.000Z',
+            lastAnsweredRunId: 'r-25'
+        };
+        const { tools, summarize } = buildTools([], summary);
+
+        const result = await tools[AI_TOOL_NAMES.summarizeRuns].handler({ savedPromptId: 'news', since: '2026-10-01T00:00:00Z' }) as Record<string, unknown>;
+
+        expect(summarize).toHaveBeenCalledWith({ savedPromptId: 'news', since: '2026-10-01T00:00:00.000Z' });
+        expect(result).toMatchObject({
+            success: true,
+            filters: { savedPromptId: 'news', since: '2026-10-01T00:00:00.000Z' },
+            runs: 30,
+            byStatus: { completed: 26, failed: 4 },
+            costUsd: 6,
+            pricedRuns: 24,
+            averageCostUsd: 0.25,
+            lastAnsweredRunId: 'r-25'
+        });
+    });
+
+    it('reports no average cost when no run was priced', async () => {
+        const { tools } = buildTools([], { ...EMPTY_SUMMARY, runs: 2, byStatus: { failed: 2 } });
+
+        const result = await tools[AI_TOOL_NAMES.summarizeRuns].handler({}) as Record<string, unknown>;
+
+        expect(result).toMatchObject({ runs: 2, pricedRuns: 0, averageCostUsd: null });
     });
 
     it('pages newest first and stops nextOffset on the last page', async () => {

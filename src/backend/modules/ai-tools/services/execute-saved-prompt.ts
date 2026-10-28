@@ -208,6 +208,10 @@ export async function executeSavedPrompt(
 ): Promise<void> {
     const { savedPrompts, logger, resolveProvider, resolveEndUser, composeSystemPrompt, expandPrompt, notify, recordQuery } = deps;
     const { triggerId, claimedAt } = opts;
+    // Stamped on every history row this run writes, whichever branch writes
+    // it, so the run can be found from its prompt later. A manual run-now has
+    // no trigger, so it records the prompt id alone.
+    const runLink = { savedPromptId: p.id, ...(triggerId ? { triggerId } : {}) };
 
     /**
      * Record a pre-query failure (provider missing, owner unresolvable) so it is
@@ -242,7 +246,8 @@ export async function executeSavedPrompt(
                         // The prompt's own grant, recorded even though nothing
                         // ran: reopening a skipped run still puts the composer
                         // where retrying it by hand needs to start from.
-                        toolAllowlist: p.toolAllowlist ?? null
+                        toolAllowlist: p.toolAllowlist ?? null,
+                        ...runLink
                     })
                 );
             } catch (historyErr) {
@@ -437,7 +442,8 @@ export async function executeSavedPrompt(
                 await recordQuery(
                     buildAiQueryRecord('scheduled', promptText, historyConversationId, queryStartedAt, historyId, result, null, p.model, {
                         expandedPrompt: expandedPromptText,
-                        toolAllowlist: p.toolAllowlist ?? null
+                        toolAllowlist: p.toolAllowlist ?? null,
+                        ...runLink
                     })
                 );
             } catch (historyErr) {
@@ -518,7 +524,8 @@ export async function executeSavedPrompt(
             try {
                 await recordQuery(
                     buildAiQueryRecord('scheduled', promptText, historyConversationId, queryStartedAt, historyId, null, lastRunError, p.model, {
-                        toolAllowlist: p.toolAllowlist ?? null
+                        toolAllowlist: p.toolAllowlist ?? null,
+                        ...runLink
                     })
                 );
             } catch (historyErr) {

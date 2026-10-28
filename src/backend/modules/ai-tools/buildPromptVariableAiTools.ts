@@ -11,7 +11,8 @@
  *
  * - `ai-list-prompt-variables`: every variable's name, description, category,
  *   kind, and sensitivity. Runs no resolver and returns no value.
- * - `ai-get-prompt-variables`: the current value of up to 10 variables.
+ * - `ai-get-prompt-variables`: the current value of up to 10 variables, one
+ *   page at a time, with an `offset` for reading past the first page.
  *
  * A variable classified `secret` is never returned by `ai-get-prompt-variables`.
  * Its entry comes back `withheld`. Returning secrets would make the tool a
@@ -74,11 +75,18 @@ const GET_CAPABILITY: IAiToolCapability = {
 const MAX_NAMES = 10;
 
 /**
- * Most characters of one variable's value returned. Ten values at this size
- * stay well inside a model's context window; a longer value is cut and marked
- * `truncated`, with its full size still reported.
+ * Most characters of one variable's value returned per call. Ten values at this
+ * size stay well inside a model's context window. A longer value is returned
+ * one page at a time: the entry is marked `truncated` and carries the
+ * `nextOffset` the caller passes back to read the next page.
  */
 const MAX_VALUE_CHARS = 10_000;
+
+/**
+ * Highest `offset` accepted. Far beyond any value a prompt could usefully
+ * carry, so it only refuses a runaway argument before any lookup.
+ */
+const MAX_OFFSET = 1_000_000;
 
 /** Most variables `ai-list-prompt-variables` returns, so a large admin catalog cannot flood the context. */
 const MAX_LIST = 500;
@@ -101,12 +109,16 @@ const SHARED_DESCRIPTION =
 interface IVariableReadResult {
     name: string;
     status: 'ok' | 'not-found' | 'withheld' | 'error';
-    /** The current value, cut to {@link MAX_VALUE_CHARS}. Present only for `ok`. */
+    /** One page of the current value, starting at the requested offset. Present only for `ok`. */
     content?: string;
+    /** Length of the full value in characters, the unit `offset` counts in. Present only for `ok`. */
+    totalChars?: number;
     /** UTF-8 size of the full value, before any cut. Present only for `ok`. */
     sizeBytes?: number;
-    /** True when `content` was cut. Present only for `ok`. */
+    /** True when the value continues past this page. Present only for `ok`. */
     truncated?: boolean;
+    /** The `offset` that reads the next page, or null on the last page. Present only for `ok`. */
+    nextOffset?: number | null;
     /** Why the value is missing. Present for every status except `ok`. */
     reason?: string;
 }
@@ -137,6 +149,51 @@ function readNames(value: unknown): string[] {
         );
     }
     return [...new Set(items)];
+}
+
+/**
+ * Read the optional `offset` argument, refusing anything the model can correct.
+ *
+ * Without an offset there is no way to read past the first page of a long
+ * value, so this is what makes a value longer than {@link MAX_VALUE_CHARS}
+ * readable at all. Absent means the start of the value.
+ *
+ * @param value - The raw `offset` argument.
+ * @returns The character position each requested value is read from.
+ */
+function readOffset(value: unknown): number {
+    let result = 0;
+    if (value !== undefined && value !== null) {
+        if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > MAX_OFFSET) {
+            throw new AiToolInputError(`offset must be a whole number from 0 to ${MAX_OFFSET}. Pass the nextOffset from the previous call to continue a value.`);
+        }
+        result = value;
+    }
+    return result;
+}
+
+/**
+ * Cut one page out of a value, starting at `offset`.
+ *
+ * The page never ends between the two halves of a UTF-16 surrogate pair, such
+ * as an emoji. Splitting one would leave an unpaired half at the end of this
+ * page and at the start of the next, and both would reach the model as
+ * replacement characters.
+ *
+ * @param value - The variable's full current value.
+ * @param offset - Where the page starts, in characters.
+ * @returns The page text, and the offset of the next page or null when this page reaches the end.
+ */
+function pageOf(value: string, offset: number): { content: string; nextOffset: number | null } {
+    const start = Math.min(offset, value.length);
+    let end = Math.min(start + MAX_VALUE_CHARS, value.length);
+    if (end < value.length && end > start) {
+        const last = value.charCodeAt(end - 1);
+        if (last >= 0xd800 && last <= 0xdbff) {
+            end -= 1;
+        }
+    }
+    return { content: value.slice(start, end), nextOffset: end < value.length ? end : null };
 }
 
 /**
@@ -172,13 +229,15 @@ function toListEntry(summary: IPromptVariableSummary): Record<string, unknown> {
  * @param logger - Where resolver failures are recorded.
  * @param name - The bare variable name.
  * @param summary - The variable's summary, or undefined when no such variable exists.
+ * @param offset - Where in the value to start reading, so a caller can page through a long one.
  * @returns The variable's outcome.
  */
 async function readOne(
     registry: Pick<IPromptVariableRegistry, 'resolve'>,
     logger: ISystemLogService,
     name: string,
-    summary: IPromptVariableSummary | undefined
+    summary: IPromptVariableSummary | undefined,
+    offset: number
 ): Promise<IVariableReadResult> {
     let result: IVariableReadResult;
     if (!summary) {
@@ -188,12 +247,15 @@ async function readOne(
     } else {
         try {
             const value = await registry.resolve(name);
+            const page = pageOf(value, offset);
             result = {
                 name,
                 status: 'ok',
-                content: value.length > MAX_VALUE_CHARS ? value.slice(0, MAX_VALUE_CHARS) : value,
+                content: page.content,
+                totalChars: value.length,
                 sizeBytes: Buffer.byteLength(value, 'utf-8'),
-                truncated: value.length > MAX_VALUE_CHARS
+                truncated: page.nextOffset !== null,
+                nextOffset: page.nextOffset
             };
         } catch (error) {
             logger.warn({ err: error, variable: name, tool: AI_TOOL_NAMES.getVariables }, `Prompt variable "${name}" failed to resolve for an AI tool`);
@@ -248,8 +310,9 @@ export function buildPromptVariableAiTools(
         description:
             `Get the current value of 1 to ${MAX_NAMES} prompt variables, exactly as a prompt referencing {%name%} would receive it now. ` +
             'Use to check what a variable contains before relying on it in a prompt, or to read live data a variable already computes. ' +
-            `Parameters: names (required, 1 to ${MAX_NAMES} variable names, with or without the {% %} delimiters). ` +
-            `Returns variables[], one per name, each with status: ok (content, sizeBytes of the full value, and truncated when the content was cut to ${MAX_VALUE_CHARS} characters), not-found, withheld (classified secret), or error (the variable failed to compute). Each non-ok entry carries a reason. One bad name does not fail the others. ` +
+            `Parameters: names (required, 1 to ${MAX_NAMES} variable names, with or without the {% %} delimiters); offset (optional, default 0, the character position to start reading each value from). ` +
+            `Each value is returned ${MAX_VALUE_CHARS} characters at a time. When truncated is true, call again with that one name and offset set to its nextOffset to read the next page, and repeat until nextOffset is null. ` +
+            'Returns variables[], one per name, each with status: ok (content for this page, totalChars and sizeBytes of the full value, truncated, and nextOffset), not-found, withheld (classified secret), or error (the variable failed to compute). Each non-ok entry carries a reason. One bad name does not fail the others. ' +
             SHARED_DESCRIPTION,
         capability: GET_CAPABILITY,
         inputSchema: {
@@ -262,6 +325,12 @@ export function buildPromptVariableAiTools(
                     minItems: 1,
                     maxItems: MAX_NAMES,
                     description: `1 to ${MAX_NAMES} variable names.`
+                },
+                offset: {
+                    type: 'integer',
+                    minimum: 0,
+                    maximum: MAX_OFFSET,
+                    description: 'Character position to start reading each value from, default 0. Pass the previous call\'s nextOffset to read the next page of a long value.'
                 }
             },
             required: ['names'],
@@ -269,12 +338,14 @@ export function buildPromptVariableAiTools(
         },
         inputExamples: [
             { names: ['chain-params'] },
-            { names: ['system-status', '{%observer-stats%}', 'site-info'] }
+            { names: ['system-status', '{%observer-stats%}', 'site-info'] },
+            { names: ['news-source-urls'], offset: MAX_VALUE_CHARS }
         ],
         handler: async (input) => runAiToolCall(logger, AI_TOOL_NAMES.getVariables, FAILURE_MESSAGE, async () => {
             const names = readNames(input.names);
+            const offset = readOffset(input.offset);
             const byName = new Map(registry.listSummaries().map(summary => [summary.name, summary]));
-            const variables = await Promise.all(names.map(name => readOne(registry, logger, name, byName.get(name))));
+            const variables = await Promise.all(names.map(name => readOne(registry, logger, name, byName.get(name), offset)));
             return { variables };
         })
     };

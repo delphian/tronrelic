@@ -14,7 +14,7 @@
  * import.
  */
 
-import type { AiQueryMode, IAiQueryRecord, IAiQueryResult, IDatabaseService, ISystemLogService } from '@/types';
+import type { AiQueryMode, AiQueryOutcome, IAiQueryRecord, IAiQueryResult, IDatabaseService, ISystemLogService } from '@/types';
 import { classifyAiQueryOutcome } from './classify-query-outcome.js';
 
 /** Physical collection name (modules prefix `module_<id>_` manually). */
@@ -45,6 +45,20 @@ export interface IAiQueryRecordContext {
      * know, so the record stays silent rather than claiming `null`.
      */
     toolAllowlist?: string[] | null;
+
+    /**
+     * The saved prompt that produced the run, when one did. Recorded so a
+     * prompt's runs can be found again: nothing in the result names the
+     * prompt, and each autonomous run gets a fresh conversation id. Omit it
+     * on an interactive run.
+     */
+    savedPromptId?: string;
+
+    /**
+     * The saved-prompt trigger that fired the run. Omit it on a manual
+     * run-now, which no trigger fired.
+     */
+    triggerId?: string;
 }
 
 /**
@@ -98,7 +112,7 @@ export function buildAiQueryRecord(
     fallbackModel?: string,
     context: IAiQueryRecordContext = {}
 ): IAiQueryRecord {
-    const { expandedPrompt, toolAllowlist } = context;
+    const { expandedPrompt, toolAllowlist, savedPromptId, triggerId } = context;
     const assessment = classifyAiQueryOutcome(result, errorMessage);
 
     return {
@@ -141,6 +155,11 @@ export function buildAiQueryRecord(
         // reason, and storing a default would invent a signal that never arrived.
         ...(result ? { stopReason: result.stopReason } : {}),
         ...(conversationId ? { conversationId } : {}),
+        // Left out rather than stored empty when the run did not come from a
+        // saved prompt, so a filter on either field only ever matches runs
+        // that really have one.
+        ...(savedPromptId ? { savedPromptId } : {}),
+        ...(triggerId ? { triggerId } : {}),
         // Persist the structured transcript when the provider reported one, so a
         // reopened conversation replays the turn's thinking, tool calls, and tool
         // results — not just `responseText`. Absent when the query failed or the
@@ -150,8 +169,32 @@ export function buildAiQueryRecord(
     };
 }
 
-/** Pagination input for the history listing. */
-export interface IAiQueryHistoryQuery {
+/**
+ * Which runs a history read covers. Every field is optional and narrows the
+ * set; an empty filter covers every run. Shared by the paged listing and the
+ * summary so the two always agree on what a filter selects.
+ */
+export interface IAiQueryHistoryFilter {
+    /** Only runs produced by this saved prompt. */
+    savedPromptId?: string;
+    /** Only runs recorded with this execution mode. */
+    mode?: AiQueryMode;
+    /** Only runs that ended with this status. */
+    status?: IAiQueryRecord['status'];
+    /** Only runs classified with this outcome. Runs recorded before outcomes existed never match. */
+    outcome?: AiQueryOutcome;
+    /**
+     * Earliest `createdAt` to include, as an ISO 8601 UTC string in
+     * `toISOString()` shape. `createdAt` is stored as that string, so a plain
+     * string comparison orders records by time.
+     */
+    since?: string;
+    /** Latest `createdAt` to include, in the same shape as `since`. */
+    until?: string;
+}
+
+/** Filter and pagination input for the history listing. */
+export interface IAiQueryHistoryQuery extends IAiQueryHistoryFilter {
     /** Page size. Clamped to 1..200; defaults to 50. */
     limit?: number;
     /** Records to skip from the newest. Defaults to 0. */
@@ -162,6 +205,96 @@ export interface IAiQueryHistoryQuery {
 export interface IAiQueryHistoryPage {
     records: IAiQueryRecord[];
     total: number;
+}
+
+/**
+ * Totals over every run a filter selects, so a caller can judge how a saved
+ * prompt has been doing without paging through its runs and adding them up.
+ */
+export interface IAiQueryRunSummary {
+    /** Runs the filter selects. */
+    runs: number;
+    /** Run count per `status`. */
+    byStatus: Record<string, number>;
+    /** Run count per `outcome`, with runs recorded before outcomes existed counted under `unrecorded`. */
+    byOutcome: Record<string, number>;
+    /** Sum of `costUsd` over the runs that carry one. */
+    costUsd: number;
+    /** Runs that carry a `costUsd`. A run the provider could not price is not counted as free. */
+    pricedRuns: number;
+    /** Sum of input tokens. */
+    inputTokens: number;
+    /** Sum of output tokens. */
+    outputTokens: number;
+    /** `createdAt` of the oldest selected run, or null when none matched. */
+    firstRunAt: string | null;
+    /** `createdAt` of the newest selected run, or null when none matched. */
+    lastRunAt: string | null;
+    /** `createdAt` of the newest selected run whose outcome is `answered`, or null. */
+    lastAnsweredAt: string | null;
+    /** Id of that run, or null. */
+    lastAnsweredRunId: string | null;
+}
+
+/** The shape the summary aggregation returns, before it is turned into an {@link IAiQueryRunSummary}. */
+interface ISummaryFacets {
+    totals: Array<{ runs: number; costUsd: number; pricedRuns: number; inputTokens: number; outputTokens: number; firstRunAt: string; lastRunAt: string }>;
+    byStatus: Array<{ _id: string | null; count: number }>;
+    byOutcome: Array<{ _id: string | null; count: number }>;
+    lastAnswered: Array<{ id: string; createdAt: string }>;
+}
+
+/**
+ * Turn a history filter into a database filter.
+ *
+ * Every value is coerced to a primitive string, so a filter can never carry a
+ * database operator object even if a caller passes model-supplied input
+ * straight through.
+ *
+ * @param filter - The fields to narrow by.
+ * @returns The database filter, empty when nothing narrows.
+ */
+function toDatabaseFilter(filter: IAiQueryHistoryFilter): Record<string, unknown> {
+    const query: Record<string, unknown> = {};
+    if (filter.savedPromptId) {
+        query.savedPromptId = String(filter.savedPromptId);
+    }
+    if (filter.mode) {
+        query.mode = String(filter.mode);
+    }
+    if (filter.status) {
+        query.status = String(filter.status);
+    }
+    if (filter.outcome) {
+        query.outcome = String(filter.outcome);
+    }
+    if (filter.since || filter.until) {
+        const range: Record<string, string> = {};
+        if (filter.since) {
+            range.$gte = String(filter.since);
+        }
+        if (filter.until) {
+            range.$lte = String(filter.until);
+        }
+        query.createdAt = range;
+    }
+    return query;
+}
+
+/**
+ * Turn a grouped count list into an object keyed by the grouped value.
+ *
+ * @param rows - One row per distinct value, with its count.
+ * @param missingKey - The key a row with no value is counted under.
+ * @returns Count per value.
+ */
+function toCounts(rows: Array<{ _id: string | null; count: number }>, missingKey: string): Record<string, number> {
+    const counts: Record<string, number> = {};
+    for (const row of rows) {
+        const key = row._id ?? missingKey;
+        counts[key] = (counts[key] ?? 0) + row.count;
+    }
+    return counts;
 }
 
 /**
@@ -191,6 +324,9 @@ export class AiQueryHistoryService {
         await this.database.createIndex(COLLECTION, { id: 1 }, { unique: true });
         await this.database.createIndex(COLLECTION, { createdAt: -1 });
         await this.database.createIndex(COLLECTION, { conversationId: 1, createdAt: 1 }, { sparse: true });
+        // Backs one saved prompt's runs read newest first, by the listing and
+        // the summary. Sparse because interactive runs carry no savedPromptId.
+        await this.database.createIndex(COLLECTION, { savedPromptId: 1, createdAt: -1 }, { sparse: true });
     }
 
     /**
@@ -212,25 +348,91 @@ export class AiQueryHistoryService {
     }
 
     /**
-     * Page through query records, newest first.
+     * Page through query records, newest first, narrowed by the filter.
      *
-     * @param query - Pagination.
-     * @returns A page of records plus the matching total.
+     * @param query - Filters and pagination. With no filters every run is listed.
+     * @returns A page of records plus the total matching the filters.
      */
     async list(query: IAiQueryHistoryQuery = {}): Promise<IAiQueryHistoryPage> {
         const limit = Math.min(Math.max(1, query.limit ?? 50), 200);
         const offset = Math.max(0, query.offset ?? 0);
+        const filter = toDatabaseFilter(query);
 
         const collection = this.database.getCollection<IAiQueryRecord>(COLLECTION);
         const records = await collection
-            .find({})
+            .find(filter)
             .sort({ createdAt: -1 })
             .skip(offset)
             .limit(limit)
             .toArray();
-        const total = await this.database.count(COLLECTION, {});
+        const total = await this.database.count(COLLECTION, filter);
 
         return { records, total };
+    }
+
+    /**
+     * Add up every run a filter selects, in one database round-trip.
+     *
+     * Paging through a prompt's runs and adding them up in the caller would
+     * cost one call per page and miss runs past the last page read. This runs
+     * a single aggregation with one branch per figure. Cost is summed only
+     * over runs that carry a number, and `pricedRuns` says how many did, so a
+     * run the provider could not price is reported as unknown rather than
+     * counted as free.
+     *
+     * @param filter - Which runs to add up. With no filters every run is covered.
+     * @returns The totals, with zero counts and null timestamps when nothing matched.
+     */
+    async summarize(filter: IAiQueryHistoryFilter = {}): Promise<IAiQueryRunSummary> {
+        const collection = this.database.getCollection<IAiQueryRecord>(COLLECTION);
+        const rows = await collection
+            .aggregate<ISummaryFacets>([
+                { $match: toDatabaseFilter(filter) },
+                {
+                    $facet: {
+                        totals: [
+                            {
+                                $group: {
+                                    _id: null,
+                                    runs: { $sum: 1 },
+                                    costUsd: { $sum: { $cond: [{ $isNumber: '$costUsd' }, '$costUsd', 0] } },
+                                    pricedRuns: { $sum: { $cond: [{ $isNumber: '$costUsd' }, 1, 0] } },
+                                    inputTokens: { $sum: { $ifNull: ['$usage.inputTokens', 0] } },
+                                    outputTokens: { $sum: { $ifNull: ['$usage.outputTokens', 0] } },
+                                    firstRunAt: { $min: '$createdAt' },
+                                    lastRunAt: { $max: '$createdAt' }
+                                }
+                            }
+                        ],
+                        byStatus: [{ $group: { _id: '$status', count: { $sum: 1 } } }],
+                        byOutcome: [{ $group: { _id: '$outcome', count: { $sum: 1 } } }],
+                        lastAnswered: [
+                            { $match: { outcome: 'answered' } },
+                            { $sort: { createdAt: -1 } },
+                            { $limit: 1 },
+                            { $project: { _id: 0, id: 1, createdAt: 1 } }
+                        ]
+                    }
+                }
+            ])
+            .toArray();
+
+        const facets = rows[0];
+        const totals = facets?.totals[0];
+        const lastAnswered = facets?.lastAnswered[0];
+        return {
+            runs: totals?.runs ?? 0,
+            byStatus: toCounts(facets?.byStatus ?? [], 'unrecorded'),
+            byOutcome: toCounts(facets?.byOutcome ?? [], 'unrecorded'),
+            costUsd: totals?.costUsd ?? 0,
+            pricedRuns: totals?.pricedRuns ?? 0,
+            inputTokens: totals?.inputTokens ?? 0,
+            outputTokens: totals?.outputTokens ?? 0,
+            firstRunAt: totals?.firstRunAt ?? null,
+            lastRunAt: totals?.lastRunAt ?? null,
+            lastAnsweredAt: lastAnswered?.createdAt ?? null,
+            lastAnsweredRunId: lastAnswered?.id ?? null
+        };
     }
 
     /**
