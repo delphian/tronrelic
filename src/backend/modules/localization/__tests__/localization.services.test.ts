@@ -8,6 +8,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ObjectId } from 'mongodb';
 import type { ISystemLogService } from '@/types';
+import { MAX_LANGUAGE_PROMPT_LENGTH } from '@/types';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 import { LocalizationService } from '../services/localization.service.js';
 import { LocalizationAdminService } from '../services/localization-admin.service.js';
@@ -232,6 +233,27 @@ describe('LocalizationAdminService', () => {
         await expect(admin.createLanguage({ code: 'en', name: 'English', nativeName: 'English' }, 'admin'))
             .rejects.toBeInstanceOf(LocalizationValidationError);
         await expect(admin.createLanguage({ code: 'ZH_cn', name: 'x', nativeName: 'x' }, 'admin'))
+            .rejects.toBeInstanceOf(LocalizationValidationError);
+    });
+
+    it('stores a trimmed translation prompt, reads a missing one as empty, and lets an empty patch remove it', async () => {
+        const created = await admin.createLanguage({ code: 'vi', name: 'Vietnamese', nativeName: 'Tiếng Việt', translationPrompt: '  Address the reader as "bạn".  ' }, 'admin');
+        expect(created.translationPrompt).toBe('Address the reader as "bạn".');
+
+        // A language stored before the field existed has no prompt at all.
+        seedLanguage(db, 'zh', false);
+        const [, chinese] = await admin.listLanguages();
+        expect(chinese.translationPrompt).toBe('');
+
+        const cleared = await admin.updateLanguage('vi', { translationPrompt: '' }, 'admin');
+        expect(cleared.translationPrompt).toBe('');
+    });
+
+    it('refuses a translation prompt that is too long or not text', async () => {
+        seedLanguage(db, 'zh', false);
+        await expect(admin.updateLanguage('zh', { translationPrompt: 'x'.repeat(MAX_LANGUAGE_PROMPT_LENGTH + 1) }, 'admin'))
+            .rejects.toBeInstanceOf(LocalizationValidationError);
+        await expect(admin.updateLanguage('zh', { translationPrompt: { $set: 'x' } as unknown as string }, 'admin'))
             .rejects.toBeInstanceOf(LocalizationValidationError);
     });
 

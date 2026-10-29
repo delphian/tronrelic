@@ -17,6 +17,12 @@ export interface ILanguageDocument {
     nativeName: string;
     /** Script direction. */
     direction: LanguageDirection;
+    /**
+     * Translation guidance for this language only. Optional because languages
+     * stored before the field existed do not carry it; `toLanguage` reads a
+     * missing value as no guidance.
+     */
+    translationPrompt?: string;
     /** Whether visitors can reach the language. */
     enabled: boolean;
     /** When the language was added. */

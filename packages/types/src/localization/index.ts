@@ -38,6 +38,7 @@ export type { ILanguageSwitchStats } from './ILanguageSwitchStats.js';
 
 export { DEFAULT_LANGUAGE } from './DEFAULT_LANGUAGE.js';
 export { MAX_TRANSLATION_SUGGESTION_KEYS } from './MAX_TRANSLATION_SUGGESTION_KEYS.js';
+export { MAX_LANGUAGE_PROMPT_LENGTH } from './MAX_LANGUAGE_PROMPT_LENGTH.js';
 export { LANGUAGE_CODE_PATTERN } from './LANGUAGE_CODE_PATTERN.js';
 export { matchRoutePattern } from './matchRoutePattern.js';
 export { isValidRoutePattern } from './isValidRoutePattern.js';

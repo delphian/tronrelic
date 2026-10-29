@@ -185,6 +185,28 @@ describe('TranslationSuggestionService', () => {
         expect(db.getCollectionData(TRANSLATIONS_COLLECTION)).toHaveLength(0);
     });
 
+    it('adds the language guidance to the shared prompt, and only for that language', async () => {
+        const now = new Date();
+        db.getCollectionData(LANGUAGES_COLLECTION).push({
+            code: 'vi', name: 'Vietnamese', nativeName: 'Tiếng Việt', direction: 'ltr',
+            translationPrompt: 'Energy → Năng lượng.', enabled: false, createdAt: now, updatedAt: now
+        });
+        const reply = '{"translations":[{"id":"1","text":"x","note":null}],"notes":null}';
+        const keys = [{ namespace: 'core', key: 'tools.title' }];
+
+        const vietnamese = createProvider({ responseText: reply });
+        await createService(createRegistry(vietnamese)).suggest({ language: 'vi', keys }, 'admin');
+        const sent = (vietnamese.query as ReturnType<typeof vi.fn>).mock.calls[0][0].systemPrompt as string;
+        expect(sent.startsWith(DEFAULT_SYSTEM_PROMPT)).toBe(true);
+        expect(sent).toContain('Guidance for translating into Vietnamese (vi)');
+        expect(sent.endsWith('Energy → Năng lượng.')).toBe(true);
+
+        // The Chinese language has no guidance, so its requests carry none of Vietnamese's.
+        const chinese = createProvider({ responseText: reply });
+        await createService(createRegistry(chinese)).suggest({ language: 'zh', keys }, 'admin');
+        expect(chinese.query).toHaveBeenCalledWith(expect.objectContaining({ systemPrompt: DEFAULT_SYSTEM_PROMPT }));
+    });
+
     it('uses the provider and model chosen on the Settings tab', async () => {
         const provider = createProvider({ responseText: '{"translations":[{"id":"1","text":"x","note":null}],"notes":null}' });
         await settings.updateSettings({ providerId: 'test-ai', model: 'model-b' }, 'admin');

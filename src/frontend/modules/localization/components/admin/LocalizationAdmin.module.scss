@@ -215,6 +215,14 @@
     white-space: nowrap;
 }
 
+/* Cancel and save buttons at the foot of a dialog, such as the language
+   prompt editor, kept to the right where a dialog's confirm action sits. */
+.dialog_actions {
+    display: flex;
+    gap: var(--form-footer-gap);
+    justify-content: flex-end;
+}
+
 /* Empty and loading message inside a panel. */
 .placeholder {
     padding: var(--padding-md) 0;

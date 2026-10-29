@@ -31,6 +31,7 @@ import { DEFAULT_LANGUAGE, LANGUAGE_CODE_PATTERN } from '@/types';
 import { ContentError } from './content-error.js';
 import { resolveAiProvider, type IAiFeatureWording } from './resolveAiProvider.js';
 import { runIsolatedAiQuery } from './runIsolatedAiQuery.js';
+import { composeTranslationSystemPrompt } from './composeTranslationSystemPrompt.js';
 import { ContentTranslationProviderError, ContentTranslationUnavailableError } from './content-translation-errors.js';
 import {
     buildContentTranslationPrompt,
@@ -79,7 +80,7 @@ export interface IContentTranslationSuggestionDependencies {
     getProviderRegistry: () => IAiProviderRegistry | null;
     /**
      * Looks up the localization service at the moment of a request, for the
-     * target language's names. A function for the same reason: the
+     * target language's names and translation guidance. A function for the same reason: the
      * localization module publishes it after the content service is built.
      */
     getLocalization: () => ILocalizationService | null;
@@ -141,7 +142,7 @@ export class ContentTranslationSuggestionService {
             provider,
             {
                 prompt: buildContentTranslationPrompt(targetLanguage, source.fields, source.english, source.previous),
-                systemPrompt: settings.systemPrompt,
+                systemPrompt: composeTranslationSystemPrompt(settings.systemPrompt, targetLanguage),
                 model: settings.model ?? undefined,
                 maxTokens: estimateTranslationOutputTokens(source.fields, source.english, BASE_OUTPUT_TOKENS, MAX_OUTPUT_TOKENS),
                 timeoutMs: QUERY_TIMEOUT_MS,

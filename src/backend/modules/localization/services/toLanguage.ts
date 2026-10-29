@@ -21,6 +21,7 @@ export function toLanguage(document: ILanguageDocument): ILanguage {
         name: document.name,
         nativeName: document.nativeName,
         direction: document.direction,
+        translationPrompt: document.translationPrompt ?? '',
         enabled: document.enabled,
         createdAt: document.createdAt.toISOString(),
         updatedAt: document.updatedAt.toISOString()

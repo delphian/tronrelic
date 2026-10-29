@@ -26,7 +26,7 @@ import type {
     LanguageDirection,
     TranslationStatus
 } from '@/types';
-import { DEFAULT_LANGUAGE, LANGUAGE_CODE_PATTERN, PLUGIN_ID_PATTERN, isValidRoutePattern, matchRoutePattern } from '@/types';
+import { DEFAULT_LANGUAGE, LANGUAGE_CODE_PATTERN, MAX_LANGUAGE_PROMPT_LENGTH, PLUGIN_ID_PATTERN, isValidRoutePattern, matchRoutePattern } from '@/types';
 import type { ILanguageDocument, ILocalizedRouteDocument, ITranslationDocument, ITranslationKeyDocument } from '../database/index.js';
 import { KEYS_COLLECTION, LANGUAGES_COLLECTION, ROUTES_COLLECTION, TRANSLATIONS_COLLECTION } from '../database/index.js';
 import { LocalizationConflictError, LocalizationNotFoundError, LocalizationValidationError } from './localization-errors.js';
@@ -59,6 +59,8 @@ export interface ILanguageInput {
     nativeName: string;
     /** Script direction; defaults to `ltr`. */
     direction?: LanguageDirection;
+    /** Translation guidance for this language; defaults to none. */
+    translationPrompt?: string;
 }
 
 /** Fields an administrator may change on an existing language. */
@@ -69,6 +71,8 @@ export interface ILanguagePatch {
     nativeName?: string;
     /** New script direction. */
     direction?: LanguageDirection;
+    /** New translation guidance; an empty string removes it. */
+    translationPrompt?: string;
     /** Switch the language on or off for visitors. */
     enabled?: boolean;
 }
@@ -212,7 +216,7 @@ export class LocalizationAdminService {
      * Add a language. It starts disabled, so adding one never changes what
      * visitors see.
      *
-     * @param input - Code, names, and direction.
+     * @param input - Code, names, direction, and optional translation guidance.
      * @param actor - Who made the change, for the log.
      * @returns The stored language.
      * @throws LocalizationValidationError for a bad code or name, LocalizationConflictError for a duplicate.
@@ -241,6 +245,7 @@ export class LocalizationAdminService {
             name: this.requireName(input.name, 'name'),
             nativeName: this.requireName(input.nativeName, 'native name'),
             direction: this.requireDirection(input.direction ?? 'ltr'),
+            translationPrompt: this.requireTranslationPrompt(input.translationPrompt ?? ''),
             enabled: false,
             createdAt: now,
             updatedAt: now
@@ -257,7 +262,7 @@ export class LocalizationAdminService {
     }
 
     /**
-     * Change a language's names, direction, or enabled state.
+     * Change a language's names, direction, translation guidance, or enabled state.
      *
      * Enabling is refused when existing pages already start with `/<code>/`,
      * because once enabled the code would claim those addresses for the new
@@ -283,6 +288,9 @@ export class LocalizationAdminService {
         }
         if (patch.direction !== undefined) {
             set.direction = this.requireDirection(patch.direction);
+        }
+        if (patch.translationPrompt !== undefined) {
+            set.translationPrompt = this.requireTranslationPrompt(patch.translationPrompt);
         }
         if (patch.enabled !== undefined) {
             if (typeof patch.enabled !== 'boolean') {
@@ -785,6 +793,28 @@ export class LocalizationAdminService {
         const trimmed = typeof value === 'string' ? value.trim() : '';
         if (trimmed === '' || trimmed.length > MAX_NAME_LENGTH) {
             throw new LocalizationValidationError(`Invalid ${label}: must be 1–${MAX_NAME_LENGTH} characters`);
+        }
+        return trimmed;
+    }
+
+    /**
+     * Validate a language's translation guidance.
+     *
+     * Unlike the shared system prompt, the guidance may be empty, because most
+     * languages start with none and the shared prompt already gives the model
+     * its instructions. The limit keeps a pasted document from raising the
+     * cost of every Suggest request into the language.
+     *
+     * @param value - Candidate guidance from the request.
+     * @returns The trimmed guidance, possibly empty.
+     */
+    private requireTranslationPrompt(value: unknown): string {
+        if (typeof value !== 'string') {
+            throw new LocalizationValidationError('Invalid translation prompt: expected text');
+        }
+        const trimmed = value.trim();
+        if (trimmed.length > MAX_LANGUAGE_PROMPT_LENGTH) {
+            throw new LocalizationValidationError(`Invalid translation prompt: must be at most ${MAX_LANGUAGE_PROMPT_LENGTH} characters`);
         }
         return trimmed;
     }

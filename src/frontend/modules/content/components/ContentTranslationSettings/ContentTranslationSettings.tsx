@@ -142,7 +142,7 @@ export function ContentTranslationSettings() {
                 <Field
                     label="System prompt"
                     htmlFor="content-translation-system-prompt"
-                    hint="Sent ahead of every content translation Suggest request. Put the site's tone and a glossary here. A suggestion fills the editor; nothing is saved until you save the translation."
+                    hint="Sent ahead of every content translation Suggest request, whatever the language. Put the site's tone and rules that hold in every language here; a glossary for one language belongs in that language's translation prompt on the Languages tab. A suggestion fills the editor; nothing is saved until you save the translation."
                 >
                     <Textarea
                         id="content-translation-system-prompt"
