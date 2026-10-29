@@ -36,6 +36,62 @@ export interface IIsolatedAiQueryOptions {
 }
 
 /**
+ * What is known about a request that produced no usable answer, for the
+ * caller's log. Flat fields rather than the nested result, so a log query can
+ * filter on any one of them directly.
+ *
+ * A reply cut off by the token limit is the case these exist for. Reading
+ * `outputTokens` against the budget that was sent, next to `responseLength`,
+ * shows whether the model wrote up to the limit or spent the budget before
+ * writing much at all, which is the difference between a budget that is too
+ * small and a model that reasons at length before answering.
+ */
+export interface IIsolatedAiQueryFailure {
+    /** Why the model stopped, when the request completed. */
+    stopReason?: IAiQueryResult['stopReason'];
+    /** The model that answered, when the request completed. */
+    model?: string;
+    /** Prompt tokens the request consumed, when it completed. */
+    inputTokens?: number;
+    /** Output tokens the model produced, reasoning included, when the request completed. */
+    outputTokens?: number;
+    /** Characters of visible answer text the model produced. */
+    responseLength?: number;
+    /**
+     * Characters of reasoning in the provider's transcript. Undefined when the
+     * provider reported no transcript, which does not mean the model did not
+     * reason: a provider only includes reasoning when it is set to keep it.
+     */
+    thinkingLength?: number;
+    /** The transport error, when the request never completed. */
+    error?: unknown;
+}
+
+/**
+ * Describe a completed request whose answer cannot be used.
+ *
+ * @param result - The provider's result.
+ * @returns The flat failure details the caller logs.
+ */
+function describeFailure(result: IAiQueryResult): IIsolatedAiQueryFailure {
+    const failure: IIsolatedAiQueryFailure = {
+        stopReason: result.stopReason,
+        model: result.model,
+        inputTokens: result.usage.inputTokens,
+        outputTokens: result.usage.outputTokens,
+        responseLength: result.responseText.length
+    };
+    if (result.transcript) {
+        failure.thinkingLength = result.transcript.reduce(
+            (total, segment) => total + (segment.type === 'thinking' ? segment.text.length : 0),
+            0
+        );
+    }
+
+    return failure;
+}
+
+/**
  * Run the request with no tools, no variable expansion, and no extended
  * thinking, and check the model actually answered.
  *
@@ -49,13 +105,14 @@ export interface IIsolatedAiQueryOptions {
  * @param options - Prompt, model, budget, and the refusal wording.
  * @param providerError - Builds the caller's own error type for an unusable
  *   reply or a failed request, so its HTTP layer reports them with its status.
+ *   Receives what is known about the failure so the caller can log it.
  * @returns The provider's result, known to hold a finished answer.
  * @throws The error `providerError` builds.
  */
 export async function runIsolatedAiQuery(
     provider: IAiProvider,
     options: IIsolatedAiQueryOptions,
-    providerError: (message: string) => Error
+    providerError: (message: string, failure: IIsolatedAiQueryFailure) => Error
 ): Promise<IAiQueryResult> {
     let result: IAiQueryResult;
     try {
@@ -72,19 +129,21 @@ export async function runIsolatedAiQuery(
         });
     } catch (error) {
         throw providerError(
-            `The AI provider could not complete the request: ${error instanceof Error ? error.message : String(error)}`
+            `The AI provider could not complete the request: ${error instanceof Error ? error.message : String(error)}`,
+            { error }
         );
     }
 
     if (result.stopReason === 'refusal') {
-        throw providerError(options.refusalMessage);
+        throw providerError(options.refusalMessage, describeFailure(result));
     }
     if (result.stopReason === 'max_tokens') {
-        throw providerError(options.maxTokensMessage);
+        throw providerError(options.maxTokensMessage, describeFailure(result));
     }
     if (result.stopReason !== 'end_turn' && result.stopReason !== 'stop_sequence') {
         throw providerError(
-            `The model stopped before finishing its answer (${result.stopReason}). Try again, or choose a different model on ${options.settingsLocation}.`
+            `The model stopped before finishing its answer (${result.stopReason}). Try again, or choose a different model on ${options.settingsLocation}.`,
+            describeFailure(result)
         );
     }
 

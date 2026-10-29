@@ -12,6 +12,7 @@
  */
 
 import type { ITranslatableField, TranslationValues } from '@/types';
+import { languageOutputFactor } from './languageOutputFactor.js';
 
 /** Longest remark kept from the model's reply, so a rambling one cannot flood the toast. */
 const MAX_NOTES_LENGTH = 2000;
@@ -201,22 +202,23 @@ export function parseContentTranslationReply(
 }
 
 /**
- * Size the output budget to the item, so a short item does not reserve the
- * same budget as a long one. English runs about four characters per token;
- * allowing one token per source character leaves room for languages that need
- * more tokens than English for the same text.
+ * Size the output budget to the item and the target language, so a short
+ * item does not reserve the same budget as a long one and a language that
+ * tokenizes poorly gets the extra room it needs. The result is an estimate
+ * only; the caller caps it at the model's output limit.
  *
+ * @param language - BCP 47 code of the target language, which picks the
+ *   per-character factor.
  * @param fields - The content type's translatable fields.
  * @param english - The English values.
  * @param base - Tokens reserved for the JSON wrapper and the notes.
- * @param max - Ceiling on the budget.
- * @returns Output tokens to allow.
+ * @returns Output tokens the translation is expected to need.
  */
 export function estimateTranslationOutputTokens(
+    language: string,
     fields: ReadonlyArray<ITranslatableField>,
     english: TranslationValues,
-    base: number,
-    max: number
+    base: number
 ): number {
     let characters = 0;
     for (const field of fieldsToTranslate(fields)) {
@@ -224,5 +226,5 @@ export function estimateTranslationOutputTokens(
         characters += Array.isArray(value) ? value.join(' ').length : (value ?? '').length;
     }
 
-    return Math.min(max, base + characters);
+    return base + Math.ceil(characters * languageOutputFactor(language));
 }
