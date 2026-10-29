@@ -17,6 +17,26 @@ describe('classifyChannel', () => {
         expect(classifyChannel({ refererDomain: '' })).toBe('direct');
     });
 
+    it('classifies a referrer-less visit from a social app\'s in-app browser as social', () => {
+        // In-app browsers send no referrer, so before the source app was
+        // recorded these visits read direct.
+        expect(classifyChannel({ refererDomain: null, sourceApp: 'douyin' })).toBe('social');
+        expect(classifyChannel({ refererDomain: '', sourceApp: 'wechat' })).toBe('social');
+    });
+
+    it('lets a referrer win over the in-app browser', () => {
+        // The referrer says where the visitor came from; the app is only the
+        // browser they used, so an unknown referrer still reads referral and
+        // a search referrer still reads organic.
+        expect(classifyChannel({ refererDomain: 'example.org', sourceApp: 'wechat' })).toBe('referral');
+        expect(classifyChannel({ refererDomain: 'www.google.com', sourceApp: 'wechat' })).toBe('organic');
+    });
+
+    it('lets a stronger tag win over the in-app browser', () => {
+        expect(classifyChannel({ refererDomain: null, utmMedium: 'cpc', sourceApp: 'douyin' })).toBe('paid');
+        expect(classifyChannel({ refererDomain: null, utmSource: 'chatgpt.com', sourceApp: 'douyin' })).toBe('ai');
+    });
+
     it('lets paid UTM medium override an organic-looking referrer', () => {
         // A paid Google ad arrives with a google.com referrer — medium is
         // the advertiser's explicit declaration and must win.

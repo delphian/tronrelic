@@ -45,6 +45,7 @@ import { getIpHash, getSubnetHash } from './ip-hash.js';
 import { classifyTrafficRequest, type BotClass } from './bot-classifier.js';
 import type { IBotNetworkLookup } from './bot-networks.service.js';
 import { classifyChannel, refererDomainFromUrl, type TrafficChannel } from './channel-classifier.js';
+import { classifySourceApp, type SourceApp } from './source-app-classifier.js';
 import { UUID_V4_REGEX } from '../api/traffic-cookies.js';
 import { SystemConfigService } from '../../../services/system-config/system-config.service.js';
 import { env } from '../../../config/env.js';
@@ -185,6 +186,17 @@ export interface ITrafficEvent {
      * (migration 019).
      */
     asn: number | null;
+
+    /**
+     * The social or messaging app whose in-app browser sent the request,
+     * classified from the User-Agent at write time by
+     * `services/source-app-classifier.ts`, else `null`. Those browsers send
+     * no referrer, so this is what lets the source bucket credit such a
+     * visit to the app instead of `direct`. Written on every row, because
+     * the session-scoped source reads attribute from `page` rows. Rows
+     * before migration 020 carry `null`. Additive column (migration 020).
+     */
+    source_app: SourceApp | null;
 }
 
 /**
@@ -258,6 +270,12 @@ export interface ITrafficEventListRow {
     botClass: string | null;
     /** Device category derived from the User-Agent. */
     device: string;
+    /**
+     * The social or messaging app whose in-app browser sent the request,
+     * derived from the User-Agent, or `null` for a plain browser, a bot, or
+     * a row written before the column existed.
+     */
+    sourceApp: string | null;
     /** User-Agent, trimmed to 240 characters. Client-supplied text. */
     userAgent: string | null;
     /**
@@ -990,23 +1008,30 @@ const HUMAN_ROWS_FILTER = "(bot_class = 'human' OR bot_class IS NULL)";
  * said where it came from was filed under `direct`: the ChatGPT apps, for
  * example, send no referrer but keep the `utm_source=chatgpt.com` tag on every
  * link they cite. So the referrer's domain wins when there is one, the
- * lower-cased `utm_source` is used when there is not, and only a visit with
- * neither reads `direct`. GA4 puts `utm_source` first; the referrer stays first
- * here so a tagged link shared onto another site is still credited to the site
- * the visitor actually came from.
+ * lower-cased `utm_source` is used when there is not, and the in-app browser's
+ * app (`source_app`, read from the User-Agent at write time) is used when
+ * there is neither, which is how a visit from a Douyin caption or a WeChat
+ * chat gets its name. Only a visit with none of the three reads `direct`. GA4
+ * puts `utm_source` first; the referrer stays first here so a tagged link
+ * shared onto another site is still credited to the site the visitor actually
+ * came from, and the app comes last because a tag on the link says more about
+ * where it was posted than the browser it was opened in.
  *
  * @param refererColumn - Column or alias holding the referrer URL, which
  *   differs between `bootstrap` rows (`referer`) and derived sessions
  *   (`entry_referer`).
  * @param utmSourceColumn - Column or alias holding the same visit's
  *   `utm_source`.
- * @returns A SQL expression yielding a referrer domain, a `utm_source`, or
- *   `'direct'`.
+ * @param sourceAppColumn - Column or alias holding the same visit's
+ *   `source_app`.
+ * @returns A SQL expression yielding a referrer domain, a `utm_source`, a
+ *   source app, or `'direct'`.
  */
-function sourceBucketExpr(refererColumn: string, utmSourceColumn: string): string {
+function sourceBucketExpr(refererColumn: string, utmSourceColumn: string, sourceAppColumn: string): string {
     return `multiIf(
         ${refererColumn} IS NOT NULL AND ${refererColumn} != '', domain(${refererColumn}),
         ${utmSourceColumn} IS NOT NULL AND ${utmSourceColumn} != '', lower(${utmSourceColumn}),
+        ${sourceAppColumn} IS NOT NULL AND ${sourceAppColumn} != '', ${sourceAppColumn},
         'direct')`;
 }
 
@@ -1335,7 +1360,8 @@ export class TrafficService {
                 ip_hash,
                 subnet_hash,
                 channel,
-                asn
+                asn,
+                source_app
             FROM ${TABLE_NAME}
             WHERE candidate_uid = {candidateUid:UUID}
             ${eventFilter}
@@ -1441,6 +1467,7 @@ export class TrafficService {
                 asn,
                 bot_class,
                 device,
+                source_app,
                 substring(user_agent, 1, 240) AS user_agent_trimmed,
                 referer,
                 original_referrer,
@@ -1466,6 +1493,7 @@ export class TrafficService {
                 asn: number | null;
                 bot_class: string | null;
                 device: string;
+                source_app: string | null;
                 user_agent_trimmed: string | null;
                 referer: string | null;
                 original_referrer: string | null;
@@ -1487,6 +1515,7 @@ export class TrafficService {
                     asn: row.asn === null ? null : Number(row.asn),
                     botClass: row.bot_class,
                     device: row.device,
+                    sourceApp: row.source_app,
                     userAgent: row.user_agent_trimmed,
                     referrerDomain: refererDomainFromUrl(
                         row.event_type === 'page' ? row.original_referrer : row.referer
@@ -2044,8 +2073,9 @@ export class TrafficService {
      *   durations, and every extra column widens the scan for all of them; the
      *   source drill-down needs them to break a session cohort down by
      *   dimensions that used to be read off `bootstrap` rows. The entry hit's
-     *   `utm_source` and `utm_medium` are always projected, because
-     *   {@link sessionSourceExpr} needs them to name the session's source.
+     *   `utm_source`, `utm_medium`, and `source_app` are always projected,
+     *   because {@link sessionSourceExpr} needs them to name the session's
+     *   source.
      * @returns SELECT statement usable as a FROM subquery.
      */
     private derivedSessionsSql(where: string, havingSessionStart?: string, includeAcquisition = false): string {
@@ -2079,7 +2109,8 @@ export class TrafficService {
                 argMin(path, timestamp) AS entry_path,
                 argMin(tuple(original_referrer), timestamp).1 AS entry_referer,
                 argMin(tuple(utm_source), timestamp).1 AS entry_utm_source,
-                argMin(tuple(utm_medium), timestamp).1 AS entry_utm_medium${acquisitionAggregates}
+                argMin(tuple(utm_medium), timestamp).1 AS entry_utm_medium,
+                argMin(tuple(source_app), timestamp).1 AS entry_source_app${acquisitionAggregates}
             FROM (
                 SELECT
                     candidate_uid,
@@ -2087,7 +2118,8 @@ export class TrafficService {
                     path,
                     original_referrer,
                     utm_source,
-                    utm_medium,${acquisitionColumns}
+                    utm_medium,
+                    source_app,${acquisitionColumns}
                     sum(is_new) OVER (PARTITION BY candidate_uid ORDER BY timestamp ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS session_seq
                 FROM (
                     SELECT
@@ -2096,7 +2128,8 @@ export class TrafficService {
                         path,
                         original_referrer,
                         utm_source,
-                        utm_medium,${acquisitionColumns}
+                        utm_medium,
+                        source_app,${acquisitionColumns}
                         if(dateDiff('second', lagInFrame(timestamp) OVER (PARTITION BY candidate_uid ORDER BY timestamp ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), timestamp) >= ${SESSION_GAP_SECONDS}, 1, 0) AS is_new
                     FROM ${TABLE_NAME}
                     WHERE ${where} AND event_type = 'page'
@@ -2118,19 +2151,21 @@ export class TrafficService {
      *
      * An entry hit with a referrer is credited to that referrer's domain. One
      * without a referrer but carrying `utm_source`, such as a link opened from
-     * the ChatGPT app, is credited to that source. Only an entry hit with
-     * neither reads `direct` (typed, bookmarked, or opened from an untagged
-     * link). See {@link sourceBucketExpr}.
+     * the ChatGPT app, is credited to that source. One with neither but opened
+     * in a social app's in-app browser, which the User-Agent names, is
+     * credited to that app. Only an entry hit with none of the three reads
+     * `direct` (typed, bookmarked, or opened from an untagged link in a plain
+     * browser). See {@link sourceBucketExpr}.
      *
      * Takes no arguments: {@link acquisitionSessionFilter} has already dropped
      * self-referral sessions by the time this expression runs, so no branch for
      * them is needed here.
      *
-     * @returns A SQL expression yielding the source domain, a `utm_source`, or
-     *   `'direct'`.
+     * @returns A SQL expression yielding the source domain, a `utm_source`, a
+     *   source app, or `'direct'`.
      */
     private sessionSourceExpr(): string {
-        return sourceBucketExpr('entry_referer', 'entry_utm_source');
+        return sourceBucketExpr('entry_referer', 'entry_utm_source', 'entry_source_app');
     }
 
     /**
@@ -2261,17 +2296,20 @@ export class TrafficService {
         const siteHost = await this.resolveSiteHost();
         const acquisitionOnly = this.acquisitionSessionFilter(siteHost);
         const params = { ...sessionWindow.params, ...(siteHost ? { siteHost } : {}) };
-        // `medium` is read only from sessions with no referrer, which are the
-        // ones a bucket named by `utm_source` is made of. It lets a tagged
-        // bucket such as `telegram` (medium `social`) classify as social
-        // rather than referral, while a referrer bucket such as google.com
-        // keeps its domain-only classification.
+        // `medium` and `app` are read only from sessions with no referrer,
+        // which are the ones a bucket named by `utm_source` or by a source
+        // app is made of. `medium` lets a tagged bucket such as `telegram`
+        // (medium `social`) classify as social rather than referral, and
+        // `app` lets a bucket named by an in-app browser (`douyin`) classify
+        // as social, while a referrer bucket such as google.com keeps its
+        // domain-only classification.
         const sql = `
             SELECT
                 ${this.sessionSourceExpr()} AS source,
                 uniqExact(candidate_uid) AS visitors,
                 count() AS count,
-                anyIf(entry_utm_medium, entry_referer IS NULL OR entry_referer = '') AS medium
+                anyIf(entry_utm_medium, entry_referer IS NULL OR entry_referer = '') AS medium,
+                anyIf(entry_source_app, entry_referer IS NULL OR entry_referer = '') AS app
             FROM (${this.derivedSessionsSql(sessionWindow.where, sessionWindow.having)})
             ${acquisitionOnly ? `WHERE ${acquisitionOnly}` : ''}
             GROUP BY source
@@ -2279,7 +2317,7 @@ export class TrafficService {
         `;
         try {
             const rows = await this.clickhouse.query<{
-                source: string; visitors: string | number; count: string | number; medium: string | null;
+                source: string; visitors: string | number; count: string | number; medium: string | null; app: string | null;
             }>(sql, params);
             return rows.map(r => ({
                 source: r.source,
@@ -2294,10 +2332,14 @@ export class TrafficService {
                 // value is never stored, so it reads `organic` off its
                 // google.com referrer. Campaign Performance stays
                 // bootstrap-attributed and remains the surface that sees paid
-                // tagging.
+                // tagging. A bucket named by its source app (`douyin`) is not
+                // a domain, so it is passed as no referrer; otherwise the
+                // classifier reads the app's name as a referrer and files the
+                // bucket under referral before it reaches the source app.
                 channel: classifyChannel({
-                    refererDomain: r.source === 'direct' ? null : r.source,
-                    utmMedium: r.medium
+                    refererDomain: r.source === 'direct' || (r.app !== null && r.source === r.app) ? null : r.source,
+                    utmMedium: r.medium,
+                    sourceApp: r.app
                 })
             }));
         } catch (error) {
@@ -2831,7 +2873,7 @@ export class TrafficService {
         // each bucket's page-viewing visitor is LEFT-joined to their earliest
         // bootstrap source — `argMin(source, timestamp)` over the same
         // `sourceBucketExpr` getTrafficSources uses (referrer domain, then
-        // `utm_source`, then `direct`). The join is
+        // `utm_source`, then `source_app`, then `direct`). The join is
         // LEFT (not INNER) so a visitor whose tid has no retained bootstrap row
         // still counts: the middleware bootstrap is best-effort and swallows
         // failures, so outages/deploys and pre-feature tids leave page-only tids
@@ -2856,7 +2898,7 @@ export class TrafficService {
                 ) AS pv
                 LEFT JOIN (
                     SELECT candidate_uid,
-                        argMin(${sourceBucketExpr('referer', 'utm_source')}, timestamp) AS source
+                        argMin(${sourceBucketExpr('referer', 'utm_source', 'source_app')}, timestamp) AS source
                     FROM ${TABLE_NAME}
                     WHERE event_type = 'bootstrap' AND ${this.pageVisitorMembership(clause, botFilter)}
                     GROUP BY candidate_uid
@@ -3785,6 +3827,9 @@ export function buildTrafficEvent(
     // the real enforcement is the origin firewall allow-listing Cloudflare.
     const cfIpCountry = cfRay ? normalizeCfCountry(readSingleHeader(headers['cf-ipcountry'])) : null;
     const asn = readCloudflareAsn(headers);
+    // Written on every row, not only bootstrap rows, because the
+    // session-scoped source reads attribute from `page` rows.
+    const sourceApp = classifySourceApp(userAgent);
 
     const utm = inputs.utm ?? {};
     const path = inputs.landingPath ?? (typeof req.path === 'string' ? req.path : '/');
@@ -3851,11 +3896,13 @@ export function buildTrafficEvent(
                 refererDomain: refererDomainFromUrl(referer ?? null),
                 utmMedium: utm.medium ?? null,
                 utmSource: utm.source ?? null,
-                clickId: inputs.clickId ?? null
+                clickId: inputs.clickId ?? null,
+                sourceApp
             })
             : null,
 
-        asn
+        asn,
+        source_app: sourceApp
     };
 }
 

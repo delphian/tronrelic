@@ -723,8 +723,10 @@ function buildTools(
         description:
             'Break TronRelic traffic down by one dimension over a window. Use after ' + AI_TOOL_NAMES.overview + ' to ' +
             'explain where traffic came from or what it landed on. ' +
-            'Dimensions: "sources" (referrer domain, or the entry URL\'s utm_source when the visit had no referrer, ' +
-            'plus acquisition channel), "landing-pages" (first page hit), ' +
+            'Dimensions: "sources" (referrer domain; or the entry URL\'s utm_source when the visit had no referrer; ' +
+            'or, when it had neither, the social or messaging app whose in-app browser opened the link, read from the ' +
+            'User-Agent, such as "douyin" or "wechat" — those browsers send no referrer, so without this they read ' +
+            '"direct"; plus acquisition channel), "landing-pages" (first page hit), ' +
             '"geo" (country), "devices" (device category), "campaigns" (performance of visits carrying any UTM tag; ' +
             'a source-only tag such as utm_source=chatgpt.com reads campaign "(none)"). ' +
             'Pass `source` WITH dimension "sources" to drill into one referrer instead of listing all of them. ' +
@@ -1397,7 +1399,8 @@ function buildTools(
             'eventType ("bootstrap" = server-recorded first touch including non-JavaScript bots, "page" = client beacon), ' +
             'path, tid (the browser cookie id), loggedIn (true/false only; the account is never returned), country (stored: ' +
             'Cloudflare\'s when present, else a local GeoIP lookup), cfIpCountry (Cloudflare\'s alone), viaCloudflare, asn, ' +
-            'botClass, device, userAgent, referrerDomain, channel, ipHash, and subnetHash. ' +
+            'botClass, device, sourceApp (the social or messaging app whose in-app browser sent the request, from the ' +
+            'User-Agent, else null), userAgent, referrerDomain, channel, ipHash, and subnetHash. ' +
             'Filters, all optional and combined with AND: eventType, ipHash, subnetHash, asn, botClass ("unclassified" ' +
             'matches rows the classifier never labelled), tid, pathPrefix, and country. Copy ipHash, subnetHash, tid, and ' +
             'asn values from an earlier result to follow one source. ' +

@@ -107,6 +107,15 @@ export interface IChannelInputs {
      * have.
      */
     clickId?: string | null;
+    /**
+     * The social or messaging app whose in-app browser sent the request,
+     * from `services/source-app-classifier.ts`, when there is one. Those
+     * browsers send no referrer, so without this a visit from a Douyin
+     * caption or a WeChat chat read `direct`. Only consulted when there is
+     * no referrer, because a referrer names where the visitor actually came
+     * from and the app is then just the browser they used.
+     */
+    sourceApp?: string | null;
 }
 
 /**
@@ -139,9 +148,11 @@ export function refererDomainFromUrl(referer: string | null): string | null {
  * indistinguishable from an organic search. Email and social mediums
  * follow (GA4 matches email on source or medium), then referrer-domain
  * heuristics separate ai / organic / social, `utm_medium=organic` claims
- * organic per GA4, and the absence of any signal is `direct`.
+ * organic per GA4, a referrer-less visit from a social app's in-app browser
+ * is social, and the absence of any signal is `direct`.
  *
- * @param inputs - First-touch referrer domain, UTM parameters, and click-ID.
+ * @param inputs - First-touch referrer domain, UTM parameters, click-ID, and
+ *   the in-app browser's app when the User-Agent named one.
  * @returns The acquisition channel for the visit.
  */
 export function classifyChannel(inputs: IChannelInputs): TrafficChannel {
@@ -149,6 +160,7 @@ export function classifyChannel(inputs: IChannelInputs): TrafficChannel {
     const source = (inputs.utmSource ?? '').trim().toLowerCase();
     const domain = (inputs.refererDomain ?? '').trim().toLowerCase();
     const clickId = (inputs.clickId ?? '').trim().toLowerCase();
+    const sourceApp = (inputs.sourceApp ?? '').trim().toLowerCase();
 
     let channel: TrafficChannel;
     if ((medium && PAID_MEDIUM_REGEX.test(medium)) || DISPLAY_MEDIUMS.has(medium) || PAID_CLICK_IDS.has(clickId)) {
@@ -165,6 +177,11 @@ export function classifyChannel(inputs: IChannelInputs): TrafficChannel {
     } else if (medium === 'organic' || (domain && SEARCH_DOMAINS.test(domain))) {
         channel = 'organic';
     } else if (domain && SOCIAL_DOMAINS.test(domain)) {
+        channel = 'social';
+    } else if (!domain && sourceApp) {
+        // The in-app browser is the only signal: the app sent no referrer,
+        // and every app the classifier names is a social or messaging one.
+        // A referrer, had there been one, was already tested above and wins.
         channel = 'social';
     } else if (!domain && !medium && !source) {
         channel = 'direct';

@@ -90,7 +90,8 @@ const sampleEvent: ITrafficEvent = {
     ip_hash: null,
     subnet_hash: null,
     channel: 'referral',
-    asn: null
+    asn: null,
+    source_app: null
 };
 
 describe('TrafficService', () => {
@@ -251,6 +252,45 @@ describe('TrafficService', () => {
             expect(parseAsn('1e5')).toBeNull();
             expect(parseAsn('-5')).toBeNull();
             expect(parseAsn(undefined)).toBeNull();
+        });
+    });
+
+    describe('source app recording', () => {
+        /**
+         * Build the minimal Express request `buildTrafficEvent` reads, so a
+         * test only has to state the headers it cares about.
+         *
+         * @param headers - Request headers, lower-cased as Express delivers them.
+         * @returns A request stub carrying those headers.
+         */
+        function requestWith(headers: Record<string, string>): Request {
+            return { headers, ip: '203.0.113.7', path: '/' } as unknown as Request;
+        }
+
+        const douyinUserAgent = 'Mozilla/5.0 (Linux; Android 10; HD1900 Build/QKQ1.190716.003; wv) AppleWebKit/537.36 '
+            + '(KHTML, like Gecko) Version/4.0 Chrome/75.0.3770.156 Mobile Safari/537.36  aweme_230400 JsSdk/1.0 '
+            + 'NetType/WIFI  AppName/aweme app_version/23.4.0 ByteLocale';
+
+        it('stores the app named by the User-Agent on page rows, which the source reads attribute from', () => {
+            const event = buildTrafficEvent('page', sampleEvent.candidate_uid, requestWith({
+                'user-agent': douyinUserAgent
+            }));
+            expect(event.source_app).toBe('douyin');
+        });
+
+        it('files a referrer-less bootstrap from an in-app browser under the social channel', () => {
+            const event = buildTrafficEvent('bootstrap', sampleEvent.candidate_uid, requestWith({
+                'user-agent': douyinUserAgent
+            }));
+            expect(event.source_app).toBe('douyin');
+            expect(event.channel).toBe('social');
+        });
+
+        it('stores null for a plain browser', () => {
+            const event = buildTrafficEvent('page', sampleEvent.candidate_uid, requestWith({
+                'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+            }));
+            expect(event.source_app).toBeNull();
         });
     });
 
@@ -928,15 +968,29 @@ describe('TrafficService', () => {
             expect(sql.indexOf('domain(entry_referer)')).toBeLessThan(sql.indexOf('lower(entry_utm_source)'));
         });
 
-        it('getTrafficSources classifies a utm_source bucket by its domain and medium', async () => {
+        it('getTrafficSources credits a session with neither referrer nor utm_source to its in-app browser before direct', async () => {
+            // In-app browsers such as Douyin's send no referrer, so those
+            // sessions read direct while the app's name sat in the User-Agent.
+            const captured = captureSql();
+            await TrafficService.getInstance().getTrafficSources(range);
+            const sql = captured.sqls.join('\n');
+            expect(sql).toContain('argMin(tuple(source_app), timestamp).1 AS entry_source_app');
+            expect(sql).toContain("entry_source_app IS NOT NULL AND entry_source_app != '', entry_source_app");
+            // The tag on the link outranks the browser it was opened in.
+            expect(sql.indexOf('lower(entry_utm_source)')).toBeLessThan(sql.indexOf("entry_source_app != ''"));
+            expect(sql.indexOf("entry_source_app != ''")).toBeLessThan(sql.indexOf("'direct'"));
+        });
+
+        it('getTrafficSources classifies a utm_source or source-app bucket by its domain, medium, and app', async () => {
             const ch = createMockClickHouse();
             ch.query = async <T>(): Promise<T[]> => ([
-                { source: 'chatgpt.com', visitors: '4', count: '4', medium: null },
-                { source: 'telegram', visitors: '2', count: '3', medium: 'social' }
+                { source: 'chatgpt.com', visitors: '4', count: '4', medium: null, app: null },
+                { source: 'telegram', visitors: '2', count: '3', medium: 'social', app: null },
+                { source: 'douyin', visitors: '2', count: '2', medium: null, app: 'douyin' }
             ] as T[]);
             TrafficService.setDependencies(ch, createMockLogger());
             const out = await TrafficService.getInstance().getTrafficSources(range);
-            expect(out.map(b => b.channel)).toEqual(['ai', 'social']);
+            expect(out.map(b => b.channel)).toEqual(['ai', 'social', 'social']);
         });
 
         it('getCampaignPerformance counts visits tagged with a source but no campaign', async () => {
