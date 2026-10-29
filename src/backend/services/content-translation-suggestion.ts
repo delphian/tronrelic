@@ -31,6 +31,7 @@ import { DEFAULT_LANGUAGE, LANGUAGE_CODE_PATTERN } from '@/types';
 import { ContentError } from './content-error.js';
 import { resolveAiProvider, type IAiFeatureWording } from './resolveAiProvider.js';
 import { runIsolatedAiQuery } from './runIsolatedAiQuery.js';
+import { resolveAiOutputBudget, DEFAULT_AI_OUTPUT_BUDGET_POLICY } from './resolveAiOutputBudget.js';
 import { composeTranslationSystemPrompt } from './composeTranslationSystemPrompt.js';
 import { ContentTranslationProviderError, ContentTranslationUnavailableError } from './content-translation-errors.js';
 import {
@@ -40,14 +41,8 @@ import {
     type IParsedContentTranslation
 } from './content-translation-prompt.js';
 
-/** How long one request may take before it is abandoned. A long article takes a while to write. */
-const QUERY_TIMEOUT_MS = 180_000;
-
 /** Output tokens budgeted for the JSON wrapper and the notes. */
 const BASE_OUTPUT_TOKENS = 1024;
-
-/** Ceiling on the output budget, kept under what current models accept. */
-const MAX_OUTPUT_TOKENS = 16_000;
 
 /** How this feature names itself and its settings in provider refusals. */
 const SUGGESTION_WORDING: IAiFeatureWording = {
@@ -136,29 +131,51 @@ export class ContentTranslationSuggestionService {
              */
             (message) => new ContentTranslationUnavailableError(message)
         );
-        const logContext = { actor: actorId, typeId, id, language, providerId };
+        const model = settings.model ?? undefined;
+        const budget = await resolveAiOutputBudget(
+            provider,
+            model,
+            estimateTranslationOutputTokens(language, source.fields, source.english, BASE_OUTPUT_TOKENS),
+            DEFAULT_AI_OUTPUT_BUDGET_POLICY
+        );
+        // The budget is logged with every outcome so a cut-off reply can be
+        // read against the ceiling that cut it and where that ceiling came from.
+        const logContext = {
+            actor: actorId,
+            typeId,
+            id,
+            language,
+            providerId,
+            maxTokens: budget.maxTokens,
+            timeoutMs: budget.timeoutMs,
+            outputLimit: budget.outputLimit,
+            limitSource: budget.limitSource
+        };
 
         const result = await runIsolatedAiQuery(
             provider,
             {
                 prompt: buildContentTranslationPrompt(targetLanguage, source.fields, source.english, source.previous),
                 systemPrompt: composeTranslationSystemPrompt(settings.systemPrompt, targetLanguage),
-                model: settings.model ?? undefined,
-                maxTokens: estimateTranslationOutputTokens(source.fields, source.english, BASE_OUTPUT_TOKENS, MAX_OUTPUT_TOKENS),
-                timeoutMs: QUERY_TIMEOUT_MS,
+                model,
+                maxTokens: budget.maxTokens,
+                timeoutMs: budget.timeoutMs,
                 refusalMessage: 'The model declined to translate this content.',
-                maxTokensMessage: 'The model ran out of output space before finishing. The content may be too long to translate in one request; choose a model with a larger output limit in the content translation settings, or translate part of it by hand.',
+                maxTokensMessage: this.maxTokensMessage(budget.limitSource),
                 settingsLocation: SUGGESTION_WORDING.settingsLocation
             },
             /**
-             * Log a failed run and wrap its explanation so the admin route
-             * answers it with 502.
+             * Log a failed run, with the budget it ran under and how far the
+             * model got, and wrap its explanation so the admin route answers
+             * it with 502.
              *
              * @param message - Why the provider's answer cannot be used.
+             * @param failure - The stop reason, usage, and reply size, or the
+             *   transport error, so the log shows what the message alone cannot.
              * @returns The error to throw.
              */
-            (message) => {
-                this.deps.logger.warn({ ...logContext, message }, 'Content translation suggestion request failed');
+            (message, failure) => {
+                this.deps.logger.warn({ ...logContext, ...failure, message }, 'Content translation suggestion request failed');
                 return new ContentTranslationProviderError(message);
             }
         );
@@ -194,6 +211,24 @@ export class ContentTranslationSuggestionService {
             costUsd,
             usage: { inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens }
         };
+    }
+
+    /**
+     * Word the cut-off explanation by what the administrator can actually
+     * change. When the budget was capped at the chosen model's own limit, a
+     * model with a larger limit is the fix. When the fallback ceiling applied,
+     * the provider's default model is in use and its limit was never read, so
+     * naming a model in the settings lets the full limit be used.
+     *
+     * @param limitSource - Where the ceiling that cut the reply came from.
+     * @returns The explanation shown when the reply hit the token limit.
+     */
+    private maxTokensMessage(limitSource: 'model' | 'fallback'): string {
+        const remedy = limitSource === 'model'
+            ? 'choose a model with a larger output limit in the content translation settings'
+            : 'choose a specific model in the content translation settings so its full output limit can be used';
+
+        return `The model ran out of output space before finishing. The content may be too long to translate in one request; ${remedy}, or translate part of it by hand.`;
     }
 
     /**

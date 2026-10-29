@@ -44,10 +44,11 @@ function item(overrides: Partial<ISuggestionItem> = {}): ISuggestionItem {
 }
 
 /**
- * Build a provider stub that answers every query with the given reply.
+ * Build a provider stub that answers every query with the given reply and
+ * lists one model, `model-b`, with a small output limit.
  *
  * @param reply - Fields of the result to return.
- * @returns The stub, with `query` as a spy.
+ * @returns The stub, with `query` and `listModels` as spies.
  */
 function createProvider(reply: Partial<IAiQueryResult>): IAiProvider {
     return {
@@ -58,7 +59,8 @@ function createProvider(reply: Partial<IAiQueryResult>): IAiProvider {
             usage: { inputTokens: 100, outputTokens: 50 },
             costUsd: 0.0012,
             ...reply
-        })
+        }),
+        listModels: vi.fn().mockResolvedValue([{ id: 'model-b', display_name: 'Model B', max_tokens: 400 }])
     } as unknown as IAiProvider;
 }
 
@@ -160,10 +162,11 @@ describe('TranslationSuggestionService', () => {
      * Build the service around a registry stub.
      *
      * @param registry - Registry to hand the service, or null for none installed.
+     * @param logger - Logger to record under, when a test reads what was logged.
      * @returns The service.
      */
-    function createService(registry: IAiProviderRegistry | null): TranslationSuggestionService {
-        return new TranslationSuggestionService({ database: db, settings, getProviderRegistry: () => registry, logger: createLogger() });
+    function createService(registry: IAiProviderRegistry | null, logger: ISystemLogService = createLogger()): TranslationSuggestionService {
+        return new TranslationSuggestionService({ database: db, settings, getProviderRegistry: () => registry, logger });
     }
 
     it('calls the active provider with no tools and no variable expansion, and returns the cost', async () => {
@@ -215,6 +218,57 @@ describe('TranslationSuggestionService', () => {
             'admin'
         );
         expect(provider.query).toHaveBeenCalledWith(expect.objectContaining({ model: 'model-b' }));
+    });
+
+    it('caps the budget at the chosen model output limit and sizes the timeout to it', async () => {
+        db.getCollectionData(KEYS_COLLECTION)[0].source = 'x'.repeat(2000);
+        const provider = createProvider({ responseText: '{"translations":[{"id":"1","text":"x","note":null}],"notes":null}' });
+        await settings.updateSettings({ providerId: 'test-ai', model: 'model-b' }, 'admin');
+        await createService(createRegistry(provider, false)).suggest(
+            { language: 'zh', keys: [{ namespace: 'core', key: 'tools.title' }] },
+            'admin'
+        );
+        // 30s to begin writing plus 400 tokens at 40 a second.
+        expect(provider.query).toHaveBeenCalledWith(expect.objectContaining({ maxTokens: 400, timeoutMs: 40_000 }));
+    });
+
+    it('budgets by the source length, the key count, and the target language on the provider default model', async () => {
+        const now = new Date();
+        db.getCollectionData(LANGUAGES_COLLECTION).push({
+            code: 'vi', name: 'Vietnamese', nativeName: 'Tiếng Việt', direction: 'ltr', enabled: false, createdAt: now, updatedAt: now
+        });
+        const reply = '{"translations":[{"id":"1","text":"x","note":null}],"notes":null}';
+        const keys = [{ namespace: 'core', key: 'tools.title' }];
+
+        const chinese = createProvider({ responseText: reply });
+        await createService(createRegistry(chinese)).suggest({ language: 'zh', keys }, 'admin');
+        const vietnamese = createProvider({ responseText: reply });
+        await createService(createRegistry(vietnamese)).suggest({ language: 'vi', keys }, 'admin');
+
+        // "Address Converter" is 17 characters: 512 + 60 + 17 for Chinese, 512 + 60 + ceil(17 * 1.5) for Vietnamese.
+        expect(chinese.query).toHaveBeenCalledWith(expect.objectContaining({ maxTokens: 589 }));
+        expect(vietnamese.query).toHaveBeenCalledWith(expect.objectContaining({ maxTokens: 598 }));
+        expect(chinese.listModels).not.toHaveBeenCalled();
+    });
+
+    it('logs the budget and how far the model got when a reply is cut off', async () => {
+        const provider = createProvider({ responseText: '{"translations":[', stopReason: 'max_tokens', usage: { inputTokens: 300, outputTokens: 589 } });
+        const logger = createLogger();
+        await expect(createService(createRegistry(provider), logger).suggest({ language: 'zh', keys: [{ namespace: 'core', key: 'tools.title' }] }, 'admin'))
+            .rejects.toBeInstanceOf(LocalizationProviderError);
+
+        expect(logger.warn).toHaveBeenCalledWith(
+            expect.objectContaining({
+                maxTokens: 589,
+                limitSource: 'fallback',
+                stopReason: 'max_tokens',
+                model: 'test-model',
+                inputTokens: 300,
+                outputTokens: 589,
+                responseLength: 17
+            }),
+            'Translation suggestion request failed'
+        );
     });
 
     it('reports a missing provider as unavailable', async () => {

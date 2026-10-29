@@ -26,6 +26,8 @@ import type {
 import { MAX_TRANSLATION_SUGGESTION_KEYS } from '@/types';
 import { resolveAiProvider, type IAiFeatureWording } from '../../../services/resolveAiProvider.js';
 import { runIsolatedAiQuery } from '../../../services/runIsolatedAiQuery.js';
+import { resolveAiOutputBudget, DEFAULT_AI_OUTPUT_BUDGET_POLICY } from '../../../services/resolveAiOutputBudget.js';
+import { languageOutputFactor } from '../../../services/languageOutputFactor.js';
 import { composeTranslationSystemPrompt } from '../../../services/composeTranslationSystemPrompt.js';
 import type { ILanguageDocument, ITranslationDocument, ITranslationKeyDocument } from '../database/index.js';
 import { KEYS_COLLECTION, LANGUAGES_COLLECTION, TRANSLATIONS_COLLECTION } from '../database/index.js';
@@ -38,9 +40,6 @@ import {
 import { KEY_PATTERN, joinKeyId } from './translation-key-rules.js';
 import { buildSuggestionPrompt, parseSuggestionReply, type IParsedSuggestionReply, type ISuggestionItem } from './translation-suggestion-prompt.js';
 
-/** How long one request may take before it is abandoned. A full page can take a while to write. */
-const QUERY_TIMEOUT_MS = 180_000;
-
 /** How this feature names itself and its settings in provider refusals. */
 const SUGGESTION_WORDING: IAiFeatureWording = {
     featureName: 'translation suggestions',
@@ -52,9 +51,6 @@ const BASE_OUTPUT_TOKENS = 512;
 
 /** Output tokens budgeted per key for its id, quoting, and an optional note. */
 const PER_KEY_OUTPUT_TOKENS = 60;
-
-/** Ceiling on the output budget, kept under what current models accept. */
-const MAX_OUTPUT_TOKENS = 16_000;
 
 /** Collaborators the suggestion service needs. */
 export interface ITranslationSuggestionServiceDependencies {
@@ -112,20 +108,50 @@ export class TranslationSuggestionService {
             message => new LocalizationUnavailableError(message)
         );
 
+        const model = settings.model ?? undefined;
+        const budget = await resolveAiOutputBudget(
+            provider,
+            model,
+            estimateOutputTokens(items, language.code),
+            DEFAULT_AI_OUTPUT_BUDGET_POLICY
+        );
+        // The budget is logged with every outcome so a cut-off reply can be
+        // read against the ceiling that cut it and where that ceiling came from.
+        const logContext = {
+            actor,
+            language: language.code,
+            requested: items.length,
+            providerId,
+            maxTokens: budget.maxTokens,
+            timeoutMs: budget.timeoutMs,
+            outputLimit: budget.outputLimit,
+            limitSource: budget.limitSource
+        };
+
         const result = await runIsolatedAiQuery(
             provider,
             {
                 prompt: buildSuggestionPrompt(language, items),
                 systemPrompt: composeTranslationSystemPrompt(settings.systemPrompt, language),
-                model: settings.model ?? undefined,
-                maxTokens: estimateOutputTokens(items),
-                timeoutMs: QUERY_TIMEOUT_MS,
+                model,
+                maxTokens: budget.maxTokens,
+                timeoutMs: budget.timeoutMs,
                 refusalMessage: 'The model declined to translate these strings.',
                 maxTokensMessage: 'The model ran out of output space before finishing. Narrow the filters so fewer keys are on the page, then try again.',
                 settingsLocation: SUGGESTION_WORDING.settingsLocation
             },
-            message => {
-                this.logger.warn({ actor, providerId, model: settings.model, message }, 'Translation suggestion request failed');
+            /**
+             * Log a failed run, with the budget it ran under and how far the
+             * model got, and wrap its explanation so the admin route answers
+             * it with 502.
+             *
+             * @param message - Why the provider's answer cannot be used.
+             * @param failure - The stop reason, usage, and reply size, or the
+             *   transport error, so the log shows what the message alone cannot.
+             * @returns The error to throw.
+             */
+            (message, failure) => {
+                this.logger.warn({ ...logContext, ...failure, model: failure.model ?? model, message }, 'Translation suggestion request failed');
                 return new LocalizationProviderError(message);
             }
         );
@@ -143,11 +169,8 @@ export class TranslationSuggestionService {
         const costUsd = typeof result.costUsd === 'number' ? result.costUsd : null;
         this.logger.info(
             {
-                actor,
-                language: language.code,
-                requested: items.length,
+                ...logContext,
                 suggested: parsed.suggestions.length,
-                providerId,
                 model: result.model,
                 inputTokens: result.usage.inputTokens,
                 outputTokens: result.usage.outputTokens,
@@ -262,15 +285,17 @@ export class TranslationSuggestionService {
 }
 
 /**
- * Size the output budget to the batch, so a single key does not reserve the
- * same budget as a full page. English runs about four characters per token;
- * allowing one token per source character leaves room for languages that need
- * more tokens than English for the same text.
+ * Size the output budget to the batch and the target language, so a single
+ * key does not reserve the same budget as a full page and a language that
+ * tokenizes poorly gets the extra room it needs. The result is an estimate
+ * only; the caller caps it at the model's output limit.
  *
  * @param items - Keys in the batch.
- * @returns Output tokens to allow.
+ * @param language - BCP 47 code of the target language, which picks the
+ *   per-character factor.
+ * @returns Output tokens the batch is expected to need.
  */
-function estimateOutputTokens(items: ISuggestionItem[]): number {
+function estimateOutputTokens(items: ISuggestionItem[], language: string): number {
     const sourceCharacters = items.reduce((total, item) => total + item.source.length, 0);
-    return Math.min(MAX_OUTPUT_TOKENS, BASE_OUTPUT_TOKENS + items.length * PER_KEY_OUTPUT_TOKENS + sourceCharacters);
+    return BASE_OUTPUT_TOKENS + items.length * PER_KEY_OUTPUT_TOKENS + Math.ceil(sourceCharacters * languageOutputFactor(language));
 }
