@@ -66,16 +66,18 @@ function fakeProvider(reply: Partial<IAiQueryResult>): { provider: IAiProvider; 
 /**
  * Build the service against fakes.
  *
- * @param opts - The provider registry and settings to use.
+ * @param opts - The provider registry and settings to use, and the
+ *   translation prompt the `zh` language carries.
  * @returns The configured service.
  */
 function buildService(opts: {
     registry?: IAiProviderRegistry | null;
     settings?: Partial<IContentTranslationSettings>;
+    translationPrompt?: string;
 }): ContentTranslationSuggestionService {
     const localization = {
         getLanguage: vi.fn(async (code: string) => code === 'zh'
-            ? { code: 'zh', name: 'Chinese', nativeName: '中文', direction: 'ltr', enabled: false, createdAt: '', updatedAt: '' }
+            ? { code: 'zh', name: 'Chinese', nativeName: '中文', direction: 'ltr', translationPrompt: opts.translationPrompt ?? '', enabled: false, createdAt: '', updatedAt: '' }
             : null)
     } as unknown as ILocalizationService;
     return new ContentTranslationSuggestionService({
@@ -176,6 +178,23 @@ describe('ContentTranslationSuggestionService', () => {
         expect(result.notes).toBe('Check 波场.');
         expect(result.costUsd).toBe(0.0123);
         expect(result.providerId).toBe('p1');
+    });
+
+    it('sends the shared prompt alone when the language has no guidance', async () => {
+        const { provider, query } = fakeProvider({ responseText: '{"title":"关于","body":"# 关于"}' });
+        await buildService({ registry: registryWith(provider) }).suggest(target, source(), 'admin');
+        expect(query).toHaveBeenCalledWith(expect.objectContaining({ systemPrompt: DEFAULT_CONTENT_TRANSLATION_SYSTEM_PROMPT }));
+    });
+
+    it('adds the target language guidance after the shared prompt', async () => {
+        const { provider, query } = fakeProvider({ responseText: '{"title":"关于","body":"# 关于"}' });
+        await buildService({ registry: registryWith(provider), translationPrompt: 'TRON is always 波场.' })
+            .suggest(target, source(), 'admin');
+
+        const sent = (query.mock.calls[0] as unknown as [{ systemPrompt: string }])[0].systemPrompt;
+        expect(sent.startsWith(DEFAULT_CONTENT_TRANSLATION_SYSTEM_PROMPT)).toBe(true);
+        expect(sent).toContain('Guidance for translating into Chinese (zh)');
+        expect(sent.endsWith('TRON is always 波场.')).toBe(true);
     });
 
     it('leaves a URL field empty when there is no existing translation', async () => {

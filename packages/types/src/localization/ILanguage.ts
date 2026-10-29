@@ -27,6 +27,15 @@ export interface ILanguage {
     direction: LanguageDirection;
 
     /**
+     * Translation guidance for this language only, such as its glossary,
+     * register, and how to address the reader. Both AI Suggest features add
+     * it to their shared system prompt when they translate into this
+     * language, so rules for one language are never sent with another's
+     * requests. Empty when the language has no guidance of its own.
+     */
+    translationPrompt: string;
+
+    /**
      * Whether visitors can reach this language at all. While false, a
      * `/<code>/...` URL is treated as an ordinary English path, so it never
      * takes over a page that already lives at that address.

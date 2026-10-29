@@ -35,7 +35,7 @@ A language change is a change of the `[lang]` segment, so Next.js re-renders the
 
 ## Rollout Workflow
 
-1. **Languages tab** — add the language. It starts disabled; nothing changes for visitors.
+1. **Languages tab** — add the language. It starts disabled; nothing changes for visitors. Open the row's prompt button and write the language's own translation guidance, such as its glossary and how to address the reader; see [AI Translation Suggestions](#ai-translation-suggestions).
 2. **Translations tab** — keys appear as the site renders them. Pick the language and translate, narrowing the list by namespace, status, published route, or text. A key whose English changed after its translation was saved shows as *stale*. Each row shows the English above its editor; when two or more editors hold unsaved text, **Save all** in the panel header saves them in one request. The Suggest buttons fill editors from an AI model; see [AI Translation Suggestions](#ai-translation-suggestions).
 3. **Routes tab** — publish the route pattern in the language. The missing count shows how many keys rendered on that route still lack a translation; "Show keys" opens the Translations tab filtered to them.
 4. **Languages tab** — enable the language. Enabling is refused when existing CMS pages or menu URLs already start with `/<code>/`. The tab shows two sets of counts: **On published routes** covers the keys rendered on routes published in the language, the same keys the Routes tab counts; **All keys** covers every key the site has reported, including text seen only on pages not published in the language. A gap between the two is not an error. It is the work left before more routes can be published.
@@ -59,12 +59,13 @@ Each row on the Translations tab has a Suggest button, and the panel header has 
 |---|---|
 | Per-row button | Translates that row, replacing whatever its editor holds |
 | Suggest page | Translates every *missing* or *stale* row on the current page that has no unsaved text, in **one** request (at most `MAX_TRANSLATION_SUGGESTION_KEYS`, 50, the page size), so terms stay consistent across the batch |
-| Settings tab | The system prompt (tone and glossary, such as "TRON is always 波场") and the provider and model. A null provider means the active one; a null model means the provider's default |
+| Settings tab | The shared system prompt (tone and rules that hold in every language) and the provider and model. A null provider means the active one; a null model means the provider's default |
+| Language prompt | `ILanguage.translationPrompt`, edited from each row on the Languages tab: guidance for that language only, such as "TRON is always 波场". Appended to the shared prompt under a heading naming the language whenever a Suggest button translates into it, by this module and by core's content translation alike. Empty means the shared prompt alone. At most `MAX_LANGUAGE_PROMPT_LENGTH` (4,000) characters |
 | Toast | The model's remarks on the batch, its per-key notes, keys it skipped, and the cost the provider reported (`costUsd`) with token counts. Stays open when there are notes |
 
 `TranslationSuggestionService` resolves the provider through the `'ai-providers'` registry at request time: `getProvider(id)` when Settings names one, which fails with 503 rather than falling back if that provider is gone, otherwise `getActive()`. It calls `query()` with `toolAllowlist: []`, `expandVariables: false`, and `thinkingBudget: 0`, because the English comes from the site and plugins and must not be able to invoke a tool or expand a `{%variable%}`. The prompt (built in `translation-suggestion-prompt.ts`) sends the strings as JSON data with numbered ids, includes a stale row's previous translation as context, and asks for a JSON reply. The parser drops entries with unknown ids or empty text, reports their keys as unanswered, and adds a note when a translation dropped a `{placeholder}` the English has. Only an `end_turn` or `stop_sequence` stop is parsed; any other stop reason (`refusal`, `max_tokens`, `tool_use`, `pause_turn`) is reported as a 502, so an unfinished run never fills the editors. Every run is logged under `tronrelic:localization` with the actor, model, token usage, and cost.
 
-Choosing the provider and accepting only a finished answer are shared with the core content translation Suggest button, in `src/backend/services/resolveAiProvider.ts` and `src/backend/services/runIsolatedAiQuery.ts`, and the toast body is the shared `SuggestionSummary` component. The two features keep separate settings, and both panels sit on the Settings tab: this module's for interface text, and core's **Content translation** panel for pages and every other content type.
+Choosing the provider, accepting only a finished answer, and adding the target language's prompt to the system prompt are shared with the core content translation Suggest button, in `src/backend/services/resolveAiProvider.ts`, `src/backend/services/runIsolatedAiQuery.ts`, and `src/backend/services/composeTranslationSystemPrompt.ts`, and the toast body is the shared `SuggestionSummary` component. The two features keep separate shared prompts and model choices, and both panels sit on the Settings tab: this module's for interface text, and core's **Content translation** panel for pages and every other content type. The language prompt is one value both features use, so a glossary written once applies to interface text and page bodies alike. Rules for one language belong in its prompt rather than in a shared one, where every other language's requests would carry them too.
 
 The cost is the provider's figure after the run. There is no estimate beforehand, because `IAiProvider` has no pricing method and per-model rates live inside the provider plugin. The suggestion route has its own limit of 20 requests a minute on top of the admin limiter, since each one is a paid call.
 
@@ -122,8 +123,8 @@ All under `/api/admin/system/localization`. Errors: 400 validation, 404 not foun
 | Method | Path | Body / query | Returns |
 |---|---|---|---|
 | GET | `/languages` | — | `{ languages: ILanguageSummary[] }` with site-wide translated/stale/missing counts and the same counts over published routes in `publishedRoutes` (`ITranslationProgress`) |
-| POST | `/languages` | `{ code, name, nativeName, direction? }` | `{ language }` 201; starts disabled; `en` refused |
-| PATCH | `/languages/:code` | `{ name?, nativeName?, direction?, enabled? }` | `{ language }`; enabling refused (409) when known paths start with `/<code>` |
+| POST | `/languages` | `{ code, name, nativeName, direction?, translationPrompt? }` | `{ language }` 201; starts disabled; `en` refused |
+| PATCH | `/languages/:code` | `{ name?, nativeName?, direction?, translationPrompt?, enabled? }` | `{ language }`; enabling refused (409) when known paths start with `/<code>`; an empty `translationPrompt` removes the language's guidance |
 | DELETE | `/languages/:code` | — | 204; deletes its translations, removes it from routes, drops emptied routes |
 | GET | `/routes` | — | `{ routes: ILocalizedRouteSummary[] }` with `keyCount` and `missingByLanguage` |
 | POST | `/routes` | `{ pattern, languages }` | `{ route }` 201 |
@@ -151,7 +152,7 @@ Literal segments match exactly, `:name` matches one segment, and a final `*` mat
 
 | Collection | Unique index | Fields |
 |---|---|---|
-| `module_localization_languages` | `code` | `code`, `name`, `nativeName`, `direction`, `enabled`, `createdAt`, `updatedAt` |
+| `module_localization_languages` | `code` | `code`, `name`, `nativeName`, `direction`, `translationPrompt` (absent on languages added before it existed, read as empty), `enabled`, `createdAt`, `updatedAt` |
 | `module_localization_routes` | `pattern` | `_id`, `pattern`, `languages[]`, `updatedAt` |
 | `module_localization_keys` | `(namespace, key)` | `namespace`, `key`, `source`, `routes[]` (≤ 20, newest first), `origin`, `firstSeenAt`, `lastSeenAt`, `sourceChangedAt` |
 | `module_localization_translations` | `(namespace, key, language)`; plus `language` | `namespace`, `key`, `language`, `text`, `updatedAt`, `updatedBy` |

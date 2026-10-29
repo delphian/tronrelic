@@ -26,6 +26,7 @@ import type {
 import { MAX_TRANSLATION_SUGGESTION_KEYS } from '@/types';
 import { resolveAiProvider, type IAiFeatureWording } from '../../../services/resolveAiProvider.js';
 import { runIsolatedAiQuery } from '../../../services/runIsolatedAiQuery.js';
+import { composeTranslationSystemPrompt } from '../../../services/composeTranslationSystemPrompt.js';
 import type { ILanguageDocument, ITranslationDocument, ITranslationKeyDocument } from '../database/index.js';
 import { KEYS_COLLECTION, LANGUAGES_COLLECTION, TRANSLATIONS_COLLECTION } from '../database/index.js';
 import {
@@ -115,7 +116,7 @@ export class TranslationSuggestionService {
             provider,
             {
                 prompt: buildSuggestionPrompt(language, items),
-                systemPrompt: settings.systemPrompt,
+                systemPrompt: composeTranslationSystemPrompt(settings.systemPrompt, language),
                 model: settings.model ?? undefined,
                 maxTokens: estimateOutputTokens(items),
                 timeoutMs: QUERY_TIMEOUT_MS,

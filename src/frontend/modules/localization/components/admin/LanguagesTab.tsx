@@ -5,7 +5,8 @@
  *
  * Lists the configured languages with how far each one's translation has got,
  * lets an administrator add one, switch it on or off for visitors, change its
- * script direction, or remove it. Adding a language changes nothing a visitor
+ * script direction, edit the translation prompt the AI Suggest buttons send
+ * for it, or remove it. Adding a language changes nothing a visitor
  * sees, and enabling one only allows routes to be published in it, so this tab
  * is safe to use before any translation work is done.
  *
@@ -22,7 +23,7 @@
  */
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { MessageSquareText, Plus, Trash2 } from 'lucide-react';
 import type { ILanguageSummary, ITranslationProgress, LanguageDirection } from '@/types';
 import { Panel } from '../../../../components/ui/Panel';
 import { Button } from '../../../../components/ui/Button';
@@ -38,6 +39,7 @@ import { useToast } from '../../../../components/ui/ToastProvider';
 import { useModal } from '../../../../components/ui/ModalProvider';
 import { createLanguage, deleteLanguage, listLanguages, updateLanguage } from '../../api/client';
 import { InlineAddForm } from './InlineAddForm';
+import { LanguagePromptDialog } from './LanguagePromptDialog';
 import styles from './LocalizationAdmin.module.scss';
 
 /** Empty values for the add-language form. */
@@ -175,6 +177,32 @@ export function LanguagesTab() {
             setBusyCode(null);
         }
     }, [load, notify]);
+
+    /**
+     * Open the editor for a language's translation prompt. The dialog saves
+     * on its own; this closes it, confirms the save, and reloads the table so
+     * the row's prompt indicator updates.
+     *
+     * @param language - The row whose prompt to edit.
+     */
+    const handleEditPrompt = useCallback((language: ILanguageSummary) => {
+        const modalId = open({
+            title: `${language.name} translation prompt`,
+            size: 'md',
+            content: (
+                <LanguagePromptDialog
+                    language={language}
+                    onCancel={() => close(modalId)}
+                    onSaved={() => {
+                        close(modalId);
+                        notify('success', `Saved the ${language.name} translation prompt`, undefined, 'Suggest buttons use it from the next request.');
+                        void load();
+                    }}
+                    onError={error => notify('danger', `Could not save the ${language.name} translation prompt`, error)}
+                />
+            )
+        });
+    }, [close, load, notify, open]);
 
     /**
      * Ask for confirmation, then remove a language with its translations.
@@ -332,6 +360,15 @@ export function LanguagesTab() {
                                 </Td>
                                 <Td data-label="Actions">
                                     <div className={styles.actions}>
+                                        <IconButton
+                                            size="sm"
+                                            variant={language.translationPrompt === '' ? 'ghost' : 'primary'}
+                                            onClick={() => handleEditPrompt(language)}
+                                            aria-label={`${language.translationPrompt === '' ? 'Add' : 'Edit'} the translation prompt for ${language.name}`}
+                                            title={language.translationPrompt === '' ? 'No translation prompt yet' : 'Has a translation prompt'}
+                                        >
+                                            <MessageSquareText size={14} />
+                                        </IconButton>
                                         <IconButton
                                             size="sm"
                                             variant="danger"

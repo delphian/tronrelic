@@ -148,7 +148,7 @@ export function SettingsTab() {
                     <Field
                         label="System prompt"
                         htmlFor="localization-system-prompt"
-                        hint="Sent ahead of every Suggest request on the Translations tab. Put the site's tone and a glossary here, such as: TRON is always 波场. Suggestions fill the editors; nothing is saved until you save the row."
+                        hint="Sent ahead of every Suggest request on the Translations tab, whatever the language. Put the site's tone and rules that hold in every language here. A glossary for one language, such as: TRON is always 波场, belongs in that language's translation prompt on the Languages tab. Suggestions fill the editors; nothing is saved until you save the row."
                     >
                         <Textarea
                             id="localization-system-prompt"

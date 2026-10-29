@@ -86,15 +86,15 @@ export async function createLanguage(input: { code: string; name: string; native
 }
 
 /**
- * Change a language's names, direction, or enabled state.
+ * Change a language's names, direction, translation prompt, or enabled state.
  *
  * @param code - Language to change.
- * @param patch - Fields to change.
+ * @param patch - Fields to change; an empty `translationPrompt` removes the language's guidance.
  * @returns The updated language.
  */
 export async function updateLanguage(
     code: string,
-    patch: Partial<{ name: string; nativeName: string; direction: LanguageDirection; enabled: boolean }>
+    patch: Partial<{ name: string; nativeName: string; direction: LanguageDirection; translationPrompt: string; enabled: boolean }>
 ): Promise<ILanguage> {
     const body = await send<{ language: ILanguage }>('PATCH', `/languages/${encodeURIComponent(code)}`, 'update language', patch);
     return body.language;

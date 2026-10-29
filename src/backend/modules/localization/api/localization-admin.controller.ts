@@ -74,7 +74,7 @@ export class LocalizationAdminController {
         });
     };
 
-    /** POST /languages — add a language. Body: `{ code, name, nativeName, direction? }`. */
+    /** POST /languages — add a language. Body: `{ code, name, nativeName, direction?, translationPrompt? }`. */
     createLanguage = async (req: Request, res: Response): Promise<void> => {
         await this.handle(res, 'Failed to add language', async () => {
             const language = await this.service.createLanguage(req.body ?? {}, actorFromAdminRequest(req).id);
@@ -82,7 +82,7 @@ export class LocalizationAdminController {
         });
     };
 
-    /** PATCH /languages/:code — rename, change direction, or enable/disable. */
+    /** PATCH /languages/:code — rename, change direction or translation prompt, or enable/disable. */
     updateLanguage = async (req: Request, res: Response): Promise<void> => {
         await this.handle(res, 'Failed to update language', async () => {
             const language = await this.service.updateLanguage(req.params.code, req.body ?? {}, actorFromAdminRequest(req).id);
