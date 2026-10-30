@@ -174,6 +174,39 @@ export function windowParams(window: IChainWindow): Record<string, string> {
     return { from: formatClickHouseDateTime64Utc(window.from), to: formatClickHouseDateTime64Utc(window.to) };
 }
 
+/**
+ * Query settings a `FINAL` read carries when its filter cannot narrow the read
+ * through the table's sort key, appended to the outermost query, where they
+ * apply to its subqueries as well.
+ *
+ * Without them, ClickHouse 24.3 merges every stored part in the window at once
+ * before any filter applies, and ignores skip indexes. On a wide or busy table
+ * that merge runs out of the `ai-agent` account's 1 GB memory limit: the
+ * delegation tables failed this way at 72 hours chain-wide, and the methods
+ * view of `blockchain-contract-activity`, which reads full call data, failed
+ * on any window touching three days.
+ *
+ * `do_not_merge_across_partitions_select_final` lets `FINAL` merge each daily
+ * partition on its own. That is exact for the `tron` data tables: they are
+ * partitioned by the day of `block_timestamp`, and a block written twice is
+ * written with the same block time, so a duplicate is always in the same
+ * partition as its original.
+ *
+ * `use_skip_indexes_if_final` lets a bloom filter skip granules under `FINAL`.
+ * That is exact too: the only rows `FINAL` collapses are copies of one block's
+ * rows that differ only in `_ingested_at`, so a granule skipped because its
+ * indexed column does not match cannot hold the surviving copy of a row that
+ * does.
+ *
+ * Both rest on those two facts. A change to a table's partition key, to how
+ * `block_timestamp` is derived, or one that lets two versions of a row differ
+ * in an indexed column, would make these reads count some rows twice without
+ * any error.
+ *
+ * The `ai-agent` profile is `readonly = 2`, which permits setting both per query.
+ */
+export const FINAL_READ_SETTINGS = 'SETTINGS do_not_merge_across_partitions_select_final = 1, use_skip_indexes_if_final = 1';
+
 /** The fields a newest-first listing keyed by time and transaction id puts in its cursor. */
 export const TIME_TX_CURSOR_KEYS = ['time', 'txId', ...WINDOW_CURSOR_KEYS] as const;
 

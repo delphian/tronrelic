@@ -29,7 +29,7 @@
  * either role, while a lookup by delegator stayed cheap. Three things keep the
  * reads inside the limits:
  *
- * - Every delegation read carries {@link DELEGATION_READ_SETTINGS}, so `FINAL`
+ * - Every delegation read carries {@link FINAL_READ_SETTINGS}, so `FINAL`
  *   merges one daily partition at a time and the receiver bloom filter applies.
  * - An address is filtered as one read per role rather than one `OR`, because
  *   an `OR` across the sort key and another column lets neither index skip
@@ -70,6 +70,7 @@ import { parseUnits } from '../tokenUnits.js';
 import {
     AI_TOOL_NAMES,
     CHAIN_QUERY_CAPABILITY,
+    FINAL_READ_SETTINGS,
     SHARED_DESCRIPTION,
     TIME_TX_CURSOR_KEYS,
     TRX_TOKEN,
@@ -93,25 +94,6 @@ const WINDOW_RULES: IWindowRules = { defaultHours: 24, maxHours: 168 };
  * in the window, about 4 million a day, and no index can skip any of it.
  */
 const CHAIN_WIDE_WINDOW_RULES: IWindowRules = { defaultHours: 24, maxHours: 48 };
-
-/**
- * Query settings every read of the delegation tables carries, appended to the
- * outermost query, where they apply to its subqueries as well.
- *
- * `do_not_merge_across_partitions_select_final` lets `FINAL` merge each daily
- * partition on its own instead of every part in the window at once. That is
- * exact here: a block written twice is written with the same block time, so a
- * duplicate is always in the same partition as its original.
- *
- * `use_skip_indexes_if_final` lets the `receiver_address` bloom filter skip
- * granules, which ClickHouse 24.3 otherwise does not do under `FINAL`. That is
- * exact here too: the only rows `FINAL` collapses are identical copies of one
- * contract, so a granule skipped because its receivers do not match cannot
- * hold the surviving copy of a row that does.
- *
- * The `ai-agent` profile is `readonly = 2`, which permits setting both per query.
- */
-const DELEGATION_READ_SETTINGS = 'SETTINGS do_not_merge_across_partitions_select_final = 1, use_skip_indexes_if_final = 1';
 
 /** Rows returned when the caller does not say. */
 const DEFAULT_LIMIT = 50;
@@ -190,7 +172,7 @@ interface IDelegationFilters {
  *
  * Each table is read once per party condition, joined with `UNION ALL`, so
  * each read can be narrowed by its own index. A query using this must end
- * with {@link DELEGATION_READ_SETTINGS}.
+ * with {@link FINAL_READ_SETTINGS}.
  *
  * @param conditions - Conditions applied to every read, with placeholders.
  * @param action - Which tables to read.
@@ -461,7 +443,7 @@ FROM ${delegationRows(conditions, options.action, parties)}
 ${after ? `WHERE ${after.condition}` : ''}
 ORDER BY block_timestamp DESC, tx_id DESC
 LIMIT {limit:UInt32}
-${DELEGATION_READ_SETTINGS}`,
+${FINAL_READ_SETTINGS}`,
         params
     );
     const truncated = fetched.length > options.limit;
@@ -550,7 +532,7 @@ FROM ${delegationRows(filters.conditions, 'both', partyConditions('both'))}
 GROUP BY counterparty, relation, resource
 ORDER BY activity DESC, counterparty
 LIMIT {limit:UInt32}
-${DELEGATION_READ_SETTINGS}`,
+${FINAL_READ_SETTINGS}`,
         { ...filters.params, address }
     );
     const total = Number(rows[0]?.total_groups ?? 0);
@@ -606,7 +588,7 @@ FROM ${delegationRows(filters.conditions, 'both')}
 GROUP BY party
 ORDER BY delegated_raw DESC, party
 LIMIT {limit:UInt32}
-${DELEGATION_READ_SETTINGS}`,
+${FINAL_READ_SETTINGS}`,
         filters.params
     );
     const total = Number(rows[0]?.total_parties ?? 0);

@@ -8,10 +8,15 @@
  * `tron.transaction_info`, whose `contract_address` is the called contract.
  *
  * Neither table is sorted by contract, so a query reads every call in the
- * window and keeps one contract's. A bloom-filter skip index on
- * `trigger_smart_contract.contract_address` helps for quiet contracts. The
- * window is capped at three days to keep a busy contract such as USDT within
- * the `ai-agent` account's per-query row limit.
+ * window and keeps one contract's. Every read carries
+ * {@link FINAL_READ_SETTINGS}: without it, `FINAL` merged every day in the
+ * window at once and ignored the bloom-filter skip index on
+ * `trigger_smart_contract.contract_address`, and the methods view, which reads
+ * full call data, ran out of the `ai-agent` account's memory on any window
+ * touching three days. With it, each day is merged on its own and the skip
+ * index lets a quiet contract's read skip most of the table. The window is
+ * capped at three days to keep a busy contract such as USDT, which the index
+ * cannot narrow, within the account's per-query read limits.
  *
  * @module backend/modules/blockchain/chain-query/tools/buildContractActivityTool
  */
@@ -28,6 +33,7 @@ import { toChainAmount, tokenKey, type IChainTokenInfo } from '../TokenCatalog.j
 import {
     AI_TOOL_NAMES,
     CHAIN_QUERY_CAPABILITY,
+    FINAL_READ_SETTINGS,
     SHARED_DESCRIPTION,
     TOKEN_TAG_PREFIX,
     TRX_TOKEN,
@@ -217,7 +223,8 @@ async function readSummary(session: ChainQuerySession, where: string, params: Re
         `SELECT count() AS calls, uniqExact(owner_address) AS callers, countIf(contract_ret = 'SUCCESS') AS succeeded,
        toString(sumIf(call_value, contract_ret = 'SUCCESS')) AS trx_sent, min(block_timestamp) AS first_at, max(block_timestamp) AS last_at
 FROM ${CHAIN_DATA_DATABASE}.trigger_smart_contract FINAL
-WHERE ${where}`,
+WHERE ${where}
+${FINAL_READ_SETTINGS}`,
         params
     );
     const statuses = await session.query<IStatusRow>(
@@ -225,7 +232,8 @@ WHERE ${where}`,
 FROM ${CHAIN_DATA_DATABASE}.trigger_smart_contract FINAL
 WHERE ${where}
 GROUP BY contract_ret
-ORDER BY calls DESC`,
+ORDER BY calls DESC
+${FINAL_READ_SETTINGS}`,
         params
     );
     // Energy used from staked or delegated resources plus energy paid by the
@@ -242,7 +250,8 @@ ORDER BY calls DESC`,
        toString(sum(fee)) AS fee_total,
        toString(sum(receipt_energy_penalty_total)) AS energy_penalty
 FROM ${CHAIN_DATA_DATABASE}.transaction_info FINAL
-WHERE ${where}`,
+WHERE ${where}
+${FINAL_READ_SETTINGS}`,
         params
     );
     const calls = Number(totals?.calls ?? 0);
@@ -292,7 +301,8 @@ FROM ${CHAIN_DATA_DATABASE}.trigger_smart_contract FINAL
 WHERE ${where}
 GROUP BY caller
 ORDER BY calls DESC, caller
-LIMIT {limit:UInt32}`,
+LIMIT {limit:UInt32}
+${FINAL_READ_SETTINGS}`,
         params
     );
     const total = Number(rows[0]?.total_groups ?? 0);
@@ -334,7 +344,8 @@ FROM ${CHAIN_DATA_DATABASE}.trigger_smart_contract FINAL
 WHERE ${where}
 GROUP BY selector
 ORDER BY calls DESC, selector
-LIMIT {limit:UInt32}`,
+LIMIT {limit:UInt32}
+${FINAL_READ_SETTINGS}`,
         params
     );
     const total = Number(rows[0]?.total_groups ?? 0);
@@ -373,7 +384,8 @@ async function readHourly(session: ChainQuerySession, where: string, params: Rec
 FROM ${CHAIN_DATA_DATABASE}.trigger_smart_contract FINAL
 WHERE ${where}
 GROUP BY hour
-ORDER BY hour`,
+ORDER BY hour
+${FINAL_READ_SETTINGS}`,
         params
     );
 

@@ -14,6 +14,7 @@ import { toHexAddress } from '../../../lib/tron-address.js';
 import { summarizeCoverage } from '../chain-query/ChainCoverageReader.js';
 import type { IChainWindow } from '../chain-query/chainQueryInput.js';
 import { decodeKnownEvent, KNOWN_EVENT_TOPICS, KNOWN_METHOD_SELECTORS } from '../chain-query/chainSignatures.js';
+import { buildContractActivityTool } from '../chain-query/tools/buildContractActivityTool.js';
 import { buildContractEventsTool } from '../chain-query/tools/buildContractEventsTool.js';
 import { buildFindTokenTool } from '../chain-query/tools/buildFindTokenTool.js';
 import { buildNetworkStatsTool } from '../chain-query/tools/buildNetworkStatsTool.js';
@@ -509,6 +510,26 @@ describe('blockchain-find-token', () => {
         const result = await buildFindTokenTool(toolkit).handler({ symbol: 'trx' }, undefined, CONTEXT) as Record<string, unknown>;
 
         expect(result).toEqual(expect.objectContaining({ success: false, errorKind: 'input' }));
+    });
+});
+
+describe('blockchain-contract-activity', () => {
+    it('ends every FINAL read with the per-day merge and skip index settings, in every view', async () => {
+        const { toolkit, reads } = buildToolkit(() => []);
+        const tool = buildContractActivityTool(toolkit);
+
+        for (const view of ['summary', 'callers', 'methods', 'hourly']) {
+            const result = await tool.handler({ contract: USDT, view, hours: 72 }, undefined, CONTEXT) as Record<string, unknown>;
+            expect(result.success).toBe(true);
+        }
+
+        const contractReads = reads.filter(entry => /\.(trigger_smart_contract|transaction_info) FINAL/.test(entry.sql));
+        // Three reads for the summary view, one for each of the other three.
+        expect(contractReads).toHaveLength(6);
+        for (const read of contractReads) {
+            expect(read.sql.trimEnd().endsWith('SETTINGS do_not_merge_across_partitions_select_final = 1, use_skip_indexes_if_final = 1')).toBe(true);
+            expect(read.sql).not.toContain(USDT);
+        }
     });
 });
 
