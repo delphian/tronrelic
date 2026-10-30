@@ -116,7 +116,8 @@ export function buildChainResponse(parts: IChainResponseParts, payload: Record<s
  *
  * @param toolkit - The shared chain query dependencies.
  * @param context - The run identity the governor passed to the handler.
- * @param toolName - The tool's name, for the log line on an unexpected failure.
+ * @param toolName - The tool's name, which selects the advice its limit errors
+ *                   carry and labels the log line on an unexpected failure.
  * @param body - The tool's work, given the open session.
  * @returns `{ success: true, cost, ... }` or `{ success: false, error, errorKind, cost }`.
  */
@@ -129,7 +130,7 @@ export async function runChainQueryTool(
     let session: ChainQuerySession | undefined;
     let response: Record<string, unknown>;
     try {
-        session = toolkit.openSession(context);
+        session = toolkit.openSession(context, toolName);
         const payload = await body(session);
         response = { success: true, cost: session.cost(), ...payload };
     } catch (error) {

@@ -17,6 +17,7 @@ import { ChainCoverageReader } from '../chain-query/ChainCoverageReader.js';
 import { ChainQuerySession } from '../chain-query/ChainQuerySession.js';
 import type { IChainQueryToolkit } from '../chain-query/ChainQueryToolkit.js';
 import { TokenCatalog } from '../chain-query/TokenCatalog.js';
+import { chainQueryLimitAdvice } from '../chain-query/tools/chainQueryLimitAdvice.js';
 import { UsdPricer } from '../chain-query/UsdPricer.js';
 
 /** Real, checksum-valid addresses, so the tools' own validation accepts them. */
@@ -87,7 +88,7 @@ export function buildToolkit(onQuery: QueryHandler): { toolkit: IChainQueryToolk
         getPricesForDays: vi.fn(async (asset: string) => asset === USDT ? [{ asset, day: '2026-09-23', priceUsd: 1 }] : [])
     } as unknown as IPriceHistoryService;
     const toolkit: IChainQueryToolkit = {
-        openSession: (context) => new ChainQuerySession(reader, context),
+        openSession: (context, toolName) => new ChainQuerySession(reader, context, toolName ? chainQueryLimitAdvice[toolName] : undefined),
         coverage: new ChainCoverageReader(() => NOW.getTime()),
         tokens: new TokenCatalog(),
         tags: new AddressTagLookup(() => tagService),

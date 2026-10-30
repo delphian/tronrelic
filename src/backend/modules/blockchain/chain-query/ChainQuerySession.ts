@@ -10,31 +10,42 @@
  *   hourly budget.
  * - It keeps a running total of rows and bytes read and the ClickHouse query
  *   ids, which every response reports so a model can pace itself and an
- *   operator can find the exact queries in `system.query_log`.
+ *   operator can find the exact queries in `system.query_log`. A query that
+ *   fails is counted and named too, because it is usually the most expensive
+ *   one, and leaving it out made a failed call look nearly free.
  * - It turns ClickHouse's limit errors into instructions a model can act on,
- *   and stops every read once the call's deadline passes, so a slow query is
- *   cancelled on the server rather than left running after the governor has
- *   given up waiting.
+ *   using advice written for the tool that ran the query, and stops every read
+ *   once the call's deadline passes, so a slow query is cancelled on the
+ *   server rather than left running after the governor has given up waiting.
  *
  * @module backend/modules/blockchain/chain-query/ChainQuerySession
  */
 
+import { randomUUID } from 'node:crypto';
 import type { IClickHouseReader, IToolHandlerContext } from '@/types';
 import { logger } from '../logger.js';
 import { ChainQueryError } from './ChainQueryError.js';
 
 /** What the reads in one tool call cost, reported in every response. */
 export interface IChainQueryCost {
-    /** Queries run. */
+    /** Queries run, including any that failed. */
     queries: number;
-    /** Rows ClickHouse read from tables, summed across queries. */
+    /**
+     * Rows ClickHouse read from tables, summed across the queries that
+     * finished. ClickHouse reports nothing for a query that failed, so a call
+     * with `failedQueries` above zero read more than this.
+     */
     readRows: number;
-    /** Uncompressed bytes ClickHouse read, summed across queries. */
+    /** Uncompressed bytes ClickHouse read, summed across the queries that finished. */
     readBytes: number;
-    /** Time spent waiting on ClickHouse, in milliseconds. */
+    /** Time spent waiting on ClickHouse, in milliseconds, including time spent on queries that failed. */
     elapsedMs: number;
-    /** ClickHouse query ids, for finding each query in `system.query_log`. */
+    /** Every query's ClickHouse id, in the order they ran, for finding each in `system.query_log`. */
     queryIds: string[];
+    /** Queries that failed, such as one stopped by a limit. */
+    failedQueries: number;
+    /** The ids of the failed queries, also listed in `queryIds`, so an operator can find what each read before it stopped. */
+    failedQueryIds: string[];
 }
 
 /**
@@ -60,9 +71,12 @@ const LIMIT_MESSAGES: Readonly<Record<number, string>> = {
     396: 'The query would return or read more rows than the ai-agent account allows (TOO_MANY_ROWS_OR_BYTES).'
 };
 
-/** Advice appended to every per-query limit message. */
-const NARROWING_ADVICE =
-    'Ask for less: shorten the window with hours or since/until, add a token filter, or pick a less active address. Very busy addresses such as exchange hot wallets need windows of an hour or two.';
+/**
+ * Advice appended to a limit message when the tool supplied none of its own.
+ * It names only the window, because that is the one change that narrows every
+ * windowed tool's read; which other parameters help depends on the tool.
+ */
+export const DEFAULT_NARROWING_ADVICE = 'Ask for less: shorten the window with hours or since/until.';
 
 /**
  * Read the numeric ClickHouse error code off an error from `@clickhouse/client`,
@@ -87,7 +101,15 @@ function clickHouseCode(error: unknown): number | null {
 export class ChainQuerySession {
     private readonly controller = new AbortController();
     private readonly timer: ReturnType<typeof setTimeout>;
-    private readonly totals: IChainQueryCost = { queries: 0, readRows: 0, readBytes: 0, elapsedMs: 0, queryIds: [] };
+    private readonly totals: IChainQueryCost = {
+        queries: 0,
+        readRows: 0,
+        readBytes: 0,
+        elapsedMs: 0,
+        queryIds: [],
+        failedQueries: 0,
+        failedQueryIds: []
+    };
 
     /**
      * @param reader - The `ai-agent` account's read-only connection.
@@ -95,11 +117,16 @@ export class ChainQuerySession {
      *                  failing that its `queryId` or `conversationId`, becomes the
      *                  ClickHouse quota key. With none of them the call counts
      *                  against the account as a whole.
+     * @param narrowingAdvice - What the calling tool tells a model to change
+     *                          after a limit stops one of its reads, because
+     *                          the change that helps depends on what that
+     *                          tool's reads grow with.
      * @param deadlineMs - How long the call may spend reading before every read is cancelled.
      */
     constructor(
         private readonly reader: IClickHouseReader,
         private readonly context: IToolHandlerContext | undefined,
+        private readonly narrowingAdvice: string = DEFAULT_NARROWING_ADVICE,
         deadlineMs: number = CHAIN_QUERY_DEADLINE_MS
     ) {
         this.timer = setTimeout(() => this.controller.abort(), deadlineMs);
@@ -107,6 +134,10 @@ export class ChainQuerySession {
 
     /**
      * Run one parameterized SELECT and add its cost to the call's total.
+     *
+     * The session names each query itself rather than letting ClickHouse do
+     * it, so a query that fails still has an id to report: ClickHouse returns
+     * the generated id only with a successful result.
      *
      * @param sql - The statement, with `{name:Type}` placeholders for every
      *              value that came from the caller.
@@ -119,20 +150,26 @@ export class ChainQuerySession {
         if (this.controller.signal.aborted) {
             throw this.deadlineError();
         }
+        const queryId = randomUUID();
+        const startedAt = Date.now();
         let rows: T[];
+        this.totals.queries += 1;
         try {
             const result = await this.reader.query<T>(sql, params, {
+                queryId,
                 quotaKey: this.context?.quotaKey ?? this.context?.queryId ?? this.context?.conversationId,
                 signal: this.controller.signal
             });
-            this.totals.queries += 1;
             this.totals.readRows += result.readRows;
             this.totals.readBytes += result.readBytes;
             this.totals.elapsedMs += result.elapsedMs;
             this.totals.queryIds.push(result.queryId);
             rows = result.rows;
         } catch (error) {
-            this.totals.queries += 1;
+            this.totals.elapsedMs += Date.now() - startedAt;
+            this.totals.queryIds.push(queryId);
+            this.totals.failedQueries += 1;
+            this.totals.failedQueryIds.push(queryId);
             throw this.translate(error);
         }
         return rows;
@@ -144,7 +181,7 @@ export class ChainQuerySession {
      * @returns The totals.
      */
     public cost(): IChainQueryCost {
-        return { ...this.totals, queryIds: [...this.totals.queryIds] };
+        return { ...this.totals, queryIds: [...this.totals.queryIds], failedQueryIds: [...this.totals.failedQueryIds] };
     }
 
     /**
@@ -161,7 +198,7 @@ export class ChainQuerySession {
      */
     private deadlineError(): ChainQueryError {
         return new ChainQueryError(
-            `This call ran out of its ${Math.round(CHAIN_QUERY_DEADLINE_MS / 1000)}-second reading time and its queries were cancelled. ${NARROWING_ADVICE}`,
+            `This call ran out of its ${Math.round(CHAIN_QUERY_DEADLINE_MS / 1000)}-second reading time and its queries were cancelled. ${this.narrowingAdvice}`,
             'limit'
         );
     }
@@ -184,7 +221,7 @@ export class ChainQuerySession {
         if (this.controller.signal.aborted) {
             translated = this.deadlineError();
         } else if (code !== null && LIMIT_MESSAGES[code]) {
-            translated = new ChainQueryError(`${LIMIT_MESSAGES[code]} ${NARROWING_ADVICE}`, 'limit');
+            translated = new ChainQueryError(`${LIMIT_MESSAGES[code]} ${this.narrowingAdvice}`, 'limit');
         } else if (code === 201) {
             translated = new ChainQueryError(
                 'This run has used up its hourly chain-query quota (QUOTA_EXCEEDED). Stop querying and answer with what you have; the quota resets within the hour.',
