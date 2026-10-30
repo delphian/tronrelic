@@ -34,6 +34,7 @@ import { buildResourceDelegationsTool } from './tools/buildResourceDelegationsTo
 import { buildTokenActivityTool } from './tools/buildTokenActivityTool.js';
 import { buildTraceFlowTool } from './tools/buildTraceFlowTool.js';
 import { buildTransactionTraceTool } from './tools/buildTransactionTraceTool.js';
+import { chainQueryLimitAdvice } from './tools/chainQueryLimitAdvice.js';
 import { CHAIN_QUERY_PROVIDER_ID } from './tools/chainQueryToolShared.js';
 
 /**
@@ -79,7 +80,7 @@ export function buildChainQueryTools(toolkit: IChainQueryToolkit): IAiTool[] {
  * @returns Disposer that removes the watch subscription.
  */
 export function registerChainQueryAiTools(serviceRegistry: IServiceRegistry): ServiceWatchDisposer {
-    const tools = buildChainQueryTools(createChainQueryToolkit(serviceRegistry));
+    const tools = buildChainQueryTools(createChainQueryToolkit(serviceRegistry, chainQueryLimitAdvice));
 
     return serviceRegistry.watch<IAiToolRegistry>('ai-tools', {
         onAvailable: (registry) => {

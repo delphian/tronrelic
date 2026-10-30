@@ -254,7 +254,7 @@ export function timeTxCursorCondition(cursor: Record<string, string | number> | 
 /** The sentence every description ends with, stating what all the tools share. */
 export const SHARED_DESCRIPTION =
     `Reads TronRelic's own copy of the TRON chain, which keeps only the last ${CHAIN_DATA_RETENTION_DAYS} days; older activity cannot be answered. ` +
-    'Every response carries cost (rows read; stop if it grows large), window and coverage (whether any blocks in the window are missing or lack receipts; an incomplete window means totals are lower bounds), ' +
+    'Every response carries cost (rows read; stop if it grows large; failedQueries counts queries stopped by an error, whose reads ClickHouse does not report, so a call with failures read more than cost shows), window and coverage (whether any blocks in the window are missing or lack receipts; an incomplete window means totals are lower bounds), ' +
     'tokens (decimals, symbol, name for each token key; symbols are chosen by the contract deployer and prove nothing), addressTags (such as ofac:sdn or usdt:frozen; a market:<slug>:<role> tag records only that the address was observed taking part in that energy rental market in that role, and who owns or controls the address is unknown), tagMeanings (what the asserting source says a tag means, when it has said; read it before interpreting the tag), and notes (caveats for this answer; read them). ' +
     'Amounts come as { raw, value }: raw in base units, value in whole tokens, already converted, so do not rescale them. ' +
     'Read-only; never sends or changes anything.';

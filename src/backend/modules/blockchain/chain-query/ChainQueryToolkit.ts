@@ -33,10 +33,12 @@ export interface IChainQueryToolkit {
      * Open a session reading as the `ai-agent` account for one tool call.
      *
      * @param context - The run identity the governor passed to the handler.
+     * @param toolName - The calling tool, so the session's limit errors carry
+     *                   advice written for what that tool's reads grow with.
      * @returns The session; the caller disposes it when the call ends.
      * @throws ChainQueryError of kind `unavailable` when ClickHouse or the account is not usable.
      */
-    openSession(context: IToolHandlerContext | undefined): ChainQuerySession;
+    openSession(context: IToolHandlerContext | undefined, toolName?: string): ChainQuerySession;
     /** Coverage of a window, cached briefly across calls. */
     coverage: ChainCoverageReader;
     /** Token metadata, with resolved tokens cached for the life of the process. */
@@ -59,18 +61,29 @@ export interface IChainQueryToolkit {
  * services during their own startup, after the tools are registered.
  *
  * @param serviceRegistry - The registry the modules publish their services on.
+ * @param limitAdvice - Advice per tool name for a read stopped by a limit.
+ *                      Passed in by the registration code that knows the
+ *                      tools, so this module does not depend on them. A tool
+ *                      missing from it gets the session's default advice.
  * @returns The toolkit every chain query tool is built from.
  */
-export function createChainQueryToolkit(serviceRegistry: IServiceRegistry): IChainQueryToolkit {
+export function createChainQueryToolkit(
+    serviceRegistry: IServiceRegistry,
+    limitAdvice: Readonly<Record<string, string>> = {}
+): IChainQueryToolkit {
     return {
-        openSession: (context) => {
+        openSession: (context, toolName) => {
             const accounts = serviceRegistry.get<IClickHouseAccountService>('clickhouse-accounts');
             if (!accounts) {
                 throw new ChainQueryError('Chain data is not available on this deployment: ClickHouse is not configured.', 'unavailable');
             }
             let session: ChainQuerySession;
             try {
-                session = new ChainQuerySession(accounts.reader(CHAIN_QUERY_ACCOUNT_ID), context);
+                session = new ChainQuerySession(
+                    accounts.reader(CHAIN_QUERY_ACCOUNT_ID),
+                    context,
+                    toolName ? limitAdvice[toolName] : undefined
+                );
             } catch {
                 throw new ChainQueryError(
                     'Chain data cannot be read right now: the ai-agent ClickHouse account is not active. An operator can check it on the ClickHouse tab of /system/system.',

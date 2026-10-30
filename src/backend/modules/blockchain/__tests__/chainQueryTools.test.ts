@@ -135,8 +135,47 @@ describe(AI_TOOL_NAMES.addressTransfers, () => {
 
         expect(result).toEqual(expect.objectContaining({ success: false, errorKind: 'limit' }));
         expect(String(result.error)).toContain('TOO_MANY_ROWS');
-        expect(String(result.error)).toContain('shorten the window');
-        expect(result.cost).toEqual(expect.objectContaining({ queries: 1 }));
+        expect(String(result.error)).toContain('Shorten the window');
+        // The ledger is sorted by address then token, so a token filter
+        // genuinely narrows this tool's read and the advice may say so.
+        expect(String(result.error)).toContain('token filter');
+    });
+
+    it('reports a failed query in cost, with an id an operator can look up', async () => {
+        const { toolkit } = buildToolkit(() => {
+            throw Object.assign(new Error('Memory limit exceeded'), { code: '241' });
+        });
+
+        const result = await buildAddressTransfersTool(toolkit).handler({ address: WALLET }, undefined, CONTEXT) as Record<string, unknown>;
+
+        const cost = result.cost as { queries: number; queryIds: string[]; failedQueries: number; failedQueryIds: string[] };
+        expect(cost.failedQueries).toBe(1);
+        expect(cost.failedQueryIds).toHaveLength(1);
+        expect(cost.failedQueryIds[0]).toMatch(/^[0-9a-f-]{36}$/);
+        expect(cost.queryIds.at(-1)).toBe(cost.failedQueryIds[0]);
+        expect(cost.queries).toBe(cost.queryIds.length);
+    });
+
+    it('gives each tool advice matching what its reads grow with', async () => {
+        /**
+         * Fail the tool's own query the way ClickHouse does when the account's
+         * memory limit stops it, so the test sees the advice that tool gives.
+         *
+         * @returns Never; it always throws.
+         */
+        const memoryError = (): never => {
+            throw Object.assign(new Error('Memory limit exceeded'), { code: '241' });
+        };
+        const tools = buildChainQueryTools(buildToolkit(memoryError).toolkit);
+        const contractActivity = tools.find(tool => tool.name === AI_TOOL_NAMES.contractActivity)!;
+
+        const result = await contractActivity.handler({ contract: USDT, view: 'methods', hours: 72 }, undefined, CONTEXT) as Record<string, unknown>;
+
+        expect(String(result.error)).toContain('MEMORY_LIMIT_EXCEEDED');
+        // Its read covers every call in the window, so a less active contract
+        // would not help, and the advice must not send the model after one.
+        expect(String(result.error)).not.toContain('less active');
+        expect(String(result.error)).toContain('Only a shorter window helps');
     });
 });
 

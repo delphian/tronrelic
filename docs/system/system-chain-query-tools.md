@@ -47,10 +47,10 @@ A token filter accepts `TRX`, a TRC-20 contract address, or a TRC-10 id. A symbo
 `runChainQueryTool` opens a `ChainQuerySession` for each call. The session reads through `IClickHouseAccountService.reader('ai-agent')` and does three things on top of the account's limits:
 
 - **It charges reads to the run.** The governor passes each handler an `IToolHandlerContext` (see [system-ai-tools.md](./system-ai-tools.md#the-tool-contract)), and the session sends its `queryId` as the ClickHouse quota key, so each agent run has its own hourly budget. An entry point that wants a different budget sets `quotaKey`, which the session sends in preference to `queryId`; the MCP endpoint uses this to give each user one budget of their own. When a call has neither, the session sends its `conversationId` instead, so every run in that conversation shares one hourly budget. With neither, no key is sent and the call draws on the budget the `ai-agent` account shares with every other unkeyed call.
-- **It adds up the cost.** Queries, rows and bytes read, and the ClickHouse query ids go into every response's `cost`, which comes first in the object so the governor's short audit digest still contains the ids.
+- **It adds up the cost.** Queries, rows and bytes read, and the ClickHouse query ids go into every response's `cost`, which comes first in the object so the governor's short audit digest still contains the ids. The session names each query itself, so a query that fails is still listed, in `failedQueries` and `failedQueryIds`. ClickHouse reports no rows or bytes for a failed query, so `readRows` and `readBytes` cover only the queries that finished; a call with failures read more than they show, and the failed query's id is how an operator finds what it read in `system.query_log`.
 - **It cancels its own reads after 25 seconds.** That is under the governor's 30-second handler budget, so a slow query is cancelled on the server and reported with advice rather than left running after the governor gives up waiting.
 
-`ChainQuerySession.translate` turns ClickHouse limit errors (`TOO_MANY_ROWS`, `TIMEOUT_EXCEEDED`, `QUOTA_EXCEEDED`, and the rest) into a message telling the model how to ask for less. Any other error is logged in full and reported without SQL or server detail, because the SQL is ours and a faulty query is a bug the model cannot fix.
+`ChainQuerySession.translate` turns ClickHouse limit errors (`TOO_MANY_ROWS`, `TIMEOUT_EXCEEDED`, `QUOTA_EXCEEDED`, and the rest) into a message telling the model how to ask for less. The advice comes from `tools/chainQueryLimitAdvice.ts`, one entry per tool, because the change that helps depends on what that tool's reads grow with: a wallet tool's cost follows the address's activity and a token filter narrows it, while a contract or chain-wide tool reads every row in the window, so only a shorter window helps. Each entry names only parameters its tool accepts. Update the entry when a tool's queries change. Any other error is logged in full and reported without SQL or server detail, because the SQL is ours and a faulty query is a bug the model cannot fix.
 
 ### The response envelope
 
@@ -143,7 +143,8 @@ That party form reads the transfer tables three times, once for the join and onc
 |---|---|
 | `registerChainQueryAiTools.ts` | Builds the tools on one shared toolkit and registers them on `'ai-tools'` with `watch()`. Called from `src/backend/index.ts` |
 | `ChainQueryToolkit.ts` | Resolves `'clickhouse-accounts'`, `'address-tags'`, and `'price-history'` from the registry on each call |
-| `ChainQuerySession.ts` | Per-call reads: quota key, cost, deadline, error translation |
+| `ChainQuerySession.ts` | Per-call reads: quota key, cost including failed queries, deadline, error translation |
+| `tools/chainQueryLimitAdvice.ts` | What each tool tells the model to change after a limit stops one of its reads |
 | `chainQueryInput.ts` | Re-validates every argument: checksum-verified addresses, token filters, windows, cursors |
 | `chainQueryResponse.ts` | The envelope and `runChainQueryTool` |
 | `ChainCoverageReader.ts`, `TokenCatalog.ts`, `UsdPricer.ts`, `AddressTagLookup.ts`, `lookalikes.ts` | The shared enrichment |
