@@ -12,7 +12,7 @@
  * the AI tool cannot disagree about what a valid rule is.
  */
 
-import { useCallback, useId, useState, type FormEvent } from 'react';
+import { useCallback, useId, useRef, useState, type FormEvent } from 'react';
 import { isAxiosError } from 'axios';
 import { Eye, Save, X } from 'lucide-react';
 import { BOT_RULE_LABELS, type IBotRule, type IBotRulePreview } from '@/types';
@@ -74,10 +74,19 @@ export function BotRuleForm({ rule, initial, onSaved, onCancel }: IBotRuleFormPr
     const [previewDays, setPreviewDays] = useState<number>(7);
     const [preview, setPreview] = useState<IBotRulePreview | null>(null);
     const id = useId();
+    /**
+     * Counts how many times the preview has been invalidated. The condition
+     * inputs stay editable while a preview request is in flight, so a response
+     * can arrive describing conditions the form no longer holds. Comparing this
+     * counter before and after the request lets that stale response be dropped
+     * instead of shown as counts for a rule that is not the one about to be saved.
+     */
+    const previewGeneration = useRef(0);
 
     /**
      * Update one field. A changed condition makes the shown preview stale, so
-     * it is cleared rather than left describing different conditions.
+     * it is cleared and any request still in flight is invalidated rather than
+     * left to restore results describing different conditions.
      *
      * @param key - The field to change.
      * @param value - Its new value.
@@ -85,22 +94,46 @@ export function BotRuleForm({ rule, initial, onSaved, onCancel }: IBotRuleFormPr
     const set = useCallback(<K extends keyof IBotRuleFormState>(key: K, value: IBotRuleFormState[K]): void => {
         setForm(current => ({ ...current, [key]: value }));
         if (key !== 'name' && key !== 'note' && key !== 'label' && key !== 'mode' && key !== 'enabled' && key !== 'expiresAt') {
+            previewGeneration.current += 1;
             setPreview(null);
         }
     }, []);
 
     /**
-     * Run the conditions against recent traffic without saving.
+     * Change the window the preview counts over. The window is part of what the
+     * counts mean, so changing it invalidates a shown or in-flight preview the
+     * same way a changed condition does.
+     *
+     * @param days - The window the operator picked, in days.
+     */
+    const handlePreviewDaysChange = useCallback((days: number): void => {
+        setPreviewDays(days);
+        previewGeneration.current += 1;
+        setPreview(null);
+    }, []);
+
+    /**
+     * Run the conditions against recent traffic without saving. The result is
+     * applied only while it still belongs to the conditions and window that
+     * asked for it, so an operator who edits the form mid-request is never
+     * shown counts for the rule they just replaced.
      */
     const handlePreview = useCallback(async (): Promise<void> => {
         const { conditions, problem } = botRuleConditionsFromForm(form);
         setError(problem);
         if (!problem) {
+            previewGeneration.current += 1;
+            const generation = previewGeneration.current;
             setPreviewing(true);
             try {
-                setPreview(await adminPreviewBotRule(conditions, previewDays));
+                const result = await adminPreviewBotRule(conditions, previewDays);
+                if (generation === previewGeneration.current) {
+                    setPreview(result);
+                }
             } catch (err) {
-                setError(botRuleErrorMessage(err, 'Failed to preview the rule'));
+                if (generation === previewGeneration.current) {
+                    setError(botRuleErrorMessage(err, 'Failed to preview the rule'));
+                }
             } finally {
                 setPreviewing(false);
             }
@@ -213,7 +246,7 @@ export function BotRuleForm({ rule, initial, onSaved, onCancel }: IBotRuleFormPr
 
             <div className={styles.form_actions}>
                 <Field label="Preview window" htmlFor={`${id}-days`}>
-                    <Select id={`${id}-days`} size="sm" value={String(previewDays)} onChange={e => setPreviewDays(Number(e.target.value))}>
+                    <Select id={`${id}-days`} size="sm" value={String(previewDays)} onChange={e => handlePreviewDaysChange(Number(e.target.value))}>
                         {PREVIEW_DAYS.map(days => <option key={days} value={days}>{days === 1 ? 'Last day' : `Last ${days} days`}</option>)}
                     </Select>
                 </Field>

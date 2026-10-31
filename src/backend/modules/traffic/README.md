@@ -125,7 +125,7 @@ Some browser fleets defeat every per-request check: they send a stock Chrome UA,
 |------|-----|
 | Labels only; never blocks | A matched visitor is still served every page, so a wrong rule costs miscounted rows, not lost visitors. Blocking is a Cloudflare firewall concern |
 | Write-time, forward-only | The label is set when the row is written. Rows recorded before a rule was added keep their label, and removing or editing a rule does not relabel rows it already matched |
-| Never a logged-in visitor | An account holder is a real person by definition, so no rule may count one as a bot |
+| Never a logged-in visitor | An account holder is a real person by definition, so no rule may count one as a bot. Login state is known only on `page` rows, which the browser sends with its cookies; the middleware's server-to-server bootstrap call carries no session, so a page-load row is always judged as anonymous. Every visitor figure is computed from `page` rows, so the exemption covers every row a metric counts |
 | Trusted only through Cloudflare | The ASN is stored only when `CF-Ray` is present (see [Recording the Network](#recording-the-network-asn)), so a direct-to-origin caller cannot send the header to label itself or anyone else |
 | No regular expressions | Text conditions use `includes` and `startsWith` on length-capped input, like the built-in classifier, so an operator-entered pattern cannot slow ingestion |
 | Redirect hits too | The redirect-hit beacon applies the same rules through `applyBotRules`, with no session, no event type, and no page load to compare, so rules limited to an event type or to `networkMismatch` never match a redirect hit. `redirect_events` has no `bot_rule` column |
