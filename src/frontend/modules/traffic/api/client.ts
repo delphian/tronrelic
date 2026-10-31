@@ -14,6 +14,7 @@
  * here carries an explicit admin token.
  */
 
+import type { IBotRule, IBotRuleConditions, IBotRuleInput, IBotRulePreview, IBotRuleStats, IBotRuleSuggestion } from '@/types';
 import { apiClient } from '../../../lib/api';
 
 // ============================================================================
@@ -890,46 +891,76 @@ export async function adminSearchAccounts(q: string): Promise<IAccountMatch[]> {
     return (response.data as { accounts?: IAccountMatch[] }).accounts ?? [];
 }
 
-/** One network on the automated-network list, whose traffic is labeled a bot. */
-export interface IBotNetwork {
-    /** Autonomous system number — the key matched against each request. */
-    asn: number;
-    /** Operator's note on why the network was listed; null when none was given. */
-    note: string | null;
-    /** ISO timestamp the network was added. */
-    addedAt: string;
+/**
+ * Every bot rule with its recent match counts, as the Settings panel shows them.
+ */
+export interface IBotRuleList {
+    /** All rules, newest first, including proposed and rejected ones. */
+    rules: IBotRule[];
+    /** Match counts for each rule that matched in the last 7 days. */
+    stats: IBotRuleStats[];
 }
 
 /**
- * List the networks whose traffic is labeled `bot_other`.
- * @returns The automated-network list, newest addition first.
+ * List the bot rules and how often each has matched recently, so the panel can
+ * show what every rule is doing in one request.
+ * @returns The rules and their match counts.
  */
-export async function adminGetBotNetworks(): Promise<IBotNetwork[]> {
-    const response = await apiClient.get('/admin/traffic/bot-networks');
-    return (response.data as { networks?: IBotNetwork[] }).networks ?? [];
+export async function adminGetBotRules(): Promise<IBotRuleList> {
+    const response = await apiClient.get('/admin/traffic/bot-rules');
+    const data = response.data as Partial<IBotRuleList>;
+    return { rules: data.rules ?? [], stats: data.stats ?? [] };
 }
 
 /**
- * Add a network to the automated-network list, or replace its note. Applies
- * to traffic recorded from now on; rows already recorded keep their label.
- * @param asn - The autonomous system number, as typed by the operator.
- * @param note - Optional reason for listing it, such as the network's owner.
- * @returns The updated list.
+ * Create a bot rule. It applies to traffic recorded from now on.
+ * @param input - The rule's editable fields.
+ * @returns The stored rule.
  */
-export async function adminAddBotNetwork(asn: string, note: string): Promise<IBotNetwork[]> {
-    const response = await apiClient.post('/admin/traffic/bot-networks', { asn, note });
-    return (response.data as { networks?: IBotNetwork[] }).networks ?? [];
+export async function adminCreateBotRule(input: IBotRuleInput): Promise<IBotRule> {
+    const response = await apiClient.post('/admin/traffic/bot-rules', input);
+    return (response.data as { rule: IBotRule }).rule;
 }
 
 /**
- * Remove a network from the automated-network list. Traffic recorded from now
- * on is classified normally again.
- * @param asn - The autonomous system number to remove.
- * @returns The updated list.
+ * Replace a bot rule's editable fields. Its review status is kept.
+ * @param id - The rule to change.
+ * @param input - The new editable fields.
+ * @returns The updated rule.
  */
-export async function adminRemoveBotNetwork(asn: number): Promise<IBotNetwork[]> {
-    const response = await apiClient.delete(`/admin/traffic/bot-networks/${asn}`);
-    return (response.data as { networks?: IBotNetwork[] }).networks ?? [];
+export async function adminUpdateBotRule(id: string, input: IBotRuleInput): Promise<IBotRule> {
+    const response = await apiClient.put(`/admin/traffic/bot-rules/${encodeURIComponent(id)}`, input);
+    return (response.data as { rule: IBotRule }).rule;
+}
+
+/**
+ * Delete a bot rule. Events it already labeled keep their label.
+ * @param id - The rule to delete.
+ */
+export async function adminDeleteBotRule(id: string): Promise<void> {
+    await apiClient.delete(`/admin/traffic/bot-rules/${encodeURIComponent(id)}`);
+}
+
+/**
+ * Report what a set of conditions would have matched over a recent window,
+ * without saving anything, so the operator can check a rule before relying on it.
+ * @param conditions - The conditions to test.
+ * @param days - Window length: 1, 7, or 30 days.
+ * @returns The preview.
+ */
+export async function adminPreviewBotRule(conditions: IBotRuleConditions, days: number): Promise<IBotRulePreview> {
+    const response = await apiClient.post('/admin/traffic/bot-rules/preview', { conditions, days });
+    return (response.data as { preview: IBotRulePreview }).preview;
+}
+
+/**
+ * List networks whose recent traffic looks automated but is still counted as
+ * human, as starting points for new rules.
+ * @returns Candidate networks, most cookies first.
+ */
+export async function adminGetBotRuleSuggestions(): Promise<IBotRuleSuggestion[]> {
+    const response = await apiClient.get('/admin/traffic/bot-rules/suggestions');
+    return (response.data as { suggestions?: IBotRuleSuggestion[] }).suggestions ?? [];
 }
 
 export async function adminGetGscStatus(): Promise<IGscStatus> {

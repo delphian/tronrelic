@@ -43,7 +43,8 @@ import type { IAccountDirectoryService, IClickHouseService, ISystemLogService, I
 import { getClientIP, getCountryFromIP, getDeviceCategory } from './geo.service.js';
 import { getIpHash, getSubnetHash } from './ip-hash.js';
 import { classifyTrafficRequest, type BotClass } from './bot-classifier.js';
-import type { IBotNetworkLookup } from './bot-networks.service.js';
+import { applyBotRules, type IBotRuleMatcher } from './bot-rule-matcher.js';
+import type { IFirstTouchSnapshot } from './first-touch-store.js';
 import { classifyChannel, refererDomainFromUrl, type TrafficChannel } from './channel-classifier.js';
 import { classifySourceApp, type SourceApp } from './source-app-classifier.js';
 import { UUID_V4_REGEX } from '../api/traffic-cookies.js';
@@ -197,6 +198,15 @@ export interface ITrafficEvent {
      * before migration 020 carry `null`. Additive column (migration 020).
      */
     source_app: SourceApp | null;
+
+    /**
+     * Id of the operator bot rule that matched the event, in `label` or
+     * `monitor` mode, else `null`. Backs the per-rule match counts on the
+     * Settings tab. Left out of the insert when `null` (see
+     * {@link serializeTrafficEventForClickHouse}), so ingestion keeps working
+     * before migration 021 adds the column. Additive column (migration 021).
+     */
+    bot_rule: string | null;
 }
 
 /**
@@ -3719,8 +3729,8 @@ export class TrafficService {
  * backend has real visitor context (landing path, UTM params, original
  * referrer captured by the legacy-redirect middleware) on the bootstrap
  * call. The `startSession` payload supplies the same shape from the
- * frontend session-start fetch. One field, `botNetworks`, is not request
- * data at all but the lookup the classifier needs; see its own comment.
+ * frontend session-start fetch. Two fields, `botRules` and `firstTouch`, are
+ * not request data but what the operator's bot rules need; see their comments.
  */
 export interface ITrafficEventBuilderInputs {
     /** Sanitized landing path; falls back to `req.path` when omitted. */
@@ -3764,12 +3774,18 @@ export interface ITrafficEventBuilderInputs {
      */
     automated?: boolean;
     /**
-     * The operator's automated-network list. Not request data like the fields
-     * above: the controller passes it so the builder can check the ASN it reads
-     * from the headers. When the request's network is listed, an otherwise
-     * human verdict becomes `bot_other`. Omitted means no network is listed.
+     * The operator's active bot rules. Not request data like the fields above:
+     * the controller passes the matcher so the builder can test the event it
+     * assembles. Consulted only when the built-in verdict is `human` and the
+     * visitor is not logged in. Omitted means no rules apply.
      */
-    botNetworks?: IBotNetworkLookup;
+    botRules?: IBotRuleMatcher;
+    /**
+     * The same cookie's recent page load, which the controller recalls for
+     * `page` events so a rule's network-mismatch condition can compare the two.
+     * Null or omitted on every other event.
+     */
+    firstTouch?: IFirstTouchSnapshot | null;
 }
 
 /**
@@ -3837,12 +3853,36 @@ export function buildTrafficEvent(
     // the raw address never leaves this scope (privacy design — only the
     // derived country and keyed hashes are stored).
     const clientIP = getClientIP({ ip: req.ip, headers });
+    const country = cfIpCountry ?? getCountryFromIP(clientIP);
+    const userId = inputs.userId ?? null;
+
+    // Built-in verdict first; the operator's rules are consulted only when it
+    // reads `human`, and never for a logged-in visitor. A page report is judged
+    // by the landing referrer the browser reported, a page load by its header.
+    const builtInClass = classifyTrafficRequest({
+        userAgent,
+        path,
+        referer,
+        secFetchSite,
+        automated: inputs.automated === true
+    });
+    const ruled = applyBotRules(builtInClass, inputs.botRules, {
+        eventType: eventType === 'page' ? 'page' : 'bootstrap',
+        loggedIn: userId !== null,
+        asn,
+        country,
+        userAgent,
+        path,
+        referrer: eventType === 'page' ? inputs.originalReferrer : referer,
+        firstTouch: inputs.firstTouch ?? null,
+        now: Date.now()
+    });
 
     return {
         event_type: eventType,
         timestamp: new Date(),
         candidate_uid: candidateUid,
-        user_id: inputs.userId ?? null,
+        user_id: userId,
         referral_code: inputs.referralCode ?? null,
         duration_ms: inputs.durationMs ?? null,
 
@@ -3855,16 +3895,9 @@ export function buildTrafficEvent(
 
         // Cloudflare's edge-derived country is authoritative when present;
         // the local GeoIP lookup covers direct-to-origin and dev traffic.
-        country: cfIpCountry ?? getCountryFromIP(clientIP),
+        country,
         device: getDeviceCategory(userAgent),
-        bot_class: classifyTrafficRequest({
-            userAgent,
-            path,
-            referer,
-            secFetchSite,
-            automated: inputs.automated === true,
-            botNetwork: asn !== null && inputs.botNetworks?.isBotNetwork(asn) === true
-        }),
+        bot_class: ruled.botClass,
 
         utm_source: utm.source ?? null,
         utm_medium: utm.medium ?? null,
@@ -3902,7 +3935,8 @@ export function buildTrafficEvent(
             : null,
 
         asn,
-        source_app: sourceApp
+        source_app: sourceApp,
+        bot_rule: ruled.botRule
     };
 }
 
@@ -3945,7 +3979,7 @@ export function parseAsn(value: string | undefined): number | null {
  * header, so it means something only on a hop Cloudflare attested; without
  * `CF-Ray` a direct-to-origin caller could send any number. Shared by event
  * ingestion and redirect-hit ingestion so both apply the same rule, including
- * the automated-network check that depends on it.
+ * the bot rules' network conditions that depend on it.
  *
  * @param headers - The request headers, as Express exposes them.
  * @returns The ASN, or `null` when the hop is not attested or the value is unusable.
@@ -4022,8 +4056,9 @@ function parseSecChUaMobile(value: string | undefined): number | null {
  * native format under `JSONEachRow`); everything else lines up with
  * `ITrafficEvent` directly.
  */
-interface TrafficEventRow extends Omit<ITrafficEvent, 'timestamp'> {
+interface TrafficEventRow extends Omit<ITrafficEvent, 'timestamp' | 'bot_rule'> {
     timestamp: string;
+    bot_rule?: string | null;
 }
 
 /**
@@ -4055,19 +4090,31 @@ function clickHouseDateToIso(value: string): string {
  * wire-format pipeline as live traffic. Internal callers (`recordEvent`)
  * use it via the `serializeEvent` alias to keep the original name local
  * to this file.
+ *
+ * `bot_rule` is left out when it is `null`, so an insert names the column only
+ * when a rule matched. ClickHouse fills an omitted column with NULL, so the
+ * stored row is the same, and ingestion keeps working on a deployment that
+ * has not yet run migration 021.
  */
 export function serializeTrafficEventForClickHouse(event: ITrafficEvent): Record<string, unknown> {
-    return { ...event, timestamp: formatClickHouseDateTime64Utc(event.timestamp) };
+    const { bot_rule: botRule, ...rest } = event;
+    const row: Record<string, unknown> = { ...rest, timestamp: formatClickHouseDateTime64Utc(event.timestamp) };
+    if (botRule !== null) {
+        row.bot_rule = botRule;
+    }
+    return row;
 }
 
 const serializeEvent = serializeTrafficEventForClickHouse;
 
 /**
  * Inverse of `serializeEvent`. Re-hydrates the `Date` instance from
- * ClickHouse's native `DateTime64(3)` string form.
+ * ClickHouse's native `DateTime64(3)` string form. `bot_rule` is not selected
+ * by the per-visitor read (it would fail before migration 021), so it is
+ * filled with `null` when absent.
  */
 function deserializeEvent(row: TrafficEventRow): ITrafficEvent {
-    return { ...row, timestamp: parseClickHouseDateTime64Utc(row.timestamp) };
+    return { ...row, bot_rule: row.bot_rule ?? null, timestamp: parseClickHouseDateTime64Utc(row.timestamp) };
 }
 
 /**

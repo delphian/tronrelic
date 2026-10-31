@@ -36,8 +36,15 @@ export { GscService } from './services/gsc.service.js';
 export type { IGscStatus, IGscKeyword, IGscQueryDocument } from './services/gsc.service.js';
 export { IgnoredUsersService } from './services/ignored-users.service.js';
 export type { IIgnoredUserDocument } from './services/ignored-users.service.js';
-export { BotNetworksService, BotNetworkValidationError } from './services/bot-networks.service.js';
-export type { IBotNetworkDocument, IBotNetworkLookup } from './services/bot-networks.service.js';
+export { BotRulesService, BotRuleNotFoundError } from './services/bot-rules.service.js';
+export type { IBotRuleDocument } from './services/bot-rules.service.js';
+export { BotRuleValidationError, validateBotRuleInput, validateBotRuleConditions } from './services/bot-rule-validation.js';
+export { BotRuleAnalyticsService } from './services/bot-rule-analytics.service.js';
+export { applyBotRules, matchesBotRuleConditions, selectBotRuleMatch } from './services/bot-rule-matcher.js';
+export type { IBotRuleMatcher, IBotRuleMatch, IBotRuleSignals, ICompiledBotRule } from './services/bot-rule-matcher.js';
+export { BOT_RULE_CURATION_TYPE_ID, createBotRuleCurationType } from './services/bot-rule-curation-type.js';
+export { FirstTouchStore } from './services/first-touch-store.js';
+export type { IFirstTouchStore, IFirstTouchSnapshot } from './services/first-touch-store.js';
 export { RedirectService, RedirectValidationError, RedirectNotFoundError } from './services/redirect.service.js';
 export type {
     IRedirectRule,
@@ -62,7 +69,7 @@ export { TrafficController } from './api/traffic.controller.js';
 export { createAdminTrafficRouter, createAdminAnalyticsRouter } from './api/traffic.routes.js';
 export { RedirectsController } from './api/redirects.controller.js';
 export { createPublicRedirectsRouter, createAdminRedirectsRouter } from './api/redirects.routes.js';
-export { BotNetworksController } from './api/bot-networks.controller.js';
-export { createAdminBotNetworksRouter } from './api/bot-networks.routes.js';
+export { BotRulesController } from './api/bot-rules.controller.js';
+export { createAdminBotRulesRouter } from './api/bot-rules.routes.js';
 export { resolveAnalyticsRange } from './services/traffic.service.js';
 export type { IAnalyticsRangeQuery } from './services/traffic.service.js';

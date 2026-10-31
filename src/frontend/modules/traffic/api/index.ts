@@ -31,10 +31,13 @@ export {
     adminAddIgnoredUser,
     adminRemoveIgnoredUser,
     adminSearchAccounts,
-    // Automated-network list functions
-    adminGetBotNetworks,
-    adminAddBotNetwork,
-    adminRemoveBotNetwork,
+    // Bot rule functions
+    adminGetBotRules,
+    adminCreateBotRule,
+    adminUpdateBotRule,
+    adminDeleteBotRule,
+    adminPreviewBotRule,
+    adminGetBotRuleSuggestions,
     // Redirect management functions
     adminListRedirects,
     adminCreateRedirect,
@@ -86,7 +89,7 @@ export type {
     IOverviewTrend,
     IIgnoredUser,
     IAccountMatch,
-    IBotNetwork,
+    IBotRuleList,
     IGscStatus,
     IGscKeyword,
     IGscKeywordsResult,

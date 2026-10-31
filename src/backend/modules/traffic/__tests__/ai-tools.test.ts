@@ -174,6 +174,7 @@ function registerAndCapture(
         trafficStub as unknown as TrafficService,
         gscStub as unknown as GscService,
         createRedirectServiceStub() as unknown as RedirectService,
+        [],
         logger
     );
 

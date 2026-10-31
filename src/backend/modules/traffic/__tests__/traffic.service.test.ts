@@ -91,7 +91,8 @@ const sampleEvent: ITrafficEvent = {
     subnet_hash: null,
     channel: 'referral',
     asn: null,
-    source_app: null
+    source_app: null,
+    bot_rule: null
 };
 
 describe('TrafficService', () => {
@@ -156,6 +157,26 @@ describe('TrafficService', () => {
             expect(typeof row.timestamp).toBe('string');
             // ClickHouse native DateTime64(3) form, UTC, no 'T'/'Z' suffix.
             expect(row.timestamp).toBe('2026-04-30 12:00:00.000');
+        });
+
+        it('leaves bot_rule out of the insert when no rule matched, so it works before migration 021', async () => {
+            const ch = createMockClickHouse();
+            TrafficService.setDependencies(ch, createMockLogger());
+
+            TrafficService.getInstance().recordEvent(sampleEvent);
+            await Promise.resolve();
+
+            expect(ch.inserts[0].rows[0]).not.toHaveProperty('bot_rule');
+        });
+
+        it('includes bot_rule in the insert when a rule matched', async () => {
+            const ch = createMockClickHouse();
+            TrafficService.setDependencies(ch, createMockLogger());
+
+            TrafficService.getInstance().recordEvent({ ...sampleEvent, bot_rule: 'rule-1' });
+            await Promise.resolve();
+
+            expect((ch.inserts[0].rows[0] as Record<string, unknown>).bot_rule).toBe('rule-1');
         });
 
         it('swallows ClickHouse failures without throwing', async () => {

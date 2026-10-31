@@ -2,7 +2,9 @@
  * @file ai-tools.ts
  *
  * AI tool registrations for the traffic module. Exposes eight strictly
- * read-only tools backed by TrafficService and GscService so an AI agent can
+ * read-only tools (plus the `traffic-propose-bot-rule` write tool, defined in
+ * `bot-rule-ai-tool.ts` and registered here alongside them) backed by
+ * TrafficService and GscService so an AI agent can
  * answer analytics questions — traffic volume, acquisition sources, audience
  * behaviour, crawler pressure, search performance, and legacy-redirect usage —
  * and diagnose unusual traffic event by event, without an operator opening
@@ -1600,6 +1602,9 @@ export function listOwnAiTools(registry: IAiToolRegistry): IAiToolInfo[] {
  * @param trafficService - TrafficService singleton backing the ClickHouse reads.
  * @param gscService - GscService singleton backing the search-performance reads.
  * @param redirectService - RedirectService singleton backing the rule inventory.
+ * @param extraTools - Tools built outside this file and registered with the
+ *                     same lifecycle, such as `traffic-propose-bot-rule`, which
+ *                     lives in its own file because it writes rather than reads.
  * @param logger - Module-scoped logger for registration telemetry.
  * @returns Disposer that removes the watch subscription.
  */
@@ -1608,9 +1613,10 @@ export function registerTrafficAiTools(
     trafficService: TrafficService,
     gscService: GscService,
     redirectService: RedirectService,
+    extraTools: readonly IAiTool[],
     logger: ISystemLogService
 ): ServiceWatchDisposer {
-    const tools = buildTools(serviceRegistry, trafficService, gscService, redirectService);
+    const tools = [...buildTools(serviceRegistry, trafficService, gscService, redirectService), ...extraTools];
 
     return serviceRegistry.watch<IAiToolRegistry>('ai-tools', {
         onAvailable: (registry) => {

@@ -27,7 +27,7 @@ export { VisitorsExplorer } from './components';
 export { AnalyticsDashboard } from './components';
 export { GscSettings } from './components';
 export { IgnoredUsers } from './components';
-export { BotNetworks } from './components';
+export { BotRules } from './components';
 export { GscKeywords } from './components';
 export { RedirectsManager } from './components';
 export { RedirectAnalytics } from './components';

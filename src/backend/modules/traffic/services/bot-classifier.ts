@@ -35,11 +35,11 @@
  *   `/.env` / `/wp-login.php` / encoded path traversal, or a spoofed
  *   search-engine `Referer` with no `Sec-Fetch-Site` header. Assigned
  *   by `classifyTrafficRequest`, never by the UA-only classifier.
- * - `bot_other` — `isbot` returned true but no explicit rule matched, the
+ * - `bot_other` — `isbot` returned true but no explicit rule matched, or the
  *   page beacon reported `navigator.webdriver` on an otherwise human-looking
- *   request, or the request came from a network the operator listed as
- *   automated (headless fleets with stock browser UAs). Captures the long
- *   tail without forcing it into a misleading family.
+ *   request. Captures the long tail without forcing it into a misleading
+ *   family. Headless fleets that hide both signals are labeled afterwards by
+ *   the operator's bot rules (`bot-rule-matcher.ts`), not here.
  *
  * Keep the enum small. Industry consensus across analytics platforms
  * (Plausible, Fathom, Cloudflare Web Analytics) lands in this 5-6
@@ -251,13 +251,6 @@ export interface ITrafficRequestSignals {
      * any script runs.
      */
     automated?: boolean;
-    /**
-     * True when the request's autonomous system number is on the operator's
-     * list of automated networks. Catches browser fleets that hide the
-     * automation flag, because the network number comes from Cloudflare and
-     * the client cannot change it.
-     */
-    botNetwork?: boolean;
 }
 
 /**
@@ -404,13 +397,13 @@ function isSpoofedSearchReferrer(
  * {@link classifyUserAgent} pipeline.
  *
  * A headless browser fleet runs JavaScript and sends a stock browser UA, so
- * it passes both checks above and would be counted as a visitor. Two signals
- * downgrade such a `human` verdict to `bot_other`: the beacon reporting the
- * automation flag, and the request arriving from a network on the operator's
- * automated-network list. A UA that already matched a named family keeps that
- * family, since it is the more specific label. Both signals only ever move a
- * row toward "bot"; the automation flag comes from the request body and anyone
- * can leave it out, so its absence proves nothing.
+ * it passes both checks above and would be counted as a visitor. The beacon
+ * reporting the automation flag downgrades such a `human` verdict to
+ * `bot_other`. A UA that already matched a named family keeps that family,
+ * since it is the more specific label. The flag only ever moves a row toward
+ * "bot"; it comes from the request body and anyone can leave it out, so its
+ * absence proves nothing. Fleets that hide it are left to the operator's bot
+ * rules, which the caller applies to a `human` verdict afterwards.
  *
  * @param signals - Request-level signals collected at the write site.
  * @returns One of the seven `BotClass` enum values. Never null.
@@ -421,7 +414,7 @@ export function classifyTrafficRequest(signals: ITrafficRequestSignals): BotClas
         result = 'scanner';
     } else {
         result = classifyUserAgent(signals.userAgent);
-        if (result === 'human' && (signals.automated === true || signals.botNetwork === true)) {
+        if (result === 'human' && signals.automated === true) {
             result = 'bot_other';
         }
     }

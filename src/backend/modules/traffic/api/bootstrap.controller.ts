@@ -24,7 +24,8 @@ import { randomUUID } from 'node:crypto';
 import type { IConsentService, ISystemLogService } from '@/types';
 import { CONSENT_COOKIE_NAME } from '@/types';
 import { TrafficService, buildTrafficEvent, type TrafficEventType } from '../services/traffic.service.js';
-import type { IBotNetworkLookup } from '../services/bot-networks.service.js';
+import type { IBotRuleMatcher } from '../services/bot-rule-matcher.js';
+import type { IFirstTouchStore } from '../services/first-touch-store.js';
 import { PAID_CLICK_IDS } from '../services/channel-classifier.js';
 import {
     UUID_V4_REGEX,
@@ -129,8 +130,10 @@ function sanitizePath(raw: unknown): string | undefined {
 export class BootstrapController {
     /**
      * @param trafficService - Sink for the emitted `traffic_events` row.
-     * @param botNetworks - The operator's automated-network list, passed to
-     *   every event so a request from a listed network is labeled a bot.
+     * @param botRules - The operator's active bot rules, passed to every event
+     *   so automated traffic the built-in classifier misses is labeled.
+     * @param firstTouch - Short-lived memory of each cookie's page load, so a
+     *   rule can compare a JavaScript report's network with the page load's.
      * @param consent - The consent module's rule, asked on every page event so
      *   a visitor in a consent region who has not allowed analytics never gets
      *   a `tronrelic_tid` cookie from this endpoint.
@@ -138,7 +141,8 @@ export class BootstrapController {
      */
     constructor(
         private readonly trafficService: TrafficService,
-        private readonly botNetworks: IBotNetworkLookup,
+        private readonly botRules: IBotRuleMatcher,
+        private readonly firstTouch: IFirstTouchStore,
         private readonly consent: IConsentService,
         private readonly logger: ISystemLogService
     ) {}
@@ -203,6 +207,10 @@ export class BootstrapController {
      * Auth account when logged in), and return `{ success: true }`. No identity
      * mint, no MongoDB.
      *
+     * A page load's network and country are remembered under its tid, and a
+     * page report recalls them, so a bot rule can test whether the two came
+     * from different networks. Both steps are in-memory and never block.
+     *
      * @param eventType - `'bootstrap'` (first touch) or `'page'` (navigation).
      * @param req - Express request.
      * @param res - Express response.
@@ -211,17 +219,22 @@ export class BootstrapController {
     private async record(eventType: TrafficEventType, req: Request, res: Response): Promise<void> {
         try {
             const { tid, referralCode } = this.resolveTrafficCookies(req, res);
+            const now = Date.now();
+
+            const event = buildTrafficEvent(eventType, tid, req, {
+                ...this.extractEventInputs(req),
+                userId: req.authSession?.user?.id ?? null,
+                referralCode,
+                botRules: this.botRules,
+                firstTouch: eventType === 'page' ? this.firstTouch.recall(tid, now) : null
+            });
+            if (eventType === 'bootstrap') {
+                this.firstTouch.remember(tid, { asn: event.asn, country: event.country, at: now });
+            }
 
             // Fire-and-forget — never blocks the response, never throws into the
             // request path. No-ops silently when ClickHouse is unconfigured.
-            this.trafficService.recordEvent(
-                buildTrafficEvent(eventType, tid, req, {
-                    ...this.extractEventInputs(req),
-                    userId: req.authSession?.user?.id ?? null,
-                    referralCode,
-                    botNetworks: this.botNetworks
-                })
-            );
+            this.trafficService.recordEvent(event);
 
             res.json({ success: true });
         } catch (error) {

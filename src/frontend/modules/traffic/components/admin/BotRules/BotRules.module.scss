@@ -1,0 +1,184 @@
+/**
+ * Bot rules settings panel styles.
+ *
+ * Shared by the panel, its rule editor, the preview, and the suggestions table,
+ * which always render together inside one Panel. The body is a size container,
+ * so the editor's rows stack when the panel sits in a narrow column or a
+ * slideout. Design tokens only.
+ */
+
+@use '../../../../../app/breakpoints' as *;
+
+/* Everything under the panel header, in the panel's compact rhythm. */
+.body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+    min-width: 0;
+    container-type: inline-size;
+    container-name: bot-rules;
+}
+
+.error {
+    color: var(--color-danger-text);
+    background: var(--color-danger-alpha-18);
+    padding: var(--padding-xs) var(--padding-sm);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-body-sm);
+}
+
+.empty {
+    margin: 0;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+}
+
+/* ---------- Rule list ---------- */
+
+.rule_name {
+    display: block;
+    color: var(--color-text);
+    font-weight: var(--font-weight-medium);
+}
+
+.rule_conditions {
+    display: block;
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+}
+
+.rule_note {
+    display: block;
+    color: var(--color-text-subtle);
+    font-size: var(--font-size-caption);
+}
+
+/* Long paths and browser identifiers break anywhere rather than widening the table. */
+.cell_wrap {
+    overflow-wrap: anywhere;
+    min-width: 0;
+}
+
+.row_actions {
+    display: inline-flex;
+    gap: var(--gap-2xs);
+}
+
+.mono {
+    font-family: var(--font-mono);
+}
+
+.muted_inline {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-caption);
+}
+
+/* Column headers that only exist for screen readers. */
+.visually_hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+}
+
+/* ---------- Editor ---------- */
+
+.form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+    padding: var(--card-padding-sm);
+    border: var(--border-width-thin) solid var(--color-border-strong);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-muted);
+}
+
+/* Fields side by side, on the inputs' baseline. */
+.form_row {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--gap-sm);
+    flex-wrap: wrap;
+}
+
+.field_wide {
+    flex: 1 1 0;
+    min-width: 0;
+}
+
+.conditions {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+    margin: 0;
+    padding: var(--padding-sm);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-sm);
+}
+
+.legend {
+    padding: 0 var(--padding-2xs);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-caption);
+}
+
+.switch_field {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+}
+
+.form_actions {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--gap-sm);
+    flex-wrap: wrap;
+}
+
+/* Pushes Cancel and Save to the right of the preview controls. */
+.spacer {
+    flex: 1 1 auto;
+}
+
+/* Too narrow for rows: stack every field and let each fill the width. */
+@container bot-rules (max-width: #{$breakpoint-mobile-md}) {
+    .form_row,
+    .form_actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .spacer {
+        display: none;
+    }
+}
+
+/* ---------- Preview and suggestions ---------- */
+
+.preview {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+}
+
+.preview_window {
+    margin: 0;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-caption);
+}
+
+.suggestions {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+}
+
+.subheading {
+    font-size: var(--font-size-heading-xs);
+    color: var(--color-text-muted);
+}
