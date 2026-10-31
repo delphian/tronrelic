@@ -18,23 +18,27 @@
  */
 
 import type { Express, Router } from 'express';
-import type { ICacheService, IClickHouseService, IConsentService, IDatabaseService, IMenuService, IModule, IModuleMetadata, ISchedulerService, IServiceRegistry, ServiceWatchDisposer } from '@/types';
+import type { ICacheService, IClickHouseService, IConsentService, ICurationService, IDatabaseService, IMenuService, IModule, IModuleMetadata, ISchedulerService, IServiceRegistry, ServiceWatchDisposer } from '@/types';
 import { registerTrafficAiTools } from './ai-tools.js';
+import { createProposeBotRuleTool } from './bot-rule-ai-tool.js';
 import { logger } from '../../lib/logger.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
 import { GscService } from './services/gsc.service.js';
 import { TrafficService } from './services/traffic.service.js';
 import { IgnoredUsersService } from './services/ignored-users.service.js';
 import { TrafficIgnoreList } from './services/TrafficIgnoreList.js';
-import { BotNetworksService } from './services/bot-networks.service.js';
+import { BotRulesService } from './services/bot-rules.service.js';
+import { BotRuleAnalyticsService } from './services/bot-rule-analytics.service.js';
+import { createBotRuleCurationType } from './services/bot-rule-curation-type.js';
+import { FirstTouchStore } from './services/first-touch-store.js';
 import { RedirectService } from './services/redirect.service.js';
 import { initGeoIP } from './services/geo.service.js';
 import { TrafficController } from './api/traffic.controller.js';
 import { BootstrapController } from './api/bootstrap.controller.js';
 import { RedirectsController } from './api/redirects.controller.js';
-import { BotNetworksController } from './api/bot-networks.controller.js';
+import { BotRulesController } from './api/bot-rules.controller.js';
 import { createAdminTrafficRouter, createAdminAnalyticsRouter } from './api/traffic.routes.js';
-import { createAdminBotNetworksRouter } from './api/bot-networks.routes.js';
+import { createAdminBotRulesRouter } from './api/bot-rules.routes.js';
 import { createBootstrapRouter, createPageEventRouter } from './api/bootstrap.routes.js';
 import { createPublicRedirectsRouter, createAdminRedirectsRouter } from './api/redirects.routes.js';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
@@ -87,6 +91,19 @@ export interface ITrafficModuleDependencies {
 export const TRAFFIC_IGNORE_LIST_SERVICE = 'traffic-ignore-list';
 
 /**
+ * Service registry name of the central curation queue. Spelled here rather
+ * than imported from the curation module, which inits after this one, so the
+ * traffic module does not depend on its code.
+ */
+const CURATION_SERVICE = 'curation';
+
+/**
+ * How often the bot rules are reloaded from MongoDB, so rules a migration
+ * wrote directly take effect without a restart.
+ */
+const BOT_RULES_RELOAD_INTERVAL_MS = 60_000;
+
+/**
  * Namespace for the `/system/traffic` in-page tab row. Rendered as a menu via
  * the Submenu Pattern (`MenuNavClient`) rather than a hand-rolled button row, so
  * the tabs inherit per-user gating, ordering, and live `menu:update` refresh and
@@ -132,16 +149,26 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
      */
     private unwatchAiTools: ServiceWatchDisposer | null = null;
 
+    /**
+     * Disposer for the `'curation'` watch that registers the `traffic:bot-rule`
+     * type. Held for symmetry; modules run for the process lifetime.
+     */
+    private unwatchCuration: ServiceWatchDisposer | null = null;
+
+    /** Stops the periodic bot-rule reload. Held for symmetry, never called today. */
+    private stopBotRulesReload: (() => void) | null = null;
+
     private gscService!: GscService;
     private trafficService!: TrafficService;
     private ignoredUsersService!: IgnoredUsersService;
     private trafficIgnoreList!: TrafficIgnoreList;
-    private botNetworksService!: BotNetworksService;
+    private botRulesService!: BotRulesService;
+    private botRuleAnalytics!: BotRuleAnalyticsService;
     private redirectService!: RedirectService;
     private trafficController!: TrafficController;
     private bootstrapController!: BootstrapController;
     private redirectsController!: RedirectsController;
-    private botNetworksController!: BotNetworksController;
+    private botRulesController!: BotRulesController;
 
     private readonly logger = logger.child({ module: 'traffic' });
 
@@ -183,12 +210,15 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
         // Read-only view of that cache for other components; published in run().
         this.trafficIgnoreList = new TrafficIgnoreList(this.trafficService);
 
-        // Automated-network list — ASNs whose traffic is labeled bot_other at
-        // write time. Loaded now so classification uses it from the first event.
-        BotNetworksService.setDependencies(dependencies.database, this.logger);
-        this.botNetworksService = BotNetworksService.getInstance();
-        await this.botNetworksService.createIndexes();
-        await this.botNetworksService.load();
+        // Bot rules — operator conditions that label automated traffic the
+        // built-in classifier misses. Loaded now so classification uses them
+        // from the first event. The analytics service backs their preview,
+        // match counts, and suggestions.
+        BotRulesService.setDependencies(dependencies.database, this.logger);
+        this.botRulesService = BotRulesService.getInstance();
+        await this.botRulesService.createIndexes();
+        await this.botRulesService.load();
+        this.botRuleAnalytics = new BotRuleAnalyticsService(dependencies.clickhouse, this.logger);
 
         // RedirectService — admin-managed legacy-URL 301/302 map. Rules live in
         // Mongo and are served to the edge middleware, so operators add
@@ -210,18 +240,20 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
         );
 
         // Slim first-touch analytics bootstrap (no identity, no Mongo). Reads the
-        // automated-network list from memory to classify each event.
+        // bot rules from memory to classify each event, and keeps each cookie's
+        // page load briefly in memory for the rules' network-mismatch test.
         // Also asks the consent module, per page event, whether the visitor
         // allowed the analytics cookie.
         this.bootstrapController = new BootstrapController(
             this.trafficService,
-            this.botNetworksService,
+            this.botRulesService,
+            new FirstTouchStore(),
             dependencies.consent,
             this.logger
         );
 
-        // Admin management of the automated-network list.
-        this.botNetworksController = new BotNetworksController(this.botNetworksService, this.logger);
+        // Admin management of the bot rules.
+        this.botRulesController = new BotRulesController(this.botRulesService, this.botRuleAnalytics, this.logger);
 
         // Admin redirect management + the public feed the edge middleware polls,
         // plus redirect-hit ingestion and windowed analytics (redirect_events via
@@ -229,7 +261,7 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
         this.redirectsController = new RedirectsController(
             this.redirectService,
             this.trafficService,
-            this.botNetworksService,
+            this.botRulesService,
             this.logger
         );
 
@@ -322,11 +354,27 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
         this.app.use('/api/admin/redirects', requireAdmin, adminRedirectsRouter);
         this.logger.info('Admin redirects router mounted at /api/admin/redirects');
 
-        // Automated-network list management. Its own prefix, outside
-        // /api/admin/users, so identity's catch-all ordering does not apply.
-        const adminBotNetworksRouter: Router = createAdminBotNetworksRouter(this.botNetworksController);
-        this.app.use('/api/admin/traffic/bot-networks', requireAdmin, adminBotNetworksRouter);
-        this.logger.info('Admin bot-networks router mounted at /api/admin/traffic/bot-networks');
+        // Bot rule management. Its own prefix, outside /api/admin/users, so
+        // identity's catch-all ordering does not apply.
+        const adminBotRulesRouter: Router = createAdminBotRulesRouter(this.botRulesController);
+        this.app.use('/api/admin/traffic/bot-rules', requireAdmin, adminBotRulesRouter);
+        this.logger.info('Admin bot-rules router mounted at /api/admin/traffic/bot-rules');
+
+        // Reload the rules every minute so rules a migration wrote directly
+        // take effect without a restart.
+        this.stopBotRulesReload = this.botRulesService.startPeriodicReload(BOT_RULES_RELOAD_INTERVAL_MS);
+
+        // Register the `traffic:bot-rule` curation type whenever curation is
+        // available. The curation module runs after this one, so watch rather
+        // than resolve once; registerType tolerates re-registration. This is
+        // what backs the propose tool's verifiable curationTypeId binding.
+        const botRuleCurationType = createBotRuleCurationType(this.botRulesService, this.logger);
+        this.unwatchCuration = this.serviceRegistry.watch<ICurationService>(CURATION_SERVICE, {
+            onAvailable: (curation) => {
+                curation.registerType(botRuleCurationType, this.metadata.id);
+                this.logger.info('Registered the traffic:bot-rule curation type');
+            }
+        });
 
         // Publish the ignore-list check so plugins that count visitor activity
         // (such as resource-markets' affiliate clicks) exclude the same people
@@ -347,14 +395,22 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
             this.logger.info('Scheduler disabled — GSC fetch job not registered');
         }
 
-        // Read-only AI tools over the analytics surface. Watched rather than
-        // resolved once: the ai-tools module publishes its registry during
-        // `run()`, and bootstrap order does not guarantee it has done so yet.
+        // Read-only AI tools over the analytics surface, plus the bot-rule
+        // proposal tool, whose every effect is held for a curator. Watched
+        // rather than resolved once: the ai-tools module publishes its registry
+        // during `run()`, and bootstrap order does not guarantee it has done so yet.
+        const proposeBotRuleTool = createProposeBotRuleTool({
+            rules: this.botRulesService,
+            analytics: this.botRuleAnalytics,
+            getCuration: () => this.serviceRegistry.get<ICurationService>(CURATION_SERVICE),
+            logger: this.logger
+        });
         this.unwatchAiTools = registerTrafficAiTools(
             this.serviceRegistry,
             this.trafficService,
             this.gscService,
             this.redirectService,
+            [proposeBotRuleTool],
             this.logger
         );
 

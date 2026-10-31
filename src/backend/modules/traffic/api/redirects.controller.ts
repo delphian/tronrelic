@@ -28,7 +28,7 @@ import {
     type IRedirectHitInput
 } from '../services/traffic.service.js';
 import { classifyTrafficRequest } from '../services/bot-classifier.js';
-import type { IBotNetworkLookup } from '../services/bot-networks.service.js';
+import { applyBotRules, type IBotRuleMatcher } from '../services/bot-rule-matcher.js';
 
 /**
  * Seconds any intermediary (CDN) may cache the public redirect feed. Matches
@@ -131,14 +131,14 @@ export class RedirectsController {
      * @param redirectService - The redirect storage/validation service.
      * @param trafficService - ClickHouse-backed store for redirect-hit ingestion
      *   and windowed analytics reads; the analytics live in `redirect_events`.
-     * @param botNetworks - The operator's automated-network list, so a redirect
-     *   hit from a listed network is labeled a bot the same way a page event is.
+     * @param botRules - The operator's active bot rules, so a redirect hit is
+     *   labeled by the same rules a traffic event is.
      * @param logger - Scoped logger for handler-level failure diagnostics.
      */
     constructor(
         private readonly redirectService: RedirectService,
         private readonly trafficService: TrafficService,
-        private readonly botNetworks: IBotNetworkLookup,
+        private readonly botRules: IBotRuleMatcher,
         private readonly logger: ISystemLogService
     ) { }
 
@@ -182,15 +182,29 @@ export class RedirectsController {
             }
 
             const path = sanitizeHitPath(body.path) ?? rule.pattern;
-            const asn = readCloudflareAsn(req.headers);
-            const botClass = classifyTrafficRequest({
-                userAgent: headerValue(req.headers['user-agent']),
-                path,
-                referer: headerValue(req.headers['referer']),
-                secFetchSite: headerValue(req.headers['sec-fetch-site']),
-                botNetwork: asn !== null && this.botNetworks.isBotNetwork(asn)
-            });
+            const userAgent = headerValue(req.headers['user-agent']);
+            const referer = headerValue(req.headers['referer']);
             const country = clampCountry(headerValue(req.headers['cf-ipcountry']));
+            const builtIn = classifyTrafficRequest({
+                userAgent,
+                path,
+                referer,
+                secFetchSite: headerValue(req.headers['sec-fetch-site'])
+            });
+            // The edge middleware beacons server-to-server with no session, so
+            // the hit is never treated as logged in. Rules limited to an event
+            // type or to the network-mismatch test never match a redirect hit.
+            const { botClass } = applyBotRules(builtIn, this.botRules, {
+                eventType: 'redirect',
+                loggedIn: false,
+                asn: readCloudflareAsn(req.headers),
+                country,
+                userAgent,
+                path,
+                referrer: referer,
+                firstTouch: null,
+                now: Date.now()
+            });
 
             // destination/permanent come from the matched rule, never the caller.
             const hit: IRedirectHitInput = {

@@ -13,7 +13,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Request, Response } from 'express';
 import type { IConsentService, IConsentState, ISystemLogService } from '@/types';
 import type { TrafficService } from '../services/traffic.service.js';
-import type { IBotNetworkLookup } from '../services/bot-networks.service.js';
+import { selectBotRuleMatch, type IBotRuleMatcher, type ICompiledBotRule } from '../services/bot-rule-matcher.js';
+import { FirstTouchStore } from '../services/first-touch-store.js';
 import { BootstrapController } from '../api/bootstrap.controller.js';
 import { TID_COOKIE_NAME, REF_COOKIE_NAME } from '../api/traffic-cookies.js';
 
@@ -48,7 +49,8 @@ function buildRes(): { res: Response; cookies: SetCookie[]; json: ReturnType<typ
 describe('BootstrapController', () => {
     let recordEvent: ReturnType<typeof vi.fn>;
     let trafficService: TrafficService;
-    let botNetworks: IBotNetworkLookup;
+    let rules: ICompiledBotRule[];
+    let botRules: IBotRuleMatcher;
     let resolveRequest: ReturnType<typeof vi.fn>;
     let logger: ISystemLogService;
     let controller: BootstrapController;
@@ -59,14 +61,16 @@ describe('BootstrapController', () => {
     beforeEach(() => {
         recordEvent = vi.fn();
         trafficService = { recordEvent } as unknown as TrafficService;
-        // AS139341 stands in for a network the operator has listed.
-        botNetworks = { isBotNetwork: vi.fn((asn: number) => asn === 139341) };
+        // The real matcher over a rule list each test can set, so the controller
+        // is exercised with the same selection logic the service uses.
+        rules = [];
+        botRules = { match: vi.fn(signals => selectBotRuleMatch(rules, signals)) };
         // Analytics allowed by default, so the tests below that predate the
         // consent check exercise recording exactly as before.
         resolveRequest = vi.fn(async () => ANALYTICS_ALLOWED);
         const consent = { getPublicConfig: vi.fn(), resolveRequest } as unknown as IConsentService;
         logger = { error: vi.fn() } as unknown as ISystemLogService;
-        controller = new BootstrapController(trafficService, botNetworks, consent, logger);
+        controller = new BootstrapController(trafficService, botRules, new FirstTouchStore(), consent, logger);
     });
 
     it('mints a fresh tid, emits a bootstrap event, and returns success', async () => {
@@ -222,25 +226,31 @@ describe('BootstrapController', () => {
         });
     });
 
-    describe('automated-network list', () => {
+    describe('bot rules', () => {
         const CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36';
 
+        /** A rule labeling AS139341, which stands in for a confirmed automated network. */
+        const NETWORK_RULE: ICompiledBotRule = { id: 'rule-asn', label: 'bot_other', mode: 'label', conditions: { asns: [139341] }, expiresAt: null };
+
         /**
-         * Build a page-beacon request that arrived through Cloudflare from a
-         * given network, since the ASN is only trusted when CF-Ray is present.
+         * Build a request that arrived through Cloudflare from a given network,
+         * since the ASN is only trusted when CF-Ray is present.
          *
          * @param headers - Extra headers layered over the browser UA.
+         * @param authSession - Optional session, to test the logged-in exclusion.
          * @returns A request carrying a stock Chrome UA and the given headers.
          */
-        function networkReq(headers: Record<string, string>): Request {
+        function networkReq(headers: Record<string, string>, authSession?: unknown): Request {
             return buildReq({
                 cookies: { [TID_COOKIE_NAME]: EXISTING_TID },
                 headers: { 'user-agent': CHROME_UA, ...headers },
-                body: { landingPath: '/blog' }
+                body: { tid: EXISTING_TID, landingPath: '/blog' },
+                authSession
             } as unknown as Partial<Request>);
         }
 
-        it('labels a browser-UA event from a listed network as bot_other', async () => {
+        it('labels a browser-UA event matching a label-mode rule and records the rule id', async () => {
+            rules = [NETWORK_RULE];
             const { res } = buildRes();
 
             await controller.page(networkReq({ 'cf-ray': 'abc123-SIN', 'x-client-asn': '139341' }), res);
@@ -248,19 +258,46 @@ describe('BootstrapController', () => {
             const event = recordEvent.mock.calls[0][0];
             expect(event.asn).toBe(139341);
             expect(event.bot_class).toBe('bot_other');
+            expect(event.bot_rule).toBe('rule-asn');
         });
 
-        it('keeps a browser-UA event from an unlisted network human', async () => {
+        it('records a monitor-mode match without changing the label', async () => {
+            rules = [{ ...NETWORK_RULE, mode: 'monitor' }];
+            const { res } = buildRes();
+
+            await controller.page(networkReq({ 'cf-ray': 'abc123-SIN', 'x-client-asn': '139341' }), res);
+
+            const event = recordEvent.mock.calls[0][0];
+            expect(event.bot_class).toBe('human');
+            expect(event.bot_rule).toBe('rule-asn');
+        });
+
+        it('keeps a browser-UA event from an unlisted network human with no rule id', async () => {
+            rules = [NETWORK_RULE];
             const { res } = buildRes();
 
             await controller.page(networkReq({ 'cf-ray': 'abc123-SIN', 'x-client-asn': '9808' }), res);
 
-            expect(recordEvent.mock.calls[0][0].bot_class).toBe('human');
+            const event = recordEvent.mock.calls[0][0];
+            expect(event.bot_class).toBe('human');
+            expect(event.bot_rule).toBeNull();
+        });
+
+        it('never matches a logged-in visitor', async () => {
+            rules = [NETWORK_RULE];
+            const { res } = buildRes();
+
+            await controller.page(networkReq({ 'cf-ray': 'abc123-SIN', 'x-client-asn': '139341' }, { user: { id: 'ba_user_42' } }), res);
+
+            const event = recordEvent.mock.calls[0][0];
+            expect(event.bot_class).toBe('human');
+            expect(event.bot_rule).toBeNull();
         });
 
         it('ignores a listed ASN header that did not arrive through Cloudflare', async () => {
             // Without CF-Ray the ASN is not stored, so a direct-to-origin caller
             // cannot mislabel itself or anyone else by sending the header.
+            rules = [NETWORK_RULE];
             const { res } = buildRes();
 
             await controller.page(networkReq({ 'x-client-asn': '139341' }), res);
@@ -268,6 +305,28 @@ describe('BootstrapController', () => {
             const event = recordEvent.mock.calls[0][0];
             expect(event.asn).toBeNull();
             expect(event.bot_class).toBe('human');
+        });
+
+        it('matches a page report whose network differs from the same cookie\'s page load', async () => {
+            rules = [{ id: 'rule-mismatch', label: 'bot_other', mode: 'label', conditions: { networkMismatch: { compare: 'asn', withinSeconds: 30 } }, expiresAt: null }];
+
+            // Page load through a residential network, then the report from a cloud network.
+            await controller.bootstrap(networkReq({ 'cf-ray': 'r1-TLV', 'x-client-asn': '12849' }), buildRes().res);
+            await controller.page(networkReq({ 'cf-ray': 'r2-SIN', 'x-client-asn': '45102' }), buildRes().res);
+
+            const pageEvent = recordEvent.mock.calls[1][0];
+            expect(pageEvent.event_type).toBe('page');
+            expect(pageEvent.bot_class).toBe('bot_other');
+            expect(pageEvent.bot_rule).toBe('rule-mismatch');
+        });
+
+        it('does not match a page report from the same network as its page load', async () => {
+            rules = [{ id: 'rule-mismatch', label: 'bot_other', mode: 'label', conditions: { networkMismatch: { compare: 'asn', withinSeconds: 30 } }, expiresAt: null }];
+
+            await controller.bootstrap(networkReq({ 'cf-ray': 'r1-SIN', 'x-client-asn': '9808' }), buildRes().res);
+            await controller.page(networkReq({ 'cf-ray': 'r2-SIN', 'x-client-asn': '9808' }), buildRes().res);
+
+            expect(recordEvent.mock.calls[1][0].bot_class).toBe('human');
         });
     });
 });

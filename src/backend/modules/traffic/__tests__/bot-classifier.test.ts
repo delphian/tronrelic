@@ -340,46 +340,4 @@ describe('classifyTrafficRequest', () => {
             })).toBe('scanner');
         });
     });
-
-    describe('automated-network list', () => {
-        it('downgrades a human verdict to bot_other for a listed network', () => {
-            expect(classifyTrafficRequest({
-                userAgent: CHROME_UA,
-                path: '/blog',
-                referer: null,
-                secFetchSite: null,
-                botNetwork: true
-            })).toBe('bot_other');
-        });
-
-        it('leaves a human verdict alone for an unlisted network', () => {
-            expect(classifyTrafficRequest({
-                userAgent: CHROME_UA,
-                path: '/blog',
-                referer: null,
-                secFetchSite: null,
-                botNetwork: false
-            })).toBe('human');
-        });
-
-        it('keeps a named UA family from a listed network', () => {
-            expect(classifyTrafficRequest({
-                userAgent: 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
-                path: '/blog',
-                referer: null,
-                secFetchSite: null,
-                botNetwork: true
-            })).toBe('search_engine');
-        });
-
-        it('lets the scanner verdict win over a listed network', () => {
-            expect(classifyTrafficRequest({
-                userAgent: CHROME_UA,
-                path: '/wp-login.php',
-                referer: null,
-                secFetchSite: null,
-                botNetwork: true
-            })).toBe('scanner');
-        });
-    });
 });

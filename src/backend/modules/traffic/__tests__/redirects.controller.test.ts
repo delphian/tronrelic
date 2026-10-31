@@ -16,8 +16,11 @@ import type { Request, Response } from 'express';
 import type { ISystemLogService } from '@/types';
 import type { RedirectService } from '../services/redirect.service.js';
 import type { TrafficService } from '../services/traffic.service.js';
-import type { IBotNetworkLookup } from '../services/bot-networks.service.js';
+import { selectBotRuleMatch, type IBotRuleMatcher, type ICompiledBotRule } from '../services/bot-rule-matcher.js';
 import { RedirectsController } from '../api/redirects.controller.js';
+
+/** A rule labeling AS139341, which stands in for a confirmed automated network. */
+const NETWORK_RULE: ICompiledBotRule = { id: 'rule-asn', label: 'bot_other', mode: 'label', conditions: { asns: [139341] }, expiresAt: null };
 
 /**
  * Build an Express request double with sensible empty defaults.
@@ -57,10 +60,9 @@ describe('RedirectsController redirect analytics', () => {
         ]);
         const redirectService = { getActiveRules } as unknown as RedirectService;
         const trafficService = { recordRedirectHit, getRedirectAnalytics } as unknown as TrafficService;
-        // AS139341 stands in for a network the operator has listed.
-        const botNetworks: IBotNetworkLookup = { isBotNetwork: vi.fn((asn: number) => asn === 139341) };
+        const botRules: IBotRuleMatcher = { match: vi.fn(signals => selectBotRuleMatch([NETWORK_RULE], signals)) };
         const logger = { error: vi.fn() } as unknown as ISystemLogService;
-        controller = new RedirectsController(redirectService, trafficService, botNetworks, logger);
+        controller = new RedirectsController(redirectService, trafficService, botRules, logger);
     });
 
     describe('recordHit()', () => {
@@ -132,10 +134,10 @@ describe('RedirectsController redirect analytics', () => {
             expect(recordRedirectHit.mock.calls[0][0].country).toBeNull();
         });
 
-        describe('automated-network list', () => {
+        describe('bot rules', () => {
             const CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36';
 
-            it('labels a hit from a listed network as bot_other', async () => {
+            it('labels a hit matching a label-mode rule as bot_other', async () => {
                 const req = buildReq({
                     body: { pattern: '/tron-forum' },
                     headers: { 'user-agent': CHROME_UA, 'cf-ray': 'abc123-SIN', 'x-client-asn': '139341' }
