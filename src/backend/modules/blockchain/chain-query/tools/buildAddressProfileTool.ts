@@ -12,7 +12,7 @@
 
 import type { IAiTool } from '@/types';
 import { formatClickHouseDateTime64Utc } from '../../../../lib/formatClickHouseDateTime64Utc.js';
-import { CHAIN_DATA_DATABASE, TRANSFER_TABLE } from '../../chain-data/buildChainDataSchema.js';
+import { CHAIN_DATA_DATABASE, CHAIN_DATA_RETENTION_DAYS, TRANSFER_TABLE } from '../../chain-data/buildChainDataSchema.js';
 import { parseAddress, parseWindow, type ChainAssetType, type IWindowRules } from '../chainQueryInput.js';
 import { buildChainResponse, runChainQueryTool } from '../chainQueryResponse.js';
 import type { IChainQueryToolkit } from '../ChainQueryToolkit.js';
@@ -22,7 +22,11 @@ import { toChainAmount, tokenKey } from '../TokenCatalog.js';
 import { priceKey, toUsdValue } from '../UsdPricer.js';
 import { AI_TOOL_NAMES, CHAIN_QUERY_CAPABILITY, SHARED_DESCRIPTION, windowProperties } from './chainQueryToolShared.js';
 
-/** The window this tool accepts: the whole retention by default, since a profile is a summary. */
+/**
+ * The window this tool accepts: a whole week by default, since a profile is a
+ * summary. The retention is longer than one read may span, so a caller who
+ * wants the whole stored history places a second window behind the first.
+ */
 const WINDOW_RULES: IWindowRules = { defaultHours: 168, maxHours: 168 };
 
 /** Most token-and-direction rows returned; a wallet active in more tokens than this is rare. */
@@ -80,7 +84,7 @@ export function buildAddressProfileTool(toolkit: IChainQueryToolkit): IAiTool {
             'Get an overview of one TRON address\'s value movements: totals (transfers, transactions, distinct counterparties, first and last activity), a breakdown per token and direction (count, zero-value count, total, usd, counterparties), its address tags, and groups of its counterparties that look like address poisoning. ' +
             'Use this first when asked about a wallet, to decide where to look next: ' + AI_TOOL_NAMES.addressCounterparties + ' for who it deals with, ' + AI_TOOL_NAMES.addressTransfers + ' for individual transfers. ' +
             'A high zeroValueTransfers count on "in" rows means the address is being targeted by poisoning spam. Staking, delegation, and voting are not value movements and are not covered. ' +
-            'Parameters: address (required); hours or since/until (default and maximum 168 hours, the whole stored history). ' +
+            `Parameters: address (required); hours or since/until (default and maximum ${WINDOW_RULES.maxHours} hours per call; the stored history is ${CHAIN_DATA_RETENTION_DAYS} days, so a second call with since/until moved back a week covers the rest). ` +
             SHARED_DESCRIPTION,
         capability: CHAIN_QUERY_CAPABILITY,
         inputSchema: {
