@@ -16,7 +16,10 @@
  *   path, the redirect beacon, and the tests all evaluate rules identically.
  * - **Toward bot only.** Rules run only on events the built-in classifier left
  *   as `human`, and never on a logged-in visitor, so a rule can never undo a
- *   built-in label or count an account holder as a bot.
+ *   built-in label or count an account holder as a bot. Login state is known
+ *   only on `page` events, which the browser sends with its cookies; a
+ *   server-recorded page load carries no session and is judged as anonymous.
+ *   Every visitor figure is computed from `page` events.
  * - **No regular expressions.** Text conditions use `includes` and
  *   `startsWith` on length-capped input, the same rule the built-in classifier
  *   follows, so an operator-entered pattern cannot make a request slow.
@@ -35,7 +38,11 @@ const MAX_SIGNAL_LENGTH = 500;
 export interface IBotRuleSignals {
     /** `bootstrap` page load, `page` JavaScript report, or a `redirect` hit. */
     eventType: 'bootstrap' | 'page' | 'redirect';
-    /** True when the request carried a Better Auth session. Rules never match these. */
+    /**
+     * True when the request carried a Better Auth session. Rules never match
+     * these. Always false on `bootstrap` and `redirect` events, which arrive
+     * server-to-server without the visitor's cookies.
+     */
     loggedIn: boolean;
     /** Network number from Cloudflare, or null when not recorded. */
     asn: number | null;
