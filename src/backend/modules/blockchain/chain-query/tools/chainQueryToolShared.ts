@@ -76,7 +76,9 @@ export function windowProperties(rules: IWindowRules): Record<string, JSONSchema
         },
         since: {
             type: 'string',
-            description: 'Start of the window as an ISO 8601 time, such as "2026-09-24T00:00:00Z". Use instead of hours.'
+            description:
+                'Start of the window as an ISO 8601 time, such as "2026-09-24T00:00:00Z". Use instead of hours. ' +
+                `The window may sit anywhere inside the stored ${CHAIN_DATA_RETENTION_DAYS} days, so to cover more than ${rules.maxHours} hours call again with since and until moved back by that much.`
         },
         until: {
             type: 'string',
