@@ -1857,6 +1857,40 @@ export interface IFrontendPluginContext {
     useUser: () => IPluginUserState;
 
     /**
+     * Hook returning a function that opens the site's own sign-in dialog.
+     *
+     * A feature that only signed-in visitors may use calls this when an
+     * anonymous visitor tries it, instead of building a prompt of its own
+     * that tells the visitor to find the sign-in button. The dialog is the
+     * same one the header's sign-in button opens, so every plugin starts
+     * sign-in the same way, and it closes itself once sign-in succeeds; the
+     * session then re-renders every control that reads `useUser()`, so the
+     * caller has nothing further to do.
+     *
+     * Pass `message` to say why the dialog appeared, such as "Suggesting a
+     * relic requires an account." Omitted opens the plain dialog.
+     *
+     * Do not pass the returned function straight to an `onClick` prop, because
+     * React would call it with the click event as its options. Wrap it:
+     * `onClick={() => openSignInDialog({ message })}`.
+     *
+     * @example
+     * ```typescript
+     * const openSignInDialog = context.useSignInDialog();
+     * const { isLoggedIn } = context.useUser();
+     *
+     * const onSuggest = () => {
+     *     if (!isLoggedIn) {
+     *         openSignInDialog({ message: 'Suggesting a relic requires an account. Sign in or create one to continue.' });
+     *         return;
+     *     }
+     *     // ...
+     * };
+     * ```
+     */
+    useSignInDialog: () => (options?: { message?: string }) => void;
+
+    /**
      * Toast notification hook for displaying temporary notification messages.
      *
      * Returns methods to push and dismiss toast notifications. Must be called

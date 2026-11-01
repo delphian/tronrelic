@@ -20,6 +20,7 @@ interface IFrontendPluginContext {
     api: IApiClient;               // get/post/put/patch/delete
     websocket: IWebSocketClient;   // socket + auto-prefixed helpers
     useUser: () => IPluginUserState;
+    useSignInDialog: () => (options?: { message?: string }) => void;
     useModal: () => { open, close, closeAll };
     useToast: () => { push, dismiss };
 }
@@ -181,6 +182,16 @@ interface IPluginUserState {
 `isLoggedIn` mirrors the backend `isLoggedIn(req)` predicate — use it for login-only gates. `hasPrimaryWallet` mirrors `hasPrimaryWallet(req)`; use it for wallet-gated features, since a Better Auth account can be email/OAuth/passkey-only with no wallet. A present `primaryWallet` is always signature-proven — there is no separate verified/unverified distinction. See [system-auth.md](../system/system-auth.md).
 
 `isAdmin` mirrors the backend `isAdmin(req)` predicate and reads the same `groups` array. Check it before calling an admin-only route (`/plugins/<id>/system/...`) from a component that renders for every visitor, such as a side-effect component, so anonymous visitors and ordinary users never send a request that can only return 401. These flags decide what the UI shows and which requests it sends. They are not access control: the backend `requiresAdmin` gate still decides every request.
+
+## Sign-In Dialog (`context.useSignInDialog`)
+
+```typescript
+const openSignInDialog = context.useSignInDialog();
+```
+
+A feature that only signed-in visitors may use calls `openSignInDialog({ message })` when an anonymous visitor tries it. The dialog is the same one the header's sign-in button opens, so every plugin starts sign-in the same way instead of building a prompt that tells the visitor to find the button themselves. It closes itself once sign-in succeeds, and the session then re-renders every control that reads `useUser()`, so the caller has nothing further to do. `message` is shown above the sign-in options and should say why the dialog appeared, such as "Suggesting a relic requires an account. Sign in or create one to continue."
+
+Wrap the returned function rather than passing it straight to `onClick`, because React would call it with the click event as its options.
 
 ## Modal (`context.useModal`)
 

@@ -55,6 +55,10 @@ import { Page, PageHeader, Stack, Grid, Section } from '../components/layout';
 // keeps server-only code out of this client bundle.
 import { SubMenu } from '../components/layout/MenuNav/SubMenu';
 import { useAuthSession } from '../modules/user/components/SessionProvider';
+// Imported directly rather than through the `modules/user` barrel for the same
+// reason SessionProvider is: the barrel pulls every user component's CSS into
+// the bundle of whatever imports it.
+import { useSignInDialog } from '../modules/user/hooks/useSignInDialog';
 import { getSocket } from './socketClient';
 import { getRuntimeConfig } from './runtimeConfig';
 import { useFilePicker } from './filePickerRegistry';
@@ -461,6 +465,7 @@ export function FrontendPluginContextProvider({ children }: { children: React.Re
             websocket,
             useModal: useModalHook,
             useUser: usePluginUser,
+            useSignInDialog,
             useToast: useToastHook,
             useFilePicker,
             useImageGen,
@@ -589,6 +594,7 @@ export function createPluginContext(pluginId: string): IFrontendPluginContext {
         websocket,
         useModal: useModalHook,
         useUser: usePluginUser,
+        useSignInDialog,
         useToast: useToastHook,
         useFilePicker,
         useImageGen,

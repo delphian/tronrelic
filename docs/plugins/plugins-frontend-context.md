@@ -18,6 +18,7 @@ interface IFrontendPluginContext {
     api: IApiClient;               // get/post/put/patch/delete with runtime base URL
     websocket: IWebSocketClient;   // socket + auto-prefixed helpers
     useUser: () => IPluginUserState;
+    useSignInDialog: () => (options?: { message?: string }) => void;   // opens the site's sign-in dialog
     useModal: () => { open, close, closeAll };
     useToast: () => { push, dismiss };
     useFilePicker: () => IFilePickerClient;   // pick/upload files; provider-delivered
