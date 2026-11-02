@@ -52,7 +52,7 @@ serverDataFetcher?: (ctx: IServerDataContext) => Promise<unknown>;
 | `siteUrl` | Public site URL from runtime config |
 | `path` | The concrete URL being rendered (e.g. `/blog/my-post`) — essential for wildcard pages, whose registered path (`/blog/*`) doesn't identify the resource |
 | `translator` | An `ITranslator` for the language the request was routed to, with keys scoped to your plugin id — the same namespace `context.useTranslation()` uses. See [Translating Metadata](#translating-metadata) |
-| `forwardedHeaders` | Headers that identify the visitor to the backend, currently `x-forwarded-for`. Send them on every backend fetch. See [Forwarding the Visitor's Address](#forwarding-the-visitors-address) |
+| `forwardedHeaders` | Headers that identify the visitor to the backend, currently `x-forwarded-for`. Send them on a fetch whose backend route limits requests per IP, and leave them off a cached fetch, which Next keys by its headers. See [Forwarding the Visitor's Address](#forwarding-the-visitors-address) |
 
 The returned data **must be JSON-serializable** because it crosses the React Server Components boundary. Functions, class instances, Maps, Sets, and component references will fail. Stick to plain objects, arrays, strings, numbers, booleans, and `null`.
 
@@ -60,13 +60,16 @@ The returned data **must be JSON-serializable** because it crosses the React Ser
 
 A fetcher runs inside the frontend container, so its request reaches the backend from that container's address, not the visitor's. A backend route that rate-limits per IP then counts every visitor as one client. One person loading the page quickly can use up the limit, and the page breaks for everyone else. This happened to the trp-files upload-link page.
 
-Spread `ctx.forwardedHeaders` into the headers of every backend fetch, so the backend resolves `req.ip` to the visitor:
+Spread `ctx.forwardedHeaders` into the headers of a fetch whose backend route limits requests per IP, so the backend resolves `req.ip` to the visitor:
 
 ```typescript
 const response = await fetch(`${ctx.apiBaseUrl}/plugins/my-plugin/data`, {
+    cache: 'no-store',
     headers: { ...ctx.forwardedHeaders }
 });
 ```
+
+Leave the headers off a fetch that asks Next to cache the response, meaning one that sets `next: { revalidate }` or `cache: 'force-cache'`. Next includes the request headers in its data cache key, so a per-visitor address gives every visitor a cache entry of their own: one shared read becomes one backend call per address, and the number of cache entries grows with the number of visitors. A response that is the same for everyone does not need visitor attribution anyway, and a route serving one usually does not limit per IP — `trp-relics` exempts its server-rendered list fetch from its own limiter for that reason.
 
 The field is optional because an older core does not supply it. Spreading `undefined` sends nothing, so the same code works on both.
 

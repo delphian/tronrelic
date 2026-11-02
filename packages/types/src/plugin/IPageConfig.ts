@@ -51,8 +51,9 @@ export interface IServerDataContext {
     translator: ITranslator;
 
     /**
-     * Headers that identify the visitor to the backend. Send them on every
-     * backend fetch: `fetch(url, { headers: { ...ctx.forwardedHeaders } })`.
+     * Headers that identify the visitor to the backend. Send them on a fetch
+     * whose backend route limits requests per IP:
+     * `fetch(url, { headers: { ...ctx.forwardedHeaders } })`.
      *
      * A fetcher runs inside the frontend container, so its request reaches
      * the backend from that container's address rather than the visitor's.
@@ -60,6 +61,12 @@ export interface IServerDataContext {
      * client, and one client loading the page quickly could exhaust the limit
      * and break the page for everyone. Today this holds `x-forwarded-for` when
      * the visitor's address is known, and is empty otherwise.
+     *
+     * Leave them off a fetch that asks Next to cache the response, with
+     * `next: { revalidate }` or `cache: 'force-cache'`. Next includes the
+     * request headers in its data cache key, so a per-visitor address gives
+     * every visitor a cache entry of their own and turns one shared read into
+     * one backend call per address.
      *
      * Optional so plugins compiled against older core versions (which did not
      * supply it) still typecheck; spreading `undefined` sends no headers.
