@@ -1196,6 +1196,187 @@ describe('TrafficService', () => {
         });
     });
 
+    describe('getTopPages()', () => {
+        const range = { since: new Date('2026-06-01T00:00:00.000Z') };
+        const HUMAN_FILTER = "(bot_class = 'human' OR bot_class IS NULL)";
+
+        /**
+         * Wire a mock ClickHouse that answers the two reads getTopPages issues
+         * and keeps each one's SQL and params apart, so a test can assert on the
+         * capped row read and the uncapped totals read independently. The row
+         * read is the one that groups by path; everything else is the totals.
+         *
+         * @param rows - Rows the grouped path read should return, so mapping can be checked.
+         * @param totals - Row the totals read should return, or [] to stand for no match at all.
+         * @returns The captured reads, so a test can assert on whichever one it cares about.
+         */
+        function captureReads(
+            rows: Array<Record<string, unknown>> = [],
+            totals: Array<Record<string, unknown>> = []
+        ): {
+            rows?: { sql: string; params: Record<string, unknown> };
+            totals?: { sql: string; params: Record<string, unknown> };
+        } {
+            const captured: {
+                rows?: { sql: string; params: Record<string, unknown> };
+                totals?: { sql: string; params: Record<string, unknown> };
+            } = {};
+            const ch = createMockClickHouse();
+            ch.query = async <T>(sql: string, params?: unknown): Promise<T[]> => {
+                const entry = { sql, params: (params ?? {}) as Record<string, unknown> };
+                if (sql.includes('GROUP BY path')) {
+                    captured.rows = entry;
+                    return rows as T[];
+                }
+                captured.totals = entry;
+                return totals as T[];
+            };
+            TrafficService.setDependencies(ch, createMockLogger());
+            return captured;
+        }
+
+        /**
+         * Pull the WHERE text out of one generated read. Comparing the two reads'
+         * WHERE clauses is what proves the totals describe exactly the rows the
+         * caller sees, which is the only claim a mock can make about them —
+         * distinctness itself is computed inside ClickHouse.
+         *
+         * @param sql - One generated read, as captured from the mock.
+         * @returns The WHERE clause with surrounding whitespace removed.
+         */
+        function whereClauseOf(sql: string): string {
+            return sql.split('WHERE')[1]!.split('GROUP BY')[0]!.trim();
+        }
+
+        it('returns the empty shape when ClickHouse is unavailable', async () => {
+            TrafficService.setDependencies(undefined, createMockLogger());
+            const out = await TrafficService.getInstance().getTopPages(range);
+            expect(out).toEqual({ buckets: [], totals: { visitors: 0, pageviews: 0, paths: 0 } });
+        });
+
+        it('groups every page row by path instead of session entry paths', async () => {
+            // getTopLandingPages answers "where did sessions start", which hides
+            // every page reached by clicking through. This read exists to count
+            // every navigation, so it restricts on the event type alone and does
+            // no sessionizing.
+            const captured = captureReads();
+
+            await TrafficService.getInstance().getTopPages(range, 5);
+
+            expect(captured.rows?.sql).toContain("event_type = 'page'");
+            expect(captured.rows?.sql).toContain('uniqExact(candidate_uid) AS visitors');
+            expect(captured.rows?.sql).toContain('LIMIT {limit:UInt32}');
+            expect(captured.rows?.params.limit).toBe(5);
+            expect(captured.rows?.sql).not.toContain('session_seq');
+        });
+
+        it('leaves the totals read uncapped and ungrouped over the same rows', async () => {
+            // A section wider than the row cap must still report one complete
+            // figure, so the totals read may carry neither GROUP BY nor LIMIT,
+            // and its WHERE has to match the row read exactly.
+            const captured = captureReads();
+
+            await TrafficService.getInstance().getTopPages(range, 5);
+
+            expect(captured.totals?.sql).toContain('uniqExact(candidate_uid) AS visitors');
+            expect(captured.totals?.sql).toContain('count() AS pageviews');
+            expect(captured.totals?.sql).toContain('uniqExact(path) AS paths');
+            expect(captured.totals?.sql).not.toContain('GROUP BY');
+            expect(captured.totals?.sql).not.toContain('LIMIT');
+            expect(whereClauseOf(captured.totals!.sql)).toBe(whereClauseOf(captured.rows!.sql));
+        });
+
+        it('binds the path prefix as a parameter on both reads', async () => {
+            // The prefix arrives as an AI tool argument, so it must never be
+            // spliced into the SQL, and the totals read needs it too or the
+            // section figure would describe the whole site.
+            const captured = captureReads();
+
+            await TrafficService.getInstance().getTopPages(range, 20, false, '/zh');
+
+            for (const read of [captured.rows, captured.totals]) {
+                expect(read?.sql).toContain('startsWith(path, {pathPrefix:String})');
+                expect(read?.sql).not.toContain("'/zh'");
+                expect(read?.params.pathPrefix).toBe('/zh');
+            }
+        });
+
+        it('adds no prefix filter when no prefix is requested', async () => {
+            const captured = captureReads();
+
+            await TrafficService.getInstance().getTopPages(range);
+
+            expect(captured.rows?.sql).not.toContain('pathPrefix');
+            expect(captured.rows?.params.pathPrefix).toBeUndefined();
+            expect(captured.totals?.params.pathPrefix).toBeUndefined();
+        });
+
+        it('applies the human filter and the country scope to both reads', async () => {
+            // Both reads share one WHERE, so a filter that reached only the rows
+            // would leave the totals describing different traffic than the table.
+            const captured = captureReads();
+
+            await TrafficService.getInstance().getTopPages(
+                { since: new Date('2026-06-01T00:00:00.000Z'), country: 'KR' },
+                20,
+                true
+            );
+
+            for (const read of [captured.rows, captured.totals]) {
+                expect(read?.sql).toContain(HUMAN_FILTER);
+                expect(read?.sql).toContain('country = {country:String}');
+                expect(read?.params.country).toBe('KR');
+            }
+        });
+
+        it('keeps the human filter out when bots are not excluded', async () => {
+            const captured = captureReads();
+
+            await TrafficService.getInstance().getTopPages(range);
+
+            expect(captured.rows?.sql).not.toContain(HUMAN_FILTER);
+            expect(captured.totals?.sql).not.toContain(HUMAN_FILTER);
+        });
+
+        it('coerces string counts on the buckets and the totals alike', async () => {
+            // ClickHouse returns aggregate columns as strings under JSONEachRow,
+            // which the tool would otherwise concatenate instead of add.
+            captureReads(
+                [{ path: '/zh/resource-markets', visitors: '12', count: '31' }],
+                [{ visitors: '40', pageviews: '95', paths: '7' }]
+            );
+
+            const out = await TrafficService.getInstance().getTopPages(range, 20, false, '/zh');
+
+            expect(out).toEqual({
+                buckets: [{ path: '/zh/resource-markets', visitors: 12, count: 31 }],
+                totals: { visitors: 40, pageviews: 95, paths: 7 }
+            });
+        });
+
+        it('reports zero totals when the totals read matches nothing', async () => {
+            // An empty result set must read as zeros rather than NaN, which is
+            // what an unguarded Number(undefined) would put in front of a model.
+            captureReads([], []);
+
+            const out = await TrafficService.getInstance().getTopPages(range);
+
+            expect(out.totals).toEqual({ visitors: 0, pageviews: 0, paths: 0 });
+        });
+
+        it('returns the empty shape and logs on query failure', async () => {
+            const ch = createMockClickHouse();
+            ch.error = new Error('CH down');
+            const logger = createMockLogger();
+            TrafficService.setDependencies(ch, logger);
+
+            const out = await TrafficService.getInstance().getTopPages(range);
+
+            expect(out).toEqual({ buckets: [], totals: { visitors: 0, pageviews: 0, paths: 0 } });
+            expect(logger.warn).toHaveBeenCalled();
+        });
+    });
+
     describe('getOverviewTrend()', () => {
         it('returns the empty shape when ClickHouse is unavailable', async () => {
             TrafficService.setDependencies(undefined, createMockLogger());
