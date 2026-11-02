@@ -467,6 +467,25 @@ export interface ILandingPageBucket {
     count: number;
 }
 
+/**
+ * Every-pageview breakdown by path: the rows the caller asked for plus totals
+ * over every path that matched, so a prefix such as `/zh` can be reported as
+ * one figure even when it spans more paths than the row cap returns.
+ */
+export interface IPageViewBreakdown {
+    /** Paths by visitors descending, capped at the caller's limit. `count` is pageviews. */
+    buckets: ILandingPageBucket[];
+    /** Totals over every matching path, not only the returned rows. */
+    totals: {
+        /** Distinct visitors (tids) who viewed at least one matching path. */
+        visitors: number;
+        /** Pageviews across every matching path. */
+        pageviews: number;
+        /** How many distinct paths matched. */
+        paths: number;
+    };
+}
+
 /** Country (ISO-3166 alpha-2) bucket. `null` excluded by the query. */
 export interface IGeoBucket {
     country: string | null;
@@ -2400,6 +2419,75 @@ export class TrafficService {
             this.logger.warn({ error }, 'Failed to read top landing pages');
             return [];
         }
+    }
+
+    /**
+     * Most-viewed paths over a window, counting every pageview rather than
+     * only the first page of each session.
+     *
+     * {@link getTopLandingPages} answers "where did sessions start", which
+     * hides every page a visitor reached by clicking through. Questions such as
+     * "how are the Chinese pages doing" need the pages people actually read, so
+     * this groups every `page` row by path. A visitor here follows the Metrics
+     * Contract: a distinct tid with a `page` event, which every row in this
+     * read is. The optional prefix narrows the read to one section of the site,
+     * such as `/zh` or `/blog/`, and is bound as a parameter.
+     *
+     * The totals are computed over every matching path in a second query over
+     * the same rows, so a prefix spanning more paths than `limit` still
+     * reports one complete figure instead of the sum of whichever rows fit.
+     *
+     * @param range - Inclusive date window, optionally scoped to one country.
+     * @param limit - Most path rows to return; the totals are not capped.
+     * @param excludeBots - Restrict to human-classified rows (NULL kept).
+     * @param pathPrefix - Keep only paths starting with this text, or every path when omitted.
+     * @returns Path rows by visitors descending (`count` is pageviews) and totals over all matches.
+     */
+    async getTopPages(
+        range: IAnalyticsDateRange,
+        limit = 20,
+        excludeBots = false,
+        pathPrefix?: string
+    ): Promise<IPageViewBreakdown> {
+        let result: IPageViewBreakdown = { buckets: [], totals: { visitors: 0, pageviews: 0, paths: 0 } };
+        if (this.clickhouse) {
+            const { clause, params } = this.rangeParams(range);
+            const botFilter = excludeBots ? ` AND ${HUMAN_ROWS_FILTER}` : '';
+            const prefixFilter = pathPrefix ? ' AND startsWith(path, {pathPrefix:String})' : '';
+            const where = `${clause}${botFilter}${prefixFilter} AND event_type = 'page'`;
+            const queryParams = { ...params, ...(pathPrefix ? { pathPrefix } : {}), limit };
+            const rowsSql = `
+                SELECT path, uniqExact(candidate_uid) AS visitors, count() AS count
+                FROM ${TABLE_NAME}
+                WHERE ${where}
+                GROUP BY path
+                ORDER BY visitors DESC, count DESC
+                LIMIT {limit:UInt32}
+            `;
+            const totalsSql = `
+                SELECT uniqExact(candidate_uid) AS visitors, count() AS pageviews, uniqExact(path) AS paths
+                FROM ${TABLE_NAME}
+                WHERE ${where}
+            `;
+            try {
+                const [rows, totals] = await Promise.all([
+                    this.clickhouse.query<{ path: string; visitors: string | number; count: string | number }>(rowsSql, queryParams),
+                    this.clickhouse.query<{ visitors: string | number; pageviews: string | number; paths: string | number }>(totalsSql, queryParams)
+                ]);
+                const total = totals[0];
+                result = {
+                    buckets: rows.map(r => ({ path: r.path, visitors: Number(r.visitors), count: Number(r.count) })),
+                    totals: {
+                        visitors: Number(total?.visitors ?? 0),
+                        pageviews: Number(total?.pageviews ?? 0),
+                        paths: Number(total?.paths ?? 0)
+                    }
+                };
+            } catch (error) {
+                this.logger.warn({ error }, 'Failed to read top pages');
+            }
+        }
+        return result;
     }
 
     /**

@@ -15,6 +15,7 @@ Serves the site in languages other than English. Administrators add languages, p
 | Frontend hooks | `useTranslation`, `useLocalization`, `useLocalizedHref` |
 | Storage | `module_localization_languages`, `module_localization_routes`, `module_localization_keys`, `module_localization_translations`, `module_localization_settings`, `module_localization_switch_daily` |
 | AI provider | Read per request from the core `'ai-providers'` registry (`IAiProviderRegistry`); the module works without one, and only the Suggest buttons need it |
+| AI tools | `localization-get-status` (read / internal / untrusted) on the core `'ai-tools'` registry, provider id `localization` — see [AI Tool](#ai-tool) |
 | Frontend module | `src/frontend/modules/localization/` — `LocalizationProvider`, `useTranslation`, `LanguageSwitcher`, admin tabs; server-only helpers in `./server`, including `getServerTranslator` and `fetchLocalizationSeed` |
 | Plugin API | `context.useTranslation()` and `context.useLocalizedHref()` on `IFrontendPluginContext`, and `ctx.translator` in a plugin page's server fetchers; keys scoped to the plugin id |
 | Widget | `core:language-switcher` (widgets module catalog) |
@@ -70,6 +71,19 @@ The output budget is sized to the batch and the target language: a base for the 
 Choosing the provider, accepting only a finished answer, and adding the target language's prompt to the system prompt are shared with the core content translation Suggest button, in `src/backend/services/resolveAiProvider.ts`, `src/backend/services/runIsolatedAiQuery.ts`, and `src/backend/services/composeTranslationSystemPrompt.ts`, and the toast body is the shared `SuggestionSummary` component. The two features keep separate shared prompts and model choices, and both panels sit on the Settings tab: this module's for interface text, and core's **Content translation** panel for pages and every other content type. The language prompt is one value both features use, so a glossary written once applies to interface text and page bodies alike. Rules for one language belong in its prompt rather than in a shared one, where every other language's requests would carry them too.
 
 The cost is the provider's figure after the run. There is no estimate beforehand, because `IAiProvider` has no pricing method and per-model rates live inside the provider plugin. The suggestion route has its own limit of 20 requests a minute on top of the admin limiter, since each one is a paid call.
+
+## AI Tool
+
+`localization-get-status` lets an AI agent answer "how are our languages doing" without an operator opening this page. It registers in `run()` through `registerLocalizationAiTools` in `ai-tools.ts`, which watches `'ai-tools'` because that registry is published in the ai-tools module's own `run()`. It reads through the same service methods as the tabs, so the tool and the page report the same figures, and it never writes.
+
+| View | Backing read | Returns |
+|---|---|---|
+| `languages` (default) | `listLanguages`, `getPublicConfig` | Each language's names, `enabled`, `servedRoutes` (routes in the public snapshot listing it, translated CMS pages included), and translated/stale/missing counts as `siteWide` and `publishedRoutes` |
+| `routes` | `listRoutes` | Routes-tab routes with `keyCount` and `missingByLanguage`, paged with `limit`/`offset` |
+| `switches` | `LanguageSwitchService.getStats` | Switcher clicks over `days` (default 30, at most 90) |
+| `keys` | `listTranslations` | One page of keys for a required `language`, filterable by `status`, `route`, and `namespace`; source and translation cut at 300 characters |
+
+Three fields are deliberately left out: a language's `translationPrompt` text (only `hasTranslationPrompt` is returned), each key's `routes` list, which holds paths from visitor URLs, and a translation's `updatedBy` account id. The tool declares `surfacesUntrustedContent` because a key's English source is whatever a component passed to `t()`, and plugins pass labels built from outside data such as market names. It is a free, reversible, non-secret read, so it passes the MCP safety floor and an admin can grant it to any group on `/system/mcp`. Visitor counts for translated pages come from the traffic module's `tronrelic-query-traffic-breakdown` tool with dimension `pages` and a `pathPrefix` such as `/zh`.
 
 ## Translating Text in Code
 
@@ -167,7 +181,8 @@ A translation is *stale* when `translations.updatedAt < keys.sourceChangedAt`. S
 
 | File | Purpose |
 |---|---|
-| `LocalizationModule.ts` | `IModule`: builds services in `init()`; publishes `'localization'`, mounts routers, registers menu nodes in `run()` |
+| `LocalizationModule.ts` | `IModule`: builds services in `init()`; publishes `'localization'`, mounts routers, registers menu nodes and the AI tool in `run()` |
+| `ai-tools.ts` | The read-only `localization-get-status` tool and its `'ai-tools'` registry watch |
 | `services/localization.service.ts` | `LocalizationService` singleton (`ILocalizationService`); in-memory snapshot and catalogs, cleared by `invalidate()` |
 | `services/localization-admin.service.ts` | Language, route, key, and translation management; all validation |
 | `services/translation-observation.service.ts` | Intake of reported keys; missing-translation warnings; `selectRoutesToDrop`, which trims a key's path list without losing its published routes |

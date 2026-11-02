@@ -83,6 +83,17 @@ describe('LocalizationModule', () => {
         expect(tabUrls.every((node: { requiresAdmin?: boolean }) => node.requiresAdmin === true)).toBe(true);
     });
 
+    it('run() watches the ai-tools registry instead of resolving it once', async () => {
+        // The ai-tools module publishes its registry in its own run(), so a
+        // one-shot get() here would miss it whenever that module runs later.
+        const module = new LocalizationModule();
+        const deps = createDeps();
+        await module.init(deps);
+        expect(deps.serviceRegistry.watch).not.toHaveBeenCalled();
+        await module.run();
+        expect(deps.serviceRegistry.watch).toHaveBeenCalledWith('ai-tools', expect.objectContaining({ onAvailable: expect.any(Function) }));
+    });
+
     it('run() puts requireAdmin in front of the management router only', async () => {
         // The public router carries the reads every page render needs, so
         // gating it would break the site; the management router must be gated

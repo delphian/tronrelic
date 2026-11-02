@@ -31,6 +31,12 @@ function createTrafficServiceStub() {
         getTrafficSources: vi.fn(async () => [{ source: 'google.com', visitors: 5, count: 9 }]),
         getTrafficSourceDetails: vi.fn(async () => ({ landingPages: [] })),
         getTopLandingPages: vi.fn(async () => [{ path: '/', visitors: 4, count: 7 }]),
+        // Params declared so the pages tests can assert the prefix and limit
+        // the handler passes through.
+        getTopPages: vi.fn(async (_range: unknown, _limit: number, _excludeBots: boolean, _pathPrefix?: string) => ({
+            buckets: [{ path: '/zh/resource-markets', visitors: 8, count: 12 }],
+            totals: { visitors: 40, pageviews: 70, paths: 21 }
+        })),
         getGeoDistribution: vi.fn(async () => [{ country: 'US', visitors: 2, count: 2 }]),
         getDeviceBreakdown: vi.fn(async () => [{ device: 'desktop', visitors: 6, count: 8 }]),
         getCampaignPerformance: vi.fn(async () => [{ campaign: 'spring', visitors: 1, count: 1 }]),
@@ -659,6 +665,38 @@ describe('traffic AI tools', () => {
         it('rejects `source` paired with a dimension other than sources', async () => {
             await expect(tools.get(AI_TOOL_NAMES.breakdown)!.handler({ dimension: 'geo', source: 'google.com' }))
                 .rejects.toThrow(/only valid with dimension "sources"/);
+        });
+
+        it('passes pathPrefix to the pages read and returns its section totals', async () => {
+            const trafficStub = createTrafficServiceStub();
+            const { tools: built } = registerAndCapture(undefined, {}, trafficStub);
+            const result = await built.get(AI_TOOL_NAMES.breakdown)!.handler({
+                dimension: 'pages',
+                pathPrefix: '/zh',
+                limit: 30
+            }) as { pathPrefix: string; attribution: string; totals: { pageviews: number } };
+
+            expect(trafficStub.getTopPages).toHaveBeenCalledWith(expect.anything(), 30, true, '/zh');
+            expect(result.pathPrefix).toBe('/zh');
+            expect(result.attribution).toBe('in-window');
+            // The totals cover every matching path, so the model quotes them
+            // instead of summing whichever buckets fit under the limit.
+            expect(result.totals.pageviews).toBe(70);
+        });
+
+        it('returns null totals on dimensions other than pages', async () => {
+            const result = await tools.get(AI_TOOL_NAMES.breakdown)!.handler({ dimension: 'geo' }) as { totals: unknown };
+            expect(result.totals).toBeNull();
+        });
+
+        it('rejects pathPrefix on dimensions other than pages, and a prefix without a leading slash', async () => {
+            const breakdown = tools.get(AI_TOOL_NAMES.breakdown)!;
+            // Ignoring it would let the model narrate the whole site's landing
+            // pages as if they were the section it asked about.
+            await expect(breakdown.handler({ dimension: 'landing-pages', pathPrefix: '/zh' }))
+                .rejects.toThrow(/only valid with dimension "pages"/);
+            await expect(breakdown.handler({ dimension: 'pages', pathPrefix: 'zh' }))
+                .rejects.toThrow(/must start with "\/"/);
         });
 
         it('rejects the crawler paths view without a valid botClass', async () => {
