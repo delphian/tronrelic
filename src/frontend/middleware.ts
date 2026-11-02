@@ -23,6 +23,7 @@ import type { NextRequest, NextFetchEvent } from 'next/server';
 import type { IConsentPublicConfig, IConsentState, ILocalizationPublicConfig } from '@/types';
 import { CONSENT_COOKIE_NAME, DEFAULT_LANGUAGE, readUtmParams, resolveConsentState, resolveLocalizedPath } from '@/types';
 import { getServerSideApiUrl } from './lib/api-url';
+import { resolveVisitorForwardedFor } from './lib/resolveVisitorForwardedFor';
 import { createCachedBackendFeed } from './lib/cachedBackendFeed';
 import { LANGUAGE_REQUEST_HEADER } from './modules/localization/lib/LANGUAGE_REQUEST_HEADER';
 import { CSP_NONCE_HEADER } from './lib/CSP_NONCE_HEADER';
@@ -200,12 +201,9 @@ function buildForwardedHeaders(request: NextRequest): Record<string, string> {
 
     // Carry the visitor address through so the backend resolves req.ip to
     // the visitor rather than to this container.
-    const inboundForwardedFor = request.headers.get('x-forwarded-for');
-    const directIp = request.headers.get('x-real-ip');
-    if (inboundForwardedFor) {
-        headers['x-forwarded-for'] = inboundForwardedFor;
-    } else if (directIp) {
-        headers['x-forwarded-for'] = directIp;
+    const forwardedFor = resolveVisitorForwardedFor(request.headers);
+    if (forwardedFor) {
+        headers['x-forwarded-for'] = forwardedFor;
     }
 
     return headers;

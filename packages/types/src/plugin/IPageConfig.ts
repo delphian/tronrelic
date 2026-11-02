@@ -49,6 +49,22 @@ export interface IServerDataContext {
      * such as `en` or `zh`.
      */
     translator: ITranslator;
+
+    /**
+     * Headers that identify the visitor to the backend. Send them on every
+     * backend fetch: `fetch(url, { headers: { ...ctx.forwardedHeaders } })`.
+     *
+     * A fetcher runs inside the frontend container, so its request reaches
+     * the backend from that container's address rather than the visitor's.
+     * A route with a per-IP rate limit would then count every visitor as one
+     * client, and one client loading the page quickly could exhaust the limit
+     * and break the page for everyone. Today this holds `x-forwarded-for` when
+     * the visitor's address is known, and is empty otherwise.
+     *
+     * Optional so plugins compiled against older core versions (which did not
+     * supply it) still typecheck; spreading `undefined` sends no headers.
+     */
+    forwardedHeaders?: Record<string, string>;
 }
 
 /**
@@ -198,7 +214,9 @@ export interface IPageConfig {
      * @example
      * ```typescript
      * serverDataFetcher: async (ctx) => {
-     *     const response = await fetch(`${ctx.apiBaseUrl}/plugins/my-plugin/data`);
+     *     const response = await fetch(`${ctx.apiBaseUrl}/plugins/my-plugin/data`, {
+     *         headers: { ...ctx.forwardedHeaders }
+     *     });
      *     const data = await response.json();
      *     return { items: data.items };
      * }

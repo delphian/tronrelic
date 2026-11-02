@@ -6,14 +6,17 @@
  * `IServerDataContext`, and two routes run them: the public catch-all route
  * (both fetchers) and the `/system/plugins/[...slug]` admin route (the data
  * fetcher). Building the context in one place means every fetcher gets the
- * same backend URL, site URL, and translator, so a page's metadata and body
- * cannot disagree about the language they are written in.
+ * same backend URL, site URL, translator, and forwarded visitor headers, so a
+ * page's metadata and body cannot disagree about the language they are
+ * written in, and every backend call they make is attributed to the visitor.
  */
 
 import 'server-only';
+import { headers } from 'next/headers';
 import type { IServerDataContext } from '@/types';
 import { getServerSideApiUrlWithPath } from './api-url';
 import { getServerConfig } from './serverConfig';
+import { resolveVisitorForwardedFor } from './resolveVisitorForwardedFor';
 import { getServerTranslator } from '../modules/localization/server';
 
 /**
@@ -24,21 +27,31 @@ import { getServerTranslator } from '../modules/localization/server';
  * fetcher translates and the same key rendered in the page body share one
  * stored translation.
  *
+ * `forwardedHeaders` carries the visitor's address. A fetcher's backend call
+ * leaves from this container, so without it a per-IP rate limiter on the
+ * route counts every visitor as one client, and anyone loading the page fast
+ * enough would lock every other visitor out of it.
+ *
  * @param pluginId - Id of the plugin that owns the page; scopes the translator's keys.
  * @param slug - Requested URL path, given to the fetcher as `path` so a wildcard page knows which resource was asked for.
  * @param lang - The `[lang]` route parameter of the request, which decides the translator's language.
  * @returns The context to pass to the page's fetchers.
  */
 export async function buildServerDataContext(pluginId: string, slug: string, lang: string): Promise<IServerDataContext> {
-    const [{ siteUrl }, translator] = await Promise.all([
+    const [{ siteUrl }, translator, requestHeaders] = await Promise.all([
         getServerConfig(),
-        getServerTranslator(Promise.resolve({ lang }), pluginId)
+        getServerTranslator(Promise.resolve({ lang }), pluginId),
+        headers()
     ]);
+
+    const forwardedFor = resolveVisitorForwardedFor(requestHeaders);
+    const forwardedHeaders: Record<string, string> = forwardedFor ? { 'x-forwarded-for': forwardedFor } : {};
 
     return {
         apiBaseUrl: getServerSideApiUrlWithPath(),
         siteUrl,
         path: slug,
-        translator
+        translator,
+        forwardedHeaders
     };
 }
