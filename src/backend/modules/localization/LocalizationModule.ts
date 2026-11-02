@@ -17,7 +17,8 @@ import type {
     IModuleMetadata,
     IPublicLocalizedRoute,
     IServiceRegistry,
-    ITrafficIgnoreList
+    ITrafficIgnoreList,
+    ServiceWatchDisposer
 } from '@/types';
 import { logger } from '../../lib/logger.js';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
@@ -33,6 +34,7 @@ import { LanguageSwitchService } from './services/language-switch.service.js';
 import { LocalizationPublicController } from './api/localization-public.controller.js';
 import { LocalizationAdminController } from './api/localization-admin.controller.js';
 import { createLocalizationAdminRouter, createLocalizationPublicRouter } from './api/localization.routes.js';
+import { registerLocalizationAiTools } from './ai-tools.js';
 
 /** Name the read-side service is published under in the service registry. */
 export const LOCALIZATION_SERVICE_NAME = 'localization';
@@ -131,6 +133,7 @@ export class LocalizationModule implements IModule<ILocalizationModuleDependenci
     private suggestionService!: TranslationSuggestionService;
     private observationService!: TranslationObservationService;
     private switchService!: LanguageSwitchService;
+    private unwatchAiTools: ServiceWatchDisposer | null = null;
     private initialized = false;
     private readonly logger = logger.child({ module: 'localization' });
 
@@ -260,6 +263,21 @@ export class LocalizationModule implements IModule<ILocalizationModuleDependenci
                 requiresAdmin: true
             });
         }
+
+        // Read-only status tool for AI agents. Watched rather than resolved
+        // once: the ai-tools module publishes its registry during its own
+        // run(), and bootstrap order does not guarantee that has happened yet.
+        this.unwatchAiTools = registerLocalizationAiTools(
+            this.serviceRegistry,
+            {
+                listLanguages: () => this.adminService.listLanguages(),
+                listRoutes: () => this.adminService.listRoutes(),
+                listTranslations: (query) => this.adminService.listTranslations(query),
+                getSwitchStats: (days) => this.switchService.getStats(days),
+                getPublicConfig: () => this.service.getPublicConfig()
+            },
+            this.logger
+        );
 
         this.logger.info('Localization module running; routers mounted at /api/localization and /api/admin/system/localization');
     }

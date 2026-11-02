@@ -133,8 +133,12 @@ const MAX_BUCKETS = 50;
 /** Default row count when the model omits `limit`. */
 const DEFAULT_BUCKETS = 20;
 
-/** Dimensions {@link AI_TOOL_NAMES.breakdown} can group by. */
-const BREAKDOWN_DIMENSIONS = ['sources', 'landing-pages', 'geo', 'devices', 'campaigns'] as const;
+/**
+ * Dimensions {@link AI_TOOL_NAMES.breakdown} can group by. `pages` counts every
+ * pageview by path, where `landing-pages` counts only the first page of each
+ * session.
+ */
+const BREAKDOWN_DIMENSIONS = ['sources', 'landing-pages', 'pages', 'geo', 'devices', 'campaigns'] as const;
 
 /**
  * Views {@link AI_TOOL_NAMES.crawlers} can return.
@@ -497,18 +501,38 @@ function resolveEventFilter(input: Record<string, unknown>): ITrafficEventFilter
         filter.tid = tid;
     }
 
-    if (input.pathPrefix !== undefined && input.pathPrefix !== null && input.pathPrefix !== '') {
-        const pathPrefix = String(input.pathPrefix);
+    const pathPrefix = resolvePathPrefix(input.pathPrefix);
+    if (pathPrefix) {
+        filter.pathPrefix = pathPrefix;
+    }
+
+    return filter;
+}
+
+/**
+ * Read an optional `pathPrefix` argument.
+ *
+ * Stored paths always start with "/", so a prefix without one can only match
+ * nothing, and the model would then report an empty section as a finding.
+ * The length cap keeps a model-supplied string well inside what ingestion
+ * stores. Shared by the per-event filter and the breakdown tool's `pages`
+ * dimension so both accept exactly the same prefixes.
+ *
+ * @param value - Raw argument from the model.
+ * @returns The prefix, or undefined when the argument is absent.
+ */
+function resolvePathPrefix(value: unknown): string | undefined {
+    let pathPrefix: string | undefined;
+    if (value !== undefined && value !== null && value !== '') {
+        pathPrefix = String(value);
         if (!pathPrefix.startsWith('/') || pathPrefix.length > MAX_PATH_PREFIX_LENGTH) {
             throw new Error(
                 `Parameter "pathPrefix" must start with "/" and be at most ${MAX_PATH_PREFIX_LENGTH} characters, ` +
                 `such as "/blog/". Got: ${pathPrefix.slice(0, MAX_PATH_PREFIX_LENGTH)}`
             );
         }
-        filter.pathPrefix = pathPrefix;
     }
-
-    return filter;
+    return pathPrefix;
 }
 
 /**
@@ -729,8 +753,17 @@ function buildTools(
             'or, when it had neither, the social or messaging app whose in-app browser opened the link, read from the ' +
             'User-Agent, such as "douyin" or "wechat" — those browsers send no referrer, so without this they read ' +
             '"direct"; plus acquisition channel), "landing-pages" (first page hit), ' +
+            '"pages" (EVERY pageview grouped by path — use this for "how many people read X" or "how is the /zh ' +
+            'section doing", since "landing-pages" only sees the page a session started on and misses every page ' +
+            'reached by clicking through), ' +
             '"geo" (country), "devices" (device category), "campaigns" (performance of visits carrying any UTM tag; ' +
             'a source-only tag such as utm_source=chatgpt.com reads campaign "(none)"). ' +
+            'Pass `pathPrefix` WITH dimension "pages" to keep only paths starting with it, such as "/zh" for the ' +
+            'Chinese pages or "/blog/" for posts. The "pages" response also carries `totals` (visitors, pageviews, ' +
+            'and distinct paths over EVERY matching path, not just the returned rows) — quote those for a section-wide ' +
+            'figure instead of adding up buckets. In "pages" buckets, `count` is pageviews. A crawler that runs ' +
+            'JavaScript can still be classified human; if one network dominates a section, check it with ' +
+            AI_TOOL_NAMES.events + ' (view "sources", groupBy "asn") before reporting the figure as audience. ' +
             'Pass `source` WITH dimension "sources" to drill into one referrer instead of listing all of them. ' +
             'Each bucket carries `visitors` (distinct browsers — the primary measure) alongside `count`. ' +
             'ATTRIBUTION DIFFERS BY DIMENSION, and stating the wrong one misleads the operator. ' +
@@ -743,7 +776,7 @@ function buildTools(
             'carried its UTM tags, because ad tagging is only ever recorded at first touch. ' +
             'A consequence worth stating when asked about paid traffic: "sources" classifies by referrer domain only, ' +
             'so an auto-tagged ad click reads as "organic" there — "campaigns" is the dimension that sees paid tagging. ' +
-            '"geo" and "devices" are plain in-window visitor counts, not attributed at all. ' +
+            '"pages", "geo", and "devices" are plain in-window counts, not attributed at all. ' +
             'Pass `country` to break down one country\'s traffic, e.g. dimension "sources" with country "KR" answers ' +
             '"where do Korean visitors come from". `country` cannot be combined with dimension "geo". ' +
             'Windows: pass `period` for a preset, or `startDate`+`endDate` (ISO-8601) for a custom range. ' +
@@ -751,7 +784,7 @@ function buildTools(
         // Capability: read / internal / surfaces-untrusted — the referrer
         // domains behind "sources" are bounded, but "campaigns" returns
         // utm_campaign/source/medium and "landing-pages" returns path, and the
-        // `source` drill-down returns both. Those columns are accepted as
+        // `source` drill-down returns both; "pages" returns path too. Those columns are accepted as
         // arbitrary strings by the public unauthenticated ingestion endpoints
         // (length-capped only, never allow-listed), which is exactly why
         // newVisitorsTool declares the same values untrusted. Declared here too
@@ -781,6 +814,13 @@ function buildTools(
                         'Only valid with dimension "sources". Drills into one referrer domain, returning its landing ' +
                         'pages and campaigns instead of the all-sources list.'
                 },
+                pathPrefix: {
+                    type: 'string',
+                    maxLength: MAX_PATH_PREFIX_LENGTH,
+                    description:
+                        'Only valid with dimension "pages". Keeps only paths starting with this prefix, such as "/zh" ' +
+                        'or "/blog/". Must start with "/". The returned `totals` then cover that section of the site.'
+                },
                 country: countryProperty,
                 excludeBots: excludeBotsProperty
             },
@@ -790,6 +830,8 @@ function buildTools(
         inputExamples: [
             { dimension: 'sources' },
             { dimension: 'landing-pages', period: '7d', limit: 10 },
+            { dimension: 'pages', period: '7d', limit: 25 },
+            { dimension: 'pages', pathPrefix: '/zh', period: '7d', limit: 50 },
             { dimension: 'sources', source: 'google.com', period: '30d' },
             { dimension: 'sources', country: 'KR', period: '30d' },
             { dimension: 'geo', startDate: '2026-03-01T00:00:00Z', endDate: '2026-03-15T23:59:59Z', excludeBots: false }
@@ -810,6 +852,13 @@ function buildTools(
             if (source !== undefined && dimension !== 'sources') {
                 throw new Error('Parameter "source" is only valid with dimension "sources".');
             }
+            // Rejected rather than ignored on other dimensions, so a model that
+            // asked for "/zh" landing pages learns the list was not filtered
+            // instead of narrating the whole site as the Chinese section.
+            const pathPrefix = resolvePathPrefix(input.pathPrefix);
+            if (pathPrefix !== undefined && dimension !== 'pages') {
+                throw new Error('Parameter "pathPrefix" is only valid with dimension "pages".');
+            }
             // A geo breakdown narrowed to one country is a single row that
             // repeats the filter back, so the request is almost certainly a
             // mistake the model should rephrase rather than narrate.
@@ -821,12 +870,17 @@ function buildTools(
             }
 
             let buckets: unknown;
+            let totals: unknown = null;
             if (source !== undefined) {
                 buckets = await trafficService.getTrafficSourceDetails(range, source, excludeBots);
             } else if (dimension === 'sources') {
                 buckets = (await trafficService.getTrafficSources(range, excludeBots)).slice(0, limit);
             } else if (dimension === 'landing-pages') {
                 buckets = await trafficService.getTopLandingPages(range, limit, excludeBots);
+            } else if (dimension === 'pages') {
+                const pages = await trafficService.getTopPages(range, limit, excludeBots, pathPrefix);
+                buckets = pages.buckets;
+                totals = pages.totals;
             } else if (dimension === 'geo') {
                 buckets = await trafficService.getGeoDistribution(range, limit, excludeBots);
             } else if (dimension === 'devices') {
@@ -838,6 +892,7 @@ function buildTools(
             return {
                 dimension,
                 source: source ?? null,
+                pathPrefix: pathPrefix ?? null,
                 // Restated per call so the model reports the attribution the
                 // buckets actually carry rather than generalizing from whichever
                 // dimension it asked about last.
@@ -851,7 +906,10 @@ function buildTools(
                 limit,
                 excludeBots,
                 clickhouseEnabled: trafficService.isEnabled(),
-                buckets
+                buckets,
+                // Only the "pages" dimension carries totals; null elsewhere so
+                // the field's absence is never read as a zero.
+                totals
             };
         }
     };
