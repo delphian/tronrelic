@@ -1,13 +1,16 @@
 /// <reference types="vitest" />
 
 /**
- * @fileoverview Unit tests for the `traffic-propose-bot-rule` AI tool and the
- * `traffic:bot-rule` curation type behind it.
+ * @fileoverview Unit tests for the `traffic-propose-bot-rule` and
+ * `traffic-list-bot-rules` AI tools and the `traffic:bot-rule` curation type
+ * behind them.
  *
- * The safety argument for this tool is that no call can change a traffic
- * figure: the rule is stored as proposed, held for a curator, and approval
- * only starts it in monitor mode. These tests pin each step of that, plus the
- * capability declaration the governor verifies and the cap on waiting proposals.
+ * The safety argument for the propose tool is that no call can change a
+ * traffic figure: the rule is stored as proposed, held for a curator, and
+ * approval only starts it in monitor mode. These tests pin each step of that,
+ * plus the capability declaration the governor verifies and the cap on waiting
+ * proposals. The list tool's tests pin that evidence samples never reach the
+ * model and that an unreadable analytics store reports null counts, not zero.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -16,7 +19,14 @@ import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-
 import { BotRulesService } from '../services/bot-rules.service.js';
 import type { BotRuleAnalyticsService } from '../services/bot-rule-analytics.service.js';
 import { BOT_RULE_CURATION_TYPE_ID, createBotRuleCurationType } from '../services/bot-rule-curation-type.js';
-import { createProposeBotRuleTool, MAX_PENDING_PROPOSALS, PROPOSE_BOT_RULE_TOOL_NAME } from '../bot-rule-ai-tool.js';
+import {
+    createListBotRulesTool,
+    createProposeBotRuleTool,
+    LIST_BOT_RULES_TOOL_NAME,
+    MAX_LISTED_BOT_RULES,
+    MAX_PENDING_PROPOSALS,
+    PROPOSE_BOT_RULE_TOOL_NAME
+} from '../bot-rule-ai-tool.js';
 
 const PREVIEW = {
     windowDays: 7,
@@ -158,5 +168,112 @@ describe('traffic-propose-bot-rule', () => {
         it('refuses a text edit, which belongs on /system/traffic', async () => {
             await expect(type.applyEdit({ ruleId: 'r1' }, { body: 'new text' })).rejects.toThrow(/system\/traffic/);
         });
+    });
+});
+
+describe('traffic-list-bot-rules', () => {
+    let rules: BotRulesService;
+    let logger: ISystemLogService;
+
+    beforeEach(() => {
+        BotRulesService.resetInstance();
+        logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as unknown as ISystemLogService;
+        BotRulesService.setDependencies(createMockDatabaseService(), logger);
+        rules = BotRulesService.getInstance();
+    });
+
+    /**
+     * Build the list tool over the real rules service and a stubbed stats read.
+     *
+     * @param stats - What `tryStats` resolves to; null models an unreadable analytics store.
+     * @returns The tool under test.
+     */
+    function buildTool(stats: Array<{ ruleId: string; matches24h: number; matches7d: number; lastMatchedAt: string | null }> | null) {
+        const analytics = { tryStats: vi.fn().mockResolvedValue(stats) } as unknown as BotRuleAnalyticsService;
+        return createListBotRulesTool({ rules, analytics, logger });
+    }
+
+    /**
+     * Store one admin rule and one AI proposal, so the list has both sources
+     * and both review states to filter on.
+     *
+     * @returns The ids of the admin rule and the proposed rule.
+     */
+    async function seedRules(): Promise<{ adminId: string; proposedId: string }> {
+        const admin = await rules.create({ name: 'DigitalOcean SG', label: 'bot_other', conditions: { asns: [14061] }, mode: 'label' });
+        const proposed = await rules.propose(
+            { name: 'Alibaba SG crawler', note: 'One page per cookie', label: 'bot_other', conditions: { asns: [45102] }, mode: 'monitor', enabled: true, expiresAt: null },
+            PREVIEW
+        );
+        return { adminId: admin.id, proposedId: proposed.id };
+    }
+
+    it('declares a read that surfaces untrusted content', () => {
+        const tool = buildTool([]);
+
+        expect(tool.name).toBe(LIST_BOT_RULES_TOOL_NAME);
+        expect(tool.capability).toEqual({
+            sideEffect: 'read',
+            reversible: true,
+            sensitivity: 'internal',
+            surfacesUntrustedContent: true
+        });
+    });
+
+    it('lists every rule with its match counts and evidence counts, without samples', async () => {
+        const { adminId, proposedId } = await seedRules();
+        const tool = buildTool([{ ruleId: adminId, matches24h: 3, matches7d: 9, lastMatchedAt: '2026-10-30T00:00:00.000Z' }]);
+
+        const result = await tool.handler({}) as Record<string, any>;
+
+        expect(result.total).toBe(2);
+        expect(result.returned).toBe(2);
+        expect(result.hasMore).toBe(false);
+        expect(result.matchCountsAvailable).toBe(true);
+        const admin = result.rules.find((rule: any) => rule.id === adminId);
+        const proposed = result.rules.find((rule: any) => rule.id === proposedId);
+        expect(admin).toMatchObject({ status: 'active', source: 'admin', matches24h: 3, matches7d: 9, evidence: null });
+        expect(proposed).toMatchObject({ status: 'proposed', source: 'ai-tool', matches24h: 0, matches7d: 0, lastMatchedAt: null });
+        expect(proposed.evidence.matchedEvents).toBe(73);
+        expect(proposed.evidence).not.toHaveProperty('samples');
+        expect(JSON.stringify(result)).not.toContain('ignore previous instructions');
+    });
+
+    it('reports null counts, not zero, when the analytics store cannot be read', async () => {
+        await seedRules();
+
+        const result = await buildTool(null).handler({}) as Record<string, any>;
+
+        expect(result.matchCountsAvailable).toBe(false);
+        for (const rule of result.rules) {
+            expect(rule.matches24h).toBeNull();
+            expect(rule.matches7d).toBeNull();
+        }
+    });
+
+    it('filters by status and caps the rows', async () => {
+        const { proposedId } = await seedRules();
+        const tool = buildTool([]);
+
+        const proposed = await tool.handler({ status: 'proposed' }) as Record<string, any>;
+        expect(proposed.total).toBe(1);
+        expect(proposed.rules[0].id).toBe(proposedId);
+
+        const capped = await tool.handler({ limit: 1 }) as Record<string, any>;
+        expect(capped.total).toBe(2);
+        expect(capped.returned).toBe(1);
+        expect(capped.hasMore).toBe(true);
+    });
+
+    it('returns a correctable error for an unknown status or an out-of-range limit', async () => {
+        const tool = buildTool([]);
+
+        const badStatus = await tool.handler({ status: 'pending' }) as Record<string, any>;
+        expect(badStatus.success).toBe(false);
+        expect(badStatus.error).toMatch(/proposed, active, rejected/);
+
+        const badLimit = await tool.handler({ limit: MAX_LISTED_BOT_RULES + 1 }) as Record<string, any>;
+        expect(badLimit.success).toBe(false);
+        expect(badLimit.error).toMatch(/limit/);
     });
 });

@@ -275,10 +275,27 @@ export class BotRuleAnalyticsService {
      * `traffic_events.bot_rule`. Returns an empty list, with a warning, when the
      * read fails, which is what happens until migration 021 adds the column.
      *
+     * The admin page treats "could not read" and "nothing matched" alike, since
+     * it renders a dash either way. A caller that must tell them apart, such as
+     * the AI list tool, uses {@link tryStats}.
+     *
      * @returns One entry per rule that matched in the last 7 days.
      */
     async stats(): Promise<IBotRuleStats[]> {
-        let stats: IBotRuleStats[] = [];
+        return (await this.tryStats()) ?? [];
+    }
+
+    /**
+     * Count each rule's matches like {@link stats}, but report failure as
+     * `null` instead of an empty list. Without this a model reading the counts
+     * would narrate "this rule never matched" when the real state was that the
+     * analytics store is down or the `bot_rule` column does not exist yet.
+     *
+     * @returns One entry per rule that matched in the last 7 days, or null when
+     *          ClickHouse is not configured or the read failed.
+     */
+    async tryStats(): Promise<IBotRuleStats[] | null> {
+        let stats: IBotRuleStats[] | null = null;
         if (this.clickhouse) {
             try {
                 const rows = await this.clickhouse.query<{ rule_id: string; d1: string; d7: string; last_at: string }>(`
