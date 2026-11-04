@@ -20,7 +20,7 @@
 import type { Express, Router } from 'express';
 import type { ICacheService, IClickHouseService, IConsentService, ICurationService, IDatabaseService, IMenuService, IModule, IModuleMetadata, ISchedulerService, IServiceRegistry, ServiceWatchDisposer } from '@/types';
 import { registerTrafficAiTools } from './ai-tools.js';
-import { createProposeBotRuleTool } from './bot-rule-ai-tool.js';
+import { createListBotRulesTool, createProposeBotRuleTool } from './bot-rule-ai-tool.js';
 import { logger } from '../../lib/logger.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
 import { GscService } from './services/gsc.service.js';
@@ -395,10 +395,16 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
             this.logger.info('Scheduler disabled — GSC fetch job not registered');
         }
 
-        // Read-only AI tools over the analytics surface, plus the bot-rule
-        // proposal tool, whose every effect is held for a curator. Watched
-        // rather than resolved once: the ai-tools module publishes its registry
-        // during `run()`, and bootstrap order does not guarantee it has done so yet.
+        // Read-only AI tools over the analytics surface, plus the two bot-rule
+        // tools: a read of the rules and their match counts, and the proposal
+        // tool, whose every effect is held for a curator. Watched rather than
+        // resolved once: the ai-tools module publishes its registry during
+        // `run()`, and bootstrap order does not guarantee it has done so yet.
+        const listBotRulesTool = createListBotRulesTool({
+            rules: this.botRulesService,
+            analytics: this.botRuleAnalytics,
+            logger: this.logger
+        });
         const proposeBotRuleTool = createProposeBotRuleTool({
             rules: this.botRulesService,
             analytics: this.botRuleAnalytics,
@@ -410,7 +416,7 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
             this.trafficService,
             this.gscService,
             this.redirectService,
-            [proposeBotRuleTool],
+            [listBotRulesTool, proposeBotRuleTool],
             this.logger
         );
 
