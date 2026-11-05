@@ -4,9 +4,9 @@
  * Pins what the two saved-prompt AI tools promise a model. The listing leaves
  * out the prompt body and every error message, but still flags failing
  * triggers. The read finds prompts by id or case-insensitive name, returns the
- * body as an unexpanded template, cuts long bodies and errors, and reports an
- * unknown reference without failing the rest. Neither tool ever returns the
- * owner label, which is usually an email address.
+ * body as an unexpanded template one page at a time, cuts long errors, and
+ * reports an unknown reference without failing the rest. Neither tool ever
+ * returns the owner label, which is usually an email address.
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -107,7 +107,9 @@ describe('saved prompt AI tools', () => {
             ref: 'p-1',
             status: 'ok',
             prompt: 'Summarise {%chain-params%}',
+            promptOffset: 0,
             promptTruncated: false,
+            nextOffset: null,
             triggers: [expect.objectContaining({ lastRunError: 'provider said: bad request' })]
         });
         expect(result.prompts[1]).toMatchObject({ ref: 'ad HOC', status: 'ok', id: 'p-2' });
@@ -115,7 +117,7 @@ describe('saved prompt AI tools', () => {
         expect(JSON.stringify(result)).not.toContain('admin@example.test');
     });
 
-    it('cuts a long body and a long error message', async () => {
+    it('returns the first page of a long body with the offset of the next, and cuts a long error message', async () => {
         const long = savedPrompt({
             id: 'p-3',
             name: 'Long',
@@ -125,13 +127,62 @@ describe('saved prompt AI tools', () => {
         const { tools } = buildTools([long]);
 
         const result = await tools[AI_TOOL_NAMES.getPrompts].handler({ prompts: ['p-3'] }) as { prompts: Array<Record<string, unknown>> };
-        const entry = result.prompts[0] as { prompt: string; promptChars: number; promptTruncated: boolean; triggers: Array<{ lastRunError: string; typeIdFilter: unknown }> };
+        const entry = result.prompts[0] as { prompt: string; promptChars: number; promptOffset: number; promptTruncated: boolean; nextOffset: number | null; triggers: Array<{ lastRunError: string; typeIdFilter: unknown }> };
 
         expect(entry.prompt.length).toBe(20_000);
         expect(entry.promptChars).toBe(25_000);
+        expect(entry.promptOffset).toBe(0);
         expect(entry.promptTruncated).toBe(true);
+        expect(entry.nextOffset).toBe(20_000);
         expect(entry.triggers[0].lastRunError.length).toBe(2_000);
         expect(entry.triggers[0].typeIdFilter).toBeNull();
+    });
+
+    it('reads a long body to its end by following nextOffset', async () => {
+        const body = Array.from({ length: 45_000 }, (_, index) => String(index % 10)).join('');
+        const { tools } = buildTools([savedPrompt({ id: 'p-4', name: 'Longer', prompt: body })]);
+        const tool = tools[AI_TOOL_NAMES.getPrompts];
+
+        let offset: number | null = 0;
+        let assembled = '';
+        let pages = 0;
+        while (offset !== null) {
+            const result = await tool.handler({ prompts: ['p-4'], offset }) as { prompts: Array<Record<string, unknown>> };
+            const entry = result.prompts[0] as { prompt: string; promptOffset: number; promptTruncated: boolean; nextOffset: number | null };
+            expect(entry.promptOffset).toBe(offset);
+            expect(entry.promptTruncated).toBe(entry.nextOffset !== null);
+            assembled += entry.prompt;
+            offset = entry.nextOffset;
+            pages += 1;
+        }
+
+        expect(pages).toBe(3);
+        expect(assembled).toBe(body);
+    });
+
+    it('returns an empty last page for an offset past the end of a body', async () => {
+        const { tools } = buildTools([MANUAL]);
+
+        const result = await tools[AI_TOOL_NAMES.getPrompts].handler({ prompts: ['p-2'], offset: 500 }) as { prompts: Array<Record<string, unknown>> };
+
+        expect(result.prompts[0]).toEqual(expect.objectContaining({
+            status: 'ok',
+            prompt: '',
+            promptChars: MANUAL.prompt.length,
+            promptOffset: MANUAL.prompt.length,
+            promptTruncated: false,
+            nextOffset: null
+        }));
+    });
+
+    it('refuses a bad offset argument as an input error', async () => {
+        const { tools } = buildTools([MANUAL]);
+        const tool = tools[AI_TOOL_NAMES.getPrompts];
+
+        for (const offset of [-1, 1.5, '10', 1_000_001]) {
+            const result = await tool.handler({ prompts: ['p-2'], offset }) as Record<string, unknown>;
+            expect(result).toEqual({ success: false, error: expect.any(String), errorKind: 'input' });
+        }
     });
 
     it('refuses a bad prompts argument as an input error', async () => {
