@@ -32,6 +32,7 @@ import type {
     ISystemLogService
 } from '@/types';
 import { AiToolInputError, runAiToolCall } from './runAiToolCall.js';
+import { pageOfText } from './pageOfText.js';
 
 /**
  * Every tool's name, led by `ai`, the first word of the module id. Renaming one
@@ -173,30 +174,6 @@ function readOffset(value: unknown): number {
 }
 
 /**
- * Cut one page out of a value, starting at `offset`.
- *
- * The page never ends between the two halves of a UTF-16 surrogate pair, such
- * as an emoji. Splitting one would leave an unpaired half at the end of this
- * page and at the start of the next, and both would reach the model as
- * replacement characters.
- *
- * @param value - The variable's full current value.
- * @param offset - Where the page starts, in characters.
- * @returns The page text, and the offset of the next page or null when this page reaches the end.
- */
-function pageOf(value: string, offset: number): { content: string; nextOffset: number | null } {
-    const start = Math.min(offset, value.length);
-    let end = Math.min(start + MAX_VALUE_CHARS, value.length);
-    if (end < value.length && end > start) {
-        const last = value.charCodeAt(end - 1);
-        if (last >= 0xd800 && last <= 0xdbff) {
-            end -= 1;
-        }
-    }
-    return { content: value.slice(start, end), nextOffset: end < value.length ? end : null };
-}
-
-/**
  * Turn a registry summary into what `ai-list-prompt-variables` returns.
  *
  * Adds `readable` so the model can tell before calling
@@ -247,7 +224,7 @@ async function readOne(
     } else {
         try {
             const value = await registry.resolve(name);
-            const page = pageOf(value, offset);
+            const page = pageOfText(value, offset, MAX_VALUE_CHARS);
             result = {
                 name,
                 status: 'ok',
