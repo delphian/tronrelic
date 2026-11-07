@@ -30,13 +30,14 @@ import {
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { AlertCircle, Plus } from 'lucide-react';
 import type { IPlacementInput, IPlacementPatch, IWidgetPlacement } from '@/types';
+import { zoneAcceptsRouteFilter } from '@/types';
 import { Button } from '../../../../components/ui/Button';
 import { ConfirmDialog } from '../../../../components/ui/ConfirmDialog';
 import { useModal } from '../../../../components/ui/ModalProvider';
 import { SlideOver } from '../../../../components/ui/SlideOver';
 import { useToast } from '../../../../components/ui/ToastProvider';
 import { usePlacementsWorkbench } from '../../hooks/usePlacementsWorkbench';
-import { findWidgetType, placementLabel, providerLabel } from '../../lib/placementLookup';
+import { findWidgetType, findZone, placementLabel, providerLabel } from '../../lib/placementLookup';
 import type { EditorTarget } from '../../types/IEditorTarget';
 import type { IWidgetsAdminData } from '../../types/IWidgetsAdminData';
 import { PagePicker } from '../PagePicker';
@@ -129,8 +130,13 @@ export function PlacementsWorkbench({ initial }: IPlacementsWorkbenchProps) {
      * @param seed - Type, zone, container, and position already decided.
      */
     const openCreate = useCallback((seed: Omit<Extract<EditorTarget, { mode: 'create' }>, 'mode' | 'routes'>) => {
-        setEditor({ mode: 'create', routes: defaultRoutes, ...seed });
-    }, [defaultRoutes]);
+        // A site-wide zone shows the same widgets on every page, so a widget
+        // dropped there starts on Every page rather than on the page picked
+        // above the board, which that zone would refuse.
+        const zone = seed.zoneId ? findZone(workbench.zones, seed.zoneId) : undefined;
+        const routes = zone && !zoneAcceptsRouteFilter(zone.host) ? [] : defaultRoutes;
+        setEditor({ mode: 'create', routes, ...seed });
+    }, [defaultRoutes, workbench.zones]);
 
     const openEdit = useCallback((placement: IWidgetPlacement) => {
         setEditor({ mode: 'edit', placement });

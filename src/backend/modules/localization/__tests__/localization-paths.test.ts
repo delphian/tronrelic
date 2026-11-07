@@ -8,8 +8,10 @@
 import { describe, it, expect } from 'vitest';
 import type { ILocalizationPublicConfig } from '@/types';
 import {
+    canNavigateInPage,
     findPublishedLanguages,
     interpolateTranslation,
+    isOnSitePath,
     isValidRoutePattern,
     localizeHref,
     localizePath,
@@ -90,6 +92,48 @@ describe('localizeHref', () => {
         expect(localizeHref('/markets', 'en', CONFIG)).toBe('/markets');
         for (const href of ['https://example.com/markets', '//example.com/markets', '/\\example.com', 'mailto:a@b.c']) {
             expect(localizeHref(href, 'zh', CONFIG)).toBe(href);
+        }
+    });
+});
+
+describe('isOnSitePath', () => {
+    it('accepts root-relative paths on this site', () => {
+        for (const href of ['/', '/markets', '/zh/blog/post?x=1#top']) {
+            expect(isOnSitePath(href)).toBe(true);
+        }
+    });
+
+    it('rejects links that leave the site or are not paths', () => {
+        for (const href of ['https://example.com/markets', '//example.com/markets', '/\\example.com', 'mailto:a@b.c', '#top', 'markets']) {
+            expect(isOnSitePath(href)).toBe(false);
+        }
+    });
+});
+
+describe('canNavigateInPage', () => {
+    it('allows in-page navigation between pages in the same language', () => {
+        expect(canNavigateInPage('/blog/a', 'en', CONFIG)).toBe(true);
+        expect(canNavigateInPage('/zh/blog/a', 'zh', CONFIG)).toBe(true);
+        expect(canNavigateInPage('/zh/markets?sort=price#top', 'zh', CONFIG)).toBe(true);
+    });
+
+    it('requires a full page load when the link changes language', () => {
+        // A link localizeHref left unprefixed on a Chinese page, because the
+        // target is not published in Chinese, lands on an English page.
+        expect(canNavigateInPage('/about', 'zh', CONFIG)).toBe(false);
+        expect(canNavigateInPage('/zh/blog/a', 'en', CONFIG)).toBe(false);
+        expect(canNavigateInPage('/ru/markets', 'zh', CONFIG)).toBe(false);
+    });
+
+    it('reads a prefix the middleware would not route as part of an English path', () => {
+        // /ru/blog/a is not published in Russian, so the middleware serves it
+        // as an English path; the link's language is English, not Russian.
+        expect(canNavigateInPage('/ru/blog/a', 'en', CONFIG)).toBe(true);
+    });
+
+    it('requires a full page load for links that leave the site', () => {
+        for (const href of ['https://example.com/blog', '//example.com/blog', 'mailto:a@b.c', '#top']) {
+            expect(canNavigateInPage(href, 'en', CONFIG)).toBe(false);
         }
     });
 });

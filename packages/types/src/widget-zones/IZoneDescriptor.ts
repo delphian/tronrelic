@@ -26,9 +26,11 @@
  * `<WidgetZone>`, so this is metadata, not enforcement.
  *
  * - `'site'`: rendered by the root layout — reaches every route the root
- *   layout serves.
+ *   layout serves, and shows the same widgets on all of them, so its
+ *   placements take no route filter (see `zoneAcceptsRouteFilter`).
  * - `'core'`: rendered by the `(core)` route-group layout — front-of-house
- *   pages only.
+ *   pages only. Its zones refetch their widgets in the browser after an
+ *   in-page navigation, so route filters work there.
  * - `'plugin'`: rendered inside a plugin page wrapper.
  * - `'admin'`: rendered on admin / system pages. Reserved for future use.
  */

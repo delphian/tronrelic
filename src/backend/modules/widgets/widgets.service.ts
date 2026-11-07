@@ -46,7 +46,7 @@ import type {
     IPlacementService,
     IZoneLayoutConfig
 } from '@/types';
-import { DEFAULT_LANGUAGE } from '@/types';
+import { DEFAULT_LANGUAGE, zoneAcceptsRouteFilter } from '@/types';
 import type { PlacementResolver } from './placements/placement-resolver.js';
 import type { WidgetRouteCache } from './placements/WidgetRouteCache.js';
 import { ZoneLayoutService } from './zones/zone-layout.service.js';
@@ -59,6 +59,7 @@ import {
     PluginPlacementDeletionForbiddenError,
     RestoreDefaultsOnOperatorRowError,
     RouteFilterOnNestedPlacementError,
+    RouteFilterOnSiteZoneError,
     UnknownWidgetTypeError,
     UnknownZoneError,
     WidgetTypeOwnerConflictError
@@ -308,6 +309,10 @@ export class WidgetsService implements IWidgetsService {
             throw new WidgetTypeOwnerConflictError(input.id, existingOwner, ownerId);
         }
 
+        // A plugin's default placement obeys the same site-wide-zone rule
+        // as an operator's, so the invariant holds however a row is made.
+        this.assertRouteFilterAllowed(input.defaultZoneId, input.defaultRoutes);
+
         // Capture the most-recent args before any registry mutation so
         // a mid-registration failure still leaves a recoverable cache
         // entry for restore-defaults. Overwrite on every call so that
@@ -474,6 +479,12 @@ export class WidgetsService implements IWidgetsService {
             throw new UnknownZoneError(input.zoneId);
         }
 
+        // A nested row is stored without routes, so only a top-level row
+        // can break the site-wide-zone rule.
+        if (input.parentId === undefined) {
+            this.assertRouteFilterAllowed(input.zoneId, input.routes);
+        }
+
         // Nesting: when a parent is named, validate the one-level
         // contract and force the child into the parent's zone with no
         // route filter of its own (the container governs visibility).
@@ -543,6 +554,24 @@ export class WidgetsService implements IWidgetsService {
             }
         }
 
+        // A row that ends up top-level in a site-wide zone cannot carry a
+        // route filter, whether the patch adds the filter or moves an
+        // already-filtered row into the zone. The check reads the row as
+        // the patch leaves it, so a full representation echoing unchanged
+        // fields is judged on its result. A row that ends up nested is
+        // stored without routes, so it is skipped; a row detaching without
+        // routes of its own is checked below, where it inherits its
+        // container's.
+        if (patch.routes !== undefined || patch.zoneId !== undefined) {
+            const existing = await this.placements.findById(id);
+            if (!existing) return null;
+            const endsNested = typeof patch.parentId === 'string'
+                || (existing.parentId !== undefined && patch.parentId !== null);
+            if (!endsNested) {
+                this.assertRouteFilterAllowed(patch.zoneId ?? existing.zoneId, patch.routes ?? existing.routes);
+            }
+        }
+
         // Attaching to a container (parentId is a string): validate the
         // one-level contract against the row being moved and force it
         // into the parent's zone with an empty route filter. Omission
@@ -574,6 +603,7 @@ export class WidgetsService implements IWidgetsService {
             if (existing.parentId !== undefined && existing.routes.length === 0) {
                 const parent = await this.placements.findById(existing.parentId);
                 if (parent) {
+                    this.assertRouteFilterAllowed(patch.zoneId ?? existing.zoneId, parent.routes);
                     return this.placements.update(id, { ...patch, routes: [...parent.routes] });
                 }
             }
@@ -618,6 +648,27 @@ export class WidgetsService implements IWidgetsService {
             await this.placements.detachChildrenOf(id, existing.routes);
         }
         return this.placements.delete(id);
+    }
+
+    /**
+     * Refuse a route filter on a top-level placement in a site-wide zone.
+     *
+     * The zones the root layout draws (`host: 'site'`) cannot follow a
+     * visitor between pages, because Next.js does not render the root
+     * layout again on an in-page navigation, so a widget limited to some
+     * pages there would show on the wrong ones until a reload.
+     * `zoneAcceptsRouteFilter` holds the rule; this applies it. An unknown
+     * zone is left to the caller's own unknown-zone handling.
+     *
+     * @param zoneId - The zone the placement ends up in.
+     * @param routes - The route filter the placement ends up with.
+     * @throws {RouteFilterOnSiteZoneError} When the zone is site-wide and the filter is not empty.
+     */
+    private assertRouteFilterAllowed(zoneId: string, routes: ReadonlyArray<string>): void {
+        const zone = this.zones.get(zoneId);
+        if (zone && routes.length > 0 && !zoneAcceptsRouteFilter(zone.host)) {
+            throw new RouteFilterOnSiteZoneError(zoneId);
+        }
     }
 
     /**

@@ -1,7 +1,7 @@
 import { headers } from 'next/headers';
 import type { IZoneLayoutConfig } from '@/types';
-import { DEFAULT_LANGUAGE } from '@/types';
 import type { WidgetData } from './types';
+import { widgetsRequestPath } from './widgetsRequestPath';
 import { getServerSideApiUrl } from '../../lib/api-url';
 import { LANGUAGE_REQUEST_HEADER } from '../../modules/localization';
 
@@ -73,21 +73,13 @@ export async function fetchWidgetsForRoute(
 ): Promise<IWidgetBundle> {
     try {
         const backendUrl = getServerSideApiUrl();
-        let url = `${backendUrl}/api/widgets?route=${encodeURIComponent(route)}`;
-
-        // Add params if provided
-        if (Object.keys(params).length > 0) {
-            url += `&params=${encodeURIComponent(JSON.stringify(params))}`;
-        }
 
         // The page's language, so a widget whose content is translated
         // serves it in that language. Read from the header the middleware
         // sets on every request it routes (it always overwrites a value the
         // visitor sends), which spares every caller from passing it.
         const language = (await headers()).get(LANGUAGE_REQUEST_HEADER);
-        if (language && language !== DEFAULT_LANGUAGE) {
-            url += `&language=${encodeURIComponent(language)}`;
-        }
+        const url = `${backendUrl}/api${widgetsRequestPath(route, params, language)}`;
 
         const response = await fetch(url, {
             // Disable Next.js caching - widgets can have dynamic data

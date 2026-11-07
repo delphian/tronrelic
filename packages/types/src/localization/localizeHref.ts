@@ -5,6 +5,7 @@
 import type { ILocalizationPublicConfig } from './ILocalizationPublicConfig.js';
 import { DEFAULT_LANGUAGE } from './DEFAULT_LANGUAGE.js';
 import { findPublishedLanguages } from './findPublishedLanguages.js';
+import { isOnSitePath } from './isOnSitePath.js';
 import { localizePath } from './localizePath.js';
 
 /**
@@ -30,9 +31,8 @@ import { localizePath } from './localizePath.js';
  */
 export function localizeHref(href: string, language: string, config: ILocalizationPublicConfig): string {
     let localized = href;
-    const isOnSitePath = href.startsWith('/') && !href.startsWith('//') && !href.startsWith('/\\');
 
-    if (language !== DEFAULT_LANGUAGE && isOnSitePath) {
+    if (language !== DEFAULT_LANGUAGE && isOnSitePath(href)) {
         const suffixStart = href.search(/[?#]/);
         const path = suffixStart === -1 ? href : href.slice(0, suffixStart);
         const suffix = suffixStart === -1 ? '' : href.slice(suffixStart);

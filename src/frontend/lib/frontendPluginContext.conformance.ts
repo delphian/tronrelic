@@ -61,6 +61,7 @@ import type { Tbody as Impl_Tbody } from '../components/ui/Table';
 import type { Tr as Impl_Tr } from '../components/ui/Table';
 import type { Th as Impl_Th } from '../components/ui/Table';
 import type { Td as Impl_Td } from '../components/ui/Table';
+import type { SiteLink as Impl_Link } from '../components/ui/SiteLink';
 import type { Page as Impl_Page } from '../components/layout';
 import type { PageHeader as Impl_PageHeader } from '../components/layout';
 import type { Stack as Impl_Stack } from '../components/layout';
@@ -128,6 +129,7 @@ type _Conformance_Tbody = AssertConformant<NoPhantomProps<ComponentProps<IUIComp
 type _Conformance_Tr = AssertConformant<NoPhantomProps<ComponentProps<IUIComponents['Tr']>, ComponentProps<typeof Impl_Tr>>>;
 type _Conformance_Th = AssertConformant<NoPhantomProps<ComponentProps<IUIComponents['Th']>, ComponentProps<typeof Impl_Th>>>;
 type _Conformance_Td = AssertConformant<NoPhantomProps<ComponentProps<IUIComponents['Td']>, ComponentProps<typeof Impl_Td>>>;
+type _Conformance_Link = AssertConformant<NoPhantomProps<ComponentProps<IUIComponents['Link']>, ComponentProps<typeof Impl_Link>>>;
 
 // ILayoutComponents
 type _Conformance_Page = AssertConformant<NoPhantomProps<ComponentProps<ILayoutComponents['Page']>, ComponentProps<typeof Impl_Page>>>;

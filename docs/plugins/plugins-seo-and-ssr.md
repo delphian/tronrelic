@@ -12,7 +12,7 @@ The catch-all route at `src/frontend/app/[lang]/(site)/[...slug]/page.tsx` is th
 
 1. **`generateMetadata`** reads the page config's SEO fields (title, description, keywords, ogImage, ogType, canonical, structuredData, noindex) and composes a Next.js Metadata object via the existing `buildMetadata()` helper. The metadata lands in the `<head>` of the HTML response that crawlers and social scrapers receive — no JavaScript involved.
 
-2. **The page render** awaits the page config's `serverDataFetcher` if present, passing it an `IServerDataContext` containing the backend API URL, the public site URL, the requested path, and a translator for the request's language. The fetcher returns JSON-serializable data which the route forwards through `<PluginPageWithZones>` to `<PluginPageHandler>`, which passes it to the plugin component as the `initialData` prop. Errors from `serverDataFetcher` are caught and logged; the page renders without `initialData` rather than 500ing.
+2. **The page render** awaits the page config's `serverDataFetcher` if present, passing it an `IServerDataContext` containing the backend API URL, the public site URL, the requested path, a translator for the request's language, and a link localizer for that language. The fetcher returns JSON-serializable data which the route forwards through `<PluginPageWithZones>` to `<PluginPageHandler>`, which passes it to the plugin component as the `initialData` prop. Errors from `serverDataFetcher` are caught and logged; the page renders without `initialData` rather than 500ing.
 
 3. **The plugin component** is a `'use client'` React component. It receives `initialData` and uses it as the initial state for the data it would otherwise have fetched in `useEffect`. Static structure (headers, forms, descriptive text) renders during the SSR pass automatically because Next.js SSRs client components.
 
@@ -52,6 +52,7 @@ serverDataFetcher?: (ctx: IServerDataContext) => Promise<unknown>;
 | `siteUrl` | Public site URL from runtime config |
 | `path` | The concrete URL being rendered (e.g. `/blog/my-post`) — essential for wildcard pages, whose registered path (`/blog/*`) doesn't identify the resource |
 | `translator` | An `ITranslator` for the language the request was routed to, with keys scoped to your plugin id — the same namespace `context.useTranslation()` uses. See [Translating Metadata](#translating-metadata) |
+| `localizeHref` | Turns an on-site link such as `/` into the address of its target in the request's language, but only where that target is published in it, so a link never points at a translated address that returns 404. The server-side counterpart of `context.useLocalizedHref()`. See [Translating Metadata](#translating-metadata) |
 | `forwardedHeaders` | Headers that identify the visitor to the backend, currently `x-forwarded-for`. Send them on a fetch whose backend route limits requests per IP, and leave them off a cached fetch, which Next keys by its headers. See [Forwarding the Visitor's Address](#forwarding-the-visitors-address) |
 
 The returned data **must be JSON-serializable** because it crosses the React Server Components boundary. Functions, class instances, Maps, Sets, and component references will fail. Stick to plain objects, arrays, strings, numbers, booleans, and `null`.
@@ -100,6 +101,8 @@ serverMetadataFetcher: async (ctx) => {
     };
 }
 ```
+
+A link inside that metadata, such as the Home step of a `BreadcrumbList`, goes through `ctx.localizeHref` rather than having the language prefix added by hand. Your page being published in a language does not mean the page it links to is: `/zh` returns 404 unless `/` is published in Chinese on `/system/localization`. `ctx.localizeHref('/')` returns `/zh` when it is and `/` otherwise. The field is optional because an older core does not supply it, so write `ctx.localizeHref?.('/') ?? '/'`. `trp-blog` is the reference, in the breadcrumb trails of `src/frontend/frontend.ts`.
 
 ## Canonical Example: bazi-fortune
 

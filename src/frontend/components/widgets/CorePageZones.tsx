@@ -14,7 +14,7 @@
 
 import type { ReactNode } from 'react';
 import { headers } from 'next/headers';
-import { WidgetZone } from './WidgetZone';
+import { CorePageZonesView } from './CorePageZonesView';
 import { fetchWidgetsForRoute } from './fetchWidgetsForRoute';
 
 /** Props for {@link CorePageZones}. */
@@ -33,21 +33,25 @@ interface ICorePageZonesProps {
  * here receives an empty param map; a page whose widgets need route params
  * must fetch its own bundle and render its own zones.
  *
+ * The bundle is handed to `CorePageZonesView`, a client component, rather
+ * than rendered here. The `(core)` layout calls this component, and Next.js
+ * does not render a layout again on an in-page navigation, so a bundle drawn
+ * here would keep showing the first page's widgets on every page the visitor
+ * moved to without a reload. The view refetches the bundle when the path
+ * changes; see `useRouteWidgets`.
+ *
  * @param props - The page content to wrap.
- * @returns The content with both zones rendered around it during SSR.
+ * @returns The content with both zones rendered around it, server-rendered for the first page.
  */
 export async function CorePageZones({ children }: ICorePageZonesProps) {
     const headersList = await headers();
     const pathname = headersList.get('x-pathname') || '/';
-    const params: Record<string, string> = {};
 
-    const { widgets, zones } = await fetchWidgetsForRoute(pathname, params);
+    const { widgets, zones } = await fetchWidgetsForRoute(pathname, {});
 
     return (
-        <div className="core-layout">
-            <WidgetZone name="main-before" widgets={widgets} layout={zones['main-before']} route={pathname} params={params} />
+        <CorePageZonesView initial={{ route: pathname, widgets, zones }}>
             {children}
-            <WidgetZone name="main-after" widgets={widgets} layout={zones['main-after']} route={pathname} params={params} />
-        </div>
+        </CorePageZonesView>
     );
 }

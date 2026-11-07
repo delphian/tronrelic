@@ -53,6 +53,7 @@ export type { IAiToolSchemaViewProps } from './ui/IAiToolSchemaViewProps.js';
 export type { IContentTranslationsProps } from './ui/IContentTranslationsProps.js';
 export type { ITranslationStatusBadgesProps } from './ui/ITranslationStatusBadgesProps.js';
 export type { IPanelProps } from './ui/IPanelProps.js';
+export type { ILinkProps } from './ui/ILinkProps.js';
 export type { IFigureListRow } from './ui/IFigureListRow.js';
 export type { IFigureListProps } from './ui/IFigureListProps.js';
 export type { IPriceRailTick } from './ui/IPriceRailTick.js';
@@ -133,7 +134,7 @@ export type { BotRuleLabel, BotRuleMode, BotRuleStatus, BotRuleSource, IBotRuleN
 export { BOT_RULE_LABELS } from './traffic/index.js';
 export type { IAddressTagPair, IAddressTag, IAddressTagSource, IAddressTagGroup, IAddressTagRename, IAddressTagListQuery, IAddressTagSearchQuery, IAddressTagCount, IAddressTagSummaryQuery, IAddressTagSummary, IAddressTagAssertion, IAddressTagSyncResult, IAddressTagDeleteByTagResult, IAddressTagService, IAddressTagDefinition, IAddressTagSourceDefinition, IAddressTagDefinitionSyncResult, IAddressTagPrefixQuery } from './address-tags/index.js';
 export type { LanguageDirection, ILanguage, ILocalizedRoute, ITranslationKey, ITranslation, IPublicLanguage, IPublicLocalizedRoute, ILocalizationPublicConfig, ITranslationCatalog, ITranslationObservation, TranslationParams, ITranslator, ILocalizationService, TranslationStatus, ITranslationProgress, ILanguageSummary, ILocalizedRouteSummary, ITranslationRow, ITranslationPage, ITranslationNamespaceSummary, IResolvedLocalizedPath, ILocalizationSettings, ITranslationSuggestion, ITranslationSuggestionRequest, ITranslationSuggestionResult, ILanguageSwitch, ILanguageSwitchDay, ILanguageSwitchPair, ILanguageSwitchRoute, ILanguageSwitchStats } from './localization/index.js';
-export { DEFAULT_LANGUAGE, MAX_TRANSLATION_SUGGESTION_KEYS, MAX_LANGUAGE_PROMPT_LENGTH, LANGUAGE_CODE_PATTERN, matchRoutePattern, isValidRoutePattern, localizePath, localizeHref, findPublishedLanguages, resolveLocalizedPath, interpolateTranslation } from './localization/index.js';
+export { DEFAULT_LANGUAGE, MAX_TRANSLATION_SUGGESTION_KEYS, MAX_LANGUAGE_PROMPT_LENGTH, LANGUAGE_CODE_PATTERN, matchRoutePattern, isValidRoutePattern, localizePath, localizeHref, isOnSitePath, canNavigateInPage, findPublishedLanguages, resolveLocalizedPath, interpolateTranslation } from './localization/index.js';
 export type { IConsentPublicConfig, IConsentSettings, IConsentChoice, IConsentState, IConsentService, IConsentDailyCount, IConsentPageviewStats } from './consent/index.js';
 export { CONSENT_COOKIE_NAME, CONSENT_COOKIE_MAX_AGE_SECONDS, CONSENT_REGION_COUNTRIES, GOOGLE_ADS_ID_PATTERN, GOOGLE_ADS_CONVERSION_LABEL_PATTERN, isConsentRequiredCountry, parseConsentCookie, serializeConsentCookie, resolveConsentState } from './consent/index.js';
 export type { IAiTool, IAiToolInputSchema, IAiConversationMessage, IAiProvider, IAiStreamChunk, IAiQueryRecord, AiQueryMode, AiQueryOutcome, IAiQueryOptions, IAiQueryResult, AiStopReason, IModelInfo, ISavedPrompt, ISavedPromptTrigger, ISavedPromptTriggerBase, ISavedPromptCronTrigger, ISavedPromptHookTrigger, IAiTranscriptSegment, IAiThinkingSegment, IAiTextSegment, IAiToolUseSegment, IAiToolResultSegment } from './ai-tools/index.js';
@@ -331,6 +332,7 @@ export type {
     IDefineZoneOptions,
     ZoneRegisterDisposer
 } from './widget-zones/index.js';
+export { zoneAcceptsRouteFilter, SITE_ZONE_ROUTE_FILTER_REASON } from './widget-zones/index.js';
 export type {
     IWidgetType,
     IWidgetPlacementContext,
