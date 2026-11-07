@@ -73,9 +73,13 @@ export function localizedAbsoluteUrl(siteUrl: string, path: string = '/', langua
  * recognise only codes in that form, so a bare `zh` would be ignored and the
  * page read as the default `en_US`. Codes listed here are the ones the site
  * can serve without a region; `zh` is Simplified Chinese as used in China.
+ * A language enabled on `/system/localization` with a bare code needs an
+ * entry here, or its pages send no `og:locale` at all.
  */
 const OPEN_GRAPH_LOCALES: Record<string, string> = {
   en: 'en_US',
+  ru: 'ru_RU',
+  vi: 'vi_VN',
   zh: 'zh_CN',
   'zh-hans': 'zh_CN',
   'zh-hant': 'zh_TW'

@@ -144,12 +144,21 @@ function editorRows(source: string, draft: string): number {
  * button, Ctrl+Enter, and Save all use the same test, so Save all never sends
  * a row whose own button would be disabled.
  *
+ * A stale row stays savable when its text is unchanged. Its English changed
+ * after the translation was saved, and often the old translation is still
+ * right, so Suggest returns the same text. Saving it again is the only way to
+ * confirm that: the backend records a new save time, which is what marks the
+ * translation current. Requiring a change here left such a row stale with its
+ * Save button disabled and no way to clear it.
+ *
  * @param row - A listing row.
  * @param draft - The text currently in the row's editor.
- * @returns True when the text is non-empty and differs from what is stored.
+ * @returns True when the text is non-empty and either differs from what is
+ *          stored or confirms a stale translation.
  */
 function hasSavableDraft(row: ITranslationRow, draft: string): boolean {
-    return draft.trim() !== '' && draft !== (row.translation?.text ?? '');
+    const changed = draft !== (row.translation?.text ?? '');
+    return draft.trim() !== '' && (changed || row.status === 'stale');
 }
 
 /**

@@ -111,6 +111,11 @@ describe('toOpenGraphLocale', () => {
         expect(toOpenGraphLocale('zh-Hant')).toBe('zh_TW');
     });
 
+    it('maps the bare codes of the other languages the site serves', () => {
+        expect(toOpenGraphLocale('ru')).toBe('ru_RU');
+        expect(toOpenGraphLocale('vi')).toBe('vi_VN');
+    });
+
     it('converts a code that names its region', () => {
         expect(toOpenGraphLocale('pt-BR')).toBe('pt_BR');
         expect(toOpenGraphLocale('zh-tw')).toBe('zh_TW');
