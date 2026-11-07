@@ -14,6 +14,8 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { ISystemLogService } from '@/types';
+import { SITE_ZONE_ROUTE_FILTER_REASON } from '@/types';
+import { RouteFilterOnSiteZoneError } from '../widgets.errors.js';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 import { WidgetsService } from '../widgets.service.js';
 import { ZoneRegistry } from '../zones/zone-registry.js';
@@ -519,6 +521,75 @@ describe('WidgetsService.updatePlacement', () => {
             { order: 10 }
         );
         expect(result).toBeNull();
+    });
+});
+
+describe('WidgetsService route filters in site-wide zones', () => {
+    /**
+     * Build a service with one site-wide zone and one page zone, and a
+     * widget type to place in them.
+     *
+     * The root layout draws the site-wide zone and does not render again on
+     * an in-page navigation, so a widget limited to some pages there would
+     * show on the wrong pages; the page zone accepts route filters.
+     *
+     * @returns The service under test.
+     */
+    function buildWithZones() {
+        const { widgets } = buildWidgetsService();
+        widgets.registerZone({ id: 'site-top', label: 'Site top', description: 's', host: 'site' }, 'core');
+        widgets.registerZone({ id: 'main-after', label: 'm', description: 'm', host: 'core' }, 'core');
+        widgets.registerType({ id: 't', label: 'T', description: 'T', defaultDataFetcher: async () => ({}) }, 'p');
+        return widgets;
+    }
+
+    it('refuses to create a placement limited to some pages in a site-wide zone, explaining why', async () => {
+        const widgets = buildWithZones();
+        const attempt = widgets.createPlacement({ typeId: 't', zoneId: 'site-top', routes: ['/markets'] });
+        await expect(attempt).rejects.toBeInstanceOf(RouteFilterOnSiteZoneError);
+        await expect(widgets.createPlacement({ typeId: 't', zoneId: 'site-top', routes: ['/markets'] }))
+            .rejects.toThrow(SITE_ZONE_ROUTE_FILTER_REASON);
+    });
+
+    it('accepts a site-wide placement shown on every page, and route filters in page zones', async () => {
+        const widgets = buildWithZones();
+        await expect(widgets.createPlacement({ typeId: 't', zoneId: 'site-top', routes: [] })).resolves.toBeTruthy();
+        await expect(widgets.createPlacement({ typeId: 't', zoneId: 'main-after', routes: ['/markets'] })).resolves.toBeTruthy();
+    });
+
+    it('refuses a patch that adds a route filter to a site-wide placement', async () => {
+        const widgets = buildWithZones();
+        const placement = await widgets.createPlacement({ typeId: 't', zoneId: 'site-top', routes: [] });
+        await expect(widgets.updatePlacement(placement.id, { routes: ['/markets'] }))
+            .rejects.toBeInstanceOf(RouteFilterOnSiteZoneError);
+    });
+
+    it('refuses a patch that moves a filtered placement into a site-wide zone', async () => {
+        const widgets = buildWithZones();
+        const placement = await widgets.createPlacement({ typeId: 't', zoneId: 'main-after', routes: ['/markets'] });
+        await expect(widgets.updatePlacement(placement.id, { zoneId: 'site-top' }))
+            .rejects.toBeInstanceOf(RouteFilterOnSiteZoneError);
+    });
+
+    it('accepts a full patch of a site-wide placement that keeps it on every page', async () => {
+        // The admin editor sends `routes` on every save, so an empty filter
+        // echoed back with another change must still pass.
+        const widgets = buildWithZones();
+        const placement = await widgets.createPlacement({ typeId: 't', zoneId: 'site-top', routes: [] });
+        const updated = await widgets.updatePlacement(placement.id, { zoneId: 'site-top', routes: [], order: 5 });
+        expect(updated?.order).toBe(5);
+    });
+
+    it('refuses a plugin default placement limited to some pages in a site-wide zone', async () => {
+        const widgets = buildWithZones();
+        await expect(widgets.registerWidget({
+            id: 'p:banner',
+            label: 'Banner',
+            description: 'Banner',
+            defaultZoneId: 'site-top',
+            defaultRoutes: ['/markets'],
+            defaultDataFetcher: async () => ({})
+        }, 'p')).rejects.toBeInstanceOf(RouteFilterOnSiteZoneError);
     });
 });
 

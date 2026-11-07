@@ -12,7 +12,7 @@ Direct imports from `src/frontend/` break Next.js module resolution and couple p
 interface IFrontendPluginContext {
     pluginId: string;              // namespacing for events and API routes
     layout: ILayoutComponents;     // Page, PageHeader, Stack, Grid, Section, SubMenu
-    ui: IUIComponents;             // Card, Panel, FigureList, Badge, Button, CopyButton, IconButton, Switch, Input, Select, Textarea, Skeleton, StatTile, StatGrid, ClientTime, Tooltip, TronAddress, TronTransactionId, IconPickerModal, ConfirmDialog, AccountPicker, AddressSelector, Table family
+    ui: IUIComponents;             // Card, Panel, FigureList, Badge, Button, CopyButton, IconButton, Switch, Input, Select, Textarea, Skeleton, StatTile, StatGrid, ClientTime, Tooltip, TronAddress, TronTransactionId, IconPickerModal, ConfirmDialog, AccountPicker, AddressSelector, Table family, Link
     charts: IChartComponents;      // LineChart, BarChart, PriceRail
     system: ISystemComponents;     // SchedulerMonitor, CollectionBrowser, ClickHouseTableBrowser, SystemLogsMonitor, AiToolSchemaView, ContentTranslations, TranslationStatusBadges (admin)
     api: IApiClient;               // get/post/put/patch/delete with runtime base URL
@@ -219,9 +219,11 @@ A helper that builds visitor text outside a component, such as a function assemb
 
 **Links.** `useLocalizedHref()` returns a function that points an on-site link at the page's language. On `/zh/resource-markets`, a plain `href="/"` would send the visitor back to the English site. Render `href={localize('/')}` instead: the prefix is added only when the target route is published in that language, and English pages and off-site links pass through unchanged, so call it on every on-site link.
 
+Render a link to another page of the site with `ui.Link` rather than a plain `<a>`. A plain anchor reloads the whole site on every click; `ui.Link` navigates without the reload where it is safe to, and falls back to a plain anchor for a link that leaves the site or changes language, which needs a full page load. Pass it an href you have already localized, since it does not add the prefix itself. Keep plain `<a>` elements for links to files, feeds, and API routes, which are not pages. See [plugins-frontend-context-ui.md](./plugins-frontend-context-ui.md#links-uilink).
+
 ```typescript
 const localize = context.useLocalizedHref();
-return <a href={localize(`/resource-markets/${slug}`)}>{name}</a>;
+return <context.ui.Link href={localize(`/resource-markets/${slug}`)}>{name}</context.ui.Link>;
 ```
 
 ## Detail Documents

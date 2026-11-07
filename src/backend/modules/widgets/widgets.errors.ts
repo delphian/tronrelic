@@ -10,6 +10,8 @@
  * @module backend/modules/widgets/widgets.errors
  */
 
+import { SITE_ZONE_ROUTE_FILTER_REASON } from '@/types';
+
 /**
  * Base class for widget-service errors so callers that only care that
  * "this came from the widgets service" can narrow with a single check.
@@ -95,6 +97,23 @@ export class RouteFilterOnNestedPlacementError extends WidgetsServiceError {
         super(
             'A placement nested in a layout group cannot carry its own routes — the container decides where the group renders. Send parentId: null in the same patch to detach the row and scope it.'
         );
+    }
+}
+
+/**
+ * Thrown when a placement in a site-wide zone (one `zoneAcceptsRouteFilter`
+ * refuses, the zones the root layout draws) would end up with a route
+ * filter. Next.js does not render the root layout again when a visitor moves
+ * between pages without a reload, so a widget limited to some pages there
+ * keeps showing, or keeps missing, from the page the visitor arrived on.
+ * Storing the filter would leave the operator believing the widget is
+ * scoped when visitors see it on the wrong pages, so the write is refused.
+ * The message is `SITE_ZONE_ROUTE_FILTER_REASON`, the same text the admin
+ * editor shows. HTTP maps this to 400.
+ */
+export class RouteFilterOnSiteZoneError extends WidgetsServiceError {
+    constructor(public readonly zoneId: string) {
+        super(SITE_ZONE_ROUTE_FILTER_REASON);
     }
 }
 

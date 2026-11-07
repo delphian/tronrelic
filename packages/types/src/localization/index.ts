@@ -44,6 +44,8 @@ export { matchRoutePattern } from './matchRoutePattern.js';
 export { isValidRoutePattern } from './isValidRoutePattern.js';
 export { localizePath } from './localizePath.js';
 export { localizeHref } from './localizeHref.js';
+export { isOnSitePath } from './isOnSitePath.js';
+export { canNavigateInPage } from './canNavigateInPage.js';
 export { findPublishedLanguages } from './findPublishedLanguages.js';
 export { resolveLocalizedPath } from './resolveLocalizedPath.js';
 export { interpolateTranslation } from './interpolateTranslation.js';

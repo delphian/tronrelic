@@ -39,6 +39,7 @@ import { LazyIconPickerModal as IconPickerModal } from '../components/ui/IconPic
 import { AccountPicker } from '../components/ui/AccountPicker';
 import { AddressSelector } from '../components/ui/AddressSelector';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../components/ui/Table';
+import { SiteLink } from '../components/ui/SiteLink';
 import { useModal as useModalHook } from '../components/ui/ModalProvider';
 import { useToast as useToastHook } from '../components/ui/ToastProvider';
 import { LineChart } from '../features/charts/components/LineChart';
@@ -423,7 +424,8 @@ export function FrontendPluginContextProvider({ children }: { children: React.Re
             Tbody,
             Tr,
             Th,
-            Td
+            Td,
+            Link: SiteLink
         };
 
         const layout: ILayoutComponents = {
@@ -553,7 +555,8 @@ export function createPluginContext(pluginId: string): IFrontendPluginContext {
         Tbody,
         Tr,
         Th,
-        Td
+        Td,
+        Link: SiteLink
     };
 
     const layout: ILayoutComponents = {

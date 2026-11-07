@@ -9,6 +9,7 @@ import type { IAiToolSchemaViewProps } from '../ui/IAiToolSchemaViewProps.js';
 import type { IContentTranslationsProps } from '../ui/IContentTranslationsProps.js';
 import type { ITranslationStatusBadgesProps } from '../ui/ITranslationStatusBadgesProps.js';
 import type { IPanelProps } from '../ui/IPanelProps.js';
+import type { ILinkProps } from '../ui/ILinkProps.js';
 import type { IFigureListProps } from '../ui/IFigureListProps.js';
 import type { IPriceRailProps } from '../ui/IPriceRailProps.js';
 import type { ITranslator } from '../localization/ITranslator.js';
@@ -788,6 +789,14 @@ export interface IUIComponents {
         rowSpan?: number;
         className?: string;
     }>;
+
+    /**
+     * Link to another page of the site that navigates without a full page
+     * load where it is safe to, and falls back to a plain `<a>` where it is
+     * not. Pass an href already localized with `context.useLocalizedHref()`;
+     * prefetching is off unless `prefetch` is set. See {@link ILinkProps}.
+     */
+    Link: ComponentType<ILinkProps>;
 }
 
 /**

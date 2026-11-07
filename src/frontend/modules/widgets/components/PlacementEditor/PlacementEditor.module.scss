@@ -103,6 +103,24 @@
     min-width: 0;
 }
 
+/* Explains why a site-wide zone keeps "Every page". Warning-toned rather
+   than an error, because nothing the operator typed is wrong; the choice is
+   simply not available in this zone. */
+.route_notice {
+    display: inline-flex;
+    align-items: flex-start;
+    gap: var(--gap-2xs);
+    margin: 0;
+    font-size: var(--field-message-font-size);
+    line-height: var(--line-height-normal);
+    color: var(--color-warning-text);
+}
+
+.route_notice svg {
+    flex-shrink: 0;
+    margin-top: var(--gap-2xs);
+}
+
 .routes {
     display: flex;
     flex-direction: column;

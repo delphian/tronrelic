@@ -8,7 +8,10 @@ import { CorePageZones } from '../../../../components/widgets';
  * `(core)` route group without modifying page code. The `main-before` and
  * `main-after` zones come from `CorePageZones`, which the catch-all route also
  * uses for menu category and markdown pages, so a placement behaves the same
- * whichever route serves the page.
+ * whichever route serves the page. Next.js does not render this layout again
+ * when a visitor moves between its pages without a reload, so the zones
+ * refetch their widgets in the browser when the path changes; see
+ * `useRouteWidgets`.
  *
  * @param props - The page content the route group renders.
  * @returns The page wrapped in the two core widget zones.

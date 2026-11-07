@@ -25,6 +25,9 @@ export type {
     IZoneSnapshotRecord
 } from './IZoneRegistry.js';
 
+export { zoneAcceptsRouteFilter } from './zoneAcceptsRouteFilter.js';
+export { SITE_ZONE_ROUTE_FILTER_REASON } from './SITE_ZONE_ROUTE_FILTER_REASON.js';
+
 export type {
     IZoneLayoutConfig,
     ZoneFlexDirection,

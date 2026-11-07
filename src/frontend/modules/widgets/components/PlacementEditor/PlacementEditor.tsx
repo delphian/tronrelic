@@ -15,7 +15,7 @@
  */
 
 import { useCallback, useEffect, useId, useMemo, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
-import { AlertCircle, RefreshCw, Trash2, X } from 'lucide-react';
+import { AlertCircle, Info, RefreshCw, Trash2, X } from 'lucide-react';
 import type {
     IPlacementInput,
     IPlacementPatch,
@@ -26,6 +26,7 @@ import type {
     WidgetShowOn,
     WidgetTitleSize
 } from '@/types';
+import { SITE_ZONE_ROUTE_FILTER_REASON, zoneAcceptsRouteFilter } from '@/types';
 import { Button } from '../../../../components/ui/Button';
 import { Field } from '../../../../components/ui/Field';
 import { Input } from '../../../../components/ui/Input';
@@ -127,6 +128,9 @@ export function PlacementEditor({
     const [routes, setRoutes] = useState<string[]>(seedRoutes);
     const [routeDraft, setRouteDraft] = useState('');
     const [routeError, setRouteError] = useState<string | null>(null);
+    // Set when the operator tries "Only some pages" in a site-wide zone, so
+    // the reason it is unavailable is shown beside the control.
+    const [routeNotice, setRouteNotice] = useState(false);
     const [title, setTitle] = useState<string>(initial?.title ?? '');
     const [titleUrl, setTitleUrl] = useState<string>(initial?.titleUrl ?? '');
     const [titleSize, setTitleSize] = useState<WidgetTitleSize>(initial?.titleSize ?? 'heading-md');
@@ -315,6 +319,15 @@ export function PlacementEditor({
             setRouteError('Add at least one page, or choose Every page.');
             return;
         }
+        // A row limited to some pages that was moved into a site-wide zone
+        // would be refused by the server with the same reason. The notice
+        // beside the Pages control already gives it, so keep the form as it
+        // is rather than sending a request that cannot succeed.
+        const targetZone = findZone(zones, zoneId);
+        if (!nested && routeScope === 'some' && targetZone && !zoneAcceptsRouteFilter(targetZone.host)) {
+            setRouteNotice(true);
+            return;
+        }
         setSaveError(null);
         setSaving(true);
 
@@ -372,6 +385,10 @@ export function PlacementEditor({
     const canSubmit = typeId.length > 0 && zoneId.length > 0 && !saving;
     const zone = findZone(zones, zoneId);
     const routesId = `${formId}-routes`;
+    // Site-wide zones show the same widgets on every page; see
+    // zoneAcceptsRouteFilter for why.
+    const siteWideZone = zone !== undefined && !zoneAcceptsRouteFilter(zone.host);
+    const showSiteWideNotice = !nested && siteWideZone && (routeNotice || routeScope === 'some');
 
     /**
      * The settings body for the current type and mode.
@@ -484,7 +501,7 @@ export function PlacementEditor({
                             id={`${formId}-zone`}
                             size="sm"
                             value={zoneId}
-                            onChange={(e) => setZoneId(e.target.value)}
+                            onChange={(e) => { setZoneId(e.target.value); setRouteNotice(false); }}
                             disabled={saving}
                             required
                         >
@@ -526,14 +543,27 @@ export function PlacementEditor({
                             value={routeScope}
                             disabled={saving}
                             onChange={(scope) => {
-                                setRouteScope(scope);
-                                if (scope === 'some' && routes.length === 0 && selectedRoute) setRoutes([selectedRoute]);
+                                // In a site-wide zone the choice stays on Every
+                                // page and the reason is shown instead.
+                                if (scope === 'some' && siteWideZone) {
+                                    setRouteNotice(true);
+                                } else {
+                                    setRouteNotice(false);
+                                    setRouteScope(scope);
+                                    if (scope === 'some' && routes.length === 0 && selectedRoute) setRoutes([selectedRoute]);
+                                }
                             }}
                             options={[
                                 { id: 'all', label: 'Every page' },
                                 { id: 'some', label: 'Only some pages' }
                             ]}
                         />
+                        {showSiteWideNotice && (
+                            <p className={styles.route_notice} role="status">
+                                <Info size={14} aria-hidden="true" />
+                                <span>{SITE_ZONE_ROUTE_FILTER_REASON}</span>
+                            </p>
+                        )}
                         {routeScope === 'some' && (
                             <Field
                                 htmlFor={routesId}

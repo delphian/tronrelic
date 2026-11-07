@@ -51,6 +51,26 @@ export interface IServerDataContext {
     translator: ITranslator;
 
     /**
+     * Point an on-site link at the version of its target in the request's
+     * language, but only where that target is published in it.
+     *
+     * A translated page that links to another page, such as a breadcrumb's
+     * Home step in structured data, cannot just add the language prefix:
+     * `/zh` returns 404 unless the route covering `/` is published in
+     * Chinese, and that is decided on `/system/localization` independently of
+     * the page doing the linking. This applies the same rule as the
+     * middleware and `context.useLocalizedHref()`, so a link resolves to the
+     * translated page where one exists and to the English page otherwise.
+     * Absolute URLs, and every link on an English page, are returned
+     * unchanged.
+     *
+     * Optional so plugins compiled against older core versions (which did not
+     * supply it) still typecheck; fall back to the unprefixed path when it is
+     * absent: `ctx.localizeHref?.('/') ?? '/'`.
+     */
+    localizeHref?: (href: string) => string;
+
+    /**
      * Headers that identify the visitor to the backend. Send them on a fetch
      * whose backend route limits requests per IP:
      * `fetch(url, { headers: { ...ctx.forwardedHeaders } })`.

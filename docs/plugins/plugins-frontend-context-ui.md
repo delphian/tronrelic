@@ -14,7 +14,7 @@ Layout components carry typed props — `<layout.Stack gap="md">` fails compilat
 interface IFrontendPluginContext {
     pluginId: string;              // Used internally for namespacing events and API routes
     layout: ILayoutComponents;     // Page, PageHeader, Stack, Grid, Section, SubMenu
-    ui: IUIComponents;             // Card, Panel, FigureList, Badge, Button, CopyButton, IconButton, Switch, Input, Field, Skeleton, ClientTime, Tooltip, TronAddress, TronContractAddress, TronTransactionId, IconPickerModal, Table family
+    ui: IUIComponents;             // Card, Panel, FigureList, Badge, Button, CopyButton, IconButton, Switch, Input, Field, Skeleton, ClientTime, Tooltip, TronAddress, TronContractAddress, TronTransactionId, IconPickerModal, Table family, Link
     charts: IChartComponents;      // LineChart, BarChart, PriceRail
     system: ISystemComponents;     // SchedulerMonitor, CollectionBrowser, ClickHouseTableBrowser, SystemLogsMonitor, AiToolSchemaView (admin)
     api: IApiClient;               // get/post/put/patch/delete
@@ -126,6 +126,23 @@ Six related components matching the `/system/*` admin tables. Compose them to in
 | `Td` | `muted?`, `numeric?`, `colSpan?`, `rowSpan?`, `className?`, `children?` |
 
 `Tr.hasError` applies the error surface tone; `Tr.isExpanded` renders the muted "details drawer" background. `Th.width="shrink"` sizes a column to its content (good for status badges/action buttons); `"expand"` forces it to fill remaining space. `Td.muted` dims secondary metadata. `Table.stickyHeader` pins the header row and bounds the wrapper to `--table-sticky-max-height` (70vh default), making it the vertical scroll container — use it on any table long enough to scroll its own column labels out of view. Set `numeric` on a `Th` **and** every `Td` beneath it for quantities read down a column: it right-aligns and renders tabular figures so values line up on their least significant digit. Leave it off for text, addresses, and dates.
+
+### Links (`ui.Link`)
+
+| Component | Props |
+|-----------|-------|
+| `Link` | `href: string` (required, already localized), `prefetch?: boolean` (default `false`), plus every standard anchor attribute (`className`, `rel`, `title`, `aria-*`, `onClick`, ...) and `children?` |
+
+A plain `<a href>` reloads the whole site on every click: the HTML, the JavaScript start-up, the WebSocket connection, and on a translated page the full translation catalog. `Link` uses Next.js navigation instead, the way core's menus do, so only the new page's content is fetched. Its props are declared once as `ILinkProps` in the types package.
+
+It renders a plain `<a>` in two cases, decided by `canNavigateInPage` in the types package. A link that leaves the site always does. So does a link whose target is in a different language from the current page, because changing language needs a full page load to switch `<html lang>`, the catalog, and the navigation together. That happens more than it sounds: on a Chinese page, `localize()` returns the English address for a page that is not published in Chinese.
+
+Build the href with `context.useLocalizedHref()` first. `Link` does not add the prefix, because localizing an address that already carries one can double it. Prefetching is off by default because a long list, such as the blog archive, would otherwise send a burst of background requests that the per-visitor rate limit refuses; set `prefetch` only on a few links a visitor is likely to follow. Use it for links to pages, and keep plain `<a>` elements for files, feeds, and API routes.
+
+```tsx
+const localize = context.useLocalizedHref();
+return <context.ui.Link href={localize(`/blog/${post.slug}`)}>{post.title}</context.ui.Link>;
+```
 
 ## Charts (`context.charts`)
 

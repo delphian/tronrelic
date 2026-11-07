@@ -38,6 +38,7 @@ import {
     PluginPlacementDeletionForbiddenError,
     RestoreDefaultsOnOperatorRowError,
     RouteFilterOnNestedPlacementError,
+    RouteFilterOnSiteZoneError,
     UnknownWidgetTypeError,
     UnknownZoneError
 } from '../widgets.errors.js';
@@ -340,7 +341,8 @@ export class PlacementsController {
             if (
                 err instanceof UnknownWidgetTypeError ||
                 err instanceof UnknownZoneError ||
-                err instanceof InvalidParentPlacementError
+                err instanceof InvalidParentPlacementError ||
+                err instanceof RouteFilterOnSiteZoneError
             ) {
                 res.status(400).json({ success: false, error: err.message });
                 return;
@@ -402,7 +404,8 @@ export class PlacementsController {
         } catch (err) {
             if (err instanceof UnknownZoneError
                 || err instanceof InvalidParentPlacementError
-                || err instanceof RouteFilterOnNestedPlacementError) {
+                || err instanceof RouteFilterOnNestedPlacementError
+                || err instanceof RouteFilterOnSiteZoneError) {
                 res.status(400).json({ success: false, error: err.message });
                 return;
             }
