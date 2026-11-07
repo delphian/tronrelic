@@ -22,7 +22,7 @@ Instead, please report security issues through one of these channels:
    - Provide detailed information about the vulnerability
 
 2. **Email**
-   - Send details to: [security contact - update with your email]
+   - Send details to: bryan.hazelbaker@gmail.com
    - Include "SECURITY" in the subject line
    - Provide detailed reproduction steps
 
