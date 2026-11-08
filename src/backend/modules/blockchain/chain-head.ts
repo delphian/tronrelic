@@ -64,8 +64,9 @@ export function resolveCursorBlock(value: unknown): number | null {
  *
  * Note what this deliberately does not do: it never adjusts the height for time
  * elapsed since it was recorded. A height above the real chain head would
- * schedule blocks TRON has not produced, and each one costs six retries in the
- * TronGrid client before landing in cooldown and the backfill queue as a
+ * schedule blocks TRON has not produced. Each one costs the TronGrid client's
+ * not-yet-served retries, about seven seconds of a worker that fetches one
+ * block at a time, before landing in cooldown and the backfill queue as a
  * phantom entry. Falling a few blocks short until the head answers is the
  * cheaper failure by a wide margin.
  *

@@ -2140,9 +2140,9 @@ export class BlockchainService implements IBlockchainService {
      *
      * The height is used exactly as it was recorded, never extrapolated from
      * elapsed time. A height above the real chain head would schedule blocks
-     * TRON has not produced, and each one costs six retries in the TronGrid
-     * client before landing in cooldown and the backfill queue as a phantom
-     * entry.
+     * TRON has not produced, and each one costs the TronGrid client's
+     * not-yet-served retries (about seven seconds) before landing in cooldown
+     * and the backfill queue as a phantom entry.
      *
      * The fallback is refused when there is no usable cursor. In that case
      * `getLastProcessedBlock` seeds the cursor *from* the height rather than

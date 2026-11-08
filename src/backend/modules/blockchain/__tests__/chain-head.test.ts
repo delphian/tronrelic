@@ -67,8 +67,8 @@ describe('resolveCachedHead', () => {
     it('returns the height exactly as recorded, never adjusted for elapsed time', () => {
         // Extrapolating forward is the obvious next idea and the harmful one: a
         // height above the real chain head schedules blocks TRON has not
-        // produced, and each costs six client retries before landing in
-        // cooldown and the backfill queue as a phantom entry.
+        // produced, and each costs the client's not-yet-served retries before
+        // landing in cooldown and the backfill queue as a phantom entry.
         expect(resolveCachedHead(1, CACHED_HEIGHT)).toBe(CACHED_HEIGHT);
     });
 });

@@ -7,6 +7,7 @@ import { parseJsonExactIntegers } from '../../lib/parseJsonExactIntegers.js';
 import { logger } from './logger.js';
 import type { ITrc10, ITrc20TokenInfo, IActivatingTransaction, ITransactionReceipt } from '@/types';
 import { decodeAbiDecimals, decodeAbiString } from './trc20-metadata.js';
+import { BlockNotYetAvailableError } from './BlockNotYetAvailableError.js';
 
 /**
  * TRON's all-zero address (hex `41` followed by twenty zero bytes).
@@ -63,6 +64,24 @@ function parseExactResponseBody(data: unknown, _headers?: unknown, status?: numb
 const EXACT_INTEGER_RESPONSE = {
     responseType: 'text' as const,
     transformResponse: [parseExactResponseBody]
+};
+
+/**
+ * How `getBlockByNumber()` retries a block TronGrid has not served yet.
+ *
+ * A node that answers a block request before it holds the block replies with an
+ * empty body rather than an error. The block exists on the chain, because sync
+ * never asks above the head TronGrid reported, so the gap closes within
+ * seconds. Three retries at roughly 1, 2, and 4 seconds cover that delay. The
+ * budget is deliberately smaller than the six transport retries: the worker
+ * fetches one block at a time, so a block TronGrid cannot serve for longer
+ * stalls every fetch behind it, and the backfill queue is the better place to
+ * wait.
+ */
+const BLOCK_NOT_YET_AVAILABLE_RETRY = {
+    retries: 3,
+    delayMs: 1000,
+    factor: 2
 };
 
 /**
@@ -722,16 +741,60 @@ export class TronGridClient {
      * 2^53, and a plain parse would round them before sync or the ClickHouse
      * chain-data copy sees them. Such a field arrives as a decimal string.
      *
+     * Two kinds of failure are retried, each on its own schedule. A transport
+     * failure (a network error, a 5xx, a 429) is retried up to six times by
+     * the inner loop. A successful reply with no block, which is what a node
+     * sends for a block it has not served yet, is retried up to three times by
+     * the outer loop, see {@link BLOCK_NOT_YET_AVAILABLE_RETRY}. Before the
+     * outer loop existed, that empty reply passed straight through as a
+     * success and sync failed the block on its missing timestamp without
+     * trying again.
+     *
      * @param blockNumber - The height to fetch.
-     * @returns The block exactly as java-tron renders it.
+     * @returns The block exactly as java-tron renders it, always with a header
+     *          timestamp.
+     * @throws {BlockNotYetAvailableError} When TronGrid still sends no block
+     *         after the not-yet-served retries, so the caller can fail the
+     *         block into the backfill queue.
      */
     async getBlockByNumber(blockNumber: number): Promise<TronGridBlock> {
-        return retry(() => this.post<TronGridBlock>('/wallet/getblockbynum', { num: blockNumber }, { exactIntegers: true }), {
+        return retry(() => this.fetchServedBlock(blockNumber), {
+            ...BLOCK_NOT_YET_AVAILABLE_RETRY,
+            shouldRetry: (error) => error instanceof BlockNotYetAvailableError,
+            onRetry: (attempt, _error, delayMs) => logger.warn(
+                { attempt, blockNumber, delayMs },
+                'TronGrid has not served block yet; retrying getBlockByNumber'
+            )
+        });
+    }
+
+    /**
+     * Fetch one block and reject a reply that carries no block.
+     *
+     * Kept apart from {@link getBlockByNumber} so the transport retry and the
+     * not-yet-served retry stay two separate loops with separate budgets. The
+     * inner retry only fires on errors, and an empty reply is not one, so this
+     * method turns it into a {@link BlockNotYetAvailableError} for the outer
+     * loop to act on.
+     *
+     * @param blockNumber - The height to fetch, also carried on the error so
+     *                      the log line names it.
+     * @returns The block, confirmed to have a header timestamp.
+     * @throws {BlockNotYetAvailableError} When the reply has no header
+     *         timestamp.
+     */
+    private async fetchServedBlock(blockNumber: number): Promise<TronGridBlock> {
+        const block = await retry(() => this.post<TronGridBlock>('/wallet/getblockbynum', { num: blockNumber }, { exactIntegers: true }), {
             retries: 6,
             delayMs: 1000,
             factor: 2,
             onRetry: (attempt, error) => logger.warn({ attempt, error, blockNumber }, 'Retrying TronGrid getBlockByNumber')
         });
+        const timestamp = block?.block_header?.raw_data?.timestamp;
+        if (timestamp === undefined || timestamp === null) {
+            throw new BlockNotYetAvailableError(blockNumber);
+        }
+        return block;
     }
 
     /**
