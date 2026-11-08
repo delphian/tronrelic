@@ -116,7 +116,13 @@ interface BuildMetadataOptions {
   /** Public site URL from runtime config (e.g., "https://tronrelic.com") */
   siteUrl: string;
   title: string;
-  description: string;
+  /**
+   * Page summary for the description, Open Graph, and Twitter tags. Optional
+   * because CMS pages may be saved without one; leaving it out omits those
+   * tags rather than emitting an empty description, while the canonical URL
+   * and social image are still set.
+   */
+  description?: string;
   path?: string;
   image?: string;
   /**

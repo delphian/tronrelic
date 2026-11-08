@@ -169,11 +169,12 @@ export const HOOKS = {
          * and return the next list — conventionally by concatenating their own
          * entries onto the input. Seeded with an empty array by the endpoint.
          *
-         * The seam exists so a plugin owning many crawlable resources (a blog's
-         * posts, a forum's threads) can surface per-resource URLs core cannot
-         * enumerate without reaching into the plugin's private storage — which
-         * the plugin-coupling rule forbids. Grouped under the `http.api` track
-         * because it fires inside the sitemap-data request.
+         * This seam is the only way a plugin URL reaches the sitemap. Core
+         * never names or guesses a plugin's pages, because they are under the
+         * plugin's authority: a plugin declares its landing page here, plus
+         * any per-resource URLs it publishes (a blog's posts), and a plugin
+         * that declares nothing is left out. Grouped under the `http.api`
+         * track because it fires inside the sitemap-data request.
          */
         sitemapEntries: defineHook<ISitemapHookContext, ReadonlyArray<ISitemapEntry>, 'waterfall'>({
             id: 'http.sitemapEntries',
@@ -183,8 +184,9 @@ export const HOOKS = {
             description:
                 'Contribute sitemap URLs while GET /api/sitemap-data assembles the sitemap. Handlers thread ' +
                 'an array of { path, lastModified?, changeFrequency?, priority? } entries; core absolutizes ' +
-                'each root-relative path against the runtime site origin. For plugins that own many crawlable ' +
-                'resources (blog posts, forum threads) core cannot enumerate on its own.'
+                'each root-relative path against the runtime site origin. The only source of plugin URLs: ' +
+                'a plugin declares its landing page and any per-resource pages (blog posts) here, because ' +
+                'core never guesses plugin URLs.'
         }),
         /**
          * Observer fired after an admin deletes a user group, once its members

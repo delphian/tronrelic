@@ -7,14 +7,21 @@
  *
  * Returns:
  * - Published CMS page slugs with updatedAt timestamps
- * - Active plugin page paths
+ * - URLs plugins declare through the `http.sitemapEntries` hook
+ *
+ * Core never names a plugin URL itself. A plugin's pages are under the
+ * plugin's authority, so a plugin that wants a page listed declares it
+ * through the hook, and a plugin that declares nothing is left out. Core
+ * used to guess `/{plugin-id}` for every enabled plugin, which put 404s and
+ * redirects into the sitemap because most plugins serve their pages
+ * elsewhere.
  *
  * Cached for 10 minutes to avoid repeated database queries from
  * sitemap.xml requests.
  */
 
 import { Router } from 'express';
-import type { IDatabaseService, IHookRegistry, ISitemapEntry } from '@/types';
+import type { IHookRegistry, ISitemapEntry } from '@/types';
 import { HOOKS } from '../../hooks/registry.js';
 
 /** Cached sitemap data with expiry timestamp. */
@@ -26,11 +33,10 @@ interface SitemapCache {
 /** Shape of the sitemap data response. */
 interface SitemapData {
     pages: Array<{ slug: string; updatedAt: string }>;
-    pluginPages: string[];
     /**
-     * Per-resource URLs contributed by plugins through the
-     * `http.sitemapEntries` hook (e.g. every published blog post). Distinct
-     * from `pluginPages`, which carries only the one landing path per plugin.
+     * URLs contributed by plugins through the `http.sitemapEntries` hook:
+     * each plugin's landing page and any per-resource pages it publishes,
+     * such as every blog post.
      */
     pluginEntries: ISitemapEntry[];
 }
@@ -51,16 +57,14 @@ export type SitemapPageLister = () => Promise<Array<{ slug: string; updatedAt: s
  * Provides a single GET endpoint returning all dynamic URLs for sitemap
  * generation. Response is cached in memory for 10 minutes.
  *
- * @param database - Database service for MongoDB access
- * @param hookRegistry - Hook registry used to invoke `http.sitemapEntries` so
- *   plugins can contribute their own per-resource URLs (blog posts, etc.).
- * @param listPages - Lists the reachable CMS pages; the router no longer
- *   queries the `pages` collection itself, because page visibility now depends
- *   on review state held by the core content service.
+ * @param hookRegistry - Hook registry used to invoke `http.sitemapEntries`,
+ *   which is the only way plugin URLs reach the sitemap.
+ * @param listPages - Lists the reachable CMS pages; the router does not
+ *   query the `pages` collection itself, because page visibility depends on
+ *   review state held by the core content service.
  * @returns Express router with sitemap data endpoint
  */
 export function sitemapRouter(
-    database: IDatabaseService,
     hookRegistry: IHookRegistry,
     listPages: SitemapPageLister
 ): Router {
@@ -82,15 +86,11 @@ export function sitemapRouter(
                 return;
             }
 
-            // Fetch both core data sources in parallel, then let plugins
-            // contribute their own per-resource URLs via the hook. The hook
-            // seed is an empty array; each handler concatenates its entries,
-            // and a throwing handler is isolated by the waterfall invoker so a
-            // single misbehaving plugin never blanks the whole sitemap.
-            const [pages, pluginPages] = await Promise.all([
-                fetchPublishedPages(listPages),
-                fetchPluginPages(database)
-            ]);
+            // List core's own pages, then let plugins declare theirs via the
+            // hook. The hook seed is an empty array; each handler concatenates
+            // its entries, and a throwing handler is isolated by the waterfall
+            // invoker so a single misbehaving plugin never blanks the sitemap.
+            const pages = await fetchPublishedPages(listPages);
 
             const pluginEntries = await hookRegistry.invoke(
                 HOOKS.http.sitemapEntries,
@@ -105,7 +105,6 @@ export function sitemapRouter(
             // exists to prevent. Coalesce a bad return to an empty list.
             const data: SitemapData = {
                 pages,
-                pluginPages,
                 pluginEntries: Array.isArray(pluginEntries) ? [...pluginEntries] : []
             };
 
@@ -134,36 +133,6 @@ async function fetchPublishedPages(
 ): Promise<Array<{ slug: string; updatedAt: string }>> {
     try {
         return await listPages();
-    } catch (error) {
-        console.error('Failed to fetch sitemap data:', error);
-        return [];
-    }
-}
-
-/**
- * Fetch active plugin page paths from plugin metadata.
- *
- * Queries the plugin_metadata collection for installed+enabled plugins
- * and returns their conventional page paths (/{plugin-id}).
- *
- * @param database - Database service
- * @returns Array of plugin page URL paths
- */
-async function fetchPluginPages(
-    database: IDatabaseService
-): Promise<string[]> {
-    try {
-        const collection = database.getCollection('plugin_metadata');
-        const plugins = await collection
-            .find(
-                { installed: true, enabled: true },
-                { projection: { id: 1 } }
-            )
-            .toArray();
-
-        return plugins
-            .map(p => `/${p.id as string}`)
-            .filter(path => path.length > 1);
     } catch (error) {
         console.error('Failed to fetch sitemap data:', error);
         return [];
