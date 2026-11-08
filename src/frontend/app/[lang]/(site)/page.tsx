@@ -7,8 +7,10 @@ import { translateKeywords } from '../../../lib/translateKeywords';
 import { getServerTranslator } from '../../../modules/localization/server';
 
 /**
- * Home page metadata, with the canonical URL and the keywords in the page's
- * language.
+ * Home page metadata, with the canonical URL, title, description, and keywords
+ * in the page's language. The title and description go through `t()` so that
+ * `/zh`, `/ru`, and `/vi` send search engines a snippet in their own language
+ * rather than the English one.
  *
  * @param props - Route props; `params.lang` selects the language described.
  * @returns The page metadata.
@@ -19,8 +21,11 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
   return buildMetadata({
     siteUrl,
     language,
-    title: 'Live TRON Blockchain Activity & Energy Tools | TronRelic',
-    description: 'Explore live TRON network activity and discover the best way to rent energy. Powered by real-time graphs, alerts, and deep market data.',
+    title: t('home.meta.title', 'Live TRON Blockchain Activity & Energy Tools | TronRelic'),
+    description: t(
+      'home.meta.description',
+      'Explore live TRON network activity and discover the best way to rent energy. Powered by real-time graphs, alerts, and deep market data.'
+    ),
     path: '/',
     keywords: translateKeywords(t, 'home.meta.keywords', [
       'TRON analytics',
