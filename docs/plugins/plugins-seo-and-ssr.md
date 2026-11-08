@@ -104,6 +104,24 @@ serverMetadataFetcher: async (ctx) => {
 
 A link inside that metadata, such as the Home step of a `BreadcrumbList`, goes through `ctx.localizeHref` rather than having the language prefix added by hand. Your page being published in a language does not mean the page it links to is: `/zh` returns 404 unless `/` is published in Chinese on `/system/localization`. `ctx.localizeHref('/')` returns `/zh` when it is and `/` otherwise. The field is optional because an older core does not supply it, so write `ctx.localizeHref?.('/') ?? '/'`. `trp-blog` is the reference, in the breadcrumb trails of `src/frontend/frontend.ts`.
 
+## Declaring Pages for the Sitemap
+
+Registering a page does not put it in `sitemap.xml`. Core lists only the routes it serves itself and published CMS pages. A plugin's URLs are under the plugin's authority, so core never names or guesses them, and a plugin that wants a page in the sitemap declares it through the `http.sitemapEntries` hook. A plugin that declares nothing is left out of the sitemap. Core used to guess `/{plugin-id}` for every enabled plugin, and because most plugins serve their pages elsewhere, the sitemap ended up listing URLs that returned 404 or redirected.
+
+Register the handler in the plugin's backend `init()`. Declare the public landing page, plus any per-resource pages you want crawled, such as each blog post. Leave out admin pages, `noindex` pages, and anything under `/system`. Give the unprefixed English path only, because core adds an entry for each language the path is published in. Set `lastModified` only when you have a real modification time, never the time the sitemap was generated, because Google stops trusting `<lastmod>` across the whole sitemap once some of the dates are wrong. Read the path from the same constant the page config uses, so the sitemap cannot drift from the route. The loader removes the handler on `disable()`, so a disabled plugin's pages drop out of the sitemap on their own.
+
+```typescript
+context.hooks.register(
+    context.hooks.HOOKS.http.sitemapEntries,
+    async (_ctx, entries) => [
+        ...entries,
+        { path: MY_PAGE_PATH, changeFrequency: 'daily', priority: 0.7 }
+    ]
+);
+```
+
+`trp-blog` is the reference: it declares `/blog`, its archive, and every published post. `trp-forum` declares only its main board and leaves individual post permalinks out on purpose. See [system-hooks.md](../system/system-hooks.md) for how the hook system works.
+
 ## Canonical Example: bazi-fortune
 
 The bazi-fortune plugin demonstrates both halves of the pattern. See `src/plugins/trp-bazi-fortune/src/frontend/frontend.ts` for the page config and `src/plugins/trp-bazi-fortune/src/frontend/BaziPage.tsx` for the component.
@@ -180,6 +198,7 @@ Before adding SEO and SSR to a plugin page, verify:
 - [ ] `ogType` is set explicitly (`'website'` or `'article'`)
 - [ ] `structuredData` includes a Schema.org `@type` appropriate for the page
 - [ ] Admin pages have `noindex: true`
+- [ ] Each public page meant to be crawled is declared through the `http.sitemapEntries` hook in the backend `init()`
 - [ ] A page published in other languages returns its title, description, and `structuredData` from `serverMetadataFetcher`, built with `ctx.translator.t`
 - [ ] If the page needs pre-fetched data, `serverDataFetcher` returns JSON-serializable values
 - [ ] The plugin component accepts `initialData` and initializes state from it

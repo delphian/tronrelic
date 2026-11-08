@@ -1,13 +1,13 @@
 /**
  * @fileoverview Types for the `http.sitemapEntries` waterfall hook.
  *
- * The core sitemap is generated from what core owns — static routes, published
- * CMS pages, and one path per enabled plugin. Plugins that own *many* crawlable
- * resources (a blog's posts, a forum's threads) have no way to surface those
- * per-resource URLs without core reaching into the plugin's private storage,
- * which the plugin-coupling rule forbids. This seam inverts that: core invites
- * each plugin to contribute its own sitemap entries at generation time, so the
- * plugin enumerates its own published content and core never learns its schema.
+ * Core lists only what core owns in the sitemap: its own static routes and
+ * published CMS pages. A plugin's URLs are under the plugin's authority, so
+ * core never names or guesses them. Instead core invites each plugin to declare
+ * its own entries at generation time through this seam: its landing page, plus
+ * any per-resource pages it publishes (a blog's posts). A plugin that declares
+ * nothing does not appear in the sitemap, and core never learns the plugin's
+ * routes or storage schema.
  *
  * @module types/hooks/ISitemapEntry
  */

@@ -11,18 +11,23 @@ import { withLanguageVersions } from '../modules/localization/lib/withLanguageVe
 /** Response shape from GET /api/sitemap-data. */
 interface SitemapData {
   pages: Array<{ slug: string; updatedAt: string }>;
-  pluginPages: string[];
   // Reuse the shared core contract the backend producer serializes into this
   // field (sitemap.router.ts types it `ISitemapEntry[]` from `@/types`), so the
   // response model cannot silently drift from the hook contract.
   pluginEntries?: ISitemapEntry[];
 }
 
-/** Static routes that always appear in the sitemap. */
+/**
+ * Core-owned routes that always appear in the sitemap.
+ *
+ * Only routes core itself serves belong here. A plugin's page, such as
+ * `/resource-markets` or `/forum`, is under that plugin's authority, and the
+ * plugin declares it through the `http.sitemapEntries` hook. Listing a plugin
+ * path here would keep it in the sitemap after the plugin is disabled or
+ * moves the page, which is how the sitemap came to list 404s.
+ */
 const staticRoutes: Array<{ path: string; priority: number; changeFrequency: MetadataRoute.Sitemap[number]['changeFrequency'] }> = [
   { path: '/', priority: 1, changeFrequency: 'hourly' },
-  { path: '/resource-markets', priority: 0.9, changeFrequency: 'hourly' },
-  { path: '/forum', priority: 0.8, changeFrequency: 'daily' },
   { path: '/articles', priority: 0.8, changeFrequency: 'daily' },
   { path: '/tools', priority: 0.8, changeFrequency: 'weekly' }
 ];
@@ -37,7 +42,8 @@ const staticPathSet = new Set(staticRoutes.map(r => r.path));
  * Fetch dynamic sitemap data from the backend.
  *
  * Calls the public /api/sitemap-data endpoint which returns published CMS pages
- * and active plugin pages in a single request.
+ * and the URLs plugins declare through the http.sitemapEntries hook in a
+ * single request.
  * Fails gracefully — returns empty data if the backend is unavailable.
  *
  * @returns Dynamic sitemap entries or empty defaults
@@ -52,13 +58,13 @@ async function fetchDynamicData(): Promise<SitemapData> {
 
     if (!response.ok) {
       console.warn(`Sitemap data fetch failed: ${response.status}`);
-      return { pages: [], pluginPages: [], pluginEntries: [] };
+      return { pages: [], pluginEntries: [] };
     }
 
     return await response.json() as SitemapData;
   } catch (error) {
     console.warn('Failed to fetch sitemap data:', error);
-    return { pages: [], pluginPages: [], pluginEntries: [] };
+    return { pages: [], pluginEntries: [] };
   }
 }
 
@@ -67,7 +73,8 @@ async function fetchDynamicData(): Promise<SitemapData> {
  *
  * Combines hardcoded core routes with dynamically discovered content:
  * - Published CMS pages (articles, documentation, announcements)
- * - Active plugin pages (resource-markets, whale tracking, etc.)
+ * - URLs plugins declare through the http.sitemapEntries hook (landing pages,
+ *   blog posts, per-market pages). Core never guesses a plugin URL.
  *
  * Dynamic entries are fetched from the backend's /api/sitemap-data endpoint
  * which caches results for 10 minutes. Static entries that overlap with
@@ -118,20 +125,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     }
   }
 
-  // Plugin pages (active frontend plugins)
-  for (const path of dynamicData.pluginPages) {
-    if (!seenPaths.has(path)) {
-      seenPaths.add(path);
-      entries.push(...withLanguageVersions(localizationConfig, siteUrl, path, {
-        url: absoluteUrl(siteUrl, path),
-        changeFrequency: 'daily',
-        priority: 0.7
-      }, seenPaths));
-    }
-  }
-
-  // Plugin-contributed per-resource URLs (e.g. every published blog post),
-  // gathered by core via the http.sitemapEntries hook. Each carries its own
+  // Plugin-declared URLs — each plugin's landing page and any per-resource
+  // pages such as blog posts — gathered by core via the http.sitemapEntries
+  // hook. This is the only source of plugin URLs. Each carries its own
   // lastModified/changeFrequency/priority; core absolutizes the root-relative
   // path here, the same way it does for CMS and plugin-landing paths above.
   // Entries cross an HTTP trust boundary from arbitrary plugin code with no

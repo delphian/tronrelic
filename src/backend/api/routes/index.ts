@@ -56,7 +56,7 @@ export function createApiRouter(
   router.use('/live', liveRouter(database));
   router.use('/tokens', tokensRouter(database));
   router.use('/admin/system', systemRouter(database));
-  router.use('/sitemap-data', sitemapRouter(database, hookRegistry, listSitemapPages));
+  router.use('/sitemap-data', sitemapRouter(hookRegistry, listSitemapPages));
 
   // Note: Menu, Pages, and Database (migrations) routers are mounted directly
   // by their respective modules in bootstrap (apps/backend/src/index.ts) to follow

@@ -243,26 +243,22 @@ export async function generateMetadata({ params }: { params: Promise<IPageParams
 
             const data: IPageResponse = await response.json();
             const { page } = data;
+            const { siteUrl } = await getServerConfig();
 
-            return {
+            // The shared helper sets the page's own canonical URL. Without it
+            // the page inherits the root layout's canonical, which names the
+            // homepage, and search engines then drop the page as a duplicate
+            // of it. The canonical uses the page's current slug, because a
+            // request for a renamed page's old slug is redirected to it.
+            return buildMetadata({
+                siteUrl,
+                language,
                 title: page.title,
                 description: page.description,
-                keywords: page.keywords,
-                openGraph: {
-                    title: page.title,
-                    description: page.description,
-                    // Set here as well as in buildMetadata: this openGraph
-                    // replaces the layout's, so without it the tag is lost.
-                    locale: toOpenGraphLocale(language),
-                    images: page.ogImage ? [page.ogImage] : undefined
-                },
-                twitter: {
-                    card: 'summary_large_image',
-                    title: page.title,
-                    description: page.description,
-                    images: page.ogImage ? [page.ogImage] : undefined
-                }
-            };
+                path: page.slug,
+                image: page.ogImage,
+                keywords: page.keywords
+            });
         } catch (error) {
             console.error('Failed to fetch page metadata:', error);
             return {};
