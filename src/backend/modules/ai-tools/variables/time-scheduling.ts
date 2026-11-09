@@ -14,15 +14,58 @@
  * Unlike the other built-in categories these resolvers take no injected core
  * services: the clock is the only input, so the register function omits the
  * `IBuiltinVariableDeps` parameter its siblings carry.
+ *
+ * Two windows are published: `run-window-24` for daily prompts and
+ * `run-window-7d` for weekly ones. Both come from one spec table and one
+ * renderer, so they always use the same line names and formats. A weekly
+ * prompt needs its own variable because the model reads the window label. A
+ * weekly report given "trailing 24 hours" tends to come out reading like a
+ * daily one.
  */
 
 import type { IPromptVariableRegistry } from '@/types';
 
-/** Span of the reporting window published by {@link registerTimeSchedulingVariables}. */
-const WINDOW_HOURS = 24;
+/** One hour in milliseconds, for turning a window's length into a subtraction. */
+const HOUR_MS = 60 * 60 * 1000;
 
-/** {@link WINDOW_HOURS} expressed in milliseconds, for the window-start subtraction. */
-const WINDOW_MS = WINDOW_HOURS * 60 * 60 * 1000;
+/**
+ * Describes one trailing reporting window variable. Keeping each window as data
+ * in {@link RUN_WINDOWS} means adding a window is a new table row rather than a
+ * copy of the resolver.
+ */
+interface IRunWindowSpec {
+    /** Registry name the prompt references as `{%name%}`. */
+    name: string;
+    /** Length of the window in hours, counted back from the run time. */
+    hours: number;
+    /** Plain wording of the length for the header line, such as `24 hours` or `7 days`. */
+    spanLabel: string;
+    /** Catalog description shown on the Registry tab and by `ai-list-prompt-variables`. */
+    description: string;
+}
+
+/**
+ * Advice shared by every window's description. Each `{%name%}` expansion pass
+ * reads the clock separately, so the same token in the system prompt and the
+ * user prompt can resolve a minute apart.
+ */
+const ONE_PROMPT_ADVICE = 'Use it in only one prompt per query — system or user, not both, since each expands on its own clock read';
+
+/** Every trailing reporting window this file registers, in catalog order. */
+const RUN_WINDOWS: readonly IRunWindowSpec[] = [
+    {
+        name: 'run-window-24',
+        hours: 24,
+        spanLabel: '24 hours',
+        description: `Trailing 24-hour reporting window: both bounds in citation, ISO-8601, and epoch-millisecond form, plus the start date as YYYY/MM/DD. ${ONE_PROMPT_ADVICE}`
+    },
+    {
+        name: 'run-window-7d',
+        hours: 7 * 24,
+        spanLabel: '7 days',
+        description: `Trailing 7-day reporting window for weekly prompts: both bounds in citation, ISO-8601, and epoch-millisecond form, plus the start date as YYYY/MM/DD. ${ONE_PROMPT_ADVICE}`
+    }
+];
 
 /**
  * Render an instant in the citation format TronRelic generated content uses, so
@@ -94,51 +137,69 @@ function formatSlashDateUtc(date: Date): string {
 }
 
 /**
- * Register all "Time & Scheduling" built-in variables on the given registry.
+ * Render one reporting window as the text block a prompt receives. Every line
+ * comes from the single `now` passed in, so the two bounds cannot fall on
+ * different sides of a second boundary and disagree. They could if each line
+ * were its own variable, because the registry resolves separate variables
+ * concurrently.
  *
- * @param registry - The core prompt-variable registry.
+ * That guarantee holds for one expansion pass, not for a whole query. The
+ * system prompt and the user prompt are expanded by separate `expandAll` calls
+ * (see `SystemPromptsService.compose` and the provider's own expansion), so a
+ * token used in BOTH gets two independent clock reads that can differ by a
+ * minute. Repeats within a single prompt are safe, because one `expandAll`
+ * resolves each unique name once and reuses the value for every occurrence.
+ *
+ * The millisecond and slash-date lines serve sources whose timestamps are not
+ * ISO-8601: epoch integers and dates embedded in URLs. Both millisecond bounds
+ * are published because a value such as a proposal's `expiration_time` can lie
+ * in the future, and a lower bound alone would let a still-open item pass as
+ * decided.
+ *
+ * @param spec - The window being rendered, which supplies its length and label.
+ * @param now - The single clock read every line is computed from.
+ * @returns The multi-line window block, header line first.
+ */
+function renderRunWindow(spec: IRunWindowSpec, now: Date): string {
+    const start = new Date(now.getTime() - spec.hours * HOUR_MS);
+    const lines = [
+        `Reporting window (trailing ${spec.spanLabel}):`,
+        `  RUN_TIME:         ${formatCitationUtc(now)}`,
+        `  RUN_TIME_ISO:     ${formatIsoUtc(now)}`,
+        `  RUN_TIME_MS:      ${formatEpochMsUtc(now)}`,
+        `  WINDOW_START:     ${formatCitationUtc(start)}`,
+        `  WINDOW_START_ISO: ${formatIsoUtc(start)}`,
+        `  WINDOW_START_MS:  ${formatEpochMsUtc(start)}`,
+        `  WINDOW_START_DATE: ${formatSlashDateUtc(start)}`
+    ];
+    const rendered = lines.join('\n');
+    return rendered;
+}
+
+/**
+ * Register all "Time & Scheduling" built-in variables on the given registry.
+ * Each entry in {@link RUN_WINDOWS} becomes one public dynamic variable that
+ * reads the clock at the moment a prompt expands it.
+ *
+ * @param registry - The core prompt-variable registry the windows are added to.
  */
 export function registerTimeSchedulingVariables(registry: IPromptVariableRegistry): void {
-    registry.registerVariable({
-        name: 'run-window-24',
-        category: 'Time & Scheduling',
-        description: 'Trailing 24-hour reporting window: both bounds in citation, ISO-8601, and epoch-millisecond form, plus the start date as YYYY/MM/DD. Use it in only one prompt per query — system or user, not both, since each expands on its own clock read',
-        sensitivity: 'public',
-        resolve: async () => {
-            // Every line derives from one clock read, so the bounds cannot
-            // straddle a second boundary and disagree — which they could if
-            // these were separate variables, since the registry resolves those
-            // concurrently.
-            //
-            // That guarantee holds per expansion pass, not per query: the
-            // system prompt and the user prompt are expanded by separate
-            // `expandAll` calls (see `SystemPromptsService.compose` and the
-            // provider's own expansion), so referencing this token in BOTH
-            // yields two independent reads that can differ by a minute. Put it
-            // in one prompt only — system or user, never both. Repeats within a
-            // single prompt are safe: one `expandAll` resolves each unique name
-            // once and reuses that value for every occurrence.
-            const now = new Date();
-            const start = new Date(now.getTime() - WINDOW_MS);
-
-            //
-            // The millisecond and slash-date lines serve sources whose
-            // timestamps are not ISO-8601: epoch integers and dates embedded in
-            // URLs. Both millisecond bounds are published because a value such
-            // as a proposal's `expiration_time` can lie in the future, and a
-            // lower bound alone would let a still-open item pass as decided.
-            const lines = [
-                `Reporting window (trailing ${WINDOW_HOURS} hours):`,
-                `  RUN_TIME:         ${formatCitationUtc(now)}`,
-                `  RUN_TIME_ISO:     ${formatIsoUtc(now)}`,
-                `  RUN_TIME_MS:      ${formatEpochMsUtc(now)}`,
-                `  WINDOW_START:     ${formatCitationUtc(start)}`,
-                `  WINDOW_START_ISO: ${formatIsoUtc(start)}`,
-                `  WINDOW_START_MS:  ${formatEpochMsUtc(start)}`,
-                `  WINDOW_START_DATE: ${formatSlashDateUtc(start)}`
-            ];
-
-            return lines.join('\n');
-        }
-    }, 'core');
+    for (const spec of RUN_WINDOWS) {
+        registry.registerVariable({
+            name: spec.name,
+            category: 'Time & Scheduling',
+            description: spec.description,
+            sensitivity: 'public',
+            /**
+             * Resolve the window when the prompt expands, so a scheduled run
+             * gets a window that ends at the moment it fired, not at boot.
+             *
+             * @returns The rendered window block for the current instant.
+             */
+            resolve: async () => {
+                const rendered = renderRunWindow(spec, new Date());
+                return rendered;
+            }
+        }, 'core');
+    }
 }
