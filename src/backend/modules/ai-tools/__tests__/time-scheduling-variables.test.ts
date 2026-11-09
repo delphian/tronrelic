@@ -78,6 +78,65 @@ describe('Time & Scheduling prompt variables', () => {
             // misreport every prompt that references it.
             expect(definition?.sensitivity).toBe('public');
         });
+
+        it('registers run-window-7d classified public in the same category', () => {
+            const { registry, registered } = createRecordingRegistry();
+
+            registerTimeSchedulingVariables(registry);
+
+            const definition = registered.get('run-window-7d');
+            expect(definition).toBeDefined();
+            expect(definition?.category).toBe('Time & Scheduling');
+            expect(definition?.sensitivity).toBe('public');
+        });
+    });
+
+    describe('run-window-7d', () => {
+        it('labels the window as seven days so a weekly prompt is not told it covers 24 hours', async () => {
+            const resolved = await resolveAt('run-window-7d', '2026-11-09T00:30:00.000Z');
+
+            expect(resolved).toContain('Reporting window (trailing 7 days):');
+            expect(resolved).not.toContain('24 hours');
+        });
+
+        it('places the window start exactly seven days before the run time in every form', async () => {
+            const resolved = await resolveAt('run-window-7d', '2026-11-09T00:30:25.123Z');
+
+            expect(resolved).toContain('RUN_TIME:         Nov 9, 00:30 UTC');
+            expect(resolved).toContain('RUN_TIME_ISO:     2026-11-09T00:30:25Z');
+            expect(resolved).toContain('WINDOW_START:     Nov 2, 00:30 UTC');
+            expect(resolved).toContain('WINDOW_START_ISO: 2026-11-02T00:30:25Z');
+            expect(resolved).toContain(`WINDOW_START_MS:  ${Date.parse('2026-11-02T00:30:25Z')}`);
+            expect(resolved).toContain('WINDOW_START_DATE: 2026/11/02');
+        });
+
+        it('crosses a month and a year boundary correctly', async () => {
+            const acrossMonth = await resolveAt('run-window-7d', '2026-12-03T09:05:00.000Z');
+            const acrossYear = await resolveAt('run-window-7d', '2027-01-04T09:05:00.000Z');
+
+            expect(acrossMonth).toContain('WINDOW_START:     Nov 26, 09:05 UTC');
+            expect(acrossYear).toContain('WINDOW_START:     Dec 28, 09:05 UTC');
+            expect(acrossYear).toContain('WINDOW_START_DATE: 2026/12/28');
+        });
+
+        it('publishes the same line names as run-window-24 so prompts can switch between them', async () => {
+            const daily = await resolveAt('run-window-24', '2026-11-09T00:30:00.000Z');
+            const weekly = await resolveAt('run-window-7d', '2026-11-09T00:30:00.000Z');
+
+            /**
+             * Reduce a window block to its line labels, ignoring values, so the
+             * two windows can be compared on shape alone.
+             *
+             * @param block - A resolved window block.
+             * @returns The label before the colon on every indented line.
+             */
+            const labelsOf = (block: string): string[] => block
+                .split('\n')
+                .slice(1)
+                .map(line => line.trim().split(':')[0]);
+
+            expect(labelsOf(weekly)).toEqual(labelsOf(daily));
+        });
     });
 
     describe('run-window-24', () => {

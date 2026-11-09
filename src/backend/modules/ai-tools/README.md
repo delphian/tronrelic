@@ -155,7 +155,7 @@ The single registry of prompt variables — the `{%name%}` tokens an AI provider
 | System Health | `observer-stats`, `log-summary`, `server-info` |
 | Site & Content | `site-info` |
 | Database Access | `cache-keys` |
-| Time & Scheduling | `run-window-24` |
+| Time & Scheduling | `run-window-24`, `run-window-7d` (the same lines over a trailing seven days, for weekly prompts) |
 
 `listSummaries()` returns each variable's name, pattern, description, category, kind, and effective sensitivity without resolving anything and without a static's `content`. Use it instead of `listInfo()` whenever the caller only needs to know what exists, because `listInfo()` runs every dynamic resolver to measure its size.
 
