@@ -1465,8 +1465,10 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
     // That reset briefly makes the pane's content shorter, and the browser
     // clamps the pane's scroll position to fit while it measures, so the
     // position is saved first and put back afterwards; without that, every
-    // keystroke near the bottom would jolt the view upward. Re-run on
-    // activation because a hidden textarea measures as zero.
+    // keystroke near the bottom would jolt the view upward. When the operator
+    // is typing at the end of the text, the view then moves down just far
+    // enough to keep the new last line in sight. Re-run on activation because
+    // a hidden textarea measures as zero.
     useEffect(() => {
         const element = textareaRef.current;
         const pane = transcriptRef.current;
@@ -1476,6 +1478,35 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
             element.style.height = `${element.scrollHeight}px`;
             pane.scrollTop = savedScrollTop;
             fitReserve();
+
+            // Putting the position back is right for an edit in the middle of a
+            // long prompt, where the new line appears below a caret that has not
+            // moved. It is wrong for text typed at the end: there the caret sits
+            // on the field's new last line, and pinning the old position leaves
+            // that line below the pane's edge, so the operator types blind. The
+            // browser's own caret reveal cannot help, because it ran during the
+            // input event, before this effect made the field taller. Correct
+            // only that case, and only by the amount the field overshoots the
+            // visible area.
+            //
+            // An empty composer is skipped deliberately. Clearing it after a
+            // send re-runs this rule in the same commit as the scroll that
+            // anchored the sent message to the top of the pane, and pulling an
+            // empty field into view would undo that anchoring. The focus check
+            // keeps a programmatic fill, such as loading a saved prompt, from
+            // moving the view while the operator is working elsewhere.
+            //
+            // This scroll does not claim the hook's "that scroll was mine" flag:
+            // moving toward the composer the operator is typing in is exactly
+            // the intent the scroll listener should record as following.
+            const caretAtEnd = element.selectionEnd === element.value.length;
+            if (element.value.length > 0 && caretAtEnd && document.activeElement === element) {
+                const paddingBottom = Number.parseFloat(getComputedStyle(pane).paddingBottom) || 0;
+                const overshoot = element.getBoundingClientRect().bottom - (pane.getBoundingClientRect().bottom - paddingBottom);
+                if (overshoot > 0) {
+                    pane.scrollTop += overshoot;
+                }
+            }
         }
     }, [input, active, fitReserve]);
 
