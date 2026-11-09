@@ -29,10 +29,13 @@ export interface IUsdtParameters {
         standardTransferEnergy: number;
 
         /**
-         * Energy cost for the first USDT transfer to an empty wallet
-         * Higher cost due to initializing the token contract state for the recipient
-         * Note: This may not be measurable via constant contract calls and may need
-         * to be calculated as standardTransferEnergy * 2 as a conservative estimate
+         * Energy cost for a USDT transfer to a wallet whose USDT balance is currently zero
+         *
+         * Costs more than a standard transfer because the recipient's balance is written
+         * into an empty storage slot. It applies to any zero-balance wallet, including one
+         * that held USDT before and emptied it. Measured by simulating a transfer to a
+         * freshly generated address, never derived from the standard figure: the gap
+         * between the two is not a fixed ratio.
          */
         firstTimeTransferEnergy: number;
     };
