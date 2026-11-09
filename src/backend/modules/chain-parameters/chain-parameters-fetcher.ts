@@ -1,36 +1,34 @@
-import type { AxiosInstance } from 'axios';
+/**
+ * @fileoverview Fetches TRON chain parameters and network staking totals.
+ *
+ * Reads the governance-set parameters and the network-wide resource totals
+ * through the platform's shared TronGrid client, derives the energy and
+ * bandwidth per TRX ratios, and stores a snapshot for `ChainParametersService`.
+ */
+
 import type { IChainParametersFetcher, IChainParameters, ISystemLogService, IDatabaseService } from '@/types';
+import type { TronGridAccountResourceResponse, TronGridChainParametersResponse } from '../blockchain/tron-grid.client.js';
 import { ChainParametersModel, type IChainParametersDocument } from '../../database/models/chain-parameters-model.js';
 
 const CHAIN_PARAMETERS_COLLECTION = 'chainParameters';
 
 /**
- * Response from TronGrid /wallet/getchainparameters endpoint
- * Contains protocol configuration parameters (fees, limits, governance settings)
- */
-interface TronGridChainParametersResponse {
-    chainParameter: Array<{
-        key: string;
-        value: number;
-    }>;
-}
-
-/**
- * Response from TronGrid /wallet/getaccountresource endpoint
- * Contains network-wide staking state (total TRX staked for energy/bandwidth)
+ * The TronGrid calls this fetcher needs. `TronGridClient` satisfies it.
  *
- * Note: This endpoint requires an address parameter but returns network-wide
- * totals regardless of which address is queried.
+ * The fetcher depends on this rather than on raw HTTP so its requests share the
+ * platform's rotating API keys, the 200ms request queue, and the retries block
+ * sync uses. Without them, a single anonymous 429 during startup stopped the
+ * backend.
  */
-interface TronGridAccountResourceResponse {
-    TotalEnergyLimit: number;
-    TotalEnergyWeight: number;
-    TotalNetLimit: number;
-    TotalNetWeight: number;
+export interface IChainParametersTransport {
+    /** Governance-set protocol parameters, such as the energy fee. */
+    getChainParameters(): Promise<TronGridChainParametersResponse>;
+    /** Network-wide resource totals, returned whichever address is asked about. */
+    getAccountResource(address: string, visible?: boolean): Promise<TronGridAccountResourceResponse>;
 }
 
 /**
- * Fetches TRON chain parameters from TronGrid API
+ * Fetches TRON chain parameters from TronGrid
  * Runs on 10-minute schedule to keep parameters current
  *
  * Why this exists:
@@ -39,9 +37,6 @@ interface TronGridAccountResourceResponse {
  * calculates the derived energyPerTrx ratio used by market fetchers.
  */
 export class ChainParametersFetcher implements IChainParametersFetcher {
-    private readonly CHAIN_PARAMS_ENDPOINT = 'https://api.trongrid.io/wallet/getchainparameters';
-    private readonly ACCOUNT_RESOURCE_ENDPOINT = 'https://api.trongrid.io/wallet/getaccountresource';
-
     /**
      * Placeholder address for getaccountresource API.
      * The endpoint requires an address but returns network-wide totals regardless of which address is used.
@@ -51,13 +46,24 @@ export class ChainParametersFetcher implements IChainParametersFetcher {
 
     private readonly database: IDatabaseService;
 
-    constructor(private readonly http: AxiosInstance, private readonly logger: ISystemLogService, database: IDatabaseService) {
+    /**
+     * @param tronGrid - TronGrid transport, injected so production shares the platform client and tests supply canned responses
+     * @param logger - Logger that records each snapshot and any failure to obtain one
+     * @param database - Database where each snapshot is stored for the service to read
+     */
+    constructor(
+        private readonly tronGrid: IChainParametersTransport,
+        private readonly logger: ISystemLogService,
+        database: IDatabaseService
+    ) {
         this.database = database;
         this.database.registerModel(CHAIN_PARAMETERS_COLLECTION, ChainParametersModel);
     }
 
     /**
      * Get the registered chain parameters model for database operations.
+     *
+     * @returns The model used to store each snapshot
      */
     private getModel() {
         return this.database.getModel<IChainParametersDocument>(CHAIN_PARAMETERS_COLLECTION);
@@ -75,27 +81,19 @@ export class ChainParametersFetcher implements IChainParametersFetcher {
      * 5. Save to MongoDB for service layer consumption
      *
      * @returns Freshly fetched chain parameters with live network state
+     * @throws Error when TronGrid cannot be reached after the client's retries, or the save fails
      */
     async fetch(): Promise<IChainParameters> {
         try {
             this.logger.info('Fetching chain parameters and network state from TronGrid');
 
             // Fetch protocol parameters (fees, limits, governance settings)
-            const paramsResponse = await this.http.post<TronGridChainParametersResponse>(
-                this.CHAIN_PARAMS_ENDPOINT,
-                {},
-                { timeout: 10000 }
-            );
+            const paramsResponse = await this.tronGrid.getChainParameters();
 
             // Fetch network state (total staked TRX for energy/bandwidth)
-            const resourceResponse = await this.http.post<TronGridAccountResourceResponse>(
-                this.ACCOUNT_RESOURCE_ENDPOINT,
-                { address: this.PLACEHOLDER_ADDRESS, visible: true },
-                { timeout: 10000 }
-            );
+            const networkState = await this.tronGrid.getAccountResource(this.PLACEHOLDER_ADDRESS, true);
 
-            const chainParams = paramsResponse.data.chainParameter;
-            const networkState = resourceResponse.data;
+            const chainParams = paramsResponse.chainParameter;
 
             // Extract protocol parameters (fees)
             const energyFee = this.findParam(chainParams, 'getEnergyFee');

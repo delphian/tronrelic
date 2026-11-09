@@ -10,6 +10,8 @@ TRON's energy-to-TRX ratio drifts daily with total staked TRX and network energy
 
 A scheduled fetcher polls TronGrid, derives `energyPerTrx`, and writes a snapshot to MongoDB. The service reads the latest snapshot, caches it in memory for 1 minute, and exposes conversion methods.
 
+Both this fetcher and the USDT parameters fetcher send their requests through `TronGridClient`, the platform's shared TronGrid client, which they receive through their constructors. That gives them the configured `TRONGRID_API_KEY*` keys, the 200ms request queue shared with block sync, and its retries on a network error, 5xx, or 429. Do not give either fetcher its own HTTP client: before this, both called TronGrid with no API key, and a single anonymous 429 during startup stopped the backend.
+
 ### Cached Fields
 
 <a id="energy-system"></a>
@@ -81,7 +83,7 @@ Never hardcode any of these formulas — call the service. All inputs/outputs ar
 
 The fetcher measures two costs on every run by simulating USDT transfers through TronGrid's `triggerconstantcontract`, which executes a call without broadcasting it. `standardTransferEnergy` is a transfer to a wallet that already holds USDT. `firstTimeTransferEnergy` is a transfer to a freshly generated address, which stands for any wallet whose USDT balance is currently zero, including one that emptied its balance. It costs more because the recipient's balance is written into an empty storage slot. Never derive one figure from the other: the gap is a fixed storage cost multiplied by USDT's dynamic energy penalty, so it is not a fixed ratio.
 
-TronGrid reports a reverted simulation as `result.result: true` with a small `energy_used`, so the fetcher rejects any response that carries a `message`, a `FAILED` transaction result, or no event logs, and rejects a first-time figure that is not above the standard one. A rejected fetch logs an error with what TronGrid returned and saves nothing, so consumers keep the last stored values. Both simulations are sent from a sample wallet that must hold at least 1 USDT. If it runs dry, every fetch fails with a logged revert until the address in `usdt-parameters-fetcher.ts` is replaced. At startup, `src/backend/index.ts` waits for the first fetch, so a failure there stops the backend from starting.
+TronGrid reports a reverted simulation as `result.result: true` with a small `energy_used`, so the fetcher rejects any response that carries a `message`, a `FAILED` transaction result, or no event logs, and rejects a first-time figure that is not above the standard one. A rejected fetch logs an error with what TronGrid returned and saves nothing, so consumers keep the last stored values. Both simulations are sent from a sample wallet that must hold at least 1 USDT. If it runs dry, every fetch fails with a logged revert until the address in `usdt-parameters-fetcher.ts` is replaced. At startup, `src/backend/index.ts` waits for the first fetch, so a failure that outlasts the client's retries stops the backend from starting.
 
 ## Rules
 

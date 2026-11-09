@@ -18,9 +18,8 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { AxiosInstance } from 'axios';
 import type { IDatabaseService, ISystemLogService } from '@/types';
-import { UsdtParametersFetcher } from '../usdt-parameters-fetcher.js';
+import { UsdtParametersFetcher, type IUsdtParametersTransport } from '../usdt-parameters-fetcher.js';
 
 /** ABI form of the fetcher's sample holder, TLa2f6VPqDgRE67v1736s7bJ8Ray5wYjU7. */
 const SAMPLE_HOLDER_ABI = '74472e7d35395a6b5add427eecb7f4b62ad2b071';
@@ -37,14 +36,12 @@ const SAMPLE_HOLDER_ABI = '74472e7d35395a6b5add427eecb7f4b62ad2b071';
  */
 function successResponse(energyUsed: number, energyPenalty: number) {
     return {
-        data: {
-            constant_result: ['0'.repeat(64)],
-            result: { result: true },
-            energy_used: energyUsed,
-            energy_penalty: energyPenalty,
-            logs: [{ topics: ['ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'] }],
-            transaction: { ret: [{}] }
-        }
+        constant_result: ['0'.repeat(64)],
+        result: { result: true },
+        energy_used: energyUsed,
+        energy_penalty: energyPenalty,
+        logs: [{ topics: ['ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'] }],
+        transaction: { ret: [{}] }
     };
 }
 
@@ -55,12 +52,10 @@ function successResponse(energyUsed: number, energyPenalty: number) {
  */
 function revertResponse() {
     return {
-        data: {
-            result: { result: true, message: 'REVERT opcode executed' },
-            energy_used: 8624,
-            energy_penalty: 6640,
-            transaction: { ret: [{ ret: 'FAILED' }] }
-        }
+        result: { result: true, message: 'REVERT opcode executed' } as { result: boolean; message?: string },
+        energy_used: 8624,
+        energy_penalty: 6640,
+        transaction: { ret: [{ ret: 'FAILED' }] }
     };
 }
 
@@ -95,16 +90,17 @@ function createMockLogger(): ISystemLogService {
 /**
  * Read the recipient a simulated transfer was sent to.
  *
- * @param post - The HTTP spy the fetcher called
+ * @param post - The transport spy the fetcher called
  * @param callIndex - Which call to inspect: 0 for standard, 1 for first-time
  * @returns The recipient as 20-byte hex, taken from the ABI-encoded parameter
  */
 function recipientOf(post: ReturnType<typeof vi.fn>, callIndex: number): string {
-    const body = post.mock.calls[callIndex][1] as { parameter: string };
-    return body.parameter.slice(24, 64);
+    const payload = post.mock.calls[callIndex][0] as { parameter: string };
+    return payload.parameter.slice(24, 64);
 }
 
 describe('UsdtParametersFetcher', () => {
+    /** Stands in for `TronGridClient.triggerConstantContract`, which retries and rate-limits in production. */
     let post: ReturnType<typeof vi.fn>;
     let create: ReturnType<typeof vi.fn>;
     let logger: ISystemLogService;
@@ -114,11 +110,8 @@ describe('UsdtParametersFetcher', () => {
         post = vi.fn();
         create = vi.fn().mockResolvedValue(undefined);
         logger = createMockLogger();
-        fetcher = new UsdtParametersFetcher(
-            { post } as unknown as AxiosInstance,
-            logger,
-            createMockDatabase(create)
-        );
+        const transport = { triggerConstantContract: post } as unknown as IUsdtParametersTransport;
+        fetcher = new UsdtParametersFetcher(transport, logger, createMockDatabase(create));
     });
 
     describe('successful measurement', () => {
@@ -200,7 +193,7 @@ describe('UsdtParametersFetcher', () => {
 
         it('rejects a FAILED transaction result that carries no message', async () => {
             const response = revertResponse();
-            delete (response.data.result as { message?: string }).message;
+            delete response.result.message;
             post.mockResolvedValueOnce(response);
 
             await expectRejectedAndLogged(/FAILED transaction result/);
@@ -208,14 +201,14 @@ describe('UsdtParametersFetcher', () => {
 
         it('rejects a response that emitted no Transfer event', async () => {
             const response = successResponse(64285, 49635);
-            response.data.logs = [];
+            response.logs = [];
             post.mockResolvedValueOnce(response);
 
             await expectRejectedAndLogged(/emitted no Transfer event/);
         });
 
         it('rejects a call TronGrid refused', async () => {
-            post.mockResolvedValueOnce({ data: { result: { result: false, message: 'CONTRACT_VALIDATE_ERROR' } } });
+            post.mockResolvedValueOnce({ result: { result: false, message: 'CONTRACT_VALIDATE_ERROR' } });
 
             await expectRejectedAndLogged(/TronGrid rejected the standard transfer simulation/);
         });

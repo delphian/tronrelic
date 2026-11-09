@@ -8,7 +8,6 @@
  */
 
 import { randomBytes } from 'node:crypto';
-import type { AxiosInstance } from 'axios';
 import type { IUsdtParametersFetcher, IUsdtParameters, ISystemLogService, IDatabaseService } from '@/types';
 import { USDT_CONTRACT_ADDRESS } from '@/types';
 import { UsdtParametersModel, type IUsdtParametersDocument } from '../../database/models/usdt-parameters-model.js';
@@ -54,6 +53,19 @@ interface ITronGridConstantContractResponse {
     };
 }
 
+/**
+ * The TronGrid call this fetcher needs. `TronGridClient` satisfies it.
+ *
+ * The fetcher depends on this rather than on raw HTTP so its two simulations
+ * share the platform's rotating API keys, the 200ms request queue, and the
+ * retries block sync uses. Without them, a single anonymous 429 during startup
+ * stopped the backend.
+ */
+export interface IUsdtParametersTransport {
+    /** Run a contract call without broadcasting it and return TronGrid's response body. */
+    triggerConstantContract<T>(payload: Record<string, unknown>): Promise<T>;
+}
+
 /** Which of the two simulated transfers a measurement belongs to. */
 type SimulationKind = 'standard' | 'first-time';
 
@@ -96,15 +108,18 @@ class UsdtTransferSimulationError extends Error {
  * as an error, and nothing is saved, so consumers keep the last good values.
  */
 export class UsdtParametersFetcher implements IUsdtParametersFetcher {
-    private readonly TRONGRID_ENDPOINT = 'https://api.trongrid.io/wallet/triggerconstantcontract';
     private readonly database: IDatabaseService;
 
     /**
-     * @param http - HTTP client for TronGrid, injected so tests can supply canned responses
+     * @param tronGrid - TronGrid transport, injected so production shares the platform client and tests supply canned responses
      * @param logger - Logger that records the error when a measurement cannot be obtained
      * @param database - Database where each validated measurement is stored
      */
-    constructor(private readonly http: AxiosInstance, private readonly logger: ISystemLogService, database: IDatabaseService) {
+    constructor(
+        private readonly tronGrid: IUsdtParametersTransport,
+        private readonly logger: ISystemLogService,
+        database: IDatabaseService
+    ) {
         this.database = database;
         this.database.registerModel(USDT_PARAMETERS_COLLECTION, UsdtParametersModel);
     }
@@ -199,21 +214,15 @@ export class UsdtParametersFetcher implements IUsdtParametersFetcher {
      * @throws UsdtTransferSimulationError when the response does not describe a successful transfer
      */
     private async simulateTransfer(recipientAbiAddress: string, kind: SimulationKind): Promise<number> {
-        const response = await this.http.post<ITronGridConstantContractResponse>(
-            this.TRONGRID_ENDPOINT,
-            {
-                owner_address: SAMPLE_HOLDER_ADDRESS,
-                contract_address: USDT_CONTRACT_ADDRESS,
-                function_selector: 'transfer(address,uint256)',
-                parameter: this.encodeTransferParameters(recipientAbiAddress, SIMULATED_TRANSFER_AMOUNT),
-                visible: true
-            },
-            {
-                timeout: 10000
-            }
-        );
+        const response = await this.tronGrid.triggerConstantContract<ITronGridConstantContractResponse>({
+            owner_address: SAMPLE_HOLDER_ADDRESS,
+            contract_address: USDT_CONTRACT_ADDRESS,
+            function_selector: 'transfer(address,uint256)',
+            parameter: this.encodeTransferParameters(recipientAbiAddress, SIMULATED_TRANSFER_AMOUNT),
+            visible: true
+        });
 
-        return this.readEnergyUsed(response.data, kind);
+        return this.readEnergyUsed(response, kind);
     }
 
     /**
