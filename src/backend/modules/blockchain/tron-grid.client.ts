@@ -417,6 +417,17 @@ export interface TronGridAccountResourceResponse {
     freeNetUsed?: number;
 }
 
+/**
+ * TronGrid's `/wallet/getchainparameters` response: protocol settings chosen by
+ * governance proposals, such as `getEnergyFee`, each as a key and value pair.
+ */
+export interface TronGridChainParametersResponse {
+    chainParameter: Array<{
+        key: string;
+        value: number;
+    }>;
+}
+
 export interface TronGridEnergyPricePoint {
     time: string;
     price: number;
@@ -1659,13 +1670,42 @@ export class TronGridClient {
     /**
      * Execute a read-only smart contract call via triggerconstantcontract.
      *
-     * No gas cost — used for querying contract state (e.g. allowance, balanceOf).
+     * No gas cost — used for querying contract state (e.g. allowance, balanceOf)
+     * and for simulating a call to measure the energy it would use. A transport
+     * failure, 5xx, or 429 is retried on the block-sync retry budget before the
+     * error reaches the caller, so a single rate-limited reply does not fail it.
      *
      * @param payload - Contract call parameters (owner_address, contract_address, function_selector, parameter, visible)
      * @returns Trigger constant contract response with result data
      */
     async triggerConstantContract<T>(payload: Record<string, unknown>): Promise<T> {
-        return this.post<T>('/wallet/triggerconstantcontract', payload);
+        return retry(() => this.post<T>('/wallet/triggerconstantcontract', payload), {
+            ...blockchainConfig.retry,
+            onRetry: (attempt, error) =>
+                logger.warn(
+                    { attempt, error, contractAddress: payload.contract_address, functionSelector: payload.function_selector },
+                    'Retrying TronGrid triggerconstantcontract'
+                )
+        });
+    }
+
+    /**
+     * Read TRON's governance-set chain parameters, such as the energy fee.
+     *
+     * The chain parameters fetcher needs these every ten minutes and once at
+     * startup, where one rate-limited reply used to stop the backend. Going
+     * through the shared queue gives the call the platform's API keys, its 200ms
+     * spacing, and the same retries as block sync, so a passing 429 is retried
+     * instead of failing the fetch.
+     *
+     * @returns Every chain parameter as a key and value pair
+     * @throws Error when every attempt fails
+     */
+    async getChainParameters(): Promise<TronGridChainParametersResponse> {
+        return retry(() => this.post<TronGridChainParametersResponse>('/wallet/getchainparameters', {}), {
+            ...blockchainConfig.retry,
+            onRetry: (attempt, error) => logger.warn({ attempt, error }, 'Retrying TronGrid getChainParameters')
+        });
     }
 
     /**

@@ -9,9 +9,9 @@
  */
 
 import type { IDatabaseService } from '@/types';
-import axios from 'axios';
 import { logger } from '../../../lib/logger.js';
 import { BlockchainService } from '../../blockchain/blockchain.service.js';
+import { TronGridClient } from '../../blockchain/tron-grid.client.js';
 import { ChainParametersFetcher } from '../../chain-parameters/chain-parameters-fetcher.js';
 import { ChainParametersService } from '../../chain-parameters/chain-parameters.service.js';
 import { UsdtParametersFetcher } from '../../usdt-parameters/usdt-parameters-fetcher.js';
@@ -61,8 +61,11 @@ export async function registerCoreJobs(
     BlockchainService.setDependencies(database);
 
     const blockchainService = BlockchainService.getInstance();
-    const chainParametersFetcher = new ChainParametersFetcher(axios, logger, database);
-    const usdtParametersFetcher = new UsdtParametersFetcher(axios, logger, database);
+    // Both fetchers send their requests through the shared TronGrid client, so
+    // they use the configured API keys, the 200ms queue, and its retries.
+    const tronGrid = TronGridClient.getInstance();
+    const chainParametersFetcher = new ChainParametersFetcher(tronGrid, logger, database);
+    const usdtParametersFetcher = new UsdtParametersFetcher(tronGrid, logger, database);
 
     // Chain parameters: every 10 minutes. The fetched snapshot is pushed into
     // the service's in-memory cache as well as the database, because the

@@ -77,7 +77,6 @@ import { createApiRouter } from './api/routes/index.js';
 import { PluginManagerService } from './services/plugin-manager.service.js';
 import type { Express } from 'express';
 import type { IDatabaseService, IMenuService, IMenuNode, IPluginManifest, IServiceRegistry, IHookRegistry, IContentRegistry, IContentRouter, IClickHouseService } from '@/types';
-import axios from 'axios';
 
 /**
  * How long shutdown waits for blocks already committed to MongoDB to reach the
@@ -851,9 +850,13 @@ async function initializeCoreServices(coreDatabase: IDatabaseService, clickhouse
     BlockchainService.setDependencies(coreDatabase, { clickhouse });
     await realignFetchHeight();
 
+    // Both startup fetches go through the shared TronGrid client, so they use the
+    // configured API keys and retry a passing 429 instead of failing bootstrap.
+    const tronGrid = TronGridClient.getInstance();
+
     // Chain parameters: inject database, fetch from TronGrid first (populates DB), then warm cache
     ChainParametersService.setDependencies(coreDatabase);
-    const chainParamsFetcher = new ChainParametersFetcher(axios, logger, coreDatabase);
+    const chainParamsFetcher = new ChainParametersFetcher(tronGrid, logger, coreDatabase);
     await chainParamsFetcher.fetch();
     if (!await ChainParametersService.getInstance().init()) {
         throw new Error('Chain parameters service failed to initialize');
@@ -861,7 +864,7 @@ async function initializeCoreServices(coreDatabase: IDatabaseService, clickhouse
 
     // USDT parameters: inject database, fetch from TronGrid first (populates DB), then warm cache
     UsdtParametersService.setDependencies(coreDatabase);
-    const usdtParamsFetcher = new UsdtParametersFetcher(axios, logger, coreDatabase);
+    const usdtParamsFetcher = new UsdtParametersFetcher(tronGrid, logger, coreDatabase);
     await usdtParamsFetcher.fetch();
     if (!await UsdtParametersService.getInstance().init()) {
         throw new Error('USDT parameters service failed to initialize');

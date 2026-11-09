@@ -10,7 +10,7 @@ The timestamp is only half the test. A candidate must **also** be a contract typ
 
 The type test also carries the case where `create_time` is unavailable. Contract accounts have none, so the timestamp test is skipped rather than failed for them, and a deployed contract still resolves to its deployer. A **failed** account lookup is different and now throws, because `getAccount` answers null on a transport error and folding that into "this account has no creation stamp" turned one failed request into a confidently-wrong parent.
 
-Every method shares one rotating-key, 200ms-throttled request queue with live block sync.
+Every method shares one rotating-key, 200ms-throttled request queue with live block sync. The chain parameters and USDT parameters fetchers use it too, through `getChainParameters()`, `getAccountResource()`, and `triggerConstantContract()`, each retried on the block-sync retry budget (`blockchainConfig.retry`), so a passing 429 at startup is retried rather than stopping the backend.
 
 `getBlockByNumber()` and `getTransactionInfoByBlockNum()` parse their responses with `parseJsonExactIntegers` (`src/backend/lib/`) instead of a plain `JSON.parse`, which would round any integer beyond 2^53. TRC-10 amounts do go that high. A field beyond that range arrives as its exact decimal string, typed `TronGridInt64` (`number | string`), so code reading an amount from these two responses must accept both forms. `resolveAmounts()` and `decodeInternalTransfers()` already do.
 
