@@ -1,0 +1,47 @@
+/**
+ * Styles for PromptLine — the operator's line on the Query tab, shared by sent
+ * messages in the transcript and the live composer field.
+ *
+ * The line spans the transcript's full width on a faint primary wash, with the
+ * glyph in the gutter and the text in the monospace face. That is how the
+ * operator's words are told apart from the model's prose, which stays in the
+ * body face with no wash. The font, size, and line height are set here and
+ * inherited by the content, so a field placed inside the line lines up with the
+ * glyph exactly as sent text does.
+ */
+
+.line {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--gap-xs);
+    min-width: 0;
+    padding: var(--padding-xs) var(--padding-sm);
+    border-radius: var(--radius-xs);
+    background: var(--color-primary-alpha-10);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-body-sm);
+    line-height: var(--line-height-relaxed);
+    color: var(--color-text);
+    transition: box-shadow var(--transition-fast);
+
+    /* Only the composer's line holds a field, so only it ever shows the ring.
+       The field inside draws no border or ring of its own, which leaves this as
+       the visible keyboard focus. */
+    &:has(:focus-visible) {
+        box-shadow: var(--input-shadow-focus);
+    }
+}
+
+/* Same face and line height as the text, so it sits on the first line's
+   baseline. Not selectable, so copying a message never picks it up. */
+.glyph {
+    flex-shrink: 0;
+    font-weight: var(--font-weight-bold);
+    color: var(--color-primary);
+    user-select: none;
+}
+
+.body {
+    flex: 1 1 auto;
+    min-width: 0;
+}

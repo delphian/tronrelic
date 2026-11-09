@@ -3,8 +3,10 @@
 /**
  * @file PromptEditorBar.tsx
  *
- * The strip directly above the composer that appears once a saved prompt is
- * loaded (or a new one is being written). It is what makes the editing mode
+ * The strip pinned to the bottom of the chat card, below the scrolling
+ * transcript and the composer inside it, that appears once a saved prompt is
+ * loaded (or a new one is being written). Pinned rather than scrolling with the
+ * composer so Save stays in reach however far the transcript has scrolled. It is what makes the editing mode
  * visible: the composer behaves differently while a prompt is loaded (Send
  * keeps the text, the tool grant is sticky), and without a labelled strip
  * beside the field those differences read as bugs. It carries the name field,
@@ -73,7 +75,7 @@ interface PromptEditorBarProps {
     onDelete: () => void;
     /** Stop editing: clears the bar without touching the transcript. */
     onClose: () => void;
-    /** Whether the triggers editor is revealed below the composer. */
+    /** Whether the triggers editor is revealed above this strip. */
     triggersOpen: boolean;
     /** Toggle the triggers editor. */
     onToggleTriggers: () => void;
@@ -124,8 +126,8 @@ export function PromptEditorBar({
     return (
         <div className={`${styles.bar} ${runError ? styles.bar_error : ''}`}>
             <div className={styles.bar_row}>
-                {/* Names the mode. The composer below is this prompt's body while
-                    the strip is showing, and this label is what says so. */}
+                {/* Names the mode. The composer's prompt line is this prompt's
+                    body while the strip is showing, and this label is what says so. */}
                 <span className={styles.bar_label}>
                     <Pencil size={12} /> {prompt ? 'Editing prompt' : 'New prompt'}
                 </span>
@@ -231,7 +233,7 @@ export function PromptEditorBar({
                     </span>
                 )}
                 <span className={styles.bar_meta_hint}>
-                    The composer below holds this prompt&apos;s text; Send tests it without clearing it.
+                    The prompt line above holds this prompt&apos;s text; Send tests it without clearing it.
                 </span>
             </div>
         </div>

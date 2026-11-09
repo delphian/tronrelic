@@ -1,12 +1,13 @@
 /**
- * Styles for one transcript turn on the AI Tools Query tab: the user bubble,
- * the assistant prose, the hover-revealed footer of actions and usage, and the
- * collapsed thinking and tool-call cards inside an assistant turn.
+ * Styles for one transcript turn on the AI Tools Query tab: the operator's
+ * line, the assistant prose, the hover-revealed footer of actions and usage,
+ * and the collapsed thinking and tool-call cards inside an assistant turn.
  *
- * The turn deliberately carries no avatar and no role label. The two roles are
- * told apart by shape and placement — a bubble on the right is the operator, a
- * flush block on the left is the model — which is the convention every current
- * chat interface uses and the one a reader arrives already knowing.
+ * The turn deliberately carries no avatar and no role label. The page reads
+ * like a command-line agent session: both roles share one left-aligned column,
+ * and the operator's line is marked by the `›` prompt glyph, the monospace
+ * face, and a faint wash (all owned by PromptLine.module.scss), while the
+ * model's answer is plain prose beneath it.
  */
 
 /*
@@ -21,27 +22,16 @@
     min-width: 0;
 }
 
-/* The operator's message: a bubble against the right edge, never the full
-   width, so the eye can tell the two speakers apart from across the room. */
-.turn_user {
-    align-self: flex-end;
-    align-items: flex-end;
-    max-width: 80%;
-}
-
+/* Both roles fill the column. The operator's line takes its look from
+   PromptLine; this only keeps the turn full-width. */
+.turn_user,
 .turn_assistant {
     align-self: stretch;
 }
 
+/* Face, size, and colour come from the PromptLine around it; this keeps the
+   operator's own line breaks and wraps a long token instead of overflowing. */
 .turn_text {
-    padding: var(--padding-sm) var(--padding-md);
-    background: var(--color-primary-alpha-15);
-    border: var(--border-width-thin) solid var(--color-primary-alpha-38);
-    border-radius: var(--radius-md);
-    border-bottom-right-radius: var(--radius-xs);
-    font-size: var(--font-size-body-sm);
-    color: var(--color-text);
-    line-height: var(--line-height-relaxed);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
 }
@@ -57,10 +47,6 @@
     flex-wrap: wrap;
     gap: var(--gap-xs);
     min-height: var(--button-height-xs);
-}
-
-.turn_footer_user {
-    justify-content: flex-end;
 }
 
 /* Hidden until the turn is hovered or holds focus. Opacity rather than

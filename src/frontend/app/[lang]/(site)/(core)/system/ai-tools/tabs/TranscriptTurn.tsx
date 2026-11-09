@@ -3,9 +3,10 @@
 /**
  * @file TranscriptTurn.tsx
  *
- * One turn of the Query tab's transcript: a user message as a right-aligned
- * bubble, or an assistant answer as flush prose with its thinking and tool
- * activity folded in. The per-turn actions — copy, save-as-prompt, the tool
+ * One turn of the Query tab's transcript: a user message as a full-width
+ * prompt line (the same `PromptLine` the composer uses, so a sent message reads
+ * as the line that was typed), or an assistant answer as flush prose with its
+ * thinking and tool activity folded in. The per-turn actions — copy, save-as-prompt, the tool
  * chips — and the usage line live in a footer that stays out of the way until
  * the turn is hovered or focused, so a long conversation reads as a
  * conversation rather than as a list of toolbars.
@@ -35,6 +36,7 @@ import { formatUsd } from './formatUsd';
 // card on screen and in the transcript an operator pastes elsewhere.
 import { formatToolPayload } from './formatConversation';
 import type { IChatTurn } from './IChatTurn';
+import { PromptLine } from './PromptLine';
 import styles from './TranscriptTurn.module.scss';
 
 /**
@@ -375,8 +377,10 @@ export const TranscriptTurn = memo(function TranscriptTurn({
                 data-turn-id={turn.id}
                 aria-label="Your message"
             >
-                <div className={styles.turn_text}>{turn.content}</div>
-                <div className={`${styles.turn_footer} ${styles.turn_footer_user}`}>
+                <PromptLine>
+                    <div className={styles.turn_text}>{turn.content}</div>
+                </PromptLine>
+                <div className={styles.turn_footer}>
                     <div className={styles.turn_actions}>
                         <IconButton
                             variant="ghost"

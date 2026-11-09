@@ -15,20 +15,32 @@
  * as a separate view that replaced the chat — was reported as hard to use:
  *
  * - The chat pane fills the viewport below the page chrome (`useViewportFill`
- *   measures the offset), so the transcript is the one scrolling region and
- *   the composer stays pinned to the bottom of the screen.
+ *   measures the offset), and the transcript is the one scrolling region.
+ * - The pane reads like a command-line agent session. The composer is the
+ *   last thing inside the scrolling transcript, directly after the newest
+ *   turn, so it scrolls with the conversation the way a terminal's input line
+ *   scrolls with its output. It is a `PromptLine` — the same `›` line a sent
+ *   message is drawn with — so the text the operator types looks the same once
+ *   it moves up into the history. The composer grows with its text without a
+ *   cap, because a second scroll box inside the transcript would break that.
  * - The transcript follows a streaming answer only while the reader is at the
  *   live edge, releases the moment they scroll up, and offers a "Latest"
  *   button back (`useTranscriptScroll`). A send anchors the new message at the
- *   top of the pane so the answer streams into empty space beneath it.
- * - Past conversations sit in a collapsible rail beside the chat and open in
- *   place; the tab stays mounted across the dashboard's other tabs and keeps
- *   the open conversation in the URL, so neither a tab switch nor a refresh
- *   loses it. Opening one also restores the composer's model and tool grant
- *   from that conversation's opening turn, so the message bar continues the
- *   thread on the terms it ran under.
- * - Enter sends and Shift+Enter inserts a newline; the composer grows with its
- *   text; per-message actions appear on hover.
+ *   top of the pane so the answer streams in beneath it, with the composer
+ *   following the answer down. While the content under that message is still
+ *   shorter than the pane, a spacer after the composer, sized by the hook,
+ *   makes up the difference, and it shrinks to nothing as the answer fills the
+ *   pane — the same picture as a terminal that has just been cleared.
+ * - Past conversations sit in a rail beside the chat that starts collapsed,
+ *   so the transcript gets the full width until the operator opens it from the
+ *   header. A conversation picked there opens in place; the tab stays mounted
+ *   across the dashboard's other tabs and keeps the open conversation in the
+ *   URL, so neither a tab switch nor a refresh loses it. Opening one also
+ *   restores the composer's model and tool grant from that conversation's
+ *   opening turn, so the message bar continues the thread on the terms it ran
+ *   under.
+ * - Enter sends and Shift+Enter inserts a newline; per-message actions appear
+ *   on hover.
  * - A copy control in the chat header and on every rail row copies the whole
  *   conversation, in one of three formats the operator picks from a menu. The
  *   header copies the transcript on screen; a rail row fetches that
@@ -56,10 +68,11 @@
  * This card is also the **saved-prompt editor**. Picking a prompt from the
  * header selector starts a fresh chat and loads that prompt's text into the
  * composer, its model pin into the picker, its allowlist into the tools
- * dropdown, and its triggers into a panel above the composer — so one Save
- * writes the whole document. The editing mode is framed by a strip directly
- * above the composer, and three consequences follow from the composer doubling
- * as the body field:
+ * dropdown, and its triggers into a panel above the editing strip — so one Save
+ * writes the whole document. The editing mode is named by a strip pinned to the
+ * bottom of the card, below the scrolling transcript, so Save stays in reach
+ * however far the transcript has scrolled. Three consequences follow from the
+ * composer doubling as the body field:
  *
  * - **Send does not clear the composer while a prompt is loaded.** The text is
  *   the prompt body; clearing it would empty what Save writes.
@@ -118,6 +131,7 @@ import { SavedPromptSelector } from '../components/SavedPromptSelector';
 import { PromptEditorBar } from './PromptEditorBar';
 import { PromptTriggersEditor } from './PromptTriggersEditor';
 import { ConversationRail } from './ConversationRail';
+import { PromptLine } from './PromptLine';
 import { TranscriptTurn } from './TranscriptTurn';
 import { formatUsd } from './formatUsd';
 import { formatConversation, type ConversationCopyFormat } from './formatConversation';
@@ -162,9 +176,6 @@ const PENDING_RUN_POLL_MS = 5_000;
 
 /** How long (ms) to keep polling for a run-now result before giving up. */
 const PENDING_RUN_POLL_LIMIT_MS = 15 * 60_000;
-
-/** Tallest the composer grows on its own before it scrolls instead. */
-const COMPOSER_MAX_ROWS = 8;
 
 /**
  * Key the header's copy control flashes under while the open chat has no
@@ -594,8 +605,11 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
      * the id of the conversation the transcript shows (mirrored from the ref
      * below so the rail can highlight it).
      */
-    /** Whether the rail is shown beside the chat. */
-    const [railOpen, setRailOpen] = useState(true);
+    /**
+     * Whether the rail is shown beside the chat. Starts collapsed so the
+     * transcript gets the full width; the header's panel toggle opens it.
+     */
+    const [railOpen, setRailOpen] = useState(false);
     /** Every history record loaded so far, newest first. */
     const [historyRecords, setHistoryRecords] = useState<IAiQueryRecord[]>([]);
     /** The server's total record count, so the rail knows whether more pages exist. */
@@ -643,7 +657,7 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
     const [promptName, setPromptName] = useState('');
     /** The trigger rows as edited; saved together with everything else. */
     const [triggerDrafts, setTriggerDrafts] = useState<ITriggerDraft[]>([]);
-    /** Whether the triggers panel is revealed above the composer. */
+    /** Whether the triggers panel is revealed above the editing strip. */
     const [triggersOpen, setTriggersOpen] = useState(false);
     /** Whether the single prompt save is in flight. */
     const [promptSaving, setPromptSaving] = useState(false);
@@ -722,7 +736,7 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
      */
     const turnToolsByTurnIdRef = useRef(new Map<string, string[]>());
 
-    const { atBottom, followRef, scrollToBottom, anchorToTop, followIfEnabled } = useTranscriptScroll(transcriptRef);
+    const { atBottom, followRef, scrollToBottom, anchorToTop, followIfEnabled, reserveRef, fitReserve } = useTranscriptScroll(transcriptRef);
     const paneTop = useViewportFill(workspaceRef, active);
 
     /**
@@ -1423,39 +1437,47 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
     // "this scroll was mine" flag would be left set for the next real scroll to
     // swallow. Streaming carries on while hidden, so `active` is a dependency
     // and the rule re-runs the moment the tab is shown again.
+    //
+    // The spacer under the composer is refitted on every change, because a
+    // streamed chunk makes the content taller and the spacer has to shrink by
+    // the same amount for the anchored message to stay where it is.
     useEffect(() => {
-        if (!active) {
-            return;
-        }
-        const anchorId = pendingAnchorTurnIdRef.current;
-        if (anchorId) {
+        if (active) {
+            const anchorId = pendingAnchorTurnIdRef.current;
             pendingAnchorTurnIdRef.current = null;
-            const element = transcriptRef.current?.querySelector<HTMLElement>(`[data-turn-id="${anchorId}"]`);
+            const element = anchorId
+                ? transcriptRef.current?.querySelector<HTMLElement>(`[data-turn-id="${anchorId}"]`)
+                : null;
             if (element) {
                 anchorToTop(element);
-                return;
+            } else {
+                fitReserve();
+                followIfEnabled();
             }
         }
-        followIfEnabled();
-    }, [messages, active, anchorToTop, followIfEnabled]);
+    }, [messages, active, anchorToTop, fitReserve, followIfEnabled]);
 
-    // Grow the composer with its text up to a cap, then scroll inside it. The
-    // height is reset before measuring so the field also shrinks when text is
-    // deleted. Re-run on activation because a hidden textarea measures as zero.
+    // Grow the composer with its text, with no cap: the composer sits inside
+    // the transcript's scrolling region, so a long prompt makes the pane scroll
+    // rather than opening a second scroll box inside the first. The height is
+    // reset before measuring so the field also shrinks when text is deleted.
+    //
+    // That reset briefly makes the pane's content shorter, and the browser
+    // clamps the pane's scroll position to fit while it measures, so the
+    // position is saved first and put back afterwards; without that, every
+    // keystroke near the bottom would jolt the view upward. Re-run on
+    // activation because a hidden textarea measures as zero.
     useEffect(() => {
         const element = textareaRef.current;
-        if (!element || !active) {
-            return;
+        const pane = transcriptRef.current;
+        if (element && pane && active) {
+            const savedScrollTop = pane.scrollTop;
+            element.style.height = 'auto';
+            element.style.height = `${element.scrollHeight}px`;
+            pane.scrollTop = savedScrollTop;
+            fitReserve();
         }
-        const computed = getComputedStyle(element);
-        const lineHeight = Number.parseFloat(computed.lineHeight) || 20;
-        const padding = (Number.parseFloat(computed.paddingTop) || 0) + (Number.parseFloat(computed.paddingBottom) || 0);
-        const maxHeight = lineHeight * COMPOSER_MAX_ROWS + padding;
-        element.style.height = 'auto';
-        const contentHeight = element.scrollHeight;
-        element.style.height = `${Math.min(contentHeight, maxHeight)}px`;
-        element.style.overflowY = contentHeight > maxHeight ? 'auto' : 'hidden';
-    }, [input, active]);
+    }, [input, active, fitReserve]);
 
     /**
      * Send the composer text as the next chat turn. Snapshots the completed
@@ -2374,61 +2396,184 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
                     </div>
 
                     <div className={styles.transcript_wrap}>
-                        <div
-                            ref={transcriptRef}
-                            className={styles.transcript}
-                            role="log"
-                            aria-live="polite"
-                            aria-busy={streaming}
-                            aria-label="Conversation transcript"
-                        >
-                            {error && (
-                                <div className={styles.chat_error} role="alert">
-                                    <AlertCircle size={16} className={styles.chat_error_icon} />
-                                    <span>{error}</span>
-                                </div>
-                            )}
-
-                            {hasTurns ? (
-                                messages.map(turn => (
-                                    <TranscriptTurn
-                                        key={turn.id}
-                                        turn={turn}
-                                        recordsById={toolRecordsById}
-                                        onSelectRecord={setSelectedRecord}
-                                        modelLabel={modelLabel}
-                                        copied={copiedId === turn.id}
-                                        onCopy={handleCopy}
-                                        tools={turn.role === 'user' ? turnToolsByTurnId.get(turn.id) : undefined}
-                                        calledTools={turn.role === 'user' ? calledToolsByTurnId.get(turn.id) : undefined}
-                                        onSaveAsPrompt={turn.role === 'user' ? handleSaveTurnAsPrompt : undefined}
-                                        saveDisabled={savingTurnId !== null}
-                                    />
-                                ))
-                            ) : (
-                                !error && (
-                                    <div className={styles.empty_state}>
-                                        <Bot size={24} className={styles.empty_state_icon} />
-                                        <span>
-                                            {awaitingRunId
-                                                ? 'This run is in progress. Its result will appear here when it finishes.'
-                                                : 'Start a conversation with the active AI provider. Responses stream in live.'}
-                                        </span>
+                        {/* The one scrolling region. It holds the conversation
+                            and, after it, the composer, so the prompt line
+                            scrolls with the transcript the way a terminal's
+                            input does. The live region is the inner log only,
+                            so typing and the composer's controls are never
+                            announced as conversation. */}
+                        <div ref={transcriptRef} className={styles.transcript}>
+                            <div
+                                className={styles.log}
+                                role="log"
+                                aria-live="polite"
+                                aria-busy={streaming}
+                                aria-label="Conversation transcript"
+                            >
+                                {error && (
+                                    <div className={styles.chat_error} role="alert">
+                                        <AlertCircle size={16} className={styles.chat_error_icon} />
+                                        <span>{error}</span>
                                     </div>
-                                )
-                            )}
+                                )}
 
-                            {unlinkedRecords.length > 0 && (
-                                // Invocations the transcript above cannot link to, because they
-                                // carry no `toolUseId` to pair with a call. Without this block
-                                // their detail would be unreachable from the chat view.
-                                <div className={styles.unlinked_records}>
-                                    <span className={styles.unlinked_records_note}>
-                                        Tool calls this transcript cannot link to
-                                    </span>
-                                    <InvocationTable records={unlinkedRecords} onSelect={setSelectedRecord} />
+                                {hasTurns ? (
+                                    messages.map(turn => (
+                                        <TranscriptTurn
+                                            key={turn.id}
+                                            turn={turn}
+                                            recordsById={toolRecordsById}
+                                            onSelectRecord={setSelectedRecord}
+                                            modelLabel={modelLabel}
+                                            copied={copiedId === turn.id}
+                                            onCopy={handleCopy}
+                                            tools={turn.role === 'user' ? turnToolsByTurnId.get(turn.id) : undefined}
+                                            calledTools={turn.role === 'user' ? calledToolsByTurnId.get(turn.id) : undefined}
+                                            onSaveAsPrompt={turn.role === 'user' ? handleSaveTurnAsPrompt : undefined}
+                                            saveDisabled={savingTurnId !== null}
+                                        />
+                                    ))
+                                ) : (
+                                    !error && (
+                                        <div className={styles.empty_state}>
+                                            <Bot size={16} className={styles.empty_state_icon} />
+                                            <span>
+                                                {awaitingRunId
+                                                    ? 'This run is in progress. Its result will appear here when it finishes.'
+                                                    : 'Start a conversation with the active AI provider. Responses stream in live.'}
+                                            </span>
+                                        </div>
+                                    )
+                                )}
+
+                                {unlinkedRecords.length > 0 && (
+                                    // Invocations the transcript above cannot link to, because they
+                                    // carry no `toolUseId` to pair with a call. Without this block
+                                    // their detail would be unreachable from the chat view.
+                                    <div className={styles.unlinked_records}>
+                                        <span className={styles.unlinked_records_note}>
+                                            Tool calls this transcript cannot link to
+                                        </span>
+                                        <InvocationTable records={unlinkedRecords} onSelect={setSelectedRecord} />
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className={styles.composer}>
+                                <PromptLine>
+                                    <Textarea
+                                        ref={textareaRef}
+                                        variant="ghost"
+                                        size="xs"
+                                        value={input}
+                                        onChange={(e) => setInput(e.target.value)}
+                                        onKeyDown={handleKeyDown}
+                                        placeholder={editingPrompt
+                                            ? 'Prompt text — Enter sends it as a test message, Shift+Enter adds a line'
+                                            : 'Message the assistant… (Enter to send, Shift+Enter for a new line)'}
+                                        className={styles.composer_input}
+                                        rows={1}
+                                        aria-label="Message input"
+                                        disabled={streaming}
+                                    />
+                                </PromptLine>
+                                <div className={styles.composer_status}>
+                                    {grantedTools.length > 0 && (
+                                        <ul className={styles.composer_chips}>
+                                            {grantedTools.map(name => (
+                                                <li key={name}>
+                                                    <button
+                                                        type="button"
+                                                        className={styles.composer_chip}
+                                                        onClick={() => handleRevokeTool(name)}
+                                                        disabled={streaming}
+                                                        title={`Remove ${name} from this message`}
+                                                        aria-label={`Remove ${name} from the tools this message may call`}
+                                                    >
+                                                        {name}
+                                                        <X size={12} aria-hidden="true" />
+                                                    </button>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    )}
+                                    <div className={styles.composer_footer}>
+                                        {providers.length > 0 && (
+                                            <Select
+                                                value={modelOverride}
+                                                onChange={(e) => setModelOverride(e.target.value)}
+                                                size="sm"
+                                                className={styles.model_select}
+                                                aria-label="Model for the next message"
+                                                title={editingPrompt
+                                                    ? 'Model for the next message, and the model this prompt pins for its autonomous runs'
+                                                    : "Model for the next message — Default uses the active provider's configured model"}
+                                            >
+                                                <option value="">Default model</option>
+                                                {providers.map(provider => (
+                                                    <optgroup
+                                                        key={provider.id}
+                                                        label={provider.active ? `${provider.label} (active)` : provider.label}
+                                                    >
+                                                        {provider.models.map(model => (
+                                                            <option key={`${provider.id}|${model.id}`} value={`${provider.id}|${model.id}`}>
+                                                                {model.display_name}
+                                                            </option>
+                                                        ))}
+                                                    </optgroup>
+                                                ))}
+                                            </Select>
+                                        )}
+                                        <ToolAllowlistDropdown
+                                            tools={tools}
+                                            hostedTools={hostedTools}
+                                            selected={toolSelection}
+                                            onChange={handleToolSelectionChange}
+                                            trifecta={trifecta}
+                                            trifectaLoading={trifectaLoading}
+                                            onOpenChange={setToolsOpen}
+                                            disabled={streaming}
+                                            hint={editingPrompt
+                                                ? 'Tools this saved prompt may call, on this message and on every autonomous run. An empty selection runs it with no tools. Provider-hosted tools are granted here too — unchecked means the request never offers them, so they cannot run. Naming a tool that is later disabled or removed fails the run.'
+                                                : undefined}
+                                        />
+                                        {pinnedProviderInactive && (
+                                            <span className={styles.model_pin_note}>
+                                                {editingPrompt
+                                                    ? 'Not the active provider — applies to scheduled runs only.'
+                                                    : 'Not the active provider — this message runs on the active provider’s default model.'}
+                                            </span>
+                                        )}
+                                        <div className={styles.composer_send}>
+                                            {streaming ? (
+                                                <Button
+                                                    variant="danger"
+                                                    size="xs"
+                                                    onClick={() => { void handleStop(); }}
+                                                    aria-label="Stop the in-flight response"
+                                                >
+                                                    <Square size={14} /> Stop
+                                                </Button>
+                                            ) : (
+                                                <Button
+                                                    variant="primary"
+                                                    size="xs"
+                                                    onClick={() => { void handleSend(); }}
+                                                    disabled={!input.trim() || (needsToolPrefill && toolsLoading)}
+                                                    aria-label="Send message"
+                                                >
+                                                    <ArrowUp size={14} /> Send
+                                                </Button>
+                                            )}
+                                        </div>
+                                    </div>
                                 </div>
-                            )}
+                            </div>
+
+                            {/* Sized by useTranscriptScroll so a sent message can
+                                be scrolled to the top of the pane while the
+                                content below it is still shorter than the pane. */}
+                            <div ref={reserveRef} className={styles.reserve} aria-hidden="true" />
                         </div>
 
                         {hasTurns && !atBottom && (
@@ -2443,6 +2588,10 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
                         )}
                     </div>
 
+                    {/* The saved-prompt editing strip stays pinned to the bottom
+                        of the card, below the scrolling region, so Save and the
+                        mode it names stay in reach however far the transcript
+                        has scrolled. */}
                     {editingPrompt && triggersOpen && (
                         <div className={styles.triggers_panel}>
                             <PromptTriggersEditor
@@ -2477,115 +2626,6 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
                             triggerCount={triggerDrafts.length}
                         />
                     )}
-
-                    <div className={styles.composer}>
-                        <div className={styles.composer_box}>
-                            <Textarea
-                                ref={textareaRef}
-                                variant="ghost"
-                                size="xs"
-                                value={input}
-                                onChange={(e) => setInput(e.target.value)}
-                                onKeyDown={handleKeyDown}
-                                placeholder={editingPrompt
-                                    ? 'Prompt text — Enter sends it as a test message, Shift+Enter adds a line'
-                                    : 'Message the assistant… (Enter to send, Shift+Enter for a new line)'}
-                                className={styles.composer_input}
-                                rows={1}
-                                aria-label="Message input"
-                                disabled={streaming}
-                            />
-                            {grantedTools.length > 0 && (
-                                <ul className={styles.composer_chips}>
-                                    {grantedTools.map(name => (
-                                        <li key={name}>
-                                            <button
-                                                type="button"
-                                                className={styles.composer_chip}
-                                                onClick={() => handleRevokeTool(name)}
-                                                disabled={streaming}
-                                                title={`Remove ${name} from this message`}
-                                                aria-label={`Remove ${name} from the tools this message may call`}
-                                            >
-                                                {name}
-                                                <X size={12} aria-hidden="true" />
-                                            </button>
-                                        </li>
-                                    ))}
-                                </ul>
-                            )}
-                            <div className={styles.composer_footer}>
-                                {providers.length > 0 && (
-                                    <Select
-                                        value={modelOverride}
-                                        onChange={(e) => setModelOverride(e.target.value)}
-                                        size="sm"
-                                        className={styles.model_select}
-                                        aria-label="Model for the next message"
-                                        title={editingPrompt
-                                            ? 'Model for the next message, and the model this prompt pins for its autonomous runs'
-                                            : "Model for the next message — Default uses the active provider's configured model"}
-                                    >
-                                        <option value="">Default model</option>
-                                        {providers.map(provider => (
-                                            <optgroup
-                                                key={provider.id}
-                                                label={provider.active ? `${provider.label} (active)` : provider.label}
-                                            >
-                                                {provider.models.map(model => (
-                                                    <option key={`${provider.id}|${model.id}`} value={`${provider.id}|${model.id}`}>
-                                                        {model.display_name}
-                                                    </option>
-                                                ))}
-                                            </optgroup>
-                                        ))}
-                                    </Select>
-                                )}
-                                <ToolAllowlistDropdown
-                                    tools={tools}
-                                    hostedTools={hostedTools}
-                                    selected={toolSelection}
-                                    onChange={handleToolSelectionChange}
-                                    trifecta={trifecta}
-                                    trifectaLoading={trifectaLoading}
-                                    onOpenChange={setToolsOpen}
-                                    disabled={streaming}
-                                    hint={editingPrompt
-                                        ? 'Tools this saved prompt may call, on this message and on every autonomous run. An empty selection runs it with no tools. Provider-hosted tools are granted here too — unchecked means the request never offers them, so they cannot run. Naming a tool that is later disabled or removed fails the run.'
-                                        : undefined}
-                                />
-                                {pinnedProviderInactive && (
-                                    <span className={styles.model_pin_note}>
-                                        {editingPrompt
-                                            ? 'Not the active provider — applies to scheduled runs only.'
-                                            : 'Not the active provider — this message runs on the active provider’s default model.'}
-                                    </span>
-                                )}
-                                <div className={styles.composer_send}>
-                                    {streaming ? (
-                                        <Button
-                                            variant="danger"
-                                            size="xs"
-                                            onClick={() => { void handleStop(); }}
-                                            aria-label="Stop the in-flight response"
-                                        >
-                                            <Square size={14} /> Stop
-                                        </Button>
-                                    ) : (
-                                        <Button
-                                            variant="primary"
-                                            size="xs"
-                                            onClick={() => { void handleSend(); }}
-                                            disabled={!input.trim() || (needsToolPrefill && toolsLoading)}
-                                            aria-label="Send message"
-                                        >
-                                            <ArrowUp size={14} /> Send
-                                        </Button>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
                 </Card>
             </div>
 

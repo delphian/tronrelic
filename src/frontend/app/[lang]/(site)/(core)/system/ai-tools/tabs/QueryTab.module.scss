@@ -2,8 +2,9 @@
  * Styles for the AI Tools Query tab — a multi-turn chat surface on the
  * core /system/ai-tools dashboard. Visual surfaces come from Card / Button /
  * Badge primitives; this module adds the workspace that fills the viewport,
- * the rail-plus-card layout, the scrolling transcript with its jump-to-latest
- * control, and the composer pinned at the bottom.
+ * the rail-plus-card layout, and the scrolling transcript with its
+ * jump-to-latest control and the composer that scrolls inside it, directly
+ * after the newest turn, like a terminal's input line.
  *
  * Turn rendering lives in TranscriptTurn.module.scss and the conversation list
  * in ConversationRail.module.scss. Responsive behaviour is driven by container
@@ -16,19 +17,16 @@
 /*
  * Tab-scoped semantic tokens. Defined here (not in core semantic-tokens.scss)
  * because they describe sizing contracts unique to this chat surface. The
- * height floors keep the pane usable on a short viewport; the rail width and
- * the anchor reserve are the two layout decisions the transcript's scroll
- * behaviour depends on.
+ * height floors keep the pane usable on a short viewport, and the transcript
+ * gap is named because the anchoring spacer has to cancel exactly one of it.
  */
 .query {
     --query-chat-height-min: 24rem;
     --query-rail-width: 17rem;
     --query-rail-stacked-height: 14rem;
     --query-triggers-max-height: 45%;
-    /* How far above the pane's bottom edge the last turn may end. Reserving this
-       much space beneath the newest message is what lets a send scroll that
-       message to the top of the pane so the answer streams in below it. */
-    --query-anchor-reserve: 60%;
+    /* Space between turns, and between the newest turn and the composer. */
+    --query-transcript-gap: var(--gap-md);
     /* Where the pane starts, in px from the top of the document. Written by the
        tab from a live measurement; the fallback only matters for the instant
        before that measurement lands. */
@@ -192,7 +190,8 @@
  * exists to prevent. The longhands pass through untouched.
  *
  * Positioned so a turn's offsetTop is measured from here, which the anchoring
- * scroll relies on.
+ * scroll relies on. Holds three things in order: the conversation log, the
+ * composer, and the anchoring spacer.
  */
 .transcript {
     position: relative;
@@ -203,20 +202,29 @@
     overflow-y: auto;
     display: flex;
     flex-direction: column;
-    gap: var(--gap-md);
+    gap: var(--query-transcript-gap);
     padding: var(--card-padding-sm);
     scroll-behavior: auto;
 }
 
-/* Reserve room under the newest turn. Without it a send could not scroll the
-   new message to the top of the pane, because there would be nothing below it
-   to scroll into. The last turn is matched by its <article> root rather than by
-   :last-child, because the trailing .unlinked_records block renders after the
-   turns and would otherwise take the reserve, stretching that footnote into a
-   tall blank area under the tool table. Earlier turns keep their natural
-   spacing. */
-.transcript > article:last-of-type {
-    min-height: var(--query-anchor-reserve);
+/* The conversation itself, and the page's live region. Kept separate from the
+   composer so screen readers announce new turns but not the operator's own
+   typing or the composer's controls. */
+.log {
+    display: flex;
+    flex-direction: column;
+    gap: var(--query-transcript-gap);
+}
+
+/* Empty space after the composer that lets a sent message scroll to the top of
+   the pane while the content below it is still short. useTranscriptScroll sets
+   the height and shrinks it to zero as the answer fills the pane. The negative
+   margin cancels the flex gap before it, so a zero-height spacer adds nothing
+   under the composer. */
+.reserve {
+    flex-shrink: 0;
+    height: 0;
+    margin-top: calc(var(--query-transcript-gap) * -1);
 }
 
 /* Top-level send error (network failure before a turn could stream). */
@@ -282,21 +290,20 @@
     color: var(--color-text-muted);
 }
 
+/* A new chat's one line of guidance, set left above the prompt line like the
+   banner a terminal agent prints when it starts. It does not grow, so the
+   prompt line sits near the top of an empty pane rather than at its foot. */
 .empty_state {
     display: flex;
-    flex-direction: column;
     align-items: center;
-    justify-content: center;
-    gap: var(--gap-sm);
-    padding: var(--card-padding-md);
-    flex: 1;
+    gap: var(--gap-xs);
     color: var(--color-text-muted);
     font-size: var(--font-size-body-sm);
-    text-align: center;
 }
 
 .empty_state_icon {
-    opacity: var(--opacity-35);
+    flex-shrink: 0;
+    color: var(--color-primary);
 }
 
 /* The saved prompt's triggers, opened above the editor strip. Capped and
@@ -310,44 +317,37 @@
 
 /*
  * ===========================================================================
- * COMPOSER — one bordered box holding the text field, the granted-tool chips,
- * and a footer row of model, tools, and send, pinned at the bottom of the card.
+ * COMPOSER — the live prompt line and a quiet status row beneath it, the last
+ * content inside the scrolling transcript.
  * ===========================================================================
+ *
+ * The composer follows the newest turn inside the transcript, with no rule,
+ * tint, or boxed field between them, so the pane reads as one command-line
+ * session that scrolls as a whole rather than an output window above a
+ * separate input form. It takes the transcript's own padding, so the prompt
+ * line sits in the same column as the sent messages above it.
  */
 .composer {
-    padding: var(--padding-sm) var(--card-padding-sm) var(--card-padding-sm);
-    border-top: var(--border-width-thin) solid var(--color-border);
-    background: var(--color-surface-muted);
-    flex-shrink: 0;
-}
-
-/* The field and its controls share one border and one focus ring, the way a
-   chat composer is drawn everywhere else, instead of a bare textarea with a
-   toolbar floating beneath it. */
-.composer_box {
     display: flex;
     flex-direction: column;
     gap: var(--gap-xs);
-    padding: var(--padding-xs) var(--padding-sm);
-    border: var(--input-border);
-    border-radius: var(--radius-md);
-    background: var(--input-background);
-    transition: var(--input-transition);
-
-    &:focus-within {
-        border-color: var(--input-border-focus);
-        box-shadow: var(--input-shadow-focus);
-    }
+    flex-shrink: 0;
 }
 
-/* The box carries the border and the ring, so the field inside draws neither.
-   Height is set from script as the text grows; resize is off because the box
-   grows on its own and a drag handle would fight it. */
-.composer_input {
+/* The prompt line carries the wash and the focus ring, so the field inside
+   draws neither, and takes the line's face, size, and line height so its text
+   sits beside the glyph exactly as a sent message's does. Two classes so these
+   win over the Textarea primitive's own single-class size and variant rules
+   whatever order the stylesheets load in. Height is set from script as the
+   text grows; resize is off because the line grows on its own and a drag
+   handle would fight it. */
+.composer .composer_input {
     border: none;
     background: transparent;
     box-shadow: none;
-    padding: var(--padding-2xs) 0;
+    padding: 0;
+    font: inherit;
+    color: inherit;
     resize: none;
     overflow-y: hidden;
 
@@ -355,6 +355,14 @@
         border: none;
         box-shadow: none;
     }
+}
+
+/* The granted-tool chips and the model, tools, and send controls, kept quiet
+   beneath the prompt line like an agent's status line. */
+.composer_status {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-xs);
 }
 
 .composer_footer {

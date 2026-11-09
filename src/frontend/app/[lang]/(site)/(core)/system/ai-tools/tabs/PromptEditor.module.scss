@@ -1,7 +1,8 @@
 /**
  * Styles for the saved-prompt editing surface embedded in the Query tab's chat
- * card: the editing strip directly above the composer (PromptEditorBar) and
- * the triggers panel that opens above that strip (PromptTriggersEditor).
+ * card: the editing strip pinned to the bottom of the card, below the
+ * scrolling transcript and its composer (PromptEditorBar), and the triggers
+ * panel that opens above that strip (PromptTriggersEditor).
  *
  * The strip is the one loud element in the card on purpose. While it shows,
  * the composer is a prompt's body rather than a chat message, and the primary
