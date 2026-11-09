@@ -18,7 +18,7 @@
  * Tab-scoped semantic tokens. Defined here (not in core semantic-tokens.scss)
  * because they describe sizing contracts unique to this chat surface. The
  * height floors keep the pane usable on a short viewport, and the transcript
- * gap is named because the anchoring spacer has to cancel exactly one of it.
+ * gap is named because the transcript and the log inside it share one rhythm.
  */
 .query {
     --query-chat-height-min: 24rem;
@@ -189,12 +189,10 @@
  * falls back to the content's height — which is exactly the growth this rule
  * exists to prevent. The longhands pass through untouched.
  *
- * Positioned so a turn's offsetTop is measured from here, which the anchoring
- * scroll relies on. Holds three things in order: the conversation log, the
- * composer, and the anchoring spacer.
+ * Holds the conversation log and, directly after it, the composer, so the
+ * composer scrolls with the conversation like a terminal's input line.
  */
 .transcript {
-    position: relative;
     flex-grow: 1;
     flex-shrink: 1;
     flex-basis: 0;
@@ -214,17 +212,6 @@
     display: flex;
     flex-direction: column;
     gap: var(--query-transcript-gap);
-}
-
-/* Empty space after the composer that lets a sent message scroll to the top of
-   the pane while the content below it is still short. useTranscriptScroll sets
-   the height and shrinks it to zero as the answer fills the pane. The negative
-   margin cancels the flex gap before it, so a zero-height spacer adds nothing
-   under the composer. */
-.reserve {
-    flex-shrink: 0;
-    height: 0;
-    margin-top: calc(var(--query-transcript-gap) * -1);
 }
 
 /* Top-level send error (network failure before a turn could stream). */

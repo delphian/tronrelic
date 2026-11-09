@@ -349,9 +349,6 @@ export interface ITranscriptTurnProps {
  * One transcript turn. Memoised so a streamed chunk re-renders only the turn
  * it changed; every other turn keeps identical props and is skipped.
  *
- * The turn's root carries `data-turn-id` so the parent can find the element to
- * anchor the view to after a send, without holding a ref per turn.
- *
  * @param props - See {@link ITranscriptTurnProps}.
  * @returns The rendered turn.
  */
@@ -374,7 +371,6 @@ export const TranscriptTurn = memo(function TranscriptTurn({
         return (
             <article
                 className={`${styles.turn} ${styles.turn_user}`}
-                data-turn-id={turn.id}
                 aria-label="Your message"
             >
                 <PromptLine>
@@ -430,7 +426,6 @@ export const TranscriptTurn = memo(function TranscriptTurn({
     return (
         <article
             className={`${styles.turn} ${styles.turn_assistant}`}
-            data-turn-id={turn.id}
             aria-label="Assistant reply"
         >
             {turn.segments && turn.segments.length > 0 ? (

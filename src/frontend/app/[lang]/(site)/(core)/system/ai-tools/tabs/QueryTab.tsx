@@ -23,14 +23,15 @@
  *   message is drawn with — so the text the operator types looks the same once
  *   it moves up into the history. The composer grows with its text without a
  *   cap, because a second scroll box inside the transcript would break that.
- * - The transcript follows a streaming answer only while the reader is at the
- *   live edge, releases the moment they scroll up, and offers a "Latest"
- *   button back (`useTranscriptScroll`). A send anchors the new message at the
- *   top of the pane so the answer streams in beneath it, with the composer
- *   following the answer down. While the content under that message is still
- *   shorter than the pane, a spacer after the composer, sized by the hook,
- *   makes up the difference, and it shrinks to nothing as the answer fills the
- *   pane — the same picture as a terminal that has just been cleared.
+ *   The field is never disabled while an answer streams, so it keeps keyboard
+ *   focus across a send and the operator can type the next message ahead.
+ * - Output builds up from the bottom, as in a terminal. The transcript follows
+ *   the live edge — the newest output with the composer under it — while the
+ *   reader is there, releases the moment they scroll up, and offers a "Latest"
+ *   button back (`useTranscriptScroll`). A send turns following back on, so
+ *   the new message and the answer streaming in under it stay in view with the
+ *   composer at the bottom of the pane. There is no empty space under the
+ *   composer once the conversation fills the pane.
  * - Past conversations sit in a rail beside the chat that starts collapsed,
  *   so the transcript gets the full width until the operator opens it from the
  *   header. A conversation picked there opens in place; the tab stays mounted
@@ -700,11 +701,6 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
     const workspaceRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    /**
-     * Id of the user turn the transcript should scroll to the top of the pane
-     * once it has rendered. Set by a send and consumed by the follow effect.
-     */
-    const pendingAnchorTurnIdRef = useRef<string | null>(null);
     /** Whether the `?conversation=` deep link has been applied, so it fires once. */
     const initialOpenedRef = useRef(false);
     /**
@@ -736,7 +732,7 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
      */
     const turnToolsByTurnIdRef = useRef(new Map<string, string[]>());
 
-    const { atBottom, followRef, scrollToBottom, anchorToTop, followIfEnabled, reserveRef, fitReserve } = useTranscriptScroll(transcriptRef);
+    const { atBottom, followRef, scrollToBottom, followIfEnabled } = useTranscriptScroll(transcriptRef);
     const paneTop = useViewportFill(workspaceRef, active);
 
     /**
@@ -1426,36 +1422,23 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
         return () => { socket.off(QUERY_STREAM_EVENT, handleStreamChunk); };
     }, [handleStreamChunk]);
 
-    // Keep the view where the reader wants it as the transcript changes. A send
-    // has asked for its new message to be anchored at the top of the pane, so
-    // the answer streams into the space beneath it; otherwise the live edge is
-    // followed only while the reader is already there.
+    // Keep the view where the reader wants it as the transcript changes. The
+    // live edge — the newest output and the composer under it — is followed
+    // while the reader is there, the way a terminal keeps its input line at the
+    // bottom of the screen. A send turns following on, so the operator's new
+    // message and the answer streaming in under it both stay in view.
     //
-    // Skip all of it while the tab is hidden. The sibling tabs keep this one
-    // mounted behind `hidden`, so the transcript has no layout box and every
+    // Skip it while the tab is hidden. The sibling tabs keep this one mounted
+    // behind `hidden`, so the transcript has no layout box and every
     // measurement reads zero: the scroll would not move, and the hook's one-shot
     // "this scroll was mine" flag would be left set for the next real scroll to
     // swallow. Streaming carries on while hidden, so `active` is a dependency
     // and the rule re-runs the moment the tab is shown again.
-    //
-    // The spacer under the composer is refitted on every change, because a
-    // streamed chunk makes the content taller and the spacer has to shrink by
-    // the same amount for the anchored message to stay where it is.
     useEffect(() => {
         if (active) {
-            const anchorId = pendingAnchorTurnIdRef.current;
-            pendingAnchorTurnIdRef.current = null;
-            const element = anchorId
-                ? transcriptRef.current?.querySelector<HTMLElement>(`[data-turn-id="${anchorId}"]`)
-                : null;
-            if (element) {
-                anchorToTop(element);
-            } else {
-                fitReserve();
-                followIfEnabled();
-            }
+            followIfEnabled();
         }
-    }, [messages, active, anchorToTop, fitReserve, followIfEnabled]);
+    }, [messages, active, followIfEnabled]);
 
     // Grow the composer with its text, with no cap: the composer sits inside
     // the transcript's scrolling region, so a long prompt makes the pane scroll
@@ -1477,7 +1460,6 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
             element.style.height = 'auto';
             element.style.height = `${element.scrollHeight}px`;
             pane.scrollTop = savedScrollTop;
-            fitReserve();
 
             // Putting the position back is right for an edit in the middle of a
             // long prompt, where the new line appears below a caret that has not
@@ -1489,18 +1471,15 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
             // only that case, and only by the amount the field overshoots the
             // visible area.
             //
-            // An empty composer is skipped deliberately. Clearing it after a
-            // send re-runs this rule in the same commit as the scroll that
-            // anchored the sent message to the top of the pane, and pulling an
-            // empty field into view would undo that anchoring. The focus check
-            // keeps a programmatic fill, such as loading a saved prompt, from
-            // moving the view while the operator is working elsewhere.
+            // The focus check keeps a programmatic fill, such as loading a saved
+            // prompt, from moving the view while the operator is working
+            // elsewhere.
             //
             // This scroll does not claim the hook's "that scroll was mine" flag:
             // moving toward the composer the operator is typing in is exactly
             // the intent the scroll listener should record as following.
             const caretAtEnd = element.selectionEnd === element.value.length;
-            if (element.value.length > 0 && caretAtEnd && document.activeElement === element) {
+            if (caretAtEnd && document.activeElement === element) {
                 const paddingBottom = Number.parseFloat(getComputedStyle(pane).paddingBottom) || 0;
                 const overshoot = element.getBoundingClientRect().bottom - (pane.getBoundingClientRect().bottom - paddingBottom);
                 if (overshoot > 0) {
@@ -1508,7 +1487,7 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
                 }
             }
         }
-    }, [input, active, fitReserve]);
+    }, [input, active]);
 
     /**
      * Send the composer text as the next chat turn. Snapshots the completed
@@ -1568,7 +1547,6 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
             // provider is not what actually answers.
             model: sendModel
         };
-        pendingAnchorTurnIdRef.current = userTurn.id;
         followRef.current = true;
         setMessages(prev => [...prev, userTurn, assistantTurn]);
         // While a prompt is loaded the composer holds that prompt's body, so the
@@ -2505,7 +2483,13 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
                                         className={styles.composer_input}
                                         rows={1}
                                         aria-label="Message input"
-                                        disabled={streaming}
+                                        // Deliberately never disabled while an answer
+                                        // streams: a disabled field loses keyboard focus,
+                                        // so the operator would have to click back in after
+                                        // every send. Instead the field stays live and the
+                                        // operator can type the next message ahead, the way
+                                        // a terminal agent allows; handleSend ignores Enter
+                                        // until the current answer finishes.
                                     />
                                 </PromptLine>
                                 <div className={styles.composer_status}>
@@ -2600,11 +2584,6 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
                                     </div>
                                 </div>
                             </div>
-
-                            {/* Sized by useTranscriptScroll so a sent message can
-                                be scrolled to the top of the pane while the
-                                content below it is still shorter than the pane. */}
-                            <div ref={reserveRef} className={styles.reserve} aria-hidden="true" />
                         </div>
 
                         {hasTurns && !atBottom && (

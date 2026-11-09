@@ -77,7 +77,11 @@ Never hardcode any of these formulas — call the service. All inputs/outputs ar
 
 ## USDT Parameters Service
 
-`UsdtParametersService` is the parallel cache for USDT TRC20 transfer energy cost (`~65,000` units, dynamic). Always call `usdtParamsService.getUsdtTransferEnergyCost()` — never hardcode `65000`. USDT cost is fetched on its own scheduler (see `usdt-parameters:fetch`) and combines with `ChainParametersService` for transfer-cost normalization.
+`UsdtParametersService` is the parallel cache for USDT TRC20 transfer energy cost (`~65,000` units, dynamic). Always call `getStandardTransferEnergy()` or `getFirstTimeTransferEnergy()` — never hardcode `65000`. USDT cost is fetched on its own scheduler (see `usdt-parameters:fetch`) and combines with `ChainParametersService` for transfer-cost normalization.
+
+The fetcher measures two costs on every run by simulating USDT transfers through TronGrid's `triggerconstantcontract`, which executes a call without broadcasting it. `standardTransferEnergy` is a transfer to a wallet that already holds USDT. `firstTimeTransferEnergy` is a transfer to a freshly generated address, which stands for any wallet whose USDT balance is currently zero, including one that emptied its balance. It costs more because the recipient's balance is written into an empty storage slot. Never derive one figure from the other: the gap is a fixed storage cost multiplied by USDT's dynamic energy penalty, so it is not a fixed ratio.
+
+TronGrid reports a reverted simulation as `result.result: true` with a small `energy_used`, so the fetcher rejects any response that carries a `message`, a `FAILED` transaction result, or no event logs, and rejects a first-time figure that is not above the standard one. A rejected fetch logs an error with what TronGrid returned and saves nothing, so consumers keep the last stored values. Both simulations are sent from a sample wallet that must hold at least 1 USDT. If it runs dry, every fetch fails with a logged revert until the address in `usdt-parameters-fetcher.ts` is replaced. At startup, `src/backend/index.ts` waits for the first fetch, so a failure there stops the backend from starting.
 
 ## Rules
 

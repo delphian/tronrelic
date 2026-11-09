@@ -30,10 +30,13 @@ export interface IUsdtParametersService {
     getStandardTransferEnergy(): Promise<number>;
 
     /**
-     * Get energy cost for first-time USDT transfer (to empty wallet)
-     * Higher cost due to contract state initialization
+     * Get energy cost for a USDT transfer to a wallet whose USDT balance is currently zero
      *
-     * @returns Energy units required for first-time transfer
+     * Callers need this to price a transfer to a new or emptied wallet, which costs more
+     * than a standard transfer because the recipient's balance is written into an empty
+     * storage slot. The figure is measured on chain, not estimated from the standard cost.
+     *
+     * @returns Energy units required for a transfer to a zero-balance wallet
      */
     getFirstTimeTransferEnergy(): Promise<number>;
 }
