@@ -63,9 +63,6 @@ function describeOutcome(outcome: IAccountHistoryTickOutcomeView): string {
 /**
  * Render the per-source walk status line under an in-progress account's status
  * badge: a check for an exhausted walk, an ellipsis for one still descending.
- *
- * @param flags - The per-source completion flags from progress.
- * @returns The `tx ✓ · trc20 … · internal …` display string.
  */
 function describeSources(flags: IAccountHistorySourceFlags): string {
     const mark = (done: boolean) => (done ? '✓' : '…');
@@ -75,9 +72,6 @@ function describeSources(flags: IAccountHistorySourceFlags): string {
 /**
  * Name the source walks currently mid-drain in forward sync, for the catching-up
  * detail line (e.g. `draining trc20`).
- *
- * @param flags - The per-source forward-drain flags from progress.
- * @returns The joined names, or an empty string when none drain.
  */
 function describeDraining(flags: IAccountHistorySourceFlags): string {
     const names = (['tx', 'trc20', 'internal'] as const).filter((source) => flags[source]);

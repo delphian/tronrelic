@@ -21,13 +21,7 @@ type Store = Record<string, Array<Record<string, unknown>>>;
  * @returns The adapter.
  */
 function adapterOver(store: Store): IOAuthStoreAdapter {
-    /**
-     * Test one row against a where list.
-     *
-     * @param row - The row.
-     * @param where - The conditions.
-     * @returns True when every condition holds.
-     */
+    /** Test one row against a where list. */
     const matches = (row: Record<string, unknown>, where: Array<{ field: string; value: unknown; operator?: string }> = []) =>
         where.every(w => w.operator === 'in' ? (w.value as unknown[]).includes(row[w.field]) : row[w.field] === w.value);
     return {

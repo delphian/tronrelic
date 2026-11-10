@@ -64,9 +64,6 @@ const PAGE_SIZE = 50;
  * Stable identity for one assignment, used for edit and busy state keys. Rows
  * are addresses, but those two states still track a single tag: an admin
  * renames one tag at a time even when its row holds a dozen.
- *
- * @param item - The assignment the key identifies.
- * @returns A unique `address tag` composite key.
  */
 function tagKey(item: { address: string; tag: string }): string {
     return `${item.address} ${item.tag}`;
@@ -177,8 +174,6 @@ export function AddressTagsManager() {
      * what the visible rows were actually filtered by. Leaving the two out of
      * step would make the next manual search read as a change to a term the
      * operator never typed.
-     *
-     * @param tag - The tag to filter by, or null to show everything again.
      */
     const handleSelectTag = useCallback(async (tag: string | null) => {
         const nextSearch = tag ?? '';

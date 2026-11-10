@@ -125,14 +125,7 @@ export function IconPickerModal({ selectedIcon, onSelect, onClose }: IconPickerM
         );
     }, [iconNames, searchQuery]) ?? [];
 
-    /**
-     * Handle icon selection and close modal.
-     *
-     * Invokes the onSelect callback with the chosen icon name,
-     * then closes the modal immediately.
-     *
-     * @param iconName - Selected icon component name
-     */
+    /** Pass the chosen icon name to onSelect, then close the modal. */
     const handleSelect = (iconName: string) => {
         onSelect(iconName);
         onClose();

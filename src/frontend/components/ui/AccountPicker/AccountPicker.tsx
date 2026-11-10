@@ -51,9 +51,6 @@ export interface AccountPickerProps {
 /**
  * Render the label for a resolved match: name when present, else email, else
  * the bare id (a deleted/unresolvable account still shows *something* stable).
- *
- * @param match - The resolved account, or a stub carrying only the id.
- * @returns A human-readable primary label.
  */
 function primaryLabel(match: IAccountMatch): string {
     return match.name || match.email || match.id;

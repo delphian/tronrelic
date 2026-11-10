@@ -368,13 +368,7 @@ export function reconstructTrxBalanceSeries(
     return points;
 }
 
-/**
- * Shift a `YYYY-MM-DD` day by a signed day count on the UTC boundary.
- *
- * @param day - UTC `YYYY-MM-DD`.
- * @param deltaDays - Days to add (negative to go back).
- * @returns The shifted day.
- */
+/** Shift a UTC `YYYY-MM-DD` day by a signed day count (negative to go back). */
 function shiftDay(day: string, deltaDays: number): string {
     const date = new Date(`${day}T00:00:00.000Z`);
     date.setUTCDate(date.getUTCDate() + deltaDays);

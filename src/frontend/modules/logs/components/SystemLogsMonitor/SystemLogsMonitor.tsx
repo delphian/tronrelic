@@ -111,8 +111,6 @@ export function SystemLogsMonitor({ service, title }: ISystemLogsMonitorProps) {
     /**
      * Synchronises the initial-load flag between state and ref so polling callbacks
      * always read the latest value when determining whether to flash new rows.
-     *
-     * @param next - Updated initial load flag
      */
     const setInitialLoadState = useCallback((next: boolean) => {
         isInitialLoadRef.current = next;
@@ -122,9 +120,8 @@ export function SystemLogsMonitor({ service, title }: ISystemLogsMonitorProps) {
     /**
      * Treats the next fetch as a fresh list after a filter, page, or page-size
      * change, so rows already on screen are not flashed as if they had just
-     * arrived. Every control that changes which entries are shown calls this.
-     *
-     * @param nextPage - The page to show next; filter changes go back to the first page
+     * arrived. Every control that changes which entries are shown calls this,
+     * and filter changes pass the first page.
      */
     const restartList = useCallback((nextPage: number) => {
         setPage(nextPage);

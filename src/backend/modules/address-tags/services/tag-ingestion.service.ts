@@ -416,13 +416,9 @@ export class TagIngestionService {
     }
 
     /**
-     * Merge a partial run record over the stored one, so a failed attempt
-     * updates `lastError`/`lastAttemptAt` without erasing the last success
-     * and its counts — the panel needs both to say "worked Tuesday, failing
-     * since".
-     *
-     * @param key - The state key to merge into.
-     * @param patch - Fields from this attempt.
+     * Merge a partial run record over the stored one, so a failed attempt updates
+     * `lastError`/`lastAttemptAt` without erasing the last success and its counts —
+     * the panel needs both to say "worked Tuesday, failing since".
      */
     private async mergeState(key: string, patch: Partial<ITagSourceRunState>): Promise<void> {
         const existing = (await this.database.get<ITagSourceRunState>(key)) ?? {};

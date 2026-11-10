@@ -160,8 +160,6 @@ describe(AI_TOOL_NAMES.addressTransfers, () => {
         /**
          * Fail the tool's own query the way ClickHouse does when the account's
          * memory limit stops it, so the test sees the advice that tool gives.
-         *
-         * @returns Never; it always throws.
          */
         const memoryError = (): never => {
             throw Object.assign(new Error('Memory limit exceeded'), { code: '241' });

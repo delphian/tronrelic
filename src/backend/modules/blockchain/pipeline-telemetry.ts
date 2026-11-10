@@ -1,12 +1,10 @@
 /**
  * @fileoverview In-memory record of what the block pipeline has done recently.
  *
- * The `/system` console used to read the pipeline from the sync state
- * document, which holds one block's timings, one error that the next healthy
- * tick erases, and no record of receipts at all. An operator could not tell
- * whether a stage was usually slow or slow once, could not see a block failure
- * that had already been cleared, and could not tell whether receipts, and so
- * decoded token transfers, were actually arriving.
+ * The sync state document holds one block's timings, one error that the next
+ * healthy tick erases, and no record of receipts at all, so it cannot show
+ * whether a stage is usually slow or slow once, a block failure already cleared,
+ * or whether receipts, and so decoded token transfers, are actually arriving.
  *
  * This class keeps a short rolling history instead: the last few hundred
  * prepared blocks with their receipt outcome and stage timings, the last few

@@ -71,10 +71,6 @@ export function buildProfileSettings(limits: IClickHouseAccountLimits): string {
     /**
      * Write one numeric limit as a setting a caller may lower but not raise
      * or switch off, so every limit carries the same constraint.
-     *
-     * @param name - ClickHouse setting name.
-     * @param value - The limit, validated as a positive whole number.
-     * @returns `name = value MIN 1 MAX value`.
      */
     const bounded = (name: string, value: number): string => {
         const checked = assertPositiveInteger(value, name);

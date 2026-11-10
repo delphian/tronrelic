@@ -133,13 +133,7 @@ export interface IProfileViewProps {
     initialTab?: string;
 }
 
-/**
- * Render a human label for the account, preferring email, then name, then a
- * short id prefix so there is always something meaningful to show.
- *
- * @param identity - The account identity projection.
- * @returns A display label for the "Signed in as" line.
- */
+/** Label for the "Signed in as" line, preferring email, then name, then a short id prefix. */
 function identityLabel(identity: IProfileIdentity): string {
     return identity.email || identity.name || `Account ${identity.id.slice(0, 8)}`;
 }
@@ -172,8 +166,6 @@ export function ProfileView({
      * address in place with `history.replaceState` — no server round-trip — so the
      * registered `?tab=` URLs become true deep links that `page.tsx` reads
      * SSR-first to seed the panel on next load.
-     *
-     * @param item - The clicked submenu node, carrying its `?tab=` url.
      */
     const handleTabSelect = useCallback((item: MenuNodeSerialized): void => {
         const tab = resolveTab(item.url, connectedAppsAvailable);

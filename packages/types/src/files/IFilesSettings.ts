@@ -1,10 +1,8 @@
 /**
  * Configuration settings for the Files module.
  *
- * These were previously colocated on `IPageSettings`. They moved here when
- * file storage became a platform-wide concern instead of a pages-only one;
- * every consumer of `IFileService.upload` (pages attachments, plugin
- * outputs) honors this single policy.
+ * A platform-wide policy: every consumer of `IFileService.upload` (pages
+ * attachments, plugin outputs) honors these settings.
  */
 export interface IFilesSettings {
     /** MongoDB identifier for the settings document. */

@@ -5,10 +5,9 @@
  * Backs two route groups, both mounted behind `requireAdmin`:
  * - `/api/admin/users/traffic/*` — raw traffic aggregates (bot class, paths,
  *   countries, bot_other UA samples) plus per-user history.
- * - `/api/admin/users/analytics/*` — the dashboard panels re-platformed off the
- *   legacy Mongo `users` aggregations onto `traffic_events` (Phase A of the
- *   Better Auth Phase 6 cutover), plus a BA-derived account/wallet overview and
- *   the Google Search Console integration.
+ * - `/api/admin/users/analytics/*` — the dashboard panels over `traffic_events`,
+ *   plus a BA-derived account/wallet overview and the Google Search Console
+ *   integration.
  *
  * The controller is not auth-aware; the parent router applies `requireAdmin`.
  * Account/wallet reads resolve `IAccountDirectoryService` / `IWalletService`
@@ -64,9 +63,6 @@ const KNOWN_BOT_CLASSES = new Set([
  * rows kept); anything else — including the param's absence — keeps the
  * historical include-everything behavior so existing consumers see no
  * change unless they opt in.
- *
- * @param value - Raw `req.query.bots` value.
- * @returns True when bot rows should be excluded.
  */
 function parseExcludeBots(value: unknown): boolean {
     return value === 'exclude';

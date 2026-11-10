@@ -3,9 +3,8 @@
  *
  * Renders the `core:auth-button` widget type: the site's sign-in button for
  * signed-out visitors, and a short identity pill linking to `/profile` for
- * signed-in ones, where wallet management and sign-out live. It used to be
- * fixed inside the site header; as a widget an operator places it from
- * `/system/widgets`, in any zone and next to any other widget.
+ * signed-in ones, where wallet management and sign-out live. An operator
+ * places it from `/system/widgets`, in any zone and next to any other widget.
  *
  * The button and its slide-out tray of links are `AccountTray` from the user
  * module. This component only passes it the administrator's sign-in image and

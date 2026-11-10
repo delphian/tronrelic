@@ -26,22 +26,12 @@ import {
 /** Status values the listing filter accepts. */
 const STATUSES: ReadonlyArray<TranslationStatus> = ['missing', 'stale', 'translated'];
 
-/**
- * Read a query value as a string.
- *
- * @param value - Raw `req.query` entry.
- * @returns The string, or undefined when absent or repeated.
- */
+/** Read a `req.query` value as a string; undefined when absent or repeated. */
 function queryString(value: unknown): string | undefined {
     return typeof value === 'string' && value !== '' ? value : undefined;
 }
 
-/**
- * Read a query value as a number.
- *
- * @param value - Raw `req.query` entry.
- * @returns The number, or undefined when absent or not numeric.
- */
+/** Read a `req.query` value as a number. */
 function queryNumber(value: unknown): number | undefined {
     const parsed = typeof value === 'string' ? Number(value) : Number.NaN;
     return Number.isFinite(parsed) ? parsed : undefined;

@@ -73,16 +73,13 @@ interface IMarkdownTreeNode {
 }
 
 /**
- * Whether a raw HTML node opens a `<script>` element without closing it.
+ * Whether a raw HTML node opens a `<script>` element without closing it, leaving
+ * the caller to find the closing tag in a later node or treat the script as
+ * running to the end of the markdown.
  *
  * Inside a paragraph the parser splits `<script>alert(1)</script>` into an
  * opening tag, a text node, and a closing tag. The sanitizer hides the text
  * too, so the stripper has to treat all three as one range.
- *
- * @param value - The raw HTML of one node.
- * @returns True when the node opens a script and does not close it itself,
- *   so the caller has to find the closing tag in a later node or treat the
- *   script as running to the end of the markdown.
  */
 function opensUnclosedScript(value: string): boolean {
     return /<script\b/i.test(value) && !/<\/script\s*>/i.test(value);
@@ -539,23 +536,12 @@ export class MarkdownService implements IMarkdownService {
         ]);
     }
 
-    /**
-     * Build the cache key of one translation's render.
-     *
-     * @param slug - The page's slug.
-     * @param language - Language code of the translation.
-     * @returns The key, distinct from every English cache key.
-     */
+    /** Build the cache key of one translation's render, distinct from every English cache key. */
     private translationRenderKey(slug: string, language: string): string {
         return `${this.TRANSLATION_RENDER_CACHE_PREFIX}${language}:${slug}`;
     }
 
-    /**
-     * Build the tag every translation render of a page carries.
-     *
-     * @param slug - The page's slug.
-     * @returns The tag `invalidateAllCaches` clears for that slug.
-     */
+    /** Build the tag every translation render of a page carries, which `invalidateAllCaches` clears. */
     private translationTag(slug: string): string {
         return `${this.TRANSLATION_TAG_PREFIX}${slug}`;
     }

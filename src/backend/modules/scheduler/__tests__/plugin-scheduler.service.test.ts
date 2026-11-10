@@ -3,10 +3,9 @@
 /**
  * @fileoverview Tests for the per-plugin scheduler facade.
  *
- * These cover the regression the facade exists to prevent: a plugin disabled from
- * the admin UI used to leave its cron jobs registered, so they kept firing on
- * their schedule for the life of the process, and uninstalling the plugin left
- * both the job and its `scheduler_configs` document behind.
+ * These guard what the facade exists to prevent: a plugin disabled from the
+ * admin UI leaving its cron jobs registered and firing for the life of the
+ * process, and an uninstall leaving the job and its `scheduler_configs` document behind.
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';

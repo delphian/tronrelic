@@ -3,8 +3,7 @@
  *
  * Core reports a `TriggerSmartContract` with the token contract as its
  * recipient and the call value (normally zero TRX) as its amount, so the real
- * recipient and token amount live only in the ABI-encoded call data. Plugins
- * used to decode that themselves, each with its own copy. Block sync now
+ * recipient and token amount live only in the ABI-encoded call data. Block sync
  * decodes it once here and delivers the result as `payload.tokenTransfer`.
  *
  * A pure module, alongside `transaction-parse.ts`, so a test can pin the
@@ -46,24 +45,15 @@ function readWord(data: string, index: number): string | null {
 }
 
 /**
- * Convert an ABI address word to a base58 TRON address.
- *
- * The word holds a 20-byte address right-aligned; TRON addresses add the
+ * Convert an ABI address word to a base58 TRON address, or null when conversion
+ * fails. The word holds a 20-byte address right-aligned; TRON addresses add the
  * `0x41` prefix byte before base58check encoding.
- *
- * @param word 64 hex characters from the call data.
- * @returns The base58 address, or null when conversion fails.
  */
 function wordToAddress(word: string): string | null {
     return TronGridClient.toBase58Address(`${TRON_ADDRESS_PREFIX_HEX}${word.slice(-40)}`);
 }
 
-/**
- * Convert an ABI uint256 word to a decimal string.
- *
- * @param word 64 hex characters from the call data.
- * @returns The value as a base-10 string; exact for any uint256.
- */
+/** Convert an ABI uint256 word to a decimal string, exact for any uint256. */
 function wordToAmount(word: string): string {
     return BigInt(`0x${word}`).toString(10);
 }

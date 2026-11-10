@@ -49,11 +49,7 @@ function createMockResponse(): Partial<Response> {
     return res;
 }
 
-/**
- * Create mock Express next function.
- *
- * @returns Mock next function
- */
+/** Create mock Express next function. */
 function createMockNext(): NextFunction {
     return vi.fn() as any;
 }
@@ -69,12 +65,6 @@ describe('SystemLogController', () => {
     });
 
     describe('getLogs', () => {
-        /**
-         * Test: getLogs should fetch logs with query parameters.
-         *
-         * Verifies that the controller parses query parameters and delegates
-         * to the service, then returns results in the expected format.
-         */
         it('should fetch logs with query parameters', async () => {
             const mockLogs = {
                 logs: [{ _id: '1', level: 'error', message: 'Test' }],
@@ -116,12 +106,6 @@ describe('SystemLogController', () => {
             expect(next).not.toHaveBeenCalled();
         });
 
-        /**
-         * Test: getLogs should parse single level as array.
-         *
-         * Verifies that when a single level is provided (not an array),
-         * it's converted to an array before passing to the service.
-         */
         it('should parse single level as array', async () => {
             mockService.getLogs.mockResolvedValue({
                 logs: [],
@@ -146,12 +130,6 @@ describe('SystemLogController', () => {
             });
         });
 
-        /**
-         * Test: getLogs should parse resolved boolean.
-         *
-         * Verifies that the 'resolved' query parameter is correctly
-         * converted from string to boolean.
-         */
         it('should parse resolved boolean', async () => {
             mockService.getLogs.mockResolvedValue({
                 logs: [],
@@ -176,12 +154,6 @@ describe('SystemLogController', () => {
             });
         });
 
-        /**
-         * Test: getLogs should parse date range.
-         *
-         * Verifies that startDate and endDate query parameters are
-         * converted to Date objects.
-         */
         it('should parse date range', async () => {
             mockService.getLogs.mockResolvedValue({
                 logs: [],
@@ -210,11 +182,6 @@ describe('SystemLogController', () => {
             });
         });
 
-        /**
-         * Test: getLogs should call next on error.
-         *
-         * Verifies that errors are passed to Express error handling middleware.
-         */
         it('should call next on error', async () => {
             const error = new Error('Database error');
             mockService.getLogs.mockRejectedValue(error);
@@ -231,11 +198,6 @@ describe('SystemLogController', () => {
     });
 
     describe('getStats', () => {
-        /**
-         * Test: getStats should return log statistics.
-         *
-         * Verifies that the controller fetches and returns statistics.
-         */
         it('should return log statistics', async () => {
             const mockStats = {
                 total: 100,
@@ -259,9 +221,6 @@ describe('SystemLogController', () => {
             });
         });
 
-        /**
-         * Test: getStats passes a service query through so the counts are scoped.
-         */
         it('should scope statistics when a service query is given', async () => {
             mockService.getStatistics.mockResolvedValue({ total: 1 });
 
@@ -274,9 +233,6 @@ describe('SystemLogController', () => {
             expect(mockService.getStatistics).toHaveBeenCalledWith('plugin:whale-alerts');
         });
 
-        /**
-         * Test: getStats should call next on error.
-         */
         it('should call next on error', async () => {
             const error = new Error('Stats error');
             mockService.getStatistics.mockRejectedValue(error);
@@ -292,11 +248,6 @@ describe('SystemLogController', () => {
     });
 
     describe('getLogById', () => {
-        /**
-         * Test: getLogById should return log entry.
-         *
-         * Verifies that the controller fetches a log by ID and returns it.
-         */
         it('should return log entry', async () => {
             const mockLog = {
                 _id: 'log123',
@@ -321,11 +272,6 @@ describe('SystemLogController', () => {
             });
         });
 
-        /**
-         * Test: getLogById should return 404 if not found.
-         *
-         * Verifies that the controller returns 404 when log entry doesn't exist.
-         */
         it('should return 404 if log not found', async () => {
             mockService.getLogById.mockResolvedValue(null);
 
@@ -344,9 +290,6 @@ describe('SystemLogController', () => {
             });
         });
 
-        /**
-         * Test: getLogById should call next on error.
-         */
         it('should call next on error', async () => {
             const error = new Error('Database error');
             mockService.getLogById.mockRejectedValue(error);
@@ -364,11 +307,6 @@ describe('SystemLogController', () => {
     });
 
     describe('markAsResolved', () => {
-        /**
-         * Test: markAsResolved should mark log as resolved.
-         *
-         * Verifies that the controller delegates to service and returns success.
-         */
         it('should mark log as resolved', async () => {
             mockService.markAsResolved.mockResolvedValue(undefined);
 
@@ -385,9 +323,6 @@ describe('SystemLogController', () => {
             expect(res.json).toHaveBeenCalledWith({ success: true });
         });
 
-        /**
-         * Test: markAsResolved should call next on error.
-         */
         it('should call next on error', async () => {
             const error = new Error('Update error');
             mockService.markAsResolved.mockRejectedValue(error);
@@ -406,11 +341,6 @@ describe('SystemLogController', () => {
     });
 
     describe('markAsUnresolved', () => {
-        /**
-         * Test: markAsUnresolved should mark log as unresolved.
-         *
-         * Verifies that the controller delegates to service and returns the updated log.
-         */
         it('should mark log as unresolved', async () => {
             const mockLog = {
                 _id: 'log123',
@@ -434,11 +364,6 @@ describe('SystemLogController', () => {
             });
         });
 
-        /**
-         * Test: markAsUnresolved should return 404 if not found.
-         *
-         * Verifies that the controller returns 404 when log entry doesn't exist.
-         */
         it('should return 404 if log not found', async () => {
             mockService.markAsUnresolved.mockResolvedValue(null);
 
@@ -457,9 +382,6 @@ describe('SystemLogController', () => {
             });
         });
 
-        /**
-         * Test: markAsUnresolved should call next on error.
-         */
         it('should call next on error', async () => {
             const error = new Error('Update error');
             mockService.markAsUnresolved.mockRejectedValue(error);
@@ -477,11 +399,6 @@ describe('SystemLogController', () => {
     });
 
     describe('deleteAllLogs', () => {
-        /**
-         * Test: deleteAllLogs should delete all log entries.
-         *
-         * Verifies that the controller delegates to service and returns deletion count.
-         */
         it('should delete all log entries', async () => {
             mockService.deleteAllLogs.mockResolvedValue(1000);
 
@@ -499,9 +416,6 @@ describe('SystemLogController', () => {
             });
         });
 
-        /**
-         * Test: deleteAllLogs should call next on error.
-         */
         it('should call next on error', async () => {
             const error = new Error('Delete error');
             mockService.deleteAllLogs.mockRejectedValue(error);

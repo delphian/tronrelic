@@ -46,9 +46,6 @@ type TriState = 'inherit' | 'on' | 'off';
  * Map an override field's stored value to its tri-state. An absent field
  * (`undefined`) means the override does not set it, so the class default
  * applies — `inherit`.
- *
- * @param value - The override field value, or undefined when unset.
- * @returns The matching tri-state.
  */
 function triFrom(value: boolean | undefined): TriState {
     return value === undefined ? 'inherit' : value ? 'on' : 'off';
@@ -61,12 +58,7 @@ function triFrom(value: boolean | undefined): TriState {
  */
 type CurationMode = 'inherit' | 'require' | 'auto-approve';
 
-/**
- * Map an override's curation value to the select state. Absent → `inherit`.
- *
- * @param value - The override's curation value, or undefined when unset.
- * @returns The matching select state.
- */
+/** Map an override's curation value to the select state. Absent → `inherit`. */
 function curationFrom(value: IToolPolicy['curation'] | undefined): CurationMode {
     return value ?? 'inherit';
 }

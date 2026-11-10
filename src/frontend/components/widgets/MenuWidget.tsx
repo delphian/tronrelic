@@ -5,8 +5,7 @@
  *
  * Renders the menu widget type (id `core:main-menu`): the navigation from
  * whichever menu namespace the operator chose in the placement settings,
- * such as `main` or `footer`. The `main` menu used to be fixed in the site
- * header; as a widget an operator places any menu from `/system/widgets`.
+ * such as `main` or `footer`, placed from `/system/widgets`.
  *
  * The menu's items do not come from the widget's `data`. Widget data is
  * cached per route and shared by every visitor, but a menu tree is filtered

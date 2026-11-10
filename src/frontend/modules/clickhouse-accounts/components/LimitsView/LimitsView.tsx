@@ -52,8 +52,6 @@ export function LimitsView({ account, onUpdated }: ILimitsViewProps) {
     /**
      * Hand a saved summary to the parent and return to the gauges, so the
      * admin sees the new values in the same form they are always shown in.
-     *
-     * @param updated - The summary the server returned after the save.
      */
     const handleSaved = (updated: IClickHouseAccountSummary) => {
         onUpdated(updated);
@@ -130,12 +128,7 @@ interface ILimitGaugeProps {
  * @returns A list item.
  */
 function LimitGauge({ field, value, ceiling, defaultValue, drift }: ILimitGaugeProps) {
-    /**
-     * Where a value sits along the track, as a percentage clamped to the track.
-     *
-     * @param amount - A value in the limit's own unit.
-     * @returns 0 to 100.
-     */
+    /** Where a value, in the limit's own unit, sits along the track, as a percentage clamped to 0–100. */
     const position = (amount: number): number => Math.min(100, Math.max(0, (amount / ceiling) * 100));
 
     return (

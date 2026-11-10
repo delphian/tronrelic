@@ -26,9 +26,7 @@ const PLACEMENTS_BASE = '/api/admin/system/widgets/placements';
  * Parse an error response into a thrown `Error`. The body may be JSON with
  * a structured validation report or may be empty; both yield one line.
  *
- * @param res - The failed response.
  * @param verb - The attempted action, for the fallback message.
- * @returns An error carrying the readable message.
  */
 async function toError(res: Response, verb: string): Promise<Error> {
     const body = await res.json().catch(() => ({}));

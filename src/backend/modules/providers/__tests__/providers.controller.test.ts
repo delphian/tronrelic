@@ -30,8 +30,6 @@ import {
 /**
  * Minimal ISystemLogService stand-in — these tests assert on stored state and
  * HTTP responses, never on log output.
- *
- * @returns A logger whose methods do nothing.
  */
 function createSilentLogger() {
     const noop = () => undefined;
@@ -59,13 +57,7 @@ function createResponseSpy() {
     return { res: res as unknown as Response, captured };
 }
 
-/**
- * Shape a plain body into the sliver of `Request` the handlers read.
- *
- * @param body - JSON body the request carries.
- * @param id - Route param `id` for the generic vendor routes.
- * @returns A request double.
- */
+/** Shape a plain body, and the optional `id` route param, into the sliver of `Request` the handlers read. */
 function requestWith(body: unknown, id?: string): Request {
     return { body, params: id ? { id } : {} } as unknown as Request;
 }

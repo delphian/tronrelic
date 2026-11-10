@@ -481,8 +481,6 @@ export function WalletFlowChart({ address, flow, counterparties, labels }: IWall
      * sit on different scales with no shared axis, so a bound typed for one is
      * meaningless for the other; clearing on switch stops a stale TRX ceiling from
      * silently clipping the USDT view (and vice versa).
-     *
-     * @param next - The denomination to plot.
      */
     const changeDenomination = (next: FlowDenomination) => {
         setDenomination(next);

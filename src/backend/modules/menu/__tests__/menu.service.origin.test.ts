@@ -160,9 +160,6 @@ describe('MenuService origin resolution', () => {
         mockDatabase.clear();
     });
 
-    /**
-     * Tags as `manual` when the node lives in `menu_nodes`.
-     */
     it('tags admin-created nodes as origin="manual"', async () => {
         menuService = await newService();
         const node = await menuService.create(
@@ -176,9 +173,6 @@ describe('MenuService origin resolution', () => {
         expect(projected?.origin).toBe('manual');
     });
 
-    /**
-     * Tags as `plugin` when the node is memory-only with no override row.
-     */
     it('tags memory-only nodes as origin="plugin" when no override exists', async () => {
         menuService = await newService();
         const node = await menuService.create(
@@ -212,11 +206,6 @@ describe('MenuService origin resolution', () => {
         expect(projected?.origin).toBe('plugin-overridden');
     });
 
-    /**
-     * Hydration path: an override row that exists in Mongo before
-     * `initialize()` runs should make the matching memory-only node
-     * read as `plugin-overridden` from the first admin tree fetch.
-     */
     it('hydrates the override-keys cache from menu_node_overrides on initialize', async () => {
         mockDatabase.seed('menu_node_overrides', [{
             namespace: 'main',

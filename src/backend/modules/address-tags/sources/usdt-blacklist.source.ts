@@ -208,11 +208,8 @@ export class UsdtBlacklistSource implements IVerifiableTagSource {
     }
 
     /**
-     * ABI-encode one address argument: the 20 account bytes (the 41 prefix
-     * stripped) left-padded to a 32-byte word.
-     *
-     * @param address - Base58 address to encode.
-     * @returns The 64-character hex parameter string.
+     * ABI-encode one base58 address argument as 64 hex characters: the 20 account
+     * bytes (the 41 prefix stripped) left-padded to a 32-byte word.
      */
     private encodeAddressParameter(address: string): string {
         return toHexAddress(address).slice(2).toLowerCase().padStart(64, '0');

@@ -1,11 +1,10 @@
 /**
  * @fileoverview Judges the block pipeline healthy, degraded, or stalled.
  *
- * Admins reported that the old console made them assemble the answer to "is
- * ingestion healthy?" themselves from a dozen figures spread over two cards,
- * some of which contradicted each other. These rules make that judgement once,
- * on the backend, and return it with plain-English reasons, so the console's
- * banner and any script reading the endpoint agree.
+ * These rules answer "is ingestion healthy?" once, on the backend, with
+ * plain-English reasons, so admins do not assemble the answer from a dozen
+ * figures that can contradict each other, and the console's banner and any
+ * script reading the endpoint agree.
  *
  * The thresholds are derived from the deployment's own configuration wherever
  * one exists — the buffer target, the backfill entry lag — so a deployment
@@ -144,12 +143,7 @@ export function resolvePipelineHealth(status: Omit<IPipelineStatus, 'health'>, n
     const reasons: IPipelineHealthReason[] = [];
     const { heights, sync, buffer, commit, receipts, backfill, errors, observers, config, chainData } = status;
 
-    /**
-     * Whether an ISO timestamp falls inside the recent window.
-     *
-     * @param at - The timestamp, or null.
-     * @returns True when it is recent enough to count against health.
-     */
+    /** Whether an ISO timestamp falls inside the recent window. */
     const isRecent = (at: string | null): boolean => at !== null && now - Date.parse(at) <= RECENT_WINDOW_MS;
 
     // Fetch: is sync running at all, and keeping up?

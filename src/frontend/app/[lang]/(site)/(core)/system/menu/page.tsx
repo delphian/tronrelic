@@ -334,9 +334,6 @@ export default function MenuAdminPage() {
     /**
      * Turn a node on or off entirely. Turning it off also stops its category
      * landing page from resolving, unlike hiding it from the menu.
-     *
-     * @param node - The row whose Enabled switch was flipped
-     * @param next - The new enabled state
      */
     const toggleEnabled = useCallback(
         (node: IMenuNode, next: boolean) =>
@@ -348,7 +345,6 @@ export default function MenuAdminPage() {
      * Show a node in navigation or hide it. A hidden node keeps working: its
      * landing page still resolves and it still appears on its parent's page.
      *
-     * @param node - The row whose In menu switch was flipped
      * @param next - True to show the node in navigation, false to hide it
      */
     const toggleInMenu = useCallback(

@@ -155,10 +155,6 @@ function GroupDropArea({
 /**
  * The provider label for a row, or null when its type is not registered
  * right now (its plugin is disabled), which the row shows as a warning.
- *
- * @param placement - The row.
- * @param types - Widget-type snapshot.
- * @returns The provider label or null.
  */
 function providerFor(placement: IWidgetPlacement, types: IWidgetTypeSnapshot | null): string | null {
     const type = findWidgetType(types, placement.typeId);

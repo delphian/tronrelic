@@ -87,10 +87,8 @@ function beginSubscriptionAttempt(socket: Socket, fullRoomName: string): number 
  * has already finished. The rejection gate still holds, because a newer attempt
  * that also rejects is itself the newest and removes the membership.
  *
- * @param socket - The socket the attempt was made on.
  * @param fullRoomName - Prefixed room name the attempt targeted.
  * @param attempt - The number {@link beginSubscriptionAttempt} returned.
- * @returns True when no later attempt for the same room has started.
  */
 function isLatestSubscriptionAttempt(socket: Socket, fullRoomName: string, attempt: number): boolean {
     return subscriptionAttempts(socket).latest.get(fullRoomName) === attempt;
@@ -104,7 +102,6 @@ function isLatestSubscriptionAttempt(socket: Socket, fullRoomName: string, attem
  * remove the entry, and attempt numbers are never reused on a socket, so this
  * cannot let a stale attempt pass as the newest.
  *
- * @param socket - The socket the attempt was made on.
  * @param fullRoomName - Prefixed room name the attempt targeted.
  * @param attempt - The number {@link beginSubscriptionAttempt} returned.
  */
@@ -491,26 +488,16 @@ export class PluginWebSocketManager implements IPluginWebSocketManager {
     }
 
     /**
-     * Get the fully namespaced room name.
-     *
-     * Converts a plugin-local room name into the full namespaced room name used
+     * Convert a plugin-local room name into the full namespaced room name used
      * internally by Socket.IO. Format: `plugin:{pluginId}:{roomName}`.
-     *
-     * @param roomName - The plugin-local room name
-     * @returns The fully namespaced room name
      */
     private getFullRoomName(roomName: string): string {
         return `plugin:${this.pluginId}:${roomName}`;
     }
 
     /**
-     * Get the fully namespaced event name.
-     *
-     * Converts a plugin-local event name into the full namespaced event name used
+     * Convert a plugin-local event name into the full namespaced event name used
      * for client communication. Format: `{pluginId}:{eventName}`.
-     *
-     * @param eventName - The plugin-local event name
-     * @returns The fully namespaced event name
      */
     private getFullEventName(eventName: string): string {
         return `${this.pluginId}:${eventName}`;

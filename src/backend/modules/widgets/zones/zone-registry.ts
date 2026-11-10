@@ -244,9 +244,6 @@ export class ZoneRegistry implements IZoneRegistry {
  * Zones that omit it fall to the end of the track (a large sentinel)
  * rather than the front, so an unordered plugin zone never jumps ahead
  * of a deliberately-placed core zone — id breaks the remaining ties.
- *
- * @param entry - Internal registered-zone record.
- * @returns Numeric sort weight; `Number.MAX_SAFE_INTEGER` when unset.
  */
 function zoneOrder(entry: IRegisteredZone): number {
     return typeof entry.descriptor.order === 'number' ? entry.descriptor.order : Number.MAX_SAFE_INTEGER;

@@ -230,11 +230,10 @@ export class DockerStatsService {
      * Report the most recent container sweep without waiting for a new one.
      *
      * A sweep costs roughly two seconds, because Docker samples CPU twice to
-     * produce a delta and every container is measured. Paying that on the
-     * request is what made the console's Server section slow: the old snapshot
-     * expired five seconds before the ten-second poll arrived, so it never once
-     * served a request and every poll blocked for the full sweep. Collection
-     * now runs on a timer, and a caller reads whatever the last tick produced.
+     * produce a delta and every container is measured, so collection runs on a
+     * timer and a caller reads whatever the last tick produced. A snapshot that
+     * expires before the console's ten-second poll arrives never serves a
+     * request, and every poll then blocks for the full sweep.
      *
      * The first caller after an idle period is the exception and does wait,
      * because collection had stopped and whatever snapshot survives it is too

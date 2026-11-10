@@ -779,10 +779,7 @@ export class WidgetsService implements IWidgetsService {
         }
     }
 
-    /**
-     * Reject empty or non-string owner ids early so downstream Mongo
-     * filters cannot accidentally match every row.
-     */
+    /** Reject empty or non-string owner ids early so downstream Mongo filters cannot match every row. */
     private assertOwnerId(ownerId: string, op: string): void {
         if (!ownerId || typeof ownerId !== 'string') {
             throw new Error(`${op} requires a non-empty string ownerId`);

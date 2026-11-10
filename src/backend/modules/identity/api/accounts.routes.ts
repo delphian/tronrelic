@@ -1,12 +1,11 @@
 /**
  * @fileoverview Admin account-directory router factory.
  *
- * Mounts the `/system/users` dashboard's account reads at `/api/admin/users`,
- * replacing the legacy UUID user-list surface. The router is the catch-all
- * `/api/admin/users` mount, so it must register *after* the more-specific
- * `/api/admin/users/{groups,traffic,analytics}` routers (the identity module
- * mounts it last in `run()` for exactly this reason) — otherwise its `/:id`
- * matcher would shadow those prefixes.
+ * Mounts the `/system/users` dashboard's account reads at `/api/admin/users`.
+ * The router is the catch-all `/api/admin/users` mount, so it must register
+ * *after* the more-specific `/api/admin/users/{groups,traffic,analytics}`
+ * routers (the identity module mounts it last in `run()` for exactly this
+ * reason) — otherwise its `/:id` matcher would shadow those prefixes.
  *
  * The per-account group editor (`PUT /:id/groups`) is composed from the
  * identity module's `UserGroupController` rather than reimplemented here, so

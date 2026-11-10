@@ -34,10 +34,7 @@ let activeProvider: IImageGenProvider | null = null;
 /** Subscribers notified whenever the active provider changes, for reactive availability. */
 const listeners = new Set<() => void>();
 
-/**
- * Notify every subscriber that availability may have changed. Kept private so
- * the active-provider slot is mutated only through register/dispose.
- */
+/** Tell subscribers availability may have changed; private so only register/dispose mutate the slot. */
 function notify(): void {
     for (const listener of listeners) {
         listener();
@@ -153,11 +150,7 @@ function subscribe(listener: () => void): () => void {
     };
 }
 
-/**
- * Client availability snapshot — whether a provider is currently registered.
- *
- * @returns True when an image-gen provider is active.
- */
+/** Client availability snapshot — whether a provider is currently registered. */
 function getIsAvailable(): boolean {
     return activeProvider !== null;
 }
@@ -166,8 +159,6 @@ function getIsAvailable(): boolean {
  * Server availability snapshot. Providers register only on the client after
  * hydration, so the server (and the first client render) always report false —
  * keeping SSR and first paint identical and avoiding a hydration mismatch.
- *
- * @returns Always false.
  */
 function getServerIsAvailable(): boolean {
     return false;

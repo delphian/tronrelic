@@ -431,9 +431,6 @@ function describeTotals(
         /**
          * Add up one integer column. ClickHouse sends 64-bit integers as
          * strings, and BigInt keeps a block of large fees from losing precision.
-         *
-         * @param values - The column's values, one per receipt or transaction.
-         * @returns Their sum.
          */
         const sum = (values: Array<string | number>): bigint => values.reduce<bigint>((total, value) => total + BigInt(value), 0n);
         totals = {
@@ -505,10 +502,8 @@ function describeGaps(gaps: IGapRow[]): Array<{ reason: string; recordedAt: stri
 }
 
 /**
- * Convert a hex address from a stored parameter into base58.
- *
- * @param value - The stored value, normally `41` followed by 40 hex characters, or empty when the field is absent.
- * @returns The base58 address, or null when the value is empty or not an address.
+ * Convert a stored hex address (normally `41` plus 40 hex characters, or empty when
+ * the field is absent) into base58, or null when it is empty or not an address.
  */
 function toAddress(value: string): string | null {
     return value ? toVerifiedBase58(value) : null;

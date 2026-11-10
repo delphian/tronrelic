@@ -100,9 +100,6 @@ interface ITagSummaryPanelProps {
  * Wrapped in a helper rather than called inline so every figure in the panel —
  * the totals strip and each row — goes through the same formatting, and so the
  * one place that decides it is easy to find if these ever need a compact form.
- *
- * @param value - The raw count from the server.
- * @returns The count as display text.
  */
 function formatCount(value: number): string {
     return value.toLocaleString();
@@ -170,8 +167,6 @@ export function TagSummaryPanel({ activeTag, onSelectTag, onDeleteTag, reloadTok
      * correctly in place — the search box shows `whale` and the extra row
      * visibly carries the longer tag — and it is the reason the count is
      * described as addresses carrying the tag rather than as a row count.
-     *
-     * @param tag - The tag on the clicked row.
      */
     const handleRowClick = useCallback((tag: string) => {
         onSelectTag(activeTag === tag ? null : tag);

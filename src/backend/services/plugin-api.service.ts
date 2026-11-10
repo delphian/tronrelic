@@ -5,46 +5,31 @@ import { requireAdmin } from '../api/middleware/admin-auth.js';
 import { requireLogin } from '../api/middleware/require-login.js';
 
 /**
- * Adapt Express Request to framework-agnostic IHttpRequest.
- *
- * This adapter wraps Express's Request object to match our IHttpRequest interface,
- * allowing plugins to remain independent of Express-specific types. The adaptation
- * is structural - Express Request already has all the properties we need.
+ * Adapt Express Request to framework-agnostic IHttpRequest, so plugins remain
+ * independent of Express-specific types. The adaptation is structural - Express
+ * Request already has all the properties we need.
  *
  * The Better Auth session (`req.authSession`), resolved once per request by
  * the `attachAuthSession` middleware in loaders/express.ts, rides along on
  * the structural cast — plugins gate on it via the predicates in
  * `@delphian/tronrelic-types`.
- *
- * @param req - Express Request object
- * @returns IHttpRequest-compatible object
  */
 function adaptRequest(req: Request): IHttpRequest {
     return req as unknown as IHttpRequest;
 }
 
 /**
- * Adapt Express Response to framework-agnostic IHttpResponse.
- *
- * This adapter wraps Express's Response object to match our IHttpResponse interface.
- * Express Response is structurally compatible with our interface, so this is mainly
- * for type safety and future flexibility.
- *
- * @param res - Express Response object
- * @returns IHttpResponse-compatible object
+ * Adapt Express Response to framework-agnostic IHttpResponse. Express Response is
+ * structurally compatible with our interface, so this is mainly for type safety
+ * and future flexibility.
  */
 function adaptResponse(res: Response): IHttpResponse {
     return res as unknown as IHttpResponse;
 }
 
 /**
- * Adapt Express NextFunction to framework-agnostic IHttpNext.
- *
- * This adapter wraps Express's NextFunction to match our IHttpNext interface.
- * Both signatures are identical, so this is a simple pass-through for type safety.
- *
- * @param next - Express NextFunction
- * @returns IHttpNext-compatible function
+ * Adapt Express NextFunction to framework-agnostic IHttpNext. Both signatures
+ * are identical, so this is a simple pass-through for type safety.
  */
 function adaptNext(next: NextFunction): IHttpNext {
     return next as IHttpNext;

@@ -1,10 +1,9 @@
 /**
  * @fileoverview Core "block ticker" widget renderer.
  *
- * Renders the real-time blockchain status row as a placeable widget. The
- * ticker used to be hardcoded into the root layout; making it a core
- * widget type lets operators position it (and sit it beside other
- * widgets) from /system/widgets like any other widget.
+ * Renders the real-time blockchain status row as a placeable widget, so
+ * operators position it (and sit it beside other widgets) from
+ * /system/widgets like any other widget.
  *
  * SSR + Live Updates: the `core:block-ticker` data fetcher ships the
  * latest processed block as `data.block`, which this wrapper hands to the

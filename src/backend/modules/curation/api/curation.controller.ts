@@ -80,9 +80,6 @@ function parseSinks(body: unknown): ICurationSinkSelection[] | undefined | null 
 /**
  * Read the Better Auth admin id `requireAdmin` set on the request, for audit
  * attribution. Undefined when the call authenticated via the service token.
- *
- * @param req - The admin request.
- * @returns The admin user id, or undefined.
  */
 function actorId(req: Request): string | undefined {
     return (req as Request & { userId?: string }).userId;

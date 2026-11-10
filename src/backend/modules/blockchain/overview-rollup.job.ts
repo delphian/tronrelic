@@ -76,9 +76,6 @@ interface IRollupBucket {
 /**
  * Truncate a date to the start of its UTC hour. Buckets are UTC because
  * `$dateToString` defaults to UTC, so flooring must match.
- *
- * @param date - Source instant.
- * @returns A new Date at the top of the UTC hour.
  */
 function floorToHour(date: Date): Date {
     const floored = new Date(date.getTime());
@@ -86,12 +83,7 @@ function floorToHour(date: Date): Date {
     return floored;
 }
 
-/**
- * Truncate a date to the start of its UTC minute.
- *
- * @param date - Source instant.
- * @returns A new Date at the top of the UTC minute.
- */
+/** Truncate a date to the start of its UTC minute. */
 function floorToMinute(date: Date): Date {
     const floored = new Date(date.getTime());
     floored.setUTCSeconds(0, 0);
@@ -99,9 +91,8 @@ function floorToMinute(date: Date): Date {
 }
 
 /**
- * Parse a `$dateToString` bucket key (UTC, no zone) into a Date. Appends
- * seconds + `Z` so both the hourly (`… HH:00`) and minute (`… HH:MM`) formats
- * resolve as UTC ISO — the same conversion the legacy timeseries used.
+ * Parse a `$dateToString` bucket key (UTC, no zone) into a Date. Appends seconds
+ * + `Z` so both the hourly (`… HH:00`) and minute (`… HH:MM`) formats resolve as UTC ISO.
  *
  * @param key - Bucket key emitted by the aggregation.
  * @returns The parsed Date, or null when the key is unparseable.

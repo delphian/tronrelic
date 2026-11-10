@@ -365,13 +365,7 @@ describe('AiToolsController — toolAllowlist wiring', () => {
     });
 
     describe('previewTrifecta', () => {
-        /**
-         * Build a minimal enabled tool-info double with the given capability.
-         *
-         * @param name - Tool name.
-         * @param cap - Capability flags driving trifecta legs.
-         * @returns An IAiToolInfo-shaped object.
-         */
+        /** Build a minimal enabled tool-info double with the given capability. */
         function tool(name: string, cap: Record<string, unknown>): any {
             return { name, description: '', inputSchema: { type: 'object' }, capability: cap, enabled: true, provider: 'core' };
         }

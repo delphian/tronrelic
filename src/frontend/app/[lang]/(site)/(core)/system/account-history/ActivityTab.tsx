@@ -22,9 +22,6 @@ import styles from './page.module.scss';
 /**
  * Shorten a base58 address for the dense per-account breakdown lines, keeping
  * the ends an operator recognizes an account by.
- *
- * @param address - Full base58 TRON address.
- * @returns A `Txxxxx…xxxx` display form.
  */
 function shortAddress(address: string): string {
     return address.length > 12 ? `${address.slice(0, 6)}…${address.slice(-4)}` : address;

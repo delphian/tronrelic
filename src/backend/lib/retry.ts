@@ -52,12 +52,7 @@ const DEFAULT_MAX_RETRY_AFTER_MS = 60_000;
  */
 const RETRYABLE_CLIENT_STATUSES: ReadonlySet<number> = new Set([408, 425, 429]);
 
-/**
- * Pause between attempts, the default when the caller supplies no `sleep`.
- *
- * @param ms - How long to wait.
- * @returns A promise that resolves once the time has passed.
- */
+/** Pause between attempts, the default when the caller supplies no `sleep`. */
 const sleepFor = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**

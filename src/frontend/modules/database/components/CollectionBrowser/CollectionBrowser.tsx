@@ -190,10 +190,6 @@ const FIRST_PAGE: IPageRequest = { direction: 'first' };
  * backed by a cursor the server confirmed documents lie beyond. When the
  * estimate loses, "Page 3 of 1" makes the readout look broken; widening the
  * total to the position keeps it coherent instead.
- *
- * @param totalPages - Page count estimated by the API.
- * @param page - Page the operator has walked to.
- * @returns The larger of the two, never below one.
  */
 function displayedTotalPages(totalPages: number, page: number): number {
     return Math.max(totalPages, page, 1);
@@ -369,8 +365,6 @@ export function CollectionBrowser({
      * Used after an edit or a delete, where the operator should stay exactly
      * where they were. Replaying the stored request is what makes that
      * possible without a page number the API could seek to.
-     *
-     * @param collectionName - Collection being browsed.
      */
     const refreshCurrentPage = useCallback((collectionName: string) => {
         return fetchDocuments(collectionName, pageRequest, page);
@@ -588,9 +582,7 @@ export function CollectionBrowser({
      * with it, so a failed statistics request would leave an error on screen
      * that the operator could no longer close.
      *
-     * @param body - What to show in place of the collection table, or null when
-     * the browser is closed and there is nothing to show.
-     * @returns The browser with that body under its heading.
+     * @param body - Shown in place of the collection table; null when the browser is closed.
      */
     const shell = (body: ReactNode): ReactElement => (
         <div className={styles.browser}>

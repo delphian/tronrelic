@@ -846,12 +846,8 @@ export class LocalizationAdminService {
     }
 
     /**
-     * Turn a duplicate-key error from Mongo into a conflict error, and pass
-     * any other error through unchanged.
-     *
-     * @param error - The thrown error.
-     * @param message - Conflict message for the duplicate case.
-     * @returns The error to throw.
+     * Turn a duplicate-key error from Mongo into a conflict error, pass any
+     * other error through unchanged, and return the error for the caller to throw.
      */
     private translateDuplicate(error: unknown, message: string): unknown {
         const isDuplicate = typeof error === 'object' && error !== null && (error as { code?: number }).code === 11000;
@@ -956,9 +952,6 @@ export class LocalizationAdminService {
 /**
  * Escape a user-typed search string for use inside a regular expression, so
  * characters such as `.` and `(` match themselves.
- *
- * @param value - Raw search text.
- * @returns The escaped text.
  */
 function escapeRegExp(value: string): string {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -968,10 +961,6 @@ function escapeRegExp(value: string): string {
  * Decide whether a key was rendered on a page that one of the route patterns
  * covers. The Languages, Routes, and Translations tabs all attribute keys to
  * routes this way, so their counts agree.
- *
- * @param paths - The paths the frontend reported the key on.
- * @param patterns - Route patterns to test the paths against.
- * @returns True when any reported path matches any pattern.
  */
 function isRenderedOnAny(paths: string[], patterns: string[]): boolean {
     return patterns.some(pattern => paths.some(path => matchRoutePattern(pattern, path)));
@@ -1004,15 +993,7 @@ function countProgress(
     return progress;
 }
 
-/**
- * Read an optional integer from a query and keep it inside a range.
- *
- * @param value - Candidate value, possibly undefined or not a number.
- * @param min - Smallest allowed value.
- * @param max - Largest allowed value.
- * @param fallback - Value used when the candidate is missing or invalid.
- * @returns An integer between `min` and `max`.
- */
+/** Read an optional integer from a query and keep it inside a range. */
 function clampInteger(value: number | undefined, min: number, max: number, fallback: number): number {
     const parsed = typeof value === 'number' && Number.isFinite(value) ? Math.floor(value) : fallback;
     return Math.min(max, Math.max(min, parsed));

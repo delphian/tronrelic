@@ -88,11 +88,8 @@ function createMockLogger(): ISystemLogService {
 }
 
 /**
- * Read the recipient a simulated transfer was sent to.
- *
- * @param post - The transport spy the fetcher called
- * @param callIndex - Which call to inspect: 0 for standard, 1 for first-time
- * @returns The recipient as 20-byte hex, taken from the ABI-encoded parameter
+ * Read the recipient a simulated transfer was sent to, as 20-byte hex taken from the
+ * ABI-encoded parameter. `callIndex` 0 is the standard transfer and 1 the first-time one.
  */
 function recipientOf(post: ReturnType<typeof vi.fn>, callIndex: number): string {
     const payload = post.mock.calls[callIndex][0] as { parameter: string };

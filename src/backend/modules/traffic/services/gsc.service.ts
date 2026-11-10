@@ -296,23 +296,15 @@ const KEYWORD_HISTORY_MATCHED_QUERY_LIMIT = 10;
  * A `contains` match must treat the caller's keyword as plain text. Without
  * escaping, a keyword such as `trx (tron)` would be read as a regular
  * expression, and a crafted one could make the pattern slow to evaluate.
- *
- * @param value - The text to match literally.
- * @returns The text with every regular-expression metacharacter escaped.
  */
 function escapeRegex(value: string): string {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /**
- * Round a click-through rate to four decimal places, or 0 with no impressions.
- *
- * Shared by the keyword-history series and its totals so a day and the window
- * report CTR identically.
- *
- * @param clicks - Clicks in the span being rated.
- * @param impressions - Impressions in the same span.
- * @returns The rounded click-through rate (0-1).
+ * Round a click-through rate (0-1) to four decimal places, or 0 with no
+ * impressions. Shared by the keyword-history series and its totals so a day and
+ * the window report CTR identically.
  */
 function roundedCtr(clicks: number, impressions: number): number {
     return impressions > 0 ? Math.round((clicks / impressions) * 10000) / 10000 : 0;
@@ -323,8 +315,6 @@ function roundedCtr(clicks: number, impressions: number): number {
  * decimal, or null when there were no impressions to weight.
  *
  * @param weightedPosition - Sum of position × impressions over the span.
- * @param impressions - Impressions over the same span.
- * @returns The average position, or null for a span with no impressions.
  */
 function roundedPosition(weightedPosition: number, impressions: number): number | null {
     return impressions > 0 ? Math.round((weightedPosition / impressions) * 10) / 10 : null;

@@ -207,11 +207,8 @@ describe('McpEndpointController', () => {
         }
 
         /**
-         * Build an authenticated request whose body is already parsed, which
-         * makes the JSON parser pass it through untouched.
-         *
-         * @param body - The JSON-RPC body.
-         * @returns The request.
+         * Build an authenticated JSON-RPC request whose body is already parsed,
+         * which makes the JSON parser pass it through untouched.
          */
         function rpc(body: unknown) {
             return Object.assign(request({ headers: { Authorization: 'Bearer abc' } }), { body, _body: true });

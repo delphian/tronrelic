@@ -4,8 +4,7 @@
  * @file ConversationRail.tsx
  *
  * The list of past conversations beside the chat, grouped by day with the
- * newest first. It replaces the History view that used to swap the chat out
- * of the page: a conversation is opened by clicking its row, in place, so the
+ * newest first. A conversation is opened by clicking its row, in place, so the
  * operator never loses sight of the chat they are in to find another one.
  *
  * The rail is presentation only. The parent owns the records, the paging, the

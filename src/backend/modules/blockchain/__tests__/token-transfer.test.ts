@@ -17,12 +17,7 @@ const USDT = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
 /** 20-byte body of the USDT address, used here as an arbitrary account address. */
 const ADDRESS_BODY = 'a614f803b6fd780986a42c78ec9c7f77e6ded13c';
 
-/**
- * Left-pad hex to one 32-byte ABI word.
- *
- * @param hex Hex digits to pad.
- * @returns 64 hex characters.
- */
+/** Left-pad hex to one 32-byte ABI word. */
 function word(hex: string): string {
     return hex.padStart(64, '0');
 }

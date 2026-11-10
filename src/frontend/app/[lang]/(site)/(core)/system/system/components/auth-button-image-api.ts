@@ -26,9 +26,6 @@ export interface IAuthButtonImageView {
  * Older documents do not carry these fields at all, and an empty string means
  * nothing is set, so both are folded into null here. The card then has one
  * value to test for "no image" rather than three.
- *
- * @param value - The raw field from the response, of unknown type.
- * @returns The string when it has content, otherwise null.
  */
 function readOptionalString(value: unknown): string | null {
     const result = typeof value === 'string' && value !== '' ? value : null;

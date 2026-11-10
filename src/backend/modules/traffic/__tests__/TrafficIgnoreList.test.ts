@@ -18,8 +18,6 @@ const TID = '550e8400-e29b-41d4-a716-446655440000';
  * parsed cookies, which at runtime come from core's middleware.
  *
  * @param userId - Logged-in user id, or null for an anonymous request.
- * @param cookies - Cookies cookie-parser would have attached.
- * @returns A request double typed as a plugin route receives it.
  */
 function createRequest(userId: string | null, cookies: Record<string, string> = {}): IHttpRequest {
     const authSession = userId ? { user: { id: userId } } : null;

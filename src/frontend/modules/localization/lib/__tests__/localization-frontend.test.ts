@@ -28,13 +28,7 @@ const CONFIG: ILocalizationPublicConfig = {
     routes: [{ pattern: '/markets', languages: ['zh'] }]
 };
 
-/**
- * Build a seed for a page in one language.
- *
- * @param language - Page language.
- * @param catalog - Translations by namespace and key.
- * @returns The seed.
- */
+/** Build a seed for a page in one language, with translations by namespace and key. */
 function seed(language: string, catalog: ILocalizationSeed['catalog']): ILocalizationSeed {
     return { language, direction: 'ltr', path: '/markets', config: CONFIG, catalog };
 }

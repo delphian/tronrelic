@@ -2,12 +2,10 @@
  * @fileoverview The ClickHouse client as a plugin receives it, scoped to that
  * plugin's own tables.
  *
- * Plugins used to be handed the shared `IClickHouseService` directly, which
- * meant each one wrote its physical table names out by hand and repeated the
- * `plugin_<id>_` prefix at every call site. That is the problem
- * `PluginDatabaseService` already solves for MongoDB, where a plugin asks for
- * `dust` and the service resolves it to `plugin_dust-tracker_dust`. This
- * interface gives ClickHouse the same treatment.
+ * It spares each plugin from writing its physical table names by hand with the
+ * `plugin_<id>_` prefix at every call site, the problem `PluginDatabaseService`
+ * already solves for MongoDB, where a plugin asks for `dust` and the service
+ * resolves it to `plugin_dust-tracker_dust`.
  *
  * The parity is deliberately partial, and the reason is worth stating plainly.
  * MongoDB access always names the collection as an argument, so there is one
@@ -17,9 +15,8 @@
  * the table with `table()` when building the statement.
  *
  * This is an ergonomic boundary, not a security one. Because `query` and `exec`
- * accept arbitrary SQL, a plugin can still read another plugin's tables. That
- * was already true when plugins shared the raw client, so nothing is lost, but
- * do not mistake this for isolation.
+ * accept arbitrary SQL, a plugin can still read another plugin's tables, so do
+ * not mistake this for isolation.
  */
 
 import type { IClickHouseInsertOptions } from './IClickHouseInsertOptions.js';

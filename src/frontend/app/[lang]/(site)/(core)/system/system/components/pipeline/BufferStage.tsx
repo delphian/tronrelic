@@ -5,11 +5,10 @@
  *
  * The buffer holds prepared blocks and releases one per slot, so an upstream
  * hiccup is covered by its lead instead of showing as a gap in the live feed.
- * The number that says whether the lead is big enough is the underrun count,
- * and the old console showed it cumulatively with no time, so one underrun
- * after boot kept the cell amber for the life of the process. This card shows
- * when the last underrun happened, and which release rule the buffer is on,
- * with a link to the buffer settings on the Configuration tab.
+ * The underrun count says whether the lead is big enough, but a cumulative
+ * count would keep the cell amber for the life of the process after one
+ * underrun, so this card shows when the last underrun happened and which
+ * release rule the buffer is on, with a link to the Configuration tab's settings.
  */
 
 import { SlidersHorizontal } from 'lucide-react';

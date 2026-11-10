@@ -3,10 +3,9 @@
  *
  * Prompt variables — named tokens (referenced in a prompt as `{%name%}`) that
  * expand to live system data or admin-authored text before a query is sent to
- * the model. Promoted out of the trp-ai-assistant plugin into core so a single
- * registry owns every variable, classification persists, and the lethal-trifecta
- * detector can see when a *secret* variable is in play — the private-data ingress
- * the tool-scoped trifecta signal historically could not model.
+ * the model. One core registry owns every variable, so classification persists
+ * and the lethal-trifecta detector can see when a *secret* variable is in play —
+ * the private-data ingress a tool-scoped trifecta signal cannot model.
  *
  * Two kinds share one registry:
  *  - `dynamic` — a code-registered resolver (closes over live services); a

@@ -67,9 +67,6 @@ describe('validateAuthButtonImage', () => {
         });
     });
 
-    /**
-     * An empty or whitespace-only string means the same as null.
-     */
     it('clears both fields when the URL is blank', () => {
         const result = validateAuthButtonImage({ authButtonImageUrl: '   ', authButtonImageFileId: 'file-1' });
         expect(result.updates).toEqual({ authButtonImageUrl: null, authButtonImageFileId: null });
@@ -104,18 +101,12 @@ describe('validateAuthButtonImage', () => {
         expect(result.updates).toEqual({});
     });
 
-    /**
-     * An oversized URL is refused rather than stored and rendered.
-     */
     it('rejects a URL over the length limit', () => {
         const url = `/uploads/${'a'.repeat(AUTH_BUTTON_IMAGE_URL_MAX_LENGTH)}.png`;
         const result = validateAuthButtonImage({ authButtonImageUrl: url });
         expect(result.error).toContain(String(AUTH_BUTTON_IMAGE_URL_MAX_LENGTH));
     });
 
-    /**
-     * An oversized file id is refused even when the URL is fine.
-     */
     it('rejects a file id over the length limit', () => {
         const result = validateAuthButtonImage({
             authButtonImageUrl: '/uploads/a.png',
@@ -134,9 +125,6 @@ describe('validateAuthButtonImage', () => {
         expect(result.error).toBe('authButtonImageFileId must be sent together with authButtonImageUrl');
     });
 
-    /**
-     * A URL of the wrong type is refused rather than coerced.
-     */
     it('rejects a non-string URL', () => {
         const result = validateAuthButtonImage({ authButtonImageUrl: 42 });
         expect(result.error).toBe('authButtonImageUrl must be a string, or null to clear it');

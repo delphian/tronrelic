@@ -18,12 +18,7 @@ import type { IBotRuleSignals } from '../services/bot-rule-matcher.js';
 
 const INPUT = { name: 'AS45102', label: 'bot_other', mode: 'label', conditions: { asns: [45102] } };
 
-/**
- * Signals for an anonymous page report from a given network.
- *
- * @param asn - The network number.
- * @returns Signals the matcher accepts.
- */
+/** Signals for an anonymous page report from a given network. */
 function from(asn: number): IBotRuleSignals {
     return { eventType: 'page', loggedIn: false, asn, country: 'SG', userAgent: 'Mozilla/5.0', path: '/', referrer: null, firstTouch: null, now: Date.now() };
 }

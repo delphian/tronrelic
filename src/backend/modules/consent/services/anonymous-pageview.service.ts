@@ -27,12 +27,7 @@ export const MAX_PAGEVIEW_STATS_DAYS = 365;
 /** Milliseconds in one day, for stepping back through the window. */
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/**
- * Format a moment as the UTC day the counters are keyed by.
- *
- * @param date - Any moment.
- * @returns The UTC day as `YYYY-MM-DD`.
- */
+/** Format a moment as the UTC `YYYY-MM-DD` day the counters are keyed by. */
 function toDayKey(date: Date): string {
     return date.toISOString().slice(0, 10);
 }
@@ -117,11 +112,7 @@ export class AnonymousPageviewService {
         }
     }
 
-    /**
-     * The daily counter collection, typed.
-     *
-     * @returns The raw collection handle.
-     */
+    /** The daily counter collection, typed. */
     private counters() {
         return this.database.getCollection<IConsentPageviewDailyDocument>(PAGEVIEW_DAILY_COLLECTION);
     }

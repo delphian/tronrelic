@@ -3,11 +3,7 @@
 /**
  * @fileoverview The Pipeline tab: block ingestion at a glance, then in depth.
  *
- * Admins found the old Overview tab hard to use for monitoring ingestion: the
- * blockchain card sat below the server console, two lag figures meant nearly
- * the same thing, figures the backend computed were never shown, and a failed
- * request blanked a panel into "No observers registered." This tab is laid
- * out in the order an operator asks questions:
+ * This tab is laid out in the order an operator asks questions:
  *
  * 1. Is it healthy? — the status banner, with reasons.
  * 2. Where is it stuck? — the heights flow from chain head to committed.
@@ -106,10 +102,7 @@ export function PipelineTab({ initialPipeline, onOpenSettings }: IPipelineTabPro
         return () => clearInterval(interval);
     }, [initialPipeline, refresh]);
 
-    /**
-     * Refresh at once after a control changes something, instead of waiting
-     * for the next poll.
-     */
+    /** Refresh at once after a control changes something, instead of waiting for the next poll. */
     const handleChanged = useCallback(() => {
         void refresh();
     }, [refresh]);

@@ -261,8 +261,6 @@ export class PluginManagerService {
      * observers and subscribes them. Without rearming, those calls would throw against a closed
      * facade and the re-enabled plugin would silently observe nothing. Mirrors `rearmHooks` on
      * the same lifecycle transitions.
-     *
-     * @param loaded - The loaded plugin whose observer facade should accept subscriptions again.
      */
     private rearmObservers(loaded: ILoadedPlugin): void {
         loaded.observers?.rearm();
@@ -275,8 +273,6 @@ export class PluginManagerService {
      * shipped plugin registers its cron jobs. Without rearming, those calls would throw against a
      * closed facade and the re-enabled plugin would silently run nothing on a schedule. Mirrors
      * `rearmObservers` on the same lifecycle transitions.
-     *
-     * @param loaded - The loaded plugin whose scheduler facade should accept registrations again.
      */
     private rearmScheduler(loaded: ILoadedPlugin): void {
         loaded.scheduler?.rearm();

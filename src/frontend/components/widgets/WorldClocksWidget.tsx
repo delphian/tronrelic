@@ -92,7 +92,6 @@ interface IWorldClocksData {
  * single point of coupling to the flag library — change the source here.
  *
  * @param countryCode - ISO 3166-1 alpha-2 code; case-insensitive.
- * @returns The flag SVG component, or null when no flag matches.
  */
 function resolveFlag(countryCode: string): FlagComponent | null {
     const flag = flagRegistry[countryCode.toUpperCase()] ?? null;

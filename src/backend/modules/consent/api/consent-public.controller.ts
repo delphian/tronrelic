@@ -20,12 +20,7 @@ import type { AnonymousPageviewService } from '../services/anonymous-pageview.se
  */
 const PUBLIC_MAX_AGE_SECONDS = 60;
 
-/**
- * Read one request header as a single string.
- *
- * @param value - The raw header, which Express types as a string or a list.
- * @returns The first value, or undefined when absent.
- */
+/** Read one request header as a single string, taking the first value when Express gives a list. */
 function headerValue(value: string | string[] | undefined): string | undefined {
     return Array.isArray(value) ? value[0] : value;
 }

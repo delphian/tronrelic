@@ -89,10 +89,7 @@ interface ICategoryResolveResponse {
  * `<html lang>`.
  *
  * @param apiUrl - Server-side API base URL.
- * @param slug - The page's slug.
- * @param language - The request's language; the default language adds no query.
  * @param suffix - Path after the slug, such as `/render`.
- * @returns The endpoint URL to fetch.
  */
 function publicPageUrl(apiUrl: string, slug: string, language: string, suffix = ''): string {
     const query = language === DEFAULT_LANGUAGE ? '' : `?language=${encodeURIComponent(language)}`;
@@ -514,7 +511,6 @@ export default async function UnifiedPage({ params }: { params: Promise<IPagePar
          * target page is published in it.
          *
          * @param href - A child item's stored, unprefixed URL.
-         * @returns The link the card renders.
          */
         const localizeCardHref = (href: string): string => localizeHref(href, language, config);
 

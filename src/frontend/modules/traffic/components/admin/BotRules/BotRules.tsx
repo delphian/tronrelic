@@ -5,11 +5,10 @@
  *
  * Manages the operator's rules for identifying automated traffic. Some browser
  * fleets run real Chrome, hide the automation flag, and send a stock browser
- * identifier, so the built-in classifier counts them as visitors. A rule
- * describes such traffic from its data — network, country, browser build,
- * paths, referrer, or a page load and JavaScript report arriving from
- * different networks — and labels matching events as a bot when they are
- * recorded. It replaced the ASN-only automated-network list.
+ * identifier, so the built-in classifier counts them as visitors. A rule describes
+ * such traffic from its data — network, country, browser build, paths, referrer,
+ * or a page load and JavaScript report arriving from different networks — and
+ * labels matching events as a bot when they are recorded.
  *
  * A rule changes only the analytics label; matched visitors are still served
  * every page, logged-in visitors never match, and events recorded before a
@@ -116,16 +115,12 @@ export function BotRules() {
      * when switching from one rule to another.
      *
      * @param rule - The rule to edit, or null for a new one.
-     * @param initial - The form's starting values.
      */
     const openEditor = useCallback((rule: IBotRule | null, initial: IBotRuleFormState): void => {
         setEditor(current => ({ rule, initial, key: (current?.key ?? 0) + 1 }));
     }, []);
 
-    /**
-     * Close the editor after a save and refresh the list so the new state and
-     * counts show.
-     */
+    /** Close the editor after a save and refresh the list so the new state and counts show. */
     const handleSaved = useCallback((): void => {
         setEditor(null);
         void load();
@@ -174,10 +169,6 @@ export function BotRules() {
                     confirmLabel="Delete"
                     onCancel={() => close(modalId)}
                     onConfirm={
-                        /**
-                         * Delete once confirmed, then close the dialog either way so a
-                         * failure is reported on the panel rather than a stuck dialog.
-                         */
                         async () => {
                             try {
                                 await adminDeleteBotRule(rule.id);

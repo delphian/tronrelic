@@ -83,12 +83,7 @@ function containerStyle(layout: IZoneLayoutConfig): CSSProperties {
     } as CSSProperties;
 }
 
-/**
- * Build the flex-item style for one block.
- *
- * @param weight - The item's relative width, if any.
- * @returns Inline style carrying the grow weight, or undefined.
- */
+/** Build the flex-item style for one block, carrying its relative width as the grow weight. */
 function itemStyle(weight: number | undefined): CSSProperties | undefined {
     return typeof weight === 'number' ? ({ '--strip-grow': weight } as CSSProperties) : undefined;
 }

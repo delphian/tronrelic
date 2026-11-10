@@ -102,11 +102,7 @@ export class LocalizationService implements ILocalizationService {
     /** Catalogs by language code, with the same sharing rule as `publicConfig`. */
     private readonly catalogs = new Map<string, Promise<ITranslationCatalog>>();
 
-    /**
-     * Private so construction only happens through `setDependencies`.
-     *
-     * @param deps - Bootstrap-wired collaborators.
-     */
+    /** Private so construction only happens through `setDependencies`. */
     private constructor(deps: ILocalizationServiceDependencies) {
         this.database = deps.database;
         this.logger = deps.logger;

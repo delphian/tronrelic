@@ -3,11 +3,10 @@
 /**
  * @fileoverview The status line at the top of the Pipeline tab.
  *
- * Operators said the old console made them work out whether ingestion was
- * healthy by reading a dozen figures across two cards. This banner states the
- * answer in one word and lists the reasons behind it, each labelled with the
- * stage card further down that shows the detail. The judgement itself is made
- * by the backend, so the banner never disagrees with the figures beneath it.
+ * This banner states in one word whether ingestion is healthy, rather than
+ * leaving an operator to read it off a dozen figures, and lists the reasons,
+ * each labelled with the stage card below that shows the detail. The backend
+ * makes the judgement, so the banner never disagrees with the figures beneath it.
  */
 
 import { AlertOctagon, AlertTriangle, CheckCircle2 } from 'lucide-react';

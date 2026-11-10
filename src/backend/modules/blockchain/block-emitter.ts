@@ -14,37 +14,30 @@
  * arrives, so every read surface agrees by construction. The cost is that the
  * whole deployment sits about a buffer's depth behind the chain head.
  *
- * Ingestion and broadcast used to be the same loop. The BullMQ worker fetched a
- * block, wrote it, then slept until its three-second slot was due and only then
- * broadcast it. Because that worker runs one job at a time, sleeping and
- * fetching could not overlap: the pipeline never held a single fetched block in
- * reserve, so a slow TronGrid response, a retry, or a late scheduler tick went
- * straight to the screen as a gap in the feed.
- *
- * This class is the other half of the split. The worker now fetches and parses
- * flat out and hands each prepared block here; the emitter holds a small lead
- * and releases them on its own clock. A hiccup upstream is then covered by the
- * lead instead of being visible, and the feed keeps its cadence.
+ * Ingestion and broadcast are separate loops. The BullMQ worker runs one job at a
+ * time, so it cannot sleep until a slot is due without also stopping fetching,
+ * which would send a slow TronGrid response, a retry, or a late scheduler tick
+ * straight to the screen as a gap. Instead the worker fetches and parses flat out
+ * and hands each prepared block here; the emitter holds a small lead and releases
+ * them on its own clock, so an upstream hiccup is covered by the lead.
  *
  * Two properties are worth stating because they are easy to lose in a rewrite.
  * The lead is built once at startup by holding the first `targetDepth` blocks,
  * and it is *rebuilt* after a drain by releasing slightly slower than blocks
  * arrive — without that second part the buffer spends its lead on the first
- * hole and never gets it back. `SocketBridge.tsx` once held a second playout
- * buffer of its own that was missing exactly that half, and it ended up parked
- * about eleven blocks behind this one, which put the block ticker out of step
- * with every other surface. It has been removed, and this is the only playout
- * clock left. And a block that is not live work is never buffered at all:
+ * hole and never gets it back. This is the only playout clock: a second buffer
+ * in `SocketBridge.tsx` without that half would park about eleven blocks behind
+ * this one and put the block ticker out of step with every other surface. And a
+ * block that is not live work is never buffered at all:
  * spending a live block's slot on a block from hours ago is what puts the
  * syncer further behind.
  *
  * The five numbers shaping the clock are stored configuration, edited from the
  * Configuration tab of `/system/system` and applied to the running instance
- * through {@link BlockEmitter.configure}. They were environment variables until
- * the loop that decides them proved unusable: the only reliable signal that a
- * lead is too small is the underrun count on `/system`, which is a reading you
- * take from a running deployment, and acting on it used to require editing a
- * `.env` file and recreating the container.
+ * through {@link BlockEmitter.configure}, not environment variables: the only
+ * reliable sign that a lead is too small is the underrun count on `/system`, read
+ * from a running deployment, and an environment variable would mean editing a
+ * `.env` file and recreating the container to act on it.
  *
  * @module backend/modules/blockchain/block-emitter
  */
@@ -676,12 +669,8 @@ export class BlockEmitter {
     /**
      * Stop the clock and discard whatever is held.
      *
-     * Discarding is correct here, and it is a deliberate reversal of what this
-     * method used to do. When the buffer held blocks that were already written
-     * and only awaiting a broadcast, flushing them on shutdown was right —
-     * dropping them denied clients data the backend already had. The buffer now
-     * holds blocks that have *not* been written, so there is nothing to deny
-     * anyone: the sync cursor never advanced past them and the next process
+     * Discarding is correct because the buffer holds blocks that have *not* been
+     * written: the sync cursor never advanced past them, so the next process
      * fetches them again. Rushing a batch of writes into the seconds before
      * `process.exit` would only risk tearing one of them partway through.
      *

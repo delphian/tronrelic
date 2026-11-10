@@ -20,9 +20,6 @@ export const MAX_SYSTEM_PROMPT_LENGTH = 8000;
 /**
  * Build the validation error a bad settings value throws, which the
  * controller answers with 400.
- *
- * @param message - Explanation shown to the administrator.
- * @returns The error to throw.
  */
 const invalidSetting = (message: string): Error => new LocalizationValidationError(message);
 

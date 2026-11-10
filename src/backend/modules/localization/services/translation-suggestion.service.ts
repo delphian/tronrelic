@@ -290,10 +290,7 @@ export class TranslationSuggestionService {
  * tokenizes poorly gets the extra room it needs. The result is an estimate
  * only; the caller caps it at the model's output limit.
  *
- * @param items - Keys in the batch.
- * @param language - BCP 47 code of the target language, which picks the
- *   per-character factor.
- * @returns Output tokens the batch is expected to need.
+ * @param language - BCP 47 code of the target language.
  */
 function estimateOutputTokens(items: ISuggestionItem[], language: string): number {
     const sourceCharacters = items.reduce((total, item) => total + item.source.length, 0);

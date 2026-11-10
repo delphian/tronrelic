@@ -65,9 +65,8 @@ export function LanguageSwitcher({ display = 'native' }: ILanguageSwitcherProps)
                     {options.map(option => {
                         const isCurrent = option.code === language;
                         /**
-                         * Report the switch as the visitor leaves the page. A
-                         * click on the current language reloads the same page
-                         * and is not a switch, so it is not reported.
+                         * Report the switch as the visitor leaves the page; a click on
+                         * the current language reloads the same page and is not a switch.
                          */
                         const handleClick = () => {
                             if (!isCurrent) {

@@ -227,13 +227,7 @@ export class SocialPostStore {
     }
 }
 
-/**
- * Strip the driver-assigned `_id` Mongo returns on every read, since the public
- * {@link ISocialPostDraft} shape does not include it.
- *
- * @param doc - The raw Mongo document.
- * @returns The document without `_id`.
- */
+/** Strip the driver-assigned `_id`; the public {@link ISocialPostDraft} shape does not include it. */
 function stripMongoId<T extends Record<string, unknown>>(doc: T): ISocialPostDraft {
     const cleaned = { ...doc };
     delete (cleaned as Record<string, unknown>)._id;

@@ -34,11 +34,7 @@ function createSilentLogger(): ISystemLogService {
     return logger as unknown as ISystemLogService;
 }
 
-/**
- * Build a menu-service mock whose `create` resolves, for module-run assertions.
- *
- * @returns A mock IMenuService.
- */
+/** Build a menu-service mock whose `create` resolves, for module-run assertions. */
 function createMenuMock(): IMenuService {
     return { create: vi.fn().mockResolvedValue({ id: 'menu-node' }) } as unknown as IMenuService;
 }

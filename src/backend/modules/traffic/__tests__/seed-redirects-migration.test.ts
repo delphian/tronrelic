@@ -50,9 +50,6 @@ function createFakeCollection() {
 /**
  * Build a migration context whose database routes every `getCollection` to one
  * shared collection double.
- *
- * @param collection - The collection double to serve.
- * @returns A migration context plus the collection.
  */
 function createContext(collection: ReturnType<typeof createFakeCollection>): IMigrationContext {
     const database = { getCollection: () => collection } as unknown as IDatabaseService;

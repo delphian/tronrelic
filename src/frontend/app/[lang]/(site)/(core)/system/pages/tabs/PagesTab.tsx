@@ -196,23 +196,14 @@ export function PagesTab() {
         }
     };
 
-    /**
-     * Handle successful page save from editor.
-     *
-     * Closes the editor modal and refreshes the pages list to show the
-     * newly created or updated page.
-     */
+    /** Close the editor modal and refresh the pages list after a successful save. */
     const handlePageSaved = () => {
         setEditingPage(null);
         setIsCreating(false);
         void fetchPages();
     };
 
-    /**
-     * Handle editor cancel action.
-     *
-     * Closes the editor modal without saving changes.
-     */
+    /** Close the editor modal without saving changes. */
     const handleEditorCancel = () => {
         setEditingPage(null);
         setIsCreating(false);

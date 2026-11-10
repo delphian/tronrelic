@@ -15,12 +15,9 @@ import { recoverSignerAddress, recoverTransactionSigners } from '../recoverTrans
 import { SIGNED_DELEGATION } from './signedDelegationFixture.js';
 
 /**
- * Sign a digest the way a TRON wallet does and return the wire signature.
- *
- * @param digest - The 64-character hex digest, standing in for a transaction id.
- * @param privateKey - The signing key in hex, so the test knows which address must come back.
- * @param recoveryOffset - Added to the recovery byte; 27 reproduces the legacy form some signers send.
- * @returns The 65-byte signature as hex: r, s, and the recovery byte.
+ * Sign a 64-character hex digest with a hex private key the way a TRON wallet does,
+ * returning the 65-byte wire signature as hex (r, s, recovery byte). A
+ * `recoveryOffset` of 27 reproduces the legacy form some signers send.
  */
 function sign(digest: string, privateKey: string, recoveryOffset = 0): string {
     const signature = secp256k1.sign(digest, privateKey);

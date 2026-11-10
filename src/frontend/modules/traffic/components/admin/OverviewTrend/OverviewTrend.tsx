@@ -34,13 +34,7 @@ import styles from './OverviewTrend.module.scss';
 /** Chart-switchable metrics. */
 type TrendMetric = 'visitors' | 'pageviews';
 
-/**
- * Resolve a CSS variable to its computed value with an SSR-safe fallback.
- *
- * @param varName - CSS variable name (e.g. '--color-primary')
- * @param fallback - Hex fallback when document is unavailable
- * @returns Resolved color string
- */
+/** Resolve a CSS variable (such as '--color-primary') to its computed value with an SSR-safe fallback. */
 function resolveCSSColor(varName: string, fallback: string): string {
     if (typeof document === 'undefined') return fallback;
     const value = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
@@ -66,10 +60,6 @@ function formatDurationMs(ms: number): string {
 /**
  * Percentage change of `current` vs `previous`. A zero previous window with
  * current activity reads as +100% rather than infinity.
- *
- * @param current - Current-window value
- * @param previous - Previous-window value
- * @returns Signed percentage change, or null when both windows are zero
  */
 function percentChange(current: number, previous: number): number | null {
     if (previous === 0 && current === 0) return null;

@@ -4,13 +4,9 @@
  * Joins matching placement records with their widget-type
  * descriptors and runs each type's `defaultDataFetcher` in parallel
  * with a 5-second timeout and a JSON-serialisability check. Returns
- * the legacy `IWidgetData` shape so the existing frontend
- * `WidgetZone` component renders without changes.
- *
- * Replaces the legacy `WidgetService.fetchWidgetsForRoute` while
- * preserving its observable behaviour (parallel fetch, timeout per
- * widget, failed widgets dropped silently with an error log, sorted
- * by zone then order).
+ * the `IWidgetData` shape the frontend `WidgetZone` component renders.
+ * Failed widgets are dropped silently with an error log, and results
+ * are sorted by zone then order.
  *
  * @module backend/modules/widgets/placements/placement-resolver
  */
@@ -48,13 +44,11 @@ export class PlacementResolver {
      * Resolve every widget that should render at the given route,
      * with their SSR data already fetched.
      *
-     * Behaviour matches the legacy
-     * `WidgetService.fetchWidgetsForRoute`: placements are joined to
-     * widget types in-memory, fetched in parallel with a 5-second
-     * timeout per fetch, JSON-serialisability is verified via a
-     * round-trip, failed fetches are dropped with an error log, and
-     * results are sorted by `(zoneId asc, order asc)`. Placements
-     * whose `typeId` is not currently registered (e.g. plugin
+     * Placements are joined to widget types in-memory, fetched in
+     * parallel with a 5-second timeout per fetch, JSON-serialisability
+     * is verified via a round-trip, failed fetches are dropped with an
+     * error log, and results are sorted by `(zoneId asc, order asc)`.
+     * Placements whose `typeId` is not currently registered (e.g. plugin
      * disabled) are silently skipped.
      *
      * Single-level grouping: a placement with a `parentId` is a child of

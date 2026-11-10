@@ -193,13 +193,7 @@ function toSuggestion(entry: unknown, items: ISuggestionItem[]): { index: number
     return result;
 }
 
-/**
- * List the placeholders in the English that the translation left out.
- *
- * @param source - English text.
- * @param text - Proposed translation.
- * @returns Missing placeholders such as `{count}`, without duplicates.
- */
+/** List the placeholders, such as `{count}`, in the English that the translation left out. */
 function missingPlaceholders(source: string, text: string): string[] {
     const expected = new Set(source.match(PLACEHOLDER_PATTERN) ?? []);
     const present = new Set(text.match(PLACEHOLDER_PATTERN) ?? []);
@@ -209,10 +203,6 @@ function missingPlaceholders(source: string, text: string): string[] {
 /**
  * Keep a remark from the model only when it is non-empty text, trimmed and
  * capped so a rambling reply cannot flood the administrator's toast.
- *
- * @param value - Raw value from the reply.
- * @param max - Longest text kept.
- * @returns The cleaned text, or null.
  */
 function cleanText(value: unknown, max: number): string | null {
     const trimmed = typeof value === 'string' ? value.trim() : '';

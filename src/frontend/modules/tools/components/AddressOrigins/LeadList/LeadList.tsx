@@ -50,9 +50,6 @@ export interface ILeadListProps {
  * names for two different actions. The tail is used because it is what a reader
  * comparing against an explorer tab scans for, and it matches the ending the
  * `<TronAddress>` chip on the rung above already shows.
- *
- * @param address - Full base58 address to shorten.
- * @returns The last four characters, prefixed with an ellipsis.
  */
 function abbreviate(address: string): string {
     return `…${address.slice(-4)}`;

@@ -50,11 +50,8 @@ class StubLogger implements ISystemLogService {
 }
 
 /**
- * Construct an Express-like request stub with headers populated.
- *
- * The facade only reads `req.headers` (via {@link fromNodeHeaders} from
- * better-auth/node), so the rest of the Express request surface is
- * unused and can be omitted from the stub.
+ * Express-like request stub carrying only headers, since the facade reads
+ * nothing but `req.headers` (via {@link fromNodeHeaders} from better-auth/node).
  */
 function makeRequest(headers: Record<string, string> = {}): Request {
     return { headers } as unknown as Request;

@@ -2,9 +2,8 @@
  * Typed errors thrown by `UserGroupService`.
  *
  * The controller maps each class to a specific HTTP status via `instanceof`
- * checks, removing the need to regex-match error messages. Service messages
- * remain human-readable for log output but are no longer load-bearing for
- * status-code selection.
+ * checks, so service messages stay human-readable for log output and never
+ * drive status-code selection.
  */
 
 /**

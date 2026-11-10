@@ -173,20 +173,12 @@ export class GeckoTerminalClient {
     /**
      * Strip GeckoTerminal's `tron_` network prefix off a token resource id so it
      * compares to a bare contract address.
-     *
-     * @param resourceId - A relationship id such as `tron_TR7NHq…`.
-     * @returns The contract address, or empty when the id is absent.
      */
     private static addressFromResourceId(resourceId: string | undefined): string {
         return resourceId ? resourceId.replace(`${NETWORK}_`, '') : '';
     }
 
-    /**
-     * Read the HTTP status off a failed request.
-     *
-     * @param error - The thrown axios error.
-     * @returns The status, when the request reached the server.
-     */
+    /** Read the HTTP status off a failed axios request, or undefined when it never reached the server. */
     private static statusOf(error: unknown): number | undefined {
         return (error as { response?: { status?: number } })?.response?.status;
     }
@@ -198,9 +190,6 @@ export class GeckoTerminalClient {
      * backfill reads an empty range as the asset's listing date and marks the
      * asset complete. The wall is the only 401 whose body states the 180-day
      * limit, so that text decides rather than the status on its own.
-     *
-     * @param error - The thrown axios error.
-     * @returns True only for the 401 that names the 180-day limit.
      */
     private static isHistoryWall(error: unknown): boolean {
         const body = (error as { response?: { data?: IGeckoTerminalErrorBody } })?.response?.data;

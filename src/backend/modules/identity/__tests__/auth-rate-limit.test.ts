@@ -118,11 +118,8 @@ describe('enforceEmailOtpLimit', () => {
     let logger: ISystemLogService;
 
     /**
-     * Send one request through the throttle.
-     *
-     * @param path - Better Auth endpoint path.
-     * @param email - Address in the body.
-     * @returns Resolves when allowed; rejects with the 429 APIError when refused.
+     * Send one request through the throttle. Resolves when allowed; rejects with
+     * the 429 APIError when refused.
      */
     const hit = (path: string, email: unknown) => enforceEmailOtpLimit(redis, 'tronrelic', logger, path, { email });
 

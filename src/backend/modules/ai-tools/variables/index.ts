@@ -2,11 +2,9 @@
  * @file variables/index.ts
  *
  * Registers the core-owned built-in dynamic prompt variables into the
- * `'prompt-variables'` registry. These were previously registered by the
- * trp-ai-assistant plugin through `IPluginContext`; ownership moved to the
- * ai-tools module so the variables exist for whichever AI provider is installed
- * (or none) and so the lethal-trifecta detector sees them regardless of which
- * provider plugin is enabled.
+ * `'prompt-variables'` registry. Core owns them so they exist for whichever AI
+ * provider is installed (or none), and the lethal-trifecta detector sees them
+ * regardless of which provider plugin is enabled.
  *
  * Plugins keep the ability to register their own dynamic variables the same way —
  * by watching the `'prompt-variables'` service and calling `registerVariable` —

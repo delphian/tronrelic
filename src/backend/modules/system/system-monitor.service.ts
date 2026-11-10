@@ -955,10 +955,9 @@ export class SystemMonitorService {
   /**
    * Read the `blockchain:sync` job's registration from the scheduler.
    *
-   * The old console decided whether sync was automatic from the
-   * `ENABLE_SCHEDULER` environment variable, so it kept claiming the scheduler
-   * was running the job after an operator had disabled that one job. The
-   * job's own state is what matters.
+   * Reads the job's own state rather than the `ENABLE_SCHEDULER` environment
+   * variable, because an operator can disable this one job while the scheduler
+   * keeps running.
    *
    * @returns Whether the job is registered and enabled, and its schedule. A
    *          scheduler that was never started reads as not registered.
@@ -1159,10 +1158,9 @@ export class SystemMonitorService {
    * Report this Node process's own resource consumption.
    *
    * CPU is measured as a delta against the previous call rather than read from
-   * `os.cpus()`. The old approach averaged host core times since boot, so in a
-   * container it reported neither this process nor anything current — a busy
-   * backend and an idle one produced the same figure, and the number barely
-   * moved once the droplet had been up a few days.
+   * `os.cpus()`, which averages host core times since boot. In a container that
+   * reports neither this process nor anything current: a busy backend and an
+   * idle one show the same figure, which barely moves after a few days' uptime.
    *
    * @returns Process uptime, memory breakdown, and windowed CPU percentage.
    */

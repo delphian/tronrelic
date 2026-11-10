@@ -1,13 +1,12 @@
 /**
  * @fileoverview Defaults and accepted ranges for the block emit buffer.
  *
- * The five emit-buffer settings used to be environment variables read at
- * startup, which meant changing the feed's lead required editing the droplet's
- * `.env`, adding the variable to the backend service in `docker-compose.yml`,
- * and recreating the container. They are now fields on the `system_config`
- * document and are edited from the Configuration tab of `/system/system`.
+ * The five emit-buffer settings are fields on the `system_config` document, edited
+ * from the Configuration tab of `/system/system`. As environment variables, changing
+ * the feed's lead would mean editing the droplet's `.env`, adding the variable to the
+ * backend service in `docker-compose.yml`, and recreating the container.
  *
- * That move creates two consumers of the same numbers: the Mongoose schema,
+ * Storing them there creates two consumers of the same numbers: the Mongoose schema,
  * which needs a default for a deployment whose config document predates these
  * fields, and `BlockEmitter`, which is built synchronously and cannot wait for
  * a database read before its first block arrives. This file is the one place

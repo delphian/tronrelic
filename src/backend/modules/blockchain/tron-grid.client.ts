@@ -631,11 +631,7 @@ export class TronGridClient {
      */
     private readonly trc20TokenInfoCache = new Map<string, ITrc20TokenInfo>();
 
-    /**
-   * Private constructor to enforce singleton pattern
-   * Rate limiting is enforced at the module level (global queue/state)
-   * but singleton ensures we don't waste memory with multiple instances
-   */
+    /** Private to enforce the singleton; rate limiting is module-level (global queue/state), not per instance. */
     private constructor() {}
 
     /**
@@ -1693,10 +1689,9 @@ export class TronGridClient {
      * Read TRON's governance-set chain parameters, such as the energy fee.
      *
      * The chain parameters fetcher needs these every ten minutes and once at
-     * startup, where one rate-limited reply used to stop the backend. Going
-     * through the shared queue gives the call the platform's API keys, its 200ms
-     * spacing, and the same retries as block sync, so a passing 429 is retried
-     * instead of failing the fetch.
+     * startup, where a rate-limited reply must not stop the backend. The shared
+     * queue gives the call the platform's API keys, its 200ms spacing, and the
+     * same retries as block sync, so a passing 429 is retried instead of failing.
      *
      * @returns Every chain parameter as a key and value pair
      * @throws Error when every attempt fails

@@ -375,9 +375,7 @@ export class RedirectService {
     /**
      * Trim a path and strip a single trailing slash (except the root) so
      * `/forum/` and `/forum` are stored identically and match consistently.
-     *
-     * @param value - Raw caller-supplied path.
-     * @returns The normalized path (unchanged shape validated separately).
+     * The shape is validated separately.
      */
     private normalizePath(value: string): string {
         const trimmed = typeof value === 'string' ? value.trim() : '';
@@ -385,13 +383,7 @@ export class RedirectService {
         return normalized;
     }
 
-    /**
-     * Collapse an empty/blank note to `undefined` so the field is absent rather
-     * than an empty string in storage.
-     *
-     * @param value - Raw note or undefined.
-     * @returns Trimmed note, or undefined when blank.
-     */
+    /** Collapse a blank note to `undefined` so the field is absent rather than an empty string in storage. */
     private normalizeNotes(value: string | undefined): string | undefined {
         const trimmed = typeof value === 'string' ? value.trim() : '';
         const notes = trimmed.length > 0 ? trimmed : undefined;

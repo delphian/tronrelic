@@ -1,12 +1,9 @@
 /**
  * @fileoverview Legacy `/account/notifications` route — permanent redirect to
- * `/profile`.
+ * `/profile`, the settings hub that owns the {@link PreferencesPanel}.
  *
- * Notification preferences moved into the consolidated profile settings hub.
- * This stub preserves any bookmarks, in-app links, or external references to
- * the old URL by redirecting them to the hub, which now owns the
- * {@link PreferencesPanel}. A server component so the redirect happens during
- * SSR with no client flash.
+ * Keeps bookmarks, in-app links, and external references to this URL working.
+ * A server component so the redirect happens during SSR with no client flash.
  */
 
 import { redirect } from 'next/navigation';

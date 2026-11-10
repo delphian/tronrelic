@@ -27,22 +27,12 @@ import { buildToolkit, CONTEXT, NOW, PEER, USDT, WALLET } from './chainQueryTest
 /** TronWeb's keccak-256 helper, typed for the one call these tests make. */
 const sha3 = (TronWeb as unknown as { sha3(text: string, prefix?: boolean): string }).sha3;
 
-/**
- * Pad a hex value to one 32-byte ABI word, as event topics and data store it.
- *
- * @param hex - Hex digits without `0x`.
- * @returns 64 hex characters.
- */
+/** Pad hex digits (without `0x`) to one 32-byte ABI word, as event topics and data store it. */
 function word(hex: string): string {
     return hex.padStart(64, '0');
 }
 
-/**
- * An indexed address topic for a base58 address: its 20 bytes, right-aligned.
- *
- * @param address - A base58 address.
- * @returns The topic.
- */
+/** An indexed address topic for a base58 address: its 20 bytes, right-aligned. */
 function addressTopic(address: string): string {
     return word(toHexAddress(address).toLowerCase().slice(2));
 }
@@ -72,11 +62,8 @@ describe('chain signatures', () => {
 
     it('decodes Tether blacklist events in the layout TRON USDT emits, with the address indexed', () => {
         /**
-         * Look up an event's topic by its signature, so each case names the
-         * event it builds instead of repeating a 64-character hash.
-         *
-         * @param prefix - The signature up to and including its `(`.
-         * @returns The event's topic0.
+         * Look up an event's topic0 by its signature prefix (up to and including
+         * its `(`), so each case names the event instead of repeating a hash.
          */
         const topicFor = (prefix: string) => Object.keys(KNOWN_EVENT_TOPICS).find(topic => KNOWN_EVENT_TOPICS[topic].startsWith(prefix))!;
 

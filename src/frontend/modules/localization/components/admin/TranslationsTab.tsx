@@ -100,12 +100,7 @@ interface ITranslationsTabProps {
     initialRoute?: string;
 }
 
-/**
- * Identify a row for draft and busy state.
- *
- * @param row - A listing row.
- * @returns A key unique to the namespace and key.
- */
+/** Identify a row for draft and busy state, by its namespace and key. */
 function rowId(row: { namespace: string; key: string }): string {
     return `${row.namespace}\u0000${row.key}`;
 }
@@ -114,10 +109,6 @@ function rowId(row: { namespace: string; key: string }): string {
  * Decide whether the whole-page Suggest button should fill a row. Rows already
  * translated are left alone, and so is any row holding text the administrator
  * typed but has not saved, so the button never overwrites their work.
- *
- * @param row - A listing row.
- * @param draft - The row's unsaved editor text, if any.
- * @returns True when the row needs a suggestion.
  */
 function needsSuggestion(row: ITranslationRow, draft: string | undefined): boolean {
     const hasUnsavedText = draft !== undefined && draft !== (row.translation?.text ?? '');
@@ -129,10 +120,6 @@ function needsSuggestion(row: ITranslationRow, draft: string | undefined): boole
  * doubled the height of every row of short labels and still cut off long
  * descriptions, so the editor takes as many lines as the longer of the English
  * source and the current text need, within a small cap.
- *
- * @param source - The English text the translation is written from.
- * @param draft - The text currently in the editor.
- * @returns The number of rows the editor starts with.
  */
 function editorRows(source: string, draft: string): number {
     const length = Math.max(source.length, draft.length);
@@ -150,11 +137,6 @@ function editorRows(source: string, draft: string): number {
  * confirm that: the backend records a new save time, which is what marks the
  * translation current. Requiring a change here left such a row stale with its
  * Save button disabled and no way to clear it.
- *
- * @param row - A listing row.
- * @param draft - The text currently in the row's editor.
- * @returns True when the text is non-empty and either differs from what is
- *          stored or confirms a stale translation.
  */
 function hasSavableDraft(row: ITranslationRow, draft: string): boolean {
     const changed = draft !== (row.translation?.text ?? '');
@@ -205,13 +187,7 @@ export function TranslationsTab({ initialRoute }: ITranslationsTabProps) {
         languageRef.current = language;
     }, [language]);
 
-    /**
-     * Show the outcome of an action with the backend's message on failure.
-     *
-     * @param tone - Success or failure.
-     * @param title - What happened.
-     * @param error - The thrown error, on failure.
-     */
+    /** Show the outcome of an action with the backend's message on failure. */
     const notify = useCallback((tone: 'success' | 'danger', title: string, error?: unknown) => {
         push({ tone, title, description: error ? (error instanceof Error ? error.message : String(error)) : undefined });
     }, [push]);
@@ -306,11 +282,7 @@ export function TranslationsTab({ initialRoute }: ITranslationsTabProps) {
         loadRowsRef.current = loadRows;
     }, [loadRows]);
 
-    /**
-     * Apply the typed search text.
-     *
-     * @param event - The search form submission.
-     */
+    /** Apply the typed search text. */
     const handleSearch = useCallback((event: FormEvent) => {
         event.preventDefault();
         setSearch(searchDraft.trim());

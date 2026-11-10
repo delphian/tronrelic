@@ -59,9 +59,7 @@ export async function buildServerDataContext(pluginId: string, slug: string, lan
     /**
      * Localize one link for this request, so a plugin fetcher never links a
      * translated page to an address that is not published in its language.
-     *
-     * @param href - The link as the fetcher would write it on an English page, such as `/`.
-     * @returns The translated address when the target is published in the request's language, otherwise `href` unchanged.
+     * Pass `href` as it would be written on an English page, such as `/`.
      */
     const localizeRequestHref = (href: string): string => localizeHref(href, language, config);
 

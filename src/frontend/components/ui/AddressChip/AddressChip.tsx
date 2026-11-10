@@ -19,12 +19,10 @@
  * `'use client'` component purely because those affordances need event handlers
  * and a click-outside listener.
  *
- * The tools menu renders in a `<body>` portal with viewport-fixed coordinates.
- * An earlier revision anchored it absolutely and only flipped it upward near the
- * viewport bottom, which left it clipped inside any scrolling ancestor — the
- * shared `Table` wrapper sets `overflow-x: auto`, and CSS turns the other axis
- * into `auto` too, so a menu opening below a row was cut at the table's edge
- * regardless of the space beyond it.
+ * The tools menu renders in a `<body>` portal with viewport-fixed coordinates,
+ * because an absolutely anchored menu is clipped inside any scrolling ancestor:
+ * the shared `Table` wrapper sets `overflow-x: auto`, CSS turns the other axis
+ * into `auto` too, and a menu opening below a row is cut at the table's edge.
  *
  * This component is internal to `components/ui/`. Callers render
  * `<TronAddress>` or `<TronContractAddress>`, never the chip directly.
@@ -212,11 +210,7 @@ export function AddressChip({
                 setMenuOpen(false);
             }
         }
-        /**
-         * Dismiss the menu on Escape so keyboard users are never trapped in it.
-         *
-         * @param event - The document-level key event being tested.
-         */
+        /** Dismiss the menu on Escape so keyboard users are never trapped in it. */
         function handleKeyDown(event: globalThis.KeyboardEvent): void {
             if (event.key === 'Escape') setMenuOpen(false);
         }

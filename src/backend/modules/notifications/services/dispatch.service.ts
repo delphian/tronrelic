@@ -217,8 +217,7 @@ export class DispatchService {
      * classification (the authorization gate is a no-op stub today), then keeps
      * only the notification-family sinks that still map to a registered channel —
      * ignoring the other families' sinks the shared router also returns. This is
-     * the structural `accepts ⊆ present` floor match that replaced the module's
-     * own `present ⊆ accepts` capability ceiling.
+     * the structural `accepts ⊆ present` floor match.
      *
      * @param present - The features the resolved descriptor carries.
      * @returns The ids of the registered channels that structurally match.

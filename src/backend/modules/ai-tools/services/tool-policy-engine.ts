@@ -661,10 +661,6 @@ export class ToolPolicyEngine {
      * admitted over the ceiling. A denied call leaves its increment, which only
      * makes the window more conservative (never over-admits) and self-heals at
      * expiry.
-     *
-     * @param name - Tool name.
-     * @param maxCalls - The tool's per-window call cap.
-     * @returns `true` when this call fits within the cap.
      */
     private async admitCostCall(name: string, maxCalls: number): Promise<boolean> {
         const count = await this.hit(`cost:${name}`, COST_WINDOW_MS);

@@ -5,11 +5,10 @@
  * object to persist.
  *
  * The schema is the widget's admin form. Without this translation every
- * widget's settings would be a raw JSON textarea, which is how the form
- * used to work and what operators found hardest to use. The server's AJV
- * check stays authoritative; the subset applied here (required presence,
- * number typing and range, array `minItems`) covers the common mistakes so
- * they surface inline before a request is made.
+ * widget's settings would be a raw JSON textarea, which operators find
+ * hardest to use. The server's AJV check stays authoritative; the subset
+ * applied here (required presence, number typing and range, array `minItems`)
+ * covers the common mistakes so they surface inline before a request is made.
  *
  * @module modules/widgets/lib/configSchema
  */

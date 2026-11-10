@@ -44,25 +44,14 @@ class TestEventObserver extends BaseEventObserver {
     }
 }
 
-/**
- * Build a batch with a given number of placeholder events.
- *
- * @param blockNumber - Block the batch belongs to.
- * @param eventCount - How many events it carries.
- * @param receiptsFetched - Whether the block's receipts were complete.
- * @returns The batch.
- */
+/** Build a batch with a given number of placeholder events. */
 function batch(blockNumber: number, eventCount: number, receiptsFetched = true): IContractEventBatch {
     const events = Array.from({ length: eventCount }, () => ({}) as IObservedContractEvent);
 
     return { blockNumber, blockTimestamp: new Date(0), receiptsFetched, events };
 }
 
-/**
- * Let the observer's queue drain.
- *
- * @returns A promise resolving after pending microtasks.
- */
+/** Let the observer's queue drain. */
 async function settle(): Promise<void> {
     await new Promise(resolve => setTimeout(resolve, 0));
 }

@@ -53,12 +53,8 @@ export class MigrationTracker {
     }
 
     /**
-     * Get MongoDB collection for migration records.
-     *
-     * Uses raw collection access (not Mongoose model) for maximum flexibility.
-     * Collection is automatically created on first write if it doesn't exist.
-     *
-     * @returns MongoDB native collection for migrations
+     * MongoDB collection for migration records, accessed raw (not as a Mongoose
+     * model) for flexibility. It is created on first write if it does not exist.
      */
     private getCollection(): Collection<IMigrationRecord> {
         return this.database.getCollection<IMigrationRecord>(this.collectionName);

@@ -178,13 +178,7 @@ describe('interpolateTranslation', () => {
 });
 
 describe('isInternalServiceRequest', () => {
-    /**
-     * Build the slice of an Express request the check reads.
-     *
-     * @param remoteAddress - Socket peer address.
-     * @param headers - Request headers.
-     * @returns A request stand-in.
-     */
+    /** Build the slice of an Express request the check reads. */
     function request(remoteAddress: string, headers: Record<string, string> = {}): any {
         return { headers, socket: { remoteAddress } };
     }

@@ -49,9 +49,6 @@ const MAX_REDIRECT_FIELD_LENGTH = 512;
  * Coalesce a possibly-multivalued Express header to its first string value.
  * `classifyTrafficRequest` and the country read want a single string or
  * undefined, never the `string[]` form Node produces for repeated headers.
- *
- * @param raw - The raw `req.headers[name]` value.
- * @returns The single header value, or undefined when absent.
  */
 function headerValue(raw: string | string[] | undefined): string | undefined {
     return Array.isArray(raw) ? raw[0] : raw;

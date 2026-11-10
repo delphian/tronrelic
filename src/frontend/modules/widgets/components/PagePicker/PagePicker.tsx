@@ -56,10 +56,7 @@ export function PagePicker({ value, options, onChange, onAddPath }: IPagePickerP
         [options]
     );
 
-    /**
-     * Submit the typed path; clear the field only when it was accepted so
-     * a rejected value stays in place to be corrected.
-     */
+    /** Submit the typed path, clearing the field only when accepted so a rejected value can be corrected. */
     const submitDraft = () => {
         if (onAddPath(draft)) setDraft('');
     };

@@ -52,10 +52,8 @@ const target = { typeId: 'core:page', id: 'page-1', language: 'zh' };
  * Build a provider whose `query` resolves with a given reply and whose model
  * list reports the given models.
  *
- * @param reply - The response text and stop reason the fake model returns.
  * @param models - What `listModels` reports; defaults to one model with a
  *   generous output limit so the budget tests can pick a smaller one.
- * @returns The provider and its query and model-list spies.
  */
 function fakeProvider(
     reply: Partial<IAiQueryResult>,
@@ -126,12 +124,7 @@ function registryWith(provider: IAiProvider): IAiProviderRegistry {
     } as unknown as IAiProviderRegistry;
 }
 
-/**
- * The suggestion source for a translation that already exists.
- *
- * @param overrides - Fields to change.
- * @returns The source.
- */
+/** The suggestion source for a translation that already exists. */
 function source(overrides: Partial<IContentTranslationSuggestionSource> = {}): IContentTranslationSuggestionSource {
     return { fields, english, previous: null, existing: null, ...overrides };
 }

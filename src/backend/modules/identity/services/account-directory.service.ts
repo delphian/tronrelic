@@ -62,10 +62,7 @@ export class AccountDirectoryService implements IAccountDirectoryService {
     /** Logger scoped to this service. */
     private readonly logger: ISystemLogService;
 
-    /**
-     * @param database - Database abstraction (Tier-1 collection access).
-     * @param logger - Derives an `account-directory-service` child logger.
-     */
+    /** Bind the auth-users collection (Tier-1 access) and an `account-directory-service` child logger. */
     private constructor(database: IDatabaseService, logger: ISystemLogService) {
         this.authUsers = database.getCollection<IAuthUserDocument>(AUTH_USERS_COLLECTION);
         this.logger = logger.child({ component: 'account-directory-service' });
@@ -188,9 +185,6 @@ export class AccountDirectoryService implements IAccountDirectoryService {
      * trigger catastrophic backtracking (ReDoS) or silently change which rows
      * match. Backslash-escaping every regex metacharacter forces the term to
      * match literally, which is the only behaviour the search box promises.
-     *
-     * @param input - Raw search string from the caller.
-     * @returns The input with all regex special characters escaped.
      */
     private static escapeRegex(input: string): string {
         return input.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');

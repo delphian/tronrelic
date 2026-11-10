@@ -42,8 +42,7 @@ interface SunPumpRecord {
  * - Persists SunPump token creations to database
  * - Emits WebSocket events for real-time frontend updates
  *
- * Note: Telegram notification delivery was removed and should be handled by
- * the telegram-bot plugin using plugin-to-plugin service architecture.
+ * Telegram delivery belongs in the telegram-bot plugin (plugin-to-plugin services), not here.
  */
 export class AlertService {
   private readonly tronClient: TronGridClient;

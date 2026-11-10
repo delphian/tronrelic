@@ -80,12 +80,6 @@ describe('MigrationsController', () => {
     });
 
     describe('getStatus', () => {
-        /**
-         * Test: getStatus should return migration system status.
-         *
-         * Verifies that the controller fetches status from the service
-         * and returns it in the response.
-         */
         it('should return migration system status', async () => {
             const mockStatus = {
                 pending: [
@@ -111,12 +105,6 @@ describe('MigrationsController', () => {
             expect(res.json).toHaveBeenCalledWith(mockStatus);
         });
 
-        /**
-         * Test: getStatus should handle service errors.
-         *
-         * Verifies that when the service throws an error, the controller
-         * logs it and returns a 500 response.
-         */
         it('should handle service errors', async () => {
             const error = new Error('Failed to read migrations');
             const mockService = (controller as any).service;
@@ -140,12 +128,6 @@ describe('MigrationsController', () => {
     });
 
     describe('getHistory', () => {
-        /**
-         * Test: getHistory should return migration history with default limit.
-         *
-         * Verifies that when no query parameters are provided, the controller
-         * uses the default limit of 100 and status filter of 'all'.
-         */
         it('should return migration history with default limit', async () => {
             const mockHistory = [
                 { id: '001-test', status: 'completed', executedAt: '2024-01-01', duration: 100 }
@@ -166,11 +148,6 @@ describe('MigrationsController', () => {
             });
         });
 
-        /**
-         * Test: getHistory should return migration history with custom limit.
-         *
-         * Verifies that the limit query parameter is parsed and passed to the service.
-         */
         it('should return migration history with custom limit', async () => {
             const mockService = (controller as any).service;
             mockService.getHistory.mockResolvedValue([]);
@@ -185,11 +162,6 @@ describe('MigrationsController', () => {
             expect(mockService.getHistory).toHaveBeenCalledWith(50, 'all');
         });
 
-        /**
-         * Test: getHistory should filter by status.
-         *
-         * Verifies that the status query parameter is passed to the service.
-         */
         it('should filter by status', async () => {
             const mockService = (controller as any).service;
             mockService.getHistory.mockResolvedValue([]);
@@ -204,11 +176,6 @@ describe('MigrationsController', () => {
             expect(mockService.getHistory).toHaveBeenCalledWith(100, 'failed');
         });
 
-        /**
-         * Test: getHistory should accept completed status filter.
-         *
-         * Verifies that 'completed' is a valid status filter value.
-         */
         it('should accept completed status filter', async () => {
             const mockService = (controller as any).service;
             mockService.getHistory.mockResolvedValue([]);
@@ -223,11 +190,6 @@ describe('MigrationsController', () => {
             expect(mockService.getHistory).toHaveBeenCalledWith(200, 'completed');
         });
 
-        /**
-         * Test: getHistory should handle service errors.
-         *
-         * Verifies that service errors are logged and returned as 500 responses.
-         */
         it('should handle service errors', async () => {
             const error = new Error('Database connection failed');
             const mockService = (controller as any).service;
@@ -251,12 +213,6 @@ describe('MigrationsController', () => {
     });
 
     describe('execute', () => {
-        /**
-         * Test: execute should execute single migration.
-         *
-         * Verifies that when a migration ID is provided, the controller
-         * executes that specific migration.
-         */
         it('should execute single migration', async () => {
             const mockResult = {
                 success: true,
@@ -278,12 +234,6 @@ describe('MigrationsController', () => {
             expect(res.json).toHaveBeenCalledWith(mockResult);
         });
 
-        /**
-         * Test: execute should execute all pending migrations.
-         *
-         * Verifies that when no migration ID is provided, the controller
-         * executes all pending migrations.
-         */
         it('should execute all pending migrations', async () => {
             const mockResult = {
                 success: true,
@@ -305,12 +255,6 @@ describe('MigrationsController', () => {
             expect(res.json).toHaveBeenCalledWith(mockResult);
         });
 
-        /**
-         * Test: execute should handle execution errors.
-         *
-         * Verifies that migration execution errors are logged and returned
-         * as 500 responses.
-         */
         it('should handle execution errors', async () => {
             const error = new Error('Migration execution failed');
             const mockService = (controller as any).service;
@@ -336,12 +280,6 @@ describe('MigrationsController', () => {
     });
 
     describe('getDetails', () => {
-        /**
-         * Test: getDetails should return migration details.
-         *
-         * Verifies that the controller fetches details for a specific migration
-         * by its ID from the URL parameters.
-         */
         it('should return migration details', async () => {
             const mockDetails = {
                 id: '001-test',
@@ -366,12 +304,6 @@ describe('MigrationsController', () => {
             expect(res.json).toHaveBeenCalledWith(mockDetails);
         });
 
-        /**
-         * Test: getDetails should return 404 for non-existent migration.
-         *
-         * Verifies that when a migration ID is not found, the controller
-         * returns a 404 status.
-         */
         it('should return 404 for non-existent migration', async () => {
             const error = new Error('Migration not found: nonexistent');
             const mockService = (controller as any).service;
@@ -391,11 +323,6 @@ describe('MigrationsController', () => {
             });
         });
 
-        /**
-         * Test: getDetails should handle service errors.
-         *
-         * Verifies that service errors are logged and returned as 500 responses.
-         */
         it('should handle service errors', async () => {
             const error = new Error('Database read failed');
             const mockService = (controller as any).service;

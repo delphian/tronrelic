@@ -67,11 +67,7 @@ export class PageTranslationService implements IPageTranslationService {
     private readonly pages: IPublicPageLookup;
     private readonly markdown: MarkdownService;
 
-    /**
-     * Private so construction only happens through `setDependencies`.
-     *
-     * @param deps - Bootstrap-wired collaborators.
-     */
+    /** Private so construction only happens through `setDependencies`. */
     private constructor(deps: IPageTranslationServiceDependencies) {
         this.contentService = deps.contentService;
         this.pages = deps.pages;
@@ -184,13 +180,7 @@ export class PageTranslationService implements IPageTranslationService {
         };
     }
 
-    /**
-     * Read one text value out of a translation.
-     *
-     * @param served - The served translation.
-     * @param field - The field name.
-     * @returns The value, or an empty string when it is missing or a list.
-     */
+    /** Read one text value out of a translation; empty when it is missing or a list. */
     private text(served: IServedContentTranslation<IPageContent>, field: string): string {
         const value = served.values[field];
 

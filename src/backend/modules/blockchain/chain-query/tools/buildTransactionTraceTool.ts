@@ -429,9 +429,6 @@ LIMIT {limit:UInt32}`,
  * java-tron leaves `token_id` empty for TRX and puts the TRC-10 id there
  * otherwise. Reading it in one place keeps the token metadata lookup and the
  * response's value keys from disagreeing about which entry is which.
- *
- * @param id - The entry's stored `token_id`, empty for TRX.
- * @returns TRX, or the TRC-10 token with that id.
  */
 function internalToken(id: string): IChainTokenFilter {
     return id ? { assetType: 'trc10', token: id } : TRX_TOKEN;
@@ -515,32 +512,23 @@ function summarizeField(field: unknown): unknown {
 }
 
 /**
- * Convert a hex address from a stored parameter into base58.
- *
- * @param value - The stored value, normally `41` followed by 40 hex characters.
- * @returns The base58 address, or null when the value is missing or not an address.
+ * Convert a stored hex address (normally `41` plus 40 hex characters) into base58,
+ * or null when the value is missing or not an address.
  */
 function toAddress(value: unknown): string | null {
     return typeof value === 'string' && value ? toVerifiedBase58(value) : null;
 }
 
 /**
- * Decode hex-encoded text, such as a memo or a revert message.
- *
- * @param hex - The stored value, which java-tron hex-encodes, so it must be decoded before a person can read it.
- * @returns The text cut to a safe length, or null when there is none or it is not hex.
+ * Decode text java-tron stores hex-encoded, such as a memo or a revert message,
+ * cut to a safe length; null when there is none or it is not hex.
  */
 function decodeText(hex: string): string | null {
     const text = /^([0-9a-fA-F]{2})+$/.test(hex) ? Buffer.from(hex, 'hex').toString('utf8') : '';
     return text ? cut(text) : null;
 }
 
-/**
- * Cut a long string so a third party's text cannot fill the response.
- *
- * @param text - Text a third party chose, which may be arbitrarily long.
- * @returns The text, or its start followed by how long it was.
- */
+/** Cut a long string so a third party's text cannot fill the response. */
 function cut(text: string): string {
     return text.length > MAX_TEXT ? `${text.slice(0, MAX_TEXT)}… (${text.length} characters)` : text;
 }

@@ -38,14 +38,7 @@ import { getConsentPageviewStats, getConsentSettings, renewConsent, updateConsen
 /** Days of anonymous page views the tab shows. */
 const PAGEVIEW_WINDOW_DAYS = 30;
 
-/**
- * Describe what is wrong with an optional field, or nothing when it is fine.
- *
- * @param value - What the administrator typed.
- * @param pattern - The form the value must take.
- * @param expected - Plain description of that form.
- * @returns The error message, or undefined for an empty or valid value.
- */
+/** Describe what is wrong with an optional field, or return undefined when it is empty or valid. */
 function fieldError(value: string, pattern: RegExp, expected: string): string | undefined {
     const trimmed = value.trim();
     return trimmed === '' || pattern.test(trimmed) ? undefined : `Expected ${expected}.`;
@@ -133,10 +126,6 @@ export function SettingsTab() {
                     confirmLabel="Ask again"
                     message="Every visitor in the EEA, the UK, and Switzerland will see the banner again on their next page view, and their analytics and advertising cookies stop until they answer. Do this after the Privacy Policy changes. Continue?"
                     onConfirm={
-                        /**
-                         * Raise the version once the admin confirms, then close
-                         * the dialog and report the outcome.
-                         */
                         async () => {
                             setRenewing(true);
                             try {

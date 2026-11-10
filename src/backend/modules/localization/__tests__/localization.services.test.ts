@@ -142,12 +142,7 @@ describe('LocalizationService content routes', () => {
         logger = createLogger();
     });
 
-    /**
-     * Configure the singleton with a content route source.
-     *
-     * @param listContentRoutes - The source the snapshot reads translated page addresses from.
-     * @returns The configured service.
-     */
+    /** Configure the singleton with the source the snapshot reads translated page addresses from. */
     function serviceWith(listContentRoutes: () => Promise<Array<{ pattern: string; languages: string[] }>>): LocalizationService {
         LocalizationService.setDependencies({ database: db, logger, listContentRoutes });
         return LocalizationService.getInstance();

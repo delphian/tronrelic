@@ -1,12 +1,9 @@
 /**
  * @fileoverview Router factory for the Better Auth-keyed wallet endpoints.
  *
- * Mounted at `/api/user/wallets` (Phase 4). These routes resolve the
- * caller from the Better Auth session via {@link WalletController}, not
- * from a cookie-validated `:id` path param, so they carry no user id in
- * the URL. The mount point must be registered *before* the legacy
- * `/api/user` public router so the literal `wallets` segment is not
- * captured by that router's `/:id` cookie-validation middleware.
+ * Mounted at `/api/user/wallets`. These routes resolve the caller from the
+ * Better Auth session via {@link WalletController}, not from a
+ * cookie-validated `:id` path param, so they carry no user id in the URL.
  */
 
 import { Router } from 'express';

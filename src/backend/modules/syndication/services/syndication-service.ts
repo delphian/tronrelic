@@ -127,10 +127,6 @@ export class SyndicationService implements ISyndicationService {
      * every retry of the same leg and across a re-enqueue of the same request, so
      * it is both the enqueue-dedupe key (unique index) and the receiver-dedupe key
      * handed to a sink.
-     *
-     * @param originId - The originating record id.
-     * @param sinkId - The destination sink id.
-     * @returns The idempotency key.
      */
     private idempotencyKey(originId: string, sinkId: string): string {
         return `${originId}::${sinkId}`;
@@ -345,13 +341,7 @@ export class SyndicationService implements ISyndicationService {
         return true;
     }
 
-    /**
-     * Resolve a leg's sink from the live router by id. Returns undefined when no
-     * sink with that id is currently registered.
-     *
-     * @param sinkId - The destination sink id.
-     * @returns The sink, or undefined when not registered.
-     */
+    /** Resolve a leg's sink from the live router by id; undefined when none is registered. */
     private resolveSink(sinkId: string): IContentSink | undefined {
         return this.contentRouter.getSinks().find((sink) => sink.id === sinkId);
     }
@@ -366,11 +356,8 @@ export class SyndicationService implements ISyndicationService {
      * settle is safe because `reclaimStaleClaims` keys on `status`/`updatedAt`, not
      * the token.
      *
-     * @param legId - The leg id.
      * @param claimToken - The token minted by this attempt's claim; the CAS guard
      *        that scopes the write to the attempt that is still the live owner.
-     * @param status - The terminal status to set.
-     * @param patch - Extra fields (a `reason` for a refusal).
      * @returns The number of legs the CAS modified: 1 when this attempt was still
      *        the live owner and settled the row, 0 when its claim had been
      *        superseded (a stale-token no-op). The delivered branch gates its
@@ -570,9 +557,6 @@ export class SyndicationService implements ISyndicationService {
     /**
      * Whether an error is a MongoDB duplicate-key (11000) error — the signal that
      * an enqueue collided with an already-present leg (the idempotent path).
-     *
-     * @param error - The caught error.
-     * @returns True when it is a duplicate-key error.
      */
     private isDuplicateKeyError(error: unknown): boolean {
         return typeof error === 'object' && error !== null && (error as { code?: number }).code === 11000;

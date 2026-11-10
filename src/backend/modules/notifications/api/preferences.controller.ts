@@ -48,9 +48,6 @@ export class PreferencesController {
      * called per category, so the caller's group membership is read once per
      * request no matter how many categories modules and plugins have
      * registered.
-     *
-     * @param userId - Better Auth id of the caller.
-     * @returns The categories this user may opt in or out of.
      */
     private async visibleCategories(userId: string): Promise<INotificationCategory[]> {
         const configurable = this.notifications.listCategories().filter((c) => c.userConfigurable !== false);

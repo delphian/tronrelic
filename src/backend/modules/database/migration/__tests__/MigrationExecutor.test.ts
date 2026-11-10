@@ -144,12 +144,6 @@ describe('MigrationExecutor', () => {
     });
 
     describe('Execution State Management', () => {
-        /**
-         * Test: Executor should track running state.
-         *
-         * Verifies that isRunning() correctly reflects whether a migration
-         * is currently executing.
-         */
         it('should track running state', async () => {
             expect(executor.isRunning()).toBe(false);
 
@@ -171,12 +165,6 @@ describe('MigrationExecutor', () => {
             expect(executor.isRunning()).toBe(false);
         });
 
-        /**
-         * Test: Executor should prevent concurrent execution.
-         *
-         * Verifies that attempting to execute a migration while another is
-         * running throws an error.
-         */
         it('should prevent concurrent execution', async () => {
             const slowMigration: IMigrationMetadata = {
                 id: '001_slow',
@@ -216,12 +204,6 @@ describe('MigrationExecutor', () => {
     });
 
     describe('Successful Execution', () => {
-        /**
-         * Test: Executor should execute migration up function.
-         *
-         * Verifies that the migration's up() method is called with the
-         * database service.
-         */
         it('should execute migration up function', async () => {
             const upFunction = vi.fn();
             const migration: IMigrationMetadata = {
@@ -241,11 +223,6 @@ describe('MigrationExecutor', () => {
             expect(upFunction).toHaveBeenCalledWith({ database: mockDatabase, clickhouse: undefined });
         });
 
-        /**
-         * Test: Executor should record success after execution.
-         *
-         * Verifies that successful migrations are recorded via the tracker.
-         */
         it('should record success after execution', async () => {
             const migration: IMigrationMetadata = {
                 id: '001_test',
@@ -265,12 +242,6 @@ describe('MigrationExecutor', () => {
             expect(mockTracker.lastRecordedDuration).toBeGreaterThanOrEqual(0);
         });
 
-        /**
-         * Test: Executor should measure execution duration.
-         *
-         * Verifies that the executor accurately measures how long the
-         * migration takes to execute.
-         */
         it('should measure execution duration', async () => {
             const migration: IMigrationMetadata = {
                 id: '001_test',
@@ -292,12 +263,6 @@ describe('MigrationExecutor', () => {
     });
 
     describe('Failed Execution', () => {
-        /**
-         * Test: Executor should catch and record migration errors.
-         *
-         * Verifies that errors thrown by migrations are caught and recorded
-         * via the tracker.
-         */
         it('should catch and record migration errors', async () => {
             const error = new Error('Migration failed');
             const migration: IMigrationMetadata = {
@@ -321,12 +286,6 @@ describe('MigrationExecutor', () => {
             expect(mockTracker.lastRecordedError).toBe(error);
         });
 
-        /**
-         * Test: Executor should reset running state after failure.
-         *
-         * Verifies that the executor allows new migrations to run after
-         * a previous migration fails.
-         */
         it('should reset running state after failure', async () => {
             const failingMigration: IMigrationMetadata = {
                 id: '001_fail',
@@ -365,11 +324,6 @@ describe('MigrationExecutor', () => {
     });
 
     describe('Batch Execution', () => {
-        /**
-         * Test: Executor should execute multiple migrations in series.
-         *
-         * Verifies that executeMigrations() runs all migrations in order.
-         */
         it('should execute multiple migrations in series', async () => {
             const executionOrder: string[] = [];
 
@@ -417,12 +371,6 @@ describe('MigrationExecutor', () => {
             expect(executionOrder).toEqual(['001_first', '002_second', '003_third']);
         });
 
-        /**
-         * Test: Executor should stop on first failure in batch.
-         *
-         * Verifies that if a migration fails during batch execution,
-         * remaining migrations are not executed.
-         */
         it('should stop on first failure in batch', async () => {
             const executionOrder: string[] = [];
 
@@ -476,12 +424,6 @@ describe('MigrationExecutor', () => {
     });
 
     describe('Database Service Access', () => {
-        /**
-         * Test: Migration should have access to database methods.
-         *
-         * Verifies that migrations can call database service methods
-         * during execution.
-         */
         it('should provide database service to migration', async () => {
             let receivedContext: IMigrationContext | null = null;
 
@@ -505,11 +447,6 @@ describe('MigrationExecutor', () => {
             expect(receivedContext!.database).toBe(mockDatabase);
         });
 
-        /**
-         * Test: Migration should be able to perform multiple database operations.
-         *
-         * Verifies that migrations can chain multiple database operations.
-         */
         it('should allow multiple database operations', async () => {
             const createIndexSpy = vi.spyOn(mockDatabase, 'createIndex');
             const setSpy = vi.spyOn(mockDatabase, 'set');
@@ -537,12 +474,6 @@ describe('MigrationExecutor', () => {
     });
 
     describe('Error Handling', () => {
-        /**
-         * Test: Executor should handle async errors correctly.
-         *
-         * Verifies that errors from async operations in migrations
-         * are caught properly.
-         */
         it('should handle async errors correctly', async () => {
             const migration: IMigrationMetadata = {
                 id: '001_test',
@@ -564,11 +495,6 @@ describe('MigrationExecutor', () => {
             expect(mockTracker.failureRecorded).toBe(true);
         });
 
-        /**
-         * Test: Executor should handle synchronous errors correctly.
-         *
-         * Verifies that synchronous errors thrown in migrations are caught.
-         */
         it('should handle synchronous errors correctly', async () => {
             const migration: IMigrationMetadata = {
                 id: '001_test',
@@ -593,13 +519,10 @@ describe('MigrationExecutor', () => {
 
     describe('Forward-Only Safeguard', () => {
         /**
-         * Test: Executor refuses to re-execute a migration whose tracker
-         * record is already 'completed'. Prior behavior re-invoked
-         * `migration.up()` against the live database when an operator hit
-         * POST /api/admin/migrations/execute with a completed migrationId;
-         * the duplicate-key error from the tracker's insertOne incidentally
-         * surfaced that behavior. Now the executor reads the tracker first
-         * and throws a clear forward-only error before `up()` runs.
+         * Guards against re-invoking `migration.up()` on the live database when
+         * an operator posts a completed migrationId to
+         * POST /api/admin/migrations/execute. The executor must read the tracker
+         * and throw a forward-only error before `up()` runs.
          */
         it('should refuse to re-execute a completed migration', async () => {
             const migration: IMigrationMetadata = {
@@ -631,10 +554,6 @@ describe('MigrationExecutor', () => {
             expect(mockTracker.failureRecorded).toBe(false);
         });
 
-        /**
-         * Test: Executor still runs a migration whose tracker record is
-         * 'failed' (the retryable case — the whole reason this PR exists).
-         */
         it('should re-execute a previously failed migration', async () => {
             const upSpy = vi.fn(async () => undefined);
             const migration: IMigrationMetadata = {

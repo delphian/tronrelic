@@ -3,20 +3,18 @@
 /**
  * @fileoverview Contextual tooltip overlay.
  *
- * The overlay renders in a `<body>` portal with viewport-fixed coordinates.
- * It used to be a `position: absolute` child of its trigger, which left it at
- * the mercy of whatever hosted the trigger: any ancestor with `overflow` clipped
- * it, and any ancestor forming a stacking context (a `z-index`, a `transform`, a
- * `filter`) trapped its `z-index` inside that context, so a neighbouring card,
- * sticky header, or dialog painted straight over it. A portal removes it from
- * that tree entirely — the same fix `TronAddress` uses for its tools menu and
- * `AddressSelector` for its suggestion dropdown.
+ * The overlay renders in a `<body>` portal with viewport-fixed coordinates. As a
+ * `position: absolute` child of its trigger, any ancestor with `overflow` would
+ * clip it, and any ancestor forming a stacking context (a `z-index`, a
+ * `transform`, a `filter`) would trap its `z-index`, letting a neighbouring card,
+ * sticky header, or dialog paint over it. `TronAddress` uses the same portal fix
+ * for its tools menu and `AddressSelector` for its suggestion dropdown.
  *
- * Escaping the tree means giving up the CSS centering the overlay got for free,
- * so this component now measures the trigger and places the overlay itself:
- * centered on the trigger, clamped inside the viewport, on the preferred side
- * when it fits, flipped to the other side when it does not, and sent to
- * whichever side has more room when neither can hold it.
+ * Escaping the tree gives up CSS centering, so this component measures the
+ * trigger and places the overlay itself: centered on the trigger, clamped inside
+ * the viewport, on the preferred side when it fits, flipped to the other side
+ * when it does not, and sent to whichever side has more room when neither can
+ * hold it.
  */
 
 import {
@@ -95,9 +93,6 @@ interface TooltipProps {
  * that as one named helper keeps the placement maths readable instead of
  * nesting `Math.min` inside `Math.max` at every site.
  *
- * @param value - The ideal position before any edge is taken into account.
- * @param min - Lower bound the caller must not cross (a viewport or corner inset).
- * @param max - Upper bound the caller must not cross.
  * @returns The value moved inside the range, or the range's start when the
  *          range is inverted — which happens when the tooltip is wider than the
  *          space available, and biasing to the start keeps its leading text on
@@ -119,10 +114,9 @@ function clamp(value: number, min: number, max: number): number {
  *
  * `placement` states a preference, not a guarantee: the overlay flips to the
  * opposite side when the preferred one has no room, and falls back to whichever
- * side has more room when neither can hold it. Callers that previously
- * passed `placement="bottom"` purely to dodge clipping in a scrolling container
- * no longer need to — the portal removes that failure mode — but the prop is
- * still the right way to say which side reads better.
+ * side has more room when neither can hold it. The portal already prevents
+ * clipping in a scrolling container, so use the prop only to say which side
+ * reads better.
  *
  * @example
  * ```tsx
@@ -147,9 +141,6 @@ export function Tooltip({ content, children, placement = 'top' }: TooltipProps) 
      * `pointerType` so a touch device — which synthesizes an enter event on tap
      * — does not open the tooltip through this path and then immediately
      * toggle it shut through the click handler.
-     *
-     * @param event - Pointer event carrying the `pointerType` that decides
-     *        whether this is genuine hover or a synthesized touch event.
      */
     function handlePointerEnter(event: PointerEvent<HTMLSpanElement>) {
         if (event.pointerType === 'mouse') {
@@ -161,8 +152,6 @@ export function Tooltip({ content, children, placement = 'top' }: TooltipProps) 
      * Hide the tooltip when a mouse pointer leaves the trigger, gated on
      * `pointerType` for the same reason as {@link handlePointerEnter}: on touch
      * the tooltip is dismissed by an outside tap, not by pointer departure.
-     *
-     * @param event - Pointer event carrying the originating `pointerType`.
      */
     function handlePointerLeave(event: PointerEvent<HTMLSpanElement>) {
         if (event.pointerType === 'mouse') {
@@ -170,10 +159,7 @@ export function Tooltip({ content, children, placement = 'top' }: TooltipProps) 
         }
     }
 
-    /**
-     * Toggle visibility on tap, which is what gives touch users any way at all
-     * to reach tooltip text — there is no hover to rely on.
-     */
+    /** Toggle visibility on tap, the only way touch users can reach tooltip text without hover. */
     function handleClick() {
         setIsVisible(prev => !prev);
     }

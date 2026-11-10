@@ -372,13 +372,7 @@ export class ConnectedAppsService implements IConnectedAppsService {
     }
 }
 
-/**
- * Build the cache key for one user's grant to one app.
- *
- * @param userId - Better Auth user id.
- * @param clientId - OAuth client id.
- * @returns A key unique to the pair.
- */
+/** Build the cache key for one user's grant to one app. */
 function grantKey(userId: string, clientId: string): string {
     return `${userId}\u0000${clientId}`;
 }

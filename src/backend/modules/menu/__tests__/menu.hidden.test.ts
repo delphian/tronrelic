@@ -36,10 +36,6 @@ import { MenuController } from '../api/menu.controller.js';
  * Test whether a stored document matches an equality filter. Matching
  * `_id` needs `ObjectId.equals`, since two ObjectId instances for the same
  * id are never `===`.
- *
- * @param doc - Stored document under test
- * @param filter - Field-equality filter as passed to the collection call
- * @returns True when every filter field matches the document
  */
 function matches(doc: any, filter: Record<string, unknown>): boolean {
     return Object.entries(filter).every(([key, value]) =>
@@ -122,9 +118,6 @@ function createResponse(): Response & { statusCode: number; body: any } {
 /**
  * Build an anonymous request carrying only a query string, which is all the
  * two read handlers under test look at.
- *
- * @param query - Query parameters for the handler
- * @returns A request with no Better Auth session attached
  */
 function anonymousRequest(query: Record<string, string>): Request {
     return { query, authSession: null } as unknown as Request;

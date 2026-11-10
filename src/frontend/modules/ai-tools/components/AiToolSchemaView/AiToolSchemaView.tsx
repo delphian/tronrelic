@@ -42,9 +42,6 @@ interface IParamView {
  * because the chip's monospace styling already marks it as a literal, and
  * quoting it would only add noise; every other type is shown as JSON so
  * `null`, `true`, and `0` stay distinguishable from the words.
- *
- * @param value - A literal taken from the schema's `enum` or `default`.
- * @returns The display text for that literal.
  */
 function formatLiteral(value: unknown): string {
     return typeof value === 'string' ? value : JSON.stringify(value);

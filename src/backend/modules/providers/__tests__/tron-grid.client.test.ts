@@ -22,11 +22,7 @@ import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-
 import { ProviderConfigService } from '../services/provider-config.service.js';
 import { TronGridProviderClient } from '../clients/tron-grid.client.js';
 
-/**
- * Minimal ISystemLogService stand-in; the probe only ever warns on failure.
- *
- * @returns A logger whose methods do nothing.
- */
+/** Minimal ISystemLogService stand-in; the probe only ever warns on failure. */
 function createSilentLogger() {
     const noop = () => undefined;
     return { info: noop, warn: noop, error: noop, debug: noop, trace: noop, fatal: noop, child: () => createSilentLogger() } as never;

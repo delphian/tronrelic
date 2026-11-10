@@ -1,9 +1,7 @@
 /**
  * User module library utilities barrel export.
  *
- * Better Auth is the sole identity layer. The legacy UUID identity
- * constants/validators, the SSR Redux-state builder, and the TronLink
- * provider utilities were removed in the Phase 6 cutover.
+ * Better Auth is the sole identity layer.
  */
 
 // Better Auth client — exposed for hook-level access from non-Provider call

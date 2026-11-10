@@ -71,10 +71,9 @@ function capabilityBadges(capability: IAiToolSummary['capability']): Array<{ lab
  * Render the traffic module's AI tools as one panel with enable/disable
  * switches.
  *
- * The tools used to render as one card each, which put seven framed boxes and
- * every tool's JSON examples on screen at once. They are now hairline-separated
- * entries flowing into two columns on a wide page, with the input examples
- * folded under each description until the operator asks for them.
+ * Tools render as hairline-separated entries flowing into two columns on a
+ * wide page, with each tool's input examples folded under its description
+ * until the operator asks for them.
  *
  * @returns The AI tools panel.
  */

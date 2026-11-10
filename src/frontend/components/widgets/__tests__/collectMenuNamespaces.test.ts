@@ -13,14 +13,7 @@ import { describe, it, expect } from 'vitest';
 import type { IWidgetData } from '@/types';
 import { collectMenuNamespaces } from '../collectMenuNamespaces';
 
-/**
- * Build a resolved widget with only the fields the collector reads.
- *
- * @param id - The widget type id, such as `core:main-menu`.
- * @param data - The widget's data payload.
- * @param children - Nested widgets, for a layout group.
- * @returns A widget record shaped like the resolver's output.
- */
+/** Build a resolved widget with only the fields the collector reads. */
 function widget(id: string, data: unknown, children?: IWidgetData[]): IWidgetData {
     return { id, zone: 'site-top', pluginId: 'core', order: 0, data, children };
 }

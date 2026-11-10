@@ -7,11 +7,9 @@
  * unregister emits onUnavailable to existing watchers — without depending on a
  * live system logger or MongoDB.
  *
- * Each test file previously hand-rolled its own in-memory registry with a Map.
- * Those mocks all silently overwrote duplicates, which let tests pass against
- * behaviors the real registry rejects (registering the same name twice from
- * two modules, registering null). Centralizing here keeps tests aligned with
- * runtime contracts and the four prior call sites consistent.
+ * Do not hand-roll a Map-based registry in a test: one silently overwrites
+ * duplicates, letting tests pass against behaviors the real registry rejects
+ * (registering the same name twice from two modules, registering null).
  *
  * @module tests/vitest/mocks/service-registry
  */

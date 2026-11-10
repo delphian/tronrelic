@@ -334,12 +334,7 @@ export class PageContentType implements IManagedContentType<IPageContent, IPageW
 
     // ---------------------------------------------------------------- internals
 
-    /**
-     * Find a page document by its core content id.
-     *
-     * @param id - The core content id.
-     * @returns The document, or null.
-     */
+    /** Find a page document by its core content id, or null. */
     private async findByContentId(id: string): Promise<IPageDocument | null> {
         return this.pages.findOne({ contentId: String(id) });
     }
@@ -440,10 +435,6 @@ export class PageContentType implements IManagedContentType<IPageContent, IPageW
      * text names collections and indexes an editor has no use for. Only a
      * conflict on the `slug` key is translated; any other error passes through
      * unchanged.
-     *
-     * @param error - What the write threw.
-     * @param slug - The slug the write tried to store, named in the message.
-     * @returns The error to throw: a plain slug conflict, or the original.
      */
     private toSlugConflictError(error: unknown, slug: string): unknown {
         const duplicate = error as { code?: number; keyPattern?: Record<string, unknown> } | null;

@@ -289,12 +289,7 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel, onItem
     // Lock body scroll when category dropdown is open on mobile
     useBodyScrollLock(!!expandedCategoryId);
 
-    /**
-     * Toggles a category's expanded state.
-     *
-     * Reopening or switching the top-level category also collapses any open
-     * second-level submenu so the dropdown never restores stale nested state.
-     */
+    /** Toggle a category, also collapsing any open submenu so the dropdown never restores stale nested state. */
     const toggleCategory = (categoryId: string) => {
         setExpandedCategoryId(prev => prev === categoryId ? null : categoryId);
         setExpandedSubcategoryId(null);
@@ -304,8 +299,6 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel, onItem
      * Toggles the expanded state of a nested subcategory inside the open
      * category dropdown. Mirrors the single-open invariant of toggleCategory:
      * opening a different subcategory id collapses the previously expanded one.
-     *
-     * @param subcategoryId - Menu node id of the second-level container being toggled
      */
     const toggleSubcategory = (subcategoryId: string) => {
         setExpandedSubcategoryId(prev => prev === subcategoryId ? null : subcategoryId);
@@ -320,9 +313,6 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel, onItem
      * or the English label when none exists yet. The key comes from the
      * item's URL rather than its id so it survives a backend restart; see
      * `menuTranslationKey`.
-     *
-     * @param item - The menu item being rendered.
-     * @returns The label to show and announce.
      */
     const labelOf = (item: MenuNodeSerialized): string => t(menuTranslationKey(namespace, item), item.label);
 
@@ -331,19 +321,12 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel, onItem
      * submenu, so screen readers hear it in the page's language too.
      *
      * @param label - The item's already-translated label.
-     * @param isExpanded - Whether the submenu is open, which decides the verb.
-     * @returns The button's `aria-label`.
      */
     const submenuToggleLabel = (label: string, isExpanded: boolean): string => (isExpanded
         ? t('menu.nav.collapseSubmenu', 'Collapse {label} submenu', { label })
         : t('menu.nav.expandSubmenu', 'Expand {label} submenu', { label }));
 
-    /**
-     * Build the accessible name of an open submenu panel.
-     *
-     * @param label - The already-translated label of the item that owns the panel.
-     * @returns The panel's `aria-label`.
-     */
+    /** Build the accessible name of an open submenu panel from its owner's already-translated label. */
     const submenuPanelLabel = (label: string): string => t('menu.nav.submenu', '{label} submenu', { label });
 
     /**

@@ -116,9 +116,6 @@ export interface ILocalizationToolReads {
  * Enforced here rather than left to the schema's `maximum`, because the schema
  * is a hint to the model and a request for "all of them" would otherwise pull
  * a large result into the context window.
- *
- * @param value - Raw `limit` input.
- * @returns A row count within `[1, MAX_ROWS]`.
  */
 function resolveLimit(value: unknown): number {
     const requested = Number(value);
@@ -169,9 +166,6 @@ function resolveEnum<T extends string>(value: unknown, allowed: readonly T[], na
  *
  * Reporting the cut lets the model tell the operator a string continues
  * rather than quoting a fragment as the whole text.
- *
- * @param text - Source or translation text.
- * @returns The possibly shortened text and whether it was shortened.
  */
 function clip(text: string): { text: string; truncated: boolean } {
     const truncated = text.length > MAX_TEXT_LENGTH;

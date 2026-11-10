@@ -2,12 +2,10 @@
  * @fileoverview Move per-user notification opt-outs into the central
  * user-settings store.
  *
- * Notification preferences used to live in this module's own
- * `module_notifications_preferences` collection. They now persist in the identity
- * module's central `module_user_settings` store under the `'notifications'`
- * namespace, so all user-centric settings share one home behind the
- * `'user-settings'` service. This migration copies each existing opt-out row into
- * the central store and drops the retired collection.
+ * Opt-outs persist in identity's central `module_user_settings` store under the
+ * `'notifications'` namespace, so all user-centric settings share one home behind
+ * the `'user-settings'` service. This migration copies each row from the retired
+ * `module_notifications_preferences` collection there and drops that collection.
  *
  * Collection names are written as literals on purpose: a migration is a frozen
  * record of an operation, so it must not drift if a constant is later renamed.

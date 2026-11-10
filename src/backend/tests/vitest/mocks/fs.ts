@@ -53,13 +53,8 @@ interface MockFileEntry {
 const mockFilesystem = new Map<string, MockFileEntry>();
 
 /**
- * Normalize a file path for consistent lookup.
- *
- * - Removes trailing slashes
- * - Ensures absolute paths start with /
- *
- * @param path - Path to normalize
- * @returns Normalized path
+ * Normalize a file path for consistent lookup: removes trailing slashes and
+ * ensures absolute paths start with /.
  */
 function normalizePath(path: string): string {
     return path.replace(/\/$/, '') || '/';

@@ -79,12 +79,6 @@ describe('DatabaseBrowserController', () => {
     });
 
     describe('getStats', () => {
-        /**
-         * Test: getStats should fetch database statistics successfully.
-         *
-         * Verifies that the controller delegates to the repository and returns
-         * results in the expected success format.
-         */
         it('should fetch database statistics successfully', async () => {
             const mockStats = {
                 dbName: 'tronrelic',
@@ -110,12 +104,6 @@ describe('DatabaseBrowserController', () => {
             });
         });
 
-        /**
-         * Test: getStats should handle repository errors.
-         *
-         * Verifies that when the repository throws an error, the controller
-         * returns a 500 status with error details.
-         */
         it('should handle repository errors', async () => {
             const error = new Error('Database connection failed');
             mockRepository.getDatabaseStats.mockRejectedValue(error);
@@ -137,12 +125,6 @@ describe('DatabaseBrowserController', () => {
             });
         });
 
-        /**
-         * Test: getStats should handle non-Error exceptions.
-         *
-         * Verifies that when a non-Error object is thrown, the controller
-         * still returns a proper error response.
-         */
         it('should handle non-Error exceptions', async () => {
             mockRepository.getDatabaseStats.mockRejectedValue('String error');
 
@@ -161,12 +143,6 @@ describe('DatabaseBrowserController', () => {
     });
 
     describe('getDocuments', () => {
-        /**
-         * Test: getDocuments should fetch documents with default pagination.
-         *
-         * Verifies that when no query parameters are provided, the controller
-         * uses sensible defaults (page 1, limit 20, sort by -_id).
-         */
         it('should fetch documents with default pagination', async () => {
             const mockResult = {
                 documents: [{ _id: '1', data: 'test' }],
@@ -200,11 +176,6 @@ describe('DatabaseBrowserController', () => {
             });
         });
 
-        /**
-         * Test: getDocuments should fetch documents with custom pagination.
-         *
-         * Verifies that query parameters for page, limit, and sort are parsed correctly.
-         */
         it('should fetch documents with custom pagination', async () => {
             const mockResult = {
                 documents: [],
@@ -239,11 +210,6 @@ describe('DatabaseBrowserController', () => {
             expect(res.status).toHaveBeenCalledWith(200);
         });
 
-        /**
-         * Test: getDocuments should parse descending sort parameter.
-         *
-         * Verifies that sort parameters prefixed with '-' are parsed as descending.
-         */
         it('should parse descending sort parameter', async () => {
             mockRepository.getDocuments.mockResolvedValue({
                 documents: [],
@@ -270,12 +236,7 @@ describe('DatabaseBrowserController', () => {
             });
         });
 
-        /**
-         * Test: getDocuments should enforce maximum limit of 100.
-         *
-         * Verifies that even if a client requests more than 100 documents,
-         * the limit is capped at 100 to prevent memory issues.
-         */
+        /** The limit is capped at 100 to prevent memory issues. */
         it('should enforce maximum limit of 100', async () => {
             mockRepository.getDocuments.mockResolvedValue({
                 documents: [],
@@ -302,12 +263,7 @@ describe('DatabaseBrowserController', () => {
             });
         });
 
-        /**
-         * Test: getDocuments should use default for invalid page strings.
-         *
-         * Verifies that when page string parses to 0 or NaN, the default value of 1 is used.
-         * The `|| 1` operator converts falsy parsed values to default before validation.
-         */
+        /** The controller's `|| 1` turns a page that parses to 0 or NaN into the default before validation. */
         it('should use default for invalid page strings', async () => {
             mockRepository.getDocuments.mockResolvedValue({
                 documents: [],
@@ -336,12 +292,7 @@ describe('DatabaseBrowserController', () => {
             expect(res.status).toHaveBeenCalledWith(200);
         });
 
-        /**
-         * Test: getDocuments should use default for invalid limit strings.
-         *
-         * Verifies that when limit string parses to 0 or NaN, the default value of 20 is used.
-         * The `|| 20` operator converts falsy parsed values to default before validation.
-         */
+        /** The controller's `|| 20` turns a limit that parses to 0 or NaN into the default before validation. */
         it('should use default for invalid limit strings', async () => {
             mockRepository.getDocuments.mockResolvedValue({
                 documents: [],
@@ -370,13 +321,7 @@ describe('DatabaseBrowserController', () => {
             expect(res.status).toHaveBeenCalledWith(200);
         });
 
-        /**
-         * Test: getDocuments should reject invalid limits (too high).
-         *
-         * Note: This test verifies the error message, but the implementation
-         * actually caps the limit rather than rejecting it. The capping test
-         * above verifies the actual behavior.
-         */
+        /** Despite the test name, the implementation caps the limit rather than rejecting it. */
         it('should reject invalid limits (too high)', async () => {
             const req = createMockRequest({
                 params: { name: 'test' },
@@ -394,11 +339,6 @@ describe('DatabaseBrowserController', () => {
             });
         });
 
-        /**
-         * Test: getDocuments should handle repository errors.
-         *
-         * Verifies that repository errors are logged and returned as 500 responses.
-         */
         it('should handle repository errors', async () => {
             const error = new Error('Collection not found');
             mockRepository.getDocuments.mockRejectedValue(error);
@@ -424,12 +364,6 @@ describe('DatabaseBrowserController', () => {
     });
 
     describe('queryDocuments', () => {
-        /**
-         * Test: queryDocuments should execute query with default options.
-         *
-         * Verifies that when minimal request body is provided, the controller
-         * uses sensible defaults.
-         */
         it('should execute query with default options', async () => {
             const mockResult = {
                 documents: [{ _id: '1', status: 'active' }],
@@ -465,11 +399,6 @@ describe('DatabaseBrowserController', () => {
             });
         });
 
-        /**
-         * Test: queryDocuments should execute query with custom filter.
-         *
-         * Verifies that MongoDB query filters are passed through correctly.
-         */
         it('should execute query with custom filter', async () => {
             mockRepository.queryDocuments.mockResolvedValue({
                 documents: [],
@@ -502,11 +431,6 @@ describe('DatabaseBrowserController', () => {
             });
         });
 
-        /**
-         * Test: queryDocuments should enforce maximum limit of 100.
-         *
-         * Verifies that requested limits are capped at 100.
-         */
         it('should enforce maximum limit of 100', async () => {
             mockRepository.queryDocuments.mockResolvedValue({
                 documents: [],
@@ -534,11 +458,6 @@ describe('DatabaseBrowserController', () => {
             });
         });
 
-        /**
-         * Test: queryDocuments should reject invalid filter type (array).
-         *
-         * Verifies that filters must be objects, not arrays.
-         */
         it('should reject invalid filter type (array)', async () => {
             const req = createMockRequest({
                 params: { name: 'test' },
@@ -557,12 +476,7 @@ describe('DatabaseBrowserController', () => {
             });
         });
 
-        /**
-         * Test: queryDocuments should use default for zero page numbers.
-         *
-         * Verifies that when page is 0, the default value of 1 is used.
-         * The `|| 1` operator converts falsy values to default before validation.
-         */
+        /** The controller's `|| 1` turns a falsy page into the default before validation. */
         it('should use default for zero page numbers', async () => {
             mockRepository.queryDocuments.mockResolvedValue({
                 documents: [],
@@ -592,12 +506,7 @@ describe('DatabaseBrowserController', () => {
             expect(res.status).toHaveBeenCalledWith(200);
         });
 
-        /**
-         * Test: queryDocuments should use default for zero limit.
-         *
-         * Verifies that when limit is 0, the default value of 20 is used.
-         * The `|| 20` operator converts falsy values to default before validation.
-         */
+        /** The controller's `|| 20` turns a falsy limit into the default before validation. */
         it('should use default for zero limit', async () => {
             mockRepository.queryDocuments.mockResolvedValue({
                 documents: [],
@@ -627,11 +536,6 @@ describe('DatabaseBrowserController', () => {
             expect(res.status).toHaveBeenCalledWith(200);
         });
 
-        /**
-         * Test: queryDocuments should reject invalid sort type (array).
-         *
-         * Verifies that sort specifications must be objects, not arrays.
-         */
         it('should reject invalid sort type (array)', async () => {
             const req = createMockRequest({
                 params: { name: 'test' },
@@ -650,11 +554,6 @@ describe('DatabaseBrowserController', () => {
             });
         });
 
-        /**
-         * Test: queryDocuments should handle repository errors.
-         *
-         * Verifies that repository errors are logged and returned as 500 responses.
-         */
         it('should handle repository errors', async () => {
             const error = new Error('Query execution failed');
             mockRepository.queryDocuments.mockRejectedValue(error);
@@ -679,11 +578,6 @@ describe('DatabaseBrowserController', () => {
             });
         });
 
-        /**
-         * Test: queryDocuments should handle string page/limit conversion.
-         *
-         * Verifies that string values are properly parsed to numbers.
-         */
         it('should handle string page/limit conversion', async () => {
             mockRepository.queryDocuments.mockResolvedValue({
                 documents: [],
@@ -716,9 +610,6 @@ describe('DatabaseBrowserController', () => {
     });
 
     describe('deleteDocument', () => {
-        /**
-         * Test: deleteDocument returns 200 with deletedCount when removed.
-         */
         it('should return 200 when a document is deleted', async () => {
             mockRepository.deleteDocument.mockResolvedValue(1);
 
@@ -740,9 +631,6 @@ describe('DatabaseBrowserController', () => {
             });
         });
 
-        /**
-         * Test: deleteDocument returns 404 when no document matches.
-         */
         it('should return 404 when no document matches', async () => {
             mockRepository.deleteDocument.mockResolvedValue(0);
 
@@ -761,9 +649,6 @@ describe('DatabaseBrowserController', () => {
             });
         });
 
-        /**
-         * Test: deleteDocument returns 500 on repository failure.
-         */
         it('should return 500 when the repository throws', async () => {
             const error = new Error('Mongo unreachable');
             mockRepository.deleteDocument.mockRejectedValue(error);
@@ -789,8 +674,6 @@ describe('DatabaseBrowserController', () => {
     });
     describe('getStats prefix scoping', () => {
         /**
-         * Test: a `?prefix=` query narrows the repository call.
-         *
          * The prefix is what keeps an embedded browser (a plugin admin page)
          * from receiving the whole deployment's collection inventory, so the
          * controller must forward it rather than silently drop it.
@@ -811,8 +694,6 @@ describe('DatabaseBrowserController', () => {
         });
 
         /**
-         * Test: an absent prefix requests the unscoped, whole-database view.
-         *
          * The system console depends on this default; passing an empty string
          * through would filter to nothing and render an empty console.
          */
@@ -832,8 +713,6 @@ describe('DatabaseBrowserController', () => {
         });
 
         /**
-         * Test: an empty prefix is treated as absent.
-         *
          * A UI that binds the prefix to an empty input would otherwise scope
          * the browser to nothing, which reads as "no collections exist".
          */
@@ -854,9 +733,6 @@ describe('DatabaseBrowserController', () => {
     });
 
     describe('replaceDocument', () => {
-        /**
-         * Test: a well-formed body replaces the document and reports the match.
-         */
         it('should replace a document and return the matched count', async () => {
             mockRepository.replaceDocument.mockResolvedValue(1);
 
@@ -881,8 +757,6 @@ describe('DatabaseBrowserController', () => {
         });
 
         /**
-         * Test: an unknown id is a 404, not a silent success.
-         *
          * Reporting success for a document that was never found would let an
          * operator believe an edit landed when nothing changed.
          */
@@ -906,8 +780,6 @@ describe('DatabaseBrowserController', () => {
         });
 
         /**
-         * Test: an array body is rejected before reaching the driver.
-         *
          * A MongoDB document is an object; letting an array through would
          * surface as an opaque driver error rather than a usable message.
          */
@@ -924,9 +796,7 @@ describe('DatabaseBrowserController', () => {
             expect(res.status).toHaveBeenCalledWith(400);
         });
 
-        /**
-         * Test: a primitive body is rejected for the same reason as an array.
-         */
+        /** A primitive body is rejected for the same reason as an array. */
         it('should reject a non-object body with 400', async () => {
             const req = createMockRequest({
                 params: { name: 'items', id: 'abc' },
@@ -940,9 +810,6 @@ describe('DatabaseBrowserController', () => {
             expect(res.status).toHaveBeenCalledWith(400);
         });
 
-        /**
-         * Test: repository failures surface as 500 with the message preserved.
-         */
         it('should return 500 when the repository throws', async () => {
             mockRepository.replaceDocument.mockRejectedValue(new Error('Mongo unreachable'));
 

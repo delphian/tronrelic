@@ -4,11 +4,10 @@
  * @fileoverview The log viewer's severity filter, which doubles as its level
  * counts.
  *
- * The viewer used to show seven stat tiles above a separate row of
- * checkboxes, so the same six levels appeared twice and took most of the
- * space above the list. Here each level is one toggle chip carrying its count,
- * which answers "how many errors are there" and "show me the errors" in the
- * same place.
+ * Each level is one toggle chip carrying its count, which answers "how many
+ * errors are there" and "show me the errors" in the same place. Separate stat
+ * tiles above a row of checkboxes would show the same levels twice and take
+ * most of the space above the list.
  */
 
 import type { LogLevel } from '@/types';

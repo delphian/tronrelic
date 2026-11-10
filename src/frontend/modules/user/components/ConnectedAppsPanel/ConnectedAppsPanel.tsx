@@ -55,11 +55,7 @@ export function ConnectedAppsPanel({ initialApps }: IConnectedAppsPanelProps) {
                     confirmLabel="Revoke"
                     message={<><strong>{app.clientName}</strong> will lose access to TronRelic on its next request. To use it again you will need to reconnect it.</>}
                     onConfirm={
-                        /**
-                         * Revoke the app once the user confirms, drop its row on
-                         * success, and close the dialog either way so a failure
-                         * is reported by toast rather than a stuck dialog.
-                         */
+                        /** Closes the dialog either way, so a failure shows as a toast, not a stuck dialog. */
                         async () => {
                         const key = connectedAppKey(app);
                         setRevokingKey(key);

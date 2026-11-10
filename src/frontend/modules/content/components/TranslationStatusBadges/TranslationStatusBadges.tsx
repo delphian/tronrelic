@@ -17,11 +17,8 @@ import { Badge } from '../../../../components/ui/Badge';
 import styles from './TranslationStatusBadges.module.scss';
 
 /**
- * Describe one translation in words, for the badge's tooltip and for screen
- * readers, which cannot read the badge's colour.
- *
- * @param status - The translation's state.
- * @returns A short phrase such as "zh: published, English changed".
+ * Describe one translation in words, such as "zh: published, English changed",
+ * for the badge's tooltip and for screen readers, which cannot read its colour.
  */
 function describeStatus(status: IContentTranslationStatus): string {
     const state = status.published ? 'published' : 'draft';

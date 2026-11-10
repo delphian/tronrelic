@@ -87,21 +87,10 @@ describe('SystemConfigService', () => {
     });
 
     describe('Singleton Pattern', () => {
-        /**
-         * Test: SystemConfigService should create singleton instance on initialize.
-         *
-         * Verifies that initialize() creates a new instance and stores it as the singleton.
-         */
         it('should create singleton instance on initialize', () => {
             expect(service).toBeInstanceOf(SystemConfigService);
         });
 
-        /**
-         * Test: SystemConfigService should return same instance on subsequent getInstance calls.
-         *
-         * Verifies that getInstance() always returns the same singleton instance
-         * after initialization, ensuring consistent state across the application.
-         */
         it('should return same instance on subsequent getInstance calls', () => {
             const instance1 = SystemConfigService.getInstance();
             const instance2 = SystemConfigService.getInstance();
@@ -109,12 +98,6 @@ describe('SystemConfigService', () => {
             expect(instance1).toBe(service);
         });
 
-        /**
-         * Test: SystemConfigService should throw error if getInstance called before initialize.
-         *
-         * Verifies that calling getInstance() before initialize() throws a clear error
-         * guiding developers to call initialize() first during application bootstrap.
-         */
         it('should throw error if getInstance called before initialize', () => {
             (SystemConfigService as any).instance = undefined;
             expect(() => SystemConfigService.getInstance()).toThrow(
@@ -122,12 +105,7 @@ describe('SystemConfigService', () => {
             );
         });
 
-        /**
-         * Test: SystemConfigService should throw error if initialized twice.
-         *
-         * Verifies that calling initialize() multiple times throws an error
-         * to prevent accidental re-initialization and loss of cached state.
-         */
+        /** Refused so an accidental re-initialization cannot lose cached state. */
         it('should throw error if initialized twice', () => {
             expect(() => SystemConfigService.initialize(mockLogger as any, mockDatabase)).toThrow(
                 'SystemConfigService already initialized'

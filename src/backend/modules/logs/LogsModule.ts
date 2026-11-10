@@ -12,8 +12,7 @@
  *
  * **Why this module exists:**
  *
- * System logs were previously scattered across services/ without following the module
- * pattern. Refactoring into a module provides:
+ * Following the module pattern gives logging:
  * - Explicit lifecycle management (init/run phases)
  * - Dependency injection for database and Pino logger
  * - Inversion of Control for route mounting

@@ -82,12 +82,7 @@ const SECRET_FIELD_NAMES = new RegExp(`^(?:${SECRET_FIELD_NAME_ALTERNATION})$`, 
  */
 const SECRET_JSON_FIELD_PATTERN = new RegExp(`("(?:${SECRET_FIELD_NAME_ALTERNATION})"\\s*:\\s*")(?:[^"\\\\]|\\\\.)*`, 'gi');
 
-/**
- * Escape a literal string for use inside a regular expression.
- *
- * @param value - The literal to match.
- * @returns The value with every regex metacharacter escaped.
- */
+/** Escape a literal string for use inside a regular expression. */
 function escapeRegExp(value: string): string {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

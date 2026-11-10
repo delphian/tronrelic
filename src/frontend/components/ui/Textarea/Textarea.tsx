@@ -53,13 +53,10 @@ export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElemen
 /**
  * Textarea Component
  *
- * A themed multiline text field that replaces the bare native `<textarea>` used
- * ad-hoc across admin surfaces. Admin pages previously hand-rolled raw
- * `<textarea>` elements with colocated SCSS that duplicated the shared input
- * tokens; that drift is exactly what the Select normalization removed for
- * dropdowns. This wraps the native control with the same input tokens
- * (`--input-padding`, `--input-background`, `--input-border`, focus ring) so
- * every multiline field matches Input, Select, Button, and Badge.
+ * A themed multiline text field. It wraps the native `<textarea>` with the
+ * shared input tokens (`--input-padding`, `--input-background`, `--input-border`,
+ * focus ring) so every multiline field matches Input, Select, Button, and Badge,
+ * instead of each admin page duplicating those tokens in its own SCSS.
  *
  * Supports all standard HTML textarea attributes (`rows`, `placeholder`,
  * `disabled`, etc.). The ghost variant provides a transparent background for

@@ -180,10 +180,6 @@ function readRefs(value: unknown): string[] {
 /**
  * Find the prompt a reference names. An exact id wins; otherwise the name is
  * compared case-insensitively, which is how the service keeps names unique.
- *
- * @param prompts - Every stored prompt.
- * @param ref - The id or name the model supplied.
- * @returns The matching prompt, or undefined when none matches.
  */
 function findPrompt(prompts: ISavedPrompt[], ref: string): ISavedPrompt | undefined {
     const lowered = ref.toLowerCase();

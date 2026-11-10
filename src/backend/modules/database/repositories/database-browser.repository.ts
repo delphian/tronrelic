@@ -167,12 +167,11 @@ export class DatabaseBrowserRepository {
      * - Collection.stats() provides detailed metrics including size and index info
      * - Querying in series prevents overwhelming the database with concurrent stats requests
      *
-     * Why the optional prefix filter: the browser is no longer exclusive to the
-     * whole-database system console. A plugin admin page embeds it scoped to its
-     * own `plugin_<id>_` namespace, and that caller has no business receiving —
-     * or paying the `collStats` round-trip for — every other collection in the
-     * deployment. Filtering here rather than in the client keeps the untargeted
-     * inventory off the wire entirely.
+     * Why the optional prefix filter: a plugin admin page embeds the browser
+     * scoped to its own `plugin_<id>_` namespace, and that caller has no business
+     * receiving — or paying the `collStats` round-trip for — every other
+     * collection in the deployment. Filtering here rather than in the client
+     * keeps the untargeted inventory off the wire entirely.
      *
      * @param prefix - When supplied, only collections whose name starts with it
      * are inspected and returned. Omit for the whole-database view.
@@ -317,10 +316,9 @@ export class DatabaseBrowserRepository {
      * everything it skips. `skip: n` makes the server walk n index entries and
      * discard them, so on the 80M-document `transactions` collection the last
      * page costs a traversal of the entire `_id` index — seconds of CPU and a
-     * cache eviction storm, for ten rows. That is why the browser previously
-     * offered only Previous/Next: any control that could *reach* a deep page
-     * was a control that could stall production MongoDB. Keyset paging removes
-     * the skip entirely, which is what makes First and Last safe to offer.
+     * cache eviction storm, for ten rows. Under offset paging, any control that
+     * can *reach* a deep page can stall production MongoDB. Keyset paging
+     * removes the skip entirely, which is what makes First and Last safe to offer.
      *
      * **How it avoids the skip:** every page is a bounded range scan on the
      * `_id` index. Stepping forward asks for documents whose `_id` sorts below
@@ -429,10 +427,8 @@ export class DatabaseBrowserRepository {
      * the first one shown.
      *
      * The bound is decoded from the cursor rather than inferred from the
-     * collection. An earlier version sampled one document with an unsorted
-     * `findOne` and cast the cursor to ObjectId when that sample was one, which
-     * left every other key type comparing across BSON types — matching nothing,
-     * on a collection whose documents were plainly there — and let a single
+     * collection. Typing the bound by sampling one document makes every other
+     * key type compare across BSON types and match nothing, and lets one
      * arbitrary document speak for a collection with mixed `_id` types. A
      * self-describing cursor needs no such guess, and saves the sample query.
      *

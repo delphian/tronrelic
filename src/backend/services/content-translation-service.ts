@@ -2,11 +2,10 @@
  * @fileoverview Translations of managed content — the workflow every
  * translatable content type shares, reached as `IContentService.translations()`.
  *
- * Why it exists: translation used to be built inside the pages module, so every
- * other content type would have needed its own copy of the stale check, the AI
- * Suggest request, the editor, and the list of translated addresses. Core now
- * runs that workflow once for every type whose registration sets
- * `translation`.
+ * Why it exists: core runs the translation workflow — the stale check, the AI
+ * Suggest request, the editor, and the list of translated addresses — once for
+ * every type whose registration sets `translation`, so no content type needs
+ * its own copy.
  *
  * Storage is split the same way it is for the items themselves. Core keeps the
  * state of each translation — published, the fingerprint of the English text
@@ -499,11 +498,7 @@ export class ContentTranslationService implements IContentTranslationService {
 
     // -------------------------------------------------------------- internals
 
-    /**
-     * The typed handle on the state collection.
-     *
-     * @returns The `content_translations` collection.
-     */
+    /** The typed handle on the `content_translations` state collection. */
     private collection() {
         return this.deps.database.getCollection<IContentTranslationStateDocument>(CONTENT_TRANSLATIONS_COLLECTION);
     }
@@ -579,13 +574,7 @@ export class ContentTranslationService implements IContentTranslationService {
         return;
     }
 
-    /**
-     * Load a translation's state.
-     *
-     * @param id - Core content id of the item.
-     * @param language - Language code of the translation.
-     * @returns The state, or null when the item has no translation into that language.
-     */
+    /** Load a translation's state, or null when the item has no translation into that language. */
     private async findState(id: string, language: string): Promise<IContentTranslationStateDocument | null> {
         return this.collection().findOne({ contentId: id, language }, { projection: { _id: 0 } });
     }
@@ -628,13 +617,7 @@ export class ContentTranslationService implements IContentTranslationService {
         return latest;
     }
 
-    /**
-     * Fingerprint the English text a translation is written against.
-     *
-     * @param entry - The managed type.
-     * @param id - Core content id of the item.
-     * @returns A SHA-256 hex digest.
-     */
+    /** Fingerprint (SHA-256 hex digest) the English text a translation is written against. */
     private async englishHash(entry: ITranslatableEntry, id: string): Promise<string> {
         const english = entry.translation.extractTranslatable(await this.loadEnglish(entry, id));
 

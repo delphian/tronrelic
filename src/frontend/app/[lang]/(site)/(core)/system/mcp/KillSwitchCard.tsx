@@ -85,10 +85,6 @@ export function KillSwitchCard({ status, onSettingsChange }: IKillSwitchCardProp
                         confirmLabel="Turn on"
                         message={<>Members of <strong>{status?.groupId ?? 'mcp-users'}</strong> will be able to connect AI clients and call the {status?.servedToolCount ?? 0} tools currently approved. Continue?</>}
                         onConfirm={
-                            /**
-                             * Turn the endpoint on once the admin confirms, then
-                             * close the dialog; `apply` reports the outcome.
-                             */
                             async () => { await apply(true); close(modalId); }
                         }
                         onCancel={() => close(modalId)}

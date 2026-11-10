@@ -25,9 +25,6 @@
  * a data visualization; it lives under `components/ui` because the legacy
  * `features/charts` directory takes no new work.
  *
- * First built in the resource-markets plugin for its market detail page and
- * moved into core unchanged.
- *
  * @module components/ui/PriceRail
  */
 
@@ -191,12 +188,7 @@ function buildScale(values: number[]): (value: number) => number {
     const start = lo - pad;
     const width = span + pad * 2;
 
-    /**
-     * Place one value on the rail.
-     *
-     * @param value - A tick or marker value in the caller's unit.
-     * @returns The value's position as a percentage of the rail's width.
-     */
+    /** Place one value on the rail, as a percentage of the rail's width. */
     const scale = (value: number): number => (width > 0 ? ((value - start) / width) * 100 : 50);
     return scale;
 }

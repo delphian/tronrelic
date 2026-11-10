@@ -56,9 +56,6 @@ const coreWidgetTypeDescriptors = buildCoreWidgetTypeDescriptors({
  * Build a system-config stub whose `getConfig` answers with the given
  * function. Only `getConfig` is read by the catalog, through the
  * auth-button fetcher, so nothing else is implemented.
- *
- * @param getConfig - What the auth-button fetcher will receive.
- * @returns The stub, typed as the full service the catalog expects.
  */
 function buildSystemConfig(getConfig: () => Promise<Partial<ISystemConfig>>): ISystemConfigService {
     return { getConfig } as unknown as ISystemConfigService;

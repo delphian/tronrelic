@@ -317,23 +317,12 @@ export function NetworkActivityWidget({ data, context, instanceConfig }: IWidget
         return Number.isNaN(parsed) ? null : parsed;
     }, [points]);
 
-    /**
-     * Format a Y-axis value for the active metric — compact TRX for volume,
-     * integer counts otherwise.
-     *
-     * @param value - Raw tick/bar value.
-     * @returns The formatted axis label.
-     */
+    /** Format a Y-axis value for the active metric: compact TRX for volume, integer counts otherwise. */
     const formatValue = useCallback((value: number): string => {
         return activeMetric.kind === 'trx' ? formatCompact(value) : Math.round(value).toLocaleString();
     }, [activeMetric]);
 
-    /**
-     * Format an X-axis tick relative to the latest bucket (hydration-safe).
-     *
-     * @param date - The tick's Date (data-derived).
-     * @returns A short relative label, or empty string before data loads.
-     */
+    /** Format an X-axis tick relative to the latest bucket (hydration-safe). */
     const formatAxisDate = useCallback((date: Date): string => {
         return latestBucketMs === null ? '' : elapsedLabel(date.getTime(), latestBucketMs);
     }, [latestBucketMs]);

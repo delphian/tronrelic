@@ -5,9 +5,7 @@
  * Visitor counts, traffic-source breakdowns, geo/device distributions,
  * engagement, the binary conversion funnel, the Better Auth account
  * overview, and GSC configuration — all served from the ClickHouse-backed
- * `traffic_events` store via the traffic module's admin routes. The legacy
- * UUID user CRUD, wallet, session, profile, and referral calls were removed
- * in the Better Auth cutover along with the routes that backed them.
+ * `traffic_events` store via the traffic module's admin routes.
  *
  * Authorization rides the same-origin Better Auth session cookie; the
  * backend `requireAdmin` middleware resolves it per request, so no call

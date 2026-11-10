@@ -134,9 +134,6 @@ export function ActivityView({ accountId, managed }: IActivityViewProps) {
         /**
          * Turn a rollup day into the ISO instant the chart plots, at UTC
          * midnight so the bar lands on the day the rollup counted.
-         *
-         * @param day - `YYYY-MM-DD` from the rollup.
-         * @returns The ISO timestamp for that day's start.
          */
         const at = (day: string) => `${day}T00:00:00.000Z`;
         return [

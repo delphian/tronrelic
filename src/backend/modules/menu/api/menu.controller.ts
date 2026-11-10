@@ -54,9 +54,8 @@ const objectIdField = z
 
 /**
  * Coerce empty strings to `undefined` before applying the inner schema.
- * Frontend forms commonly submit `''` for cleared optional fields (the
- * input element's value on a blank input). Treating that as "field
- * omitted" lets the strict regexes below reject genuinely-malformed
+ * Frontend forms commonly submit `''` for a cleared optional field, so treating
+ * that as "field omitted" lets the strict regexes below reject genuinely-malformed
  * input without rejecting routine "no value" submissions.
  */
 function emptyStringAsUndefined<T extends z.ZodTypeAny>(schema: T) {
@@ -263,9 +262,6 @@ const namespaceConfigSchema = z.object({
  * category landing page resolves and it still appears as a card on its
  * parent's landing page — but it has no menu entry. Only the navigation
  * read applies this check; `resolve` checks `enabled` alone.
- *
- * @param node - The node being considered for the navigation tree
- * @returns True when the node should be rendered in navigation
  */
 function isShownInNavigation(node: IMenuNode): boolean {
     return node.enabled && !node.hidden;
@@ -346,13 +342,11 @@ async function denyIfAdminNamespace(req: Request, res: Response, namespace: stri
 }
 
 /**
- * Resolve the per-request menu viewer from the Better Auth session.
- *
- * Returns `undefined` for anonymous callers (no session) so the gating filter
- * shows only ungated nodes. `isAdmin` routes through the admin-auth predicate
- * so the menu service stays agnostic of how admin is determined. The session
- * is resolved once per request by the global `attachAuthSession` middleware
- * and read here off `req.authSession`.
+ * Resolve the per-request menu viewer from the Better Auth session that the
+ * global `attachAuthSession` middleware puts on `req.authSession` once per request.
+ * Returns `undefined` for anonymous callers so the gating filter shows only
+ * ungated nodes. `isAdmin` routes through the admin-auth predicate so the
+ * menu service stays agnostic of how admin is determined.
  */
 async function resolveViewer(req: Request): Promise<IMenuViewer | undefined> {
     const session = (req as Request & { authSession?: IAuthSession | null }).authSession ?? null;

@@ -60,9 +60,6 @@ export const MAX_HTTP_BUFFER_SIZE_BYTES = 16 * 1024;
  * string, a number, or an array. Reading a property off any of those is how a
  * single malformed message used to throw inside an async handler and crash
  * the process.
- *
- * @param value - Anything a client sent.
- * @returns True for a non-null, non-array object.
  */
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -234,11 +231,10 @@ export class WebSocketService implements IWebSocketService, IIdentitySocketDisco
    * Wire a newly connected socket: identity rooms, then the client's
    * subscribe and unsubscribe listeners.
    *
-   * The two handlers are async and Socket.IO does not await listeners, so an
-   * error thrown inside one used to become an unhandled promise rejection,
-   * which stops the Node process. One malformed `subscribe` from an anonymous
-   * client could take the backend down. Each call now ends in `.catch()`, and
-   * the handlers themselves validate input before reading it.
+   * The two handlers are async and Socket.IO does not await listeners, so each
+   * call ends in `.catch()` and the handlers validate input before reading it:
+   * an unhandled rejection stops the Node process, and one malformed `subscribe`
+   * from an anonymous client could take the backend down.
    *
    * Connect and disconnect are logged at debug: they happen for every visitor,
    * the log is persisted to MongoDB and capped, and a flood of them would push
@@ -319,10 +315,9 @@ export class WebSocketService implements IWebSocketService, IIdentitySocketDisco
    * 2. Legacy plugin: `socket.emit('subscribe', 'plugin-id', { options })` — the room is the plugin id
    * 3. Legacy object: `socket.emit('subscribe', { memos: { all: true }, 'plugin-id': { options } })`
    *
-   * The legacy object format's other core keys (`markets`, `transactions`,
-   * `comments`, `chat`, `notifications`) were removed: nothing on the server
-   * sent to those rooms, and `notifications:<wallet>` would have delivered one
-   * wallet's events to anyone who asked for them the day something did.
+   * The legacy object format honours no other core key (`markets`,
+   * `transactions`, `comments`, `chat`, `notifications`): nothing sends to those
+   * rooms, and `notifications:<wallet>` would hand one wallet's events to anyone.
    *
    * @param socket - The Socket.IO socket requesting the subscription.
    * @param pluginIdOrPayload - A plugin id (formats 1 and 2) or the legacy object (format 3).

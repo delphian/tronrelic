@@ -69,7 +69,6 @@ class ScriptedProvider implements IPriceHistoryProvider {
  *
  * @param adapters - The adapters to attach, keyed by vendor id.
  * @param settings - Routing order overrides.
- * @returns The routing provider.
  */
 function routerWith(
     adapters: Record<string, ScriptedProvider>,

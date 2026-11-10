@@ -20,25 +20,14 @@ import {
 } from '../services/localization-errors.js';
 import { KEYS_COLLECTION, LANGUAGES_COLLECTION, TRANSLATIONS_COLLECTION } from '../database/index.js';
 
-/**
- * Build a logger whose methods are spies, so a test can run the services
- * without a backing log store.
- *
- * @returns A logger stub typed as the full service.
- */
+/** Build a logger whose methods are spies, so a test can run the services without a backing log store. */
 function createLogger(): ISystemLogService {
     const logger = { fatal: vi.fn(), error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn(), trace: vi.fn(), child: vi.fn() };
     logger.child.mockReturnValue(logger);
     return logger as unknown as ISystemLogService;
 }
 
-/**
- * Build a suggestion item with sensible defaults, so each parser test states
- * only the field it is about.
- *
- * @param overrides - Fields to change.
- * @returns The item.
- */
+/** Build a suggestion item with sensible defaults, so each parser test states only the field it is about. */
 function item(overrides: Partial<ISuggestionItem> = {}): ISuggestionItem {
     return { namespace: 'core', key: 'tools.title', source: 'Address Converter', currentTranslation: null, routes: ['/tools'], ...overrides };
 }
@@ -158,13 +147,7 @@ describe('TranslationSuggestionService', () => {
         });
     });
 
-    /**
-     * Build the service around a registry stub.
-     *
-     * @param registry - Registry to hand the service, or null for none installed.
-     * @param logger - Logger to record under, when a test reads what was logged.
-     * @returns The service.
-     */
+    /** Build the service around a registry stub; a null registry means none is installed. */
     function createService(registry: IAiProviderRegistry | null, logger: ISystemLogService = createLogger()): TranslationSuggestionService {
         return new TranslationSuggestionService({ database: db, settings, getProviderRegistry: () => registry, logger });
     }

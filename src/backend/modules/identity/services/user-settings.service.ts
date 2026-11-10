@@ -38,10 +38,6 @@ import { USER_SETTINGS_COLLECTION, type IUserSettingDocument } from '../database
 /**
  * Compose the in-memory registry key for a setting definition. Kept private so
  * `(namespace, key)` is always combined the same way for lookup and storage.
- *
- * @param namespace - Provider namespace.
- * @param key - Setting key within the namespace.
- * @returns The combined registry key.
  */
 function definitionKey(namespace: string, key: string): string {
     return JSON.stringify([namespace, key]);
@@ -70,10 +66,7 @@ export class UserSettingsService implements IUserSettingsService {
      */
     private readonly definitions = new Map<string, IUserSettingDefinition>();
 
-    /**
-     * @param database - Database abstraction (Tier-1 collection access).
-     * @param logger - Derives a `component: 'user-settings-service'` child.
-     */
+    /** Bind the settings collection (Tier-1 access) and a `user-settings-service` child logger. */
     private constructor(database: IDatabaseService, logger: ISystemLogService) {
         this.collection = database.getCollection<IUserSettingDocument>(USER_SETTINGS_COLLECTION);
         this.logger = logger.child({ component: 'user-settings-service' });

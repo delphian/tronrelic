@@ -114,10 +114,8 @@ function createFakeCollection(collectionName: string): IFakeCollection {
 }
 
 /**
- * Compute the newest day the service falls back to when no daily totals
- * are stored — midnight UTC, DELAY_DAYS before today.
- *
- * @returns The fallback anchor day as a UTC-midnight timestamp in ms.
+ * Compute the newest day the service falls back to when no daily totals are
+ * stored: midnight UTC, DELAY_DAYS before today, as a timestamp in ms.
  */
 function fallbackAnchorDay(): number {
     const now = new Date();

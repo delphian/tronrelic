@@ -282,7 +282,6 @@ function resolvePeriod(
  *                 allows. Defaults to the dashboard's global picker and its
  *                 90-day ceiling; the per-event tool passes the 30-day limits
  *                 of the raw-row reads, because it scans unaggregated rows.
- * @returns The resolved window plus the label and true boundaries to echo back.
  */
 function resolveRange(
     input: Record<string, unknown>,
@@ -335,9 +334,6 @@ function resolveRange(
  * A model asking for "all of them" would otherwise pull a dictionary-sized
  * result into the context window, so the ceiling is enforced server-side rather
  * than left to the schema's `maximum`.
- *
- * @param value - Raw `limit` input.
- * @returns A row count within `[1, MAX_BUCKETS]`.
  */
 function resolveLimit(value: unknown): number {
     const requested = Number(value);
@@ -352,9 +348,6 @@ function resolveLimit(value: unknown): number {
  * client-supplied and routinely spoofed, so include-everything counts overstate
  * real audiences. The tools inherit that default so a model's unqualified "how
  * many visitors" matches what an operator sees on screen.
- *
- * @param value - Raw `excludeBots` input.
- * @returns Whether to restrict counts to human-classified rows.
  */
 function resolveExcludeBots(value: unknown): boolean {
     return value === undefined || value === null ? true : Boolean(value);

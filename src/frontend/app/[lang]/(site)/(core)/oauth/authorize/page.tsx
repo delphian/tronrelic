@@ -28,12 +28,7 @@ interface IAuthorizeSearchParams {
     scope?: string | string[];
 }
 
-/**
- * Collapse a query value Next.js may deliver as an array to its first entry.
- *
- * @param value - The raw query value.
- * @returns The first value, or an empty string.
- */
+/** Collapse a query value Next.js may deliver as an array to its first entry, or an empty string. */
 function first(value: string | string[] | undefined): string {
     return Array.isArray(value) ? value[0] ?? '' : value ?? '';
 }

@@ -14,12 +14,7 @@ import type { AnonymousPageviewService } from '../services/anonymous-pageview.se
 import { DEFAULT_PAGEVIEW_STATS_DAYS } from '../services/anonymous-pageview.service.js';
 import { ConsentValidationError } from '../services/consent-errors.js';
 
-/**
- * Read a query value as a number.
- *
- * @param value - Raw `req.query` entry.
- * @returns The number, or undefined when absent or not numeric.
- */
+/** Read a raw `req.query` value as a number, or undefined when absent or not numeric. */
 function queryNumber(value: unknown): number | undefined {
     const parsed = typeof value === 'string' ? Number(value) : Number.NaN;
     return Number.isFinite(parsed) ? parsed : undefined;

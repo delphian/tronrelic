@@ -122,9 +122,8 @@ export function useTranscriptScroll(ref: RefObject<HTMLDivElement | null>): ITra
     }, [ref]);
 
     /**
-     * Apply the follow rule after the transcript changes: scroll to the bottom
-     * only while the reader is following, so a reader who scrolled up keeps
-     * their place.
+     * After the transcript changes, scroll to the bottom only while the reader
+     * is following, so a reader who scrolled up keeps their place.
      */
     const followIfEnabled = useCallback((): void => {
         if (followRef.current) {

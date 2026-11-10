@@ -226,12 +226,7 @@ export class AddressTagService implements IAddressTagService {
     private readonly logger: ISystemLogService;
     private readonly definitions: AddressTagDefinitionStore;
 
-    /**
-     * Private so construction can only happen through `setDependencies`,
-     * guaranteeing a single shared instance.
-     *
-     * @param deps - Bootstrap-wired collaborators.
-     */
+    /** Private so construction can only happen through `setDependencies`, guaranteeing a single shared instance. */
     private constructor(deps: IAddressTagServiceDependencies) {
         this.database = deps.database;
         this.logger = deps.logger;
@@ -1092,12 +1087,8 @@ export class AddressTagService implements IAddressTagService {
 
     /**
      * The liveness derivation rule, kept in one place rather than in each
-     * write path: a document is active while a human asserts it or any source
-     * element has not been withdrawn.
-     *
-     * @param manual - Whether a human currently asserts the tag.
-     * @param sources - The source elements to test for a live assertion.
-     * @returns Whether the document should be visible on read surfaces.
+     * write path: a document is active, and so visible on read surfaces, while
+     * a human asserts it or any source element has not been withdrawn.
      */
     private computeActive(manual: boolean, sources: IAddressTagSource[]): boolean {
         return manual || sources.some((element) => !element.withdrawnAt);
@@ -1107,10 +1098,6 @@ export class AddressTagService implements IAddressTagService {
      * Stable key for a `(address, tag)` pair in the reconcile's in-memory
      * sets. The address is fixed-width base58 with no spaces, so the space
      * separator cannot be ambiguous even though tags may contain spaces.
-     *
-     * @param address - Validated TRON address.
-     * @param tag - Validated tag text.
-     * @returns The combined lookup key.
      */
     private pairKey(address: string, tag: string): string {
         return `${address} ${tag}`;
@@ -1224,11 +1211,8 @@ export class AddressTagService implements IAddressTagService {
     }
 
     /**
-     * Load the stored records for a set of pairs — the uniform return shape
-     * for mutations, so callers always receive current persisted state.
-     *
-     * @param pairs - Already-normalized pairs to load.
-     * @returns Stored assignments matching the pairs.
+     * Load the stored records for already-normalized pairs — the uniform return
+     * shape for mutations, so callers always receive current persisted state.
      */
     private async findPairs(pairs: IAddressTagPair[]): Promise<IAddressTag[]> {
         const docs = await this.findPairDocuments(pairs);
@@ -1344,13 +1328,7 @@ export class AddressTagService implements IAddressTagService {
     }
 }
 
-/**
- * Escape regex metacharacters in user-supplied search text so it matches
- * literally (and cannot construct a pathological pattern).
- *
- * @param text - Raw search or prefix text.
- * @returns The escaped pattern fragment.
- */
+/** Escape regex metacharacters so user search text matches literally and cannot build a pathological pattern. */
 function escapeRegex(text: string): string {
     return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

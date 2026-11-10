@@ -6,8 +6,7 @@
  * - Language routing: every page request is rewritten into the `[lang]` route
  *   folder, `/markets` to `/en/markets` internally, while `/zh/markets` is
  *   served as Chinese only when that language is enabled and the route is
- *   published in it. With no language enabled every path routes to English,
- *   which is how the site behaved before localization existed.
+ *   published in it. With no language enabled every path routes to English.
  * - Custom headers for server components (pathname for widget zone routing)
  * - Cookie consent: a visitor in the EEA, the UK, or Switzerland who has not
  *   allowed analytics gets no `tronrelic_tid`, `tronrelic_ref`, or
@@ -215,9 +214,8 @@ function buildForwardedHeaders(request: NextRequest): Record<string, string> {
  * Fired once per new visitor (when the analytics tid is freshly minted).
  * The backend keys the `traffic_events` row on the tid carried in the body
  * and enriches it with the forwarded client headers. Better Auth owns
- * identity, so this no longer mints or returns a user id — it is a
- * fire-and-forget analytics beacon. Failures are swallowed: a backend
- * outage must never block a page load.
+ * identity, so this mints no user id; it is a fire-and-forget analytics
+ * beacon. Failures are swallowed: a backend outage must never block a page load.
  *
  * The fetch is server-to-server (within the same Docker network). We
  * forward the visitor context the backend needs to record a useful
@@ -355,9 +353,6 @@ const getConsentConfig = createCachedBackendFeed<IConsentPublicConfig>({
  * A visitor without analytics consent has no `tronrelic_tid` to say they were
  * already seen, so without this check every soft navigation and link prefetch
  * would record another first-touch row.
- *
- * @param request - The incoming request.
- * @returns True for a document request.
  */
 function isDocumentRequest(request: NextRequest): boolean {
     return request.headers.get('rsc') !== '1'
@@ -405,12 +400,7 @@ const UNLOCALIZED_PATH_PATTERNS: readonly RegExp[] = [
     /^\/(?:icon|apple-icon)(?:\.[A-Za-z0-9]+)?$/
 ];
 
-/**
- * Decide whether a path is a public file the middleware must pass through.
- *
- * @param pathname - The request path.
- * @returns True when the path must not be rewritten.
- */
+/** Whether a path is a public file the middleware must pass through without rewriting. */
 function isUnlocalizedPath(pathname: string): boolean {
     return UNLOCALIZED_PATH_PATTERNS.some(pattern => pattern.test(pathname));
 }

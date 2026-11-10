@@ -35,11 +35,6 @@ function createService() {
 /**
  * Read one stored document straight out of the mock collection, so tests can
  * assert on stored provenance rather than on the service's projection.
- *
- * @param database - The mock database backing the service under test.
- * @param address - Address side of the pair to load.
- * @param tag - Tag side of the pair to load.
- * @returns The raw stored document, or undefined when absent.
  */
 function storedDoc(database: ReturnType<typeof createMockDatabaseService>, address: string, tag: string) {
     return database.getCollectionData(ADDRESS_TAGS_COLLECTION)
@@ -325,9 +320,6 @@ describe('AddressTagService provenance', () => {
          * Find the context object of the last info entry written under one
          * message. The audit detail lives in that object, so the tests assert
          * on it rather than on the message text alone.
-         *
-         * @param message - The log message the mutation writes.
-         * @returns The context passed with the most recent matching entry.
          */
         function lastInfoContext(message: string) {
             const calls = logger.info.mock.calls.filter((call: unknown[]) => call[1] === message);
@@ -424,9 +416,8 @@ describe('AddressTagService provenance', () => {
 
     describe('the liveness filter (phase 1b)', () => {
         /**
-         * Seed one live manual tag and one machine tag that has been fully
-         * withdrawn, so each read path can prove it returns the former and
-         * hides the latter.
+         * Seed one live manual tag and one fully withdrawn machine tag, so each
+         * read path can prove it returns the former and hides the latter.
          */
         async function seedLiveAndWithdrawn() {
             await service.createTags([{ address: ADDRESS_A, tag: 'exchange' }]);

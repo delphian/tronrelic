@@ -38,22 +38,12 @@ const SUBMENU_NAMESPACE = 'widgets';
  */
 const COLLECTION_PREFIX = 'module_widgets_';
 
-/**
- * Narrow an arbitrary `?tab=` value to a known tab.
- *
- * @param tab - The raw value.
- * @returns True when it names a real tab.
- */
+/** Narrow an arbitrary `?tab=` value to a known tab. */
 function isTabId(tab: string | undefined): tab is TabId {
     return tab === 'placements' || tab === 'database';
 }
 
-/**
- * Resolve a submenu node's url to a tab, defaulting to the editor.
- *
- * @param url - The clicked node's url.
- * @returns The tab id.
- */
+/** Resolve a submenu node's url to a tab, defaulting to the editor. */
 function tabFromUrl(url: string | undefined): TabId {
     const tab = url?.match(/[?&]tab=([^&]+)/)?.[1];
     return isTabId(tab) ? tab : 'placements';
@@ -85,8 +75,6 @@ export function WidgetsAdminClient({ submenuTree, submenuGeneratedAt, initialTab
     /**
      * Activate the clicked tab and keep its URL a real deep link, so a
      * refresh or a shared link opens on the same panel.
-     *
-     * @param item - The clicked submenu node.
      */
     const handleTabSelect = useCallback((item: MenuNodeSerialized) => {
         const tab = tabFromUrl(item.url);

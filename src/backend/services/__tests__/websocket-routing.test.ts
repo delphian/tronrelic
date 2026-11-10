@@ -83,13 +83,7 @@ describe('WebSocketService.emit — audience routing', () => {
         (service as unknown as { io: unknown }).io = undefined;
     });
 
-    /**
-     * Emit one event and return how it was addressed.
-     *
-     * @param event - The event name to dispatch.
-     * @param payload - Payload to carry (irrelevant to routing, but realistic).
-     * @returns The single recorded emission.
-     */
+    /** Emit one event and return how it was addressed; the payload is irrelevant to routing. */
     function emitOne(event: string, payload: unknown = { timestamp: '2026-01-01T00:00:00.000Z' }): IRecordedEmit {
         service.emit({ event, payload });
         expect(emissions).toHaveLength(1);

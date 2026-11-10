@@ -32,9 +32,6 @@ export interface IQueueRailProps {
 /**
  * Collapse an item's body to a single run of text for the two-line snippet,
  * so line breaks in a draft do not waste the row's limited height.
- *
- * @param item - The held item.
- * @returns The body with whitespace collapsed, or an empty string.
  */
 function snippetOf(item: ICurationItemView): string {
     return (item.preview.body ?? '').replace(/\s+/g, ' ').trim();

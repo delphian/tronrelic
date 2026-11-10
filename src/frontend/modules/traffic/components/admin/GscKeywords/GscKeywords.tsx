@@ -80,10 +80,6 @@ const TREND_DAYS = 30;
  * the day Google actually reported. Calling it during render is safe here
  * because this panel fetches on mount and only formats data that arrived in
  * the browser, so the server never renders a date to mismatch against.
- *
- * @param value - A day as a Date or ISO string; the charts pass a Date and
- *   the coverage label passes the backend's window bounds.
- * @returns The day as a localized date string, such as "9/30/2026".
  */
 function formatGscDay(value: Date | string): string {
     return new Date(value).toLocaleDateString(undefined, { timeZone: 'UTC' });
@@ -112,13 +108,7 @@ function NotFinalBadge({ firstIncompleteDate }: { firstIncompleteDate: string })
     );
 }
 
-/**
- * Resolve a CSS variable to its computed value with an SSR-safe fallback.
- *
- * @param varName - CSS variable name (e.g. '--color-primary')
- * @param fallback - Hex fallback when document is unavailable
- * @returns Resolved color string
- */
+/** Resolve a CSS variable (such as '--color-primary') to its computed value with an SSR-safe fallback. */
 function resolveCSSColor(varName: string, fallback: string): string {
     if (typeof document === 'undefined') return fallback;
     const value = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
@@ -256,7 +246,6 @@ export function GscKeywords() {
      * final so a hover on a low recent point does not read as a real drop.
      *
      * @param date - The hovered day, as midnight UTC.
-     * @returns The formatted day, with "(not final)" appended when it applies.
      */
     const formatTooltipDay = (date: Date): string => {
         const label = formatGscDay(date);

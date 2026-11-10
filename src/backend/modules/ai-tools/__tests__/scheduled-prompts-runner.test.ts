@@ -112,12 +112,7 @@ function makePrompt(overrides: Partial<ISavedPrompt> & IScheduleOverrides = {}):
     return prompt;
 }
 
-/**
- * ISO timestamp for N minutes before now.
- *
- * @param n - Minutes in the past.
- * @returns The ISO timestamp.
- */
+/** ISO timestamp for N minutes before now. */
 function minutesAgo(n: number): string {
     return new Date(Date.now() - n * 60_000).toISOString();
 }

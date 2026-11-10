@@ -2,13 +2,12 @@
  * @fileoverview Tests for TronGridClient.getBlockByNumber.
  *
  * Why these exist: a TronGrid node asked for a block it has not served yet
- * replies with HTTP 200 and an empty body. That reply used to pass through as
- * a success, so sync failed the block on its missing timestamp without trying
- * again and parked it in a five-minute cooldown. These cases pin the fix: an
- * empty reply is retried on its own budget of three, a block that arrives
- * within that budget is returned, one that never arrives fails with
- * `BlockNotYetAvailableError`, and transport retries do not use up that
- * budget.
+ * replies with HTTP 200 and an empty body. Treated as a success, that reply makes
+ * sync fail the block on its missing timestamp without trying again and park it
+ * in a five-minute cooldown. These cases pin the handling: an empty reply is
+ * retried on its own budget of three, a block that arrives within that budget is
+ * returned, one that never arrives fails with `BlockNotYetAvailableError`, and
+ * transport retries do not use up that budget.
  *
  * The HTTP layer is mocked so each case states exactly what TronGrid replied.
  * The real retry helper runs, because the two retry budgets are what is under
@@ -65,8 +64,6 @@ const SERVED_BLOCK = {
  * Build the error `post()` throws for a refused connection, why: a transport
  * failure carries no HTTP status, which is what makes the inner retry treat it
  * as retryable.
- *
- * @returns An error shaped like the client's own connection-refused error.
  */
 function connectionRefused(): Error {
     return Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' });

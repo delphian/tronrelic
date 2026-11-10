@@ -9,12 +9,7 @@
 import { describe, it, expect } from 'vitest';
 import { computeLots, reconstructTrxBalanceSeries, type ILedgerMove } from '../lib/lot-engine.js';
 
-/**
- * Build a price lookup from a `{ 'asset|day': price }` table.
- *
- * @param table - Day-keyed prices.
- * @returns A `priceOnDay` function returning null for absent entries.
- */
+/** Build a `priceOnDay` lookup from a `{ 'asset|day': price }` table, returning null for absent entries. */
 function priceLookup(table: Record<string, number>): (asset: string, day: string) => number | null {
     return (asset, day) => table[`${asset}|${day}`] ?? null;
 }

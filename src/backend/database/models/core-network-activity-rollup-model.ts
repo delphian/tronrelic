@@ -1,24 +1,21 @@
 /**
  * @fileoverview Core network-activity rollup model.
  *
- * Pre-aggregated time buckets backing the `core:network-activity` widget. The
- * widget plots transactions, native transfers, and native TRX transfer volume
- * over a 1h/24h/7d window; computing those over raw blocks and (especially) the
- * multi-million-row `transactions` collection at request time blew the SSR
- * widget resolver's 5-second budget, so the widget was silently dropped from
- * the page. This collection holds the answer pre-computed by the
- * `network-activity:rollup` scheduler job, so the request path is a cheap
- * bounded read instead of a live aggregation — mirroring the resource-tracker
- * and dust-tracker rollup pattern, adapted to core.
+ * Pre-aggregated time buckets backing the `core:network-activity` widget, which
+ * plots transactions, native transfers, and native TRX transfer volume over a
+ * 1h/24h/7d window. The `network-activity:rollup` scheduler job pre-computes
+ * them because a live aggregation over raw blocks and the multi-million-row
+ * `transactions` collection exceeds the SSR widget resolver's 5-second budget,
+ * and the resolver silently drops a widget that misses it. This follows the
+ * resource-tracker and dust-tracker rollup pattern, adapted to core.
  *
  * Two granularities share the collection, discriminated by `bucketType`:
  * `minute` serves the 1h window (60 points), `hourly` serves 24h/7d (24/168
  * points). `(bucketType, bucketStart)` is the natural key, so the job upserts
  * idempotently — re-running for a bucket overwrites rather than duplicates.
  *
- * This is the first core-owned collection to adopt the `core_` name prefix; the
- * legacy core collections (`transactions`, `blocks`, etc.) predate the
- * convention and are not renamed here.
+ * Core-owned collections take the `core_` name prefix; older core collections
+ * such as `transactions` and `blocks` predate that convention and keep their names.
  *
  * @module backend/database/models/core-network-activity-rollup-model
  */

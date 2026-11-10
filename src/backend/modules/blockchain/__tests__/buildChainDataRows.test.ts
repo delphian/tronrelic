@@ -33,13 +33,8 @@ const BLOCK_TIME = new Date(Date.UTC(2026, 8, 24, 3, 12, 36, 0));
 const BLOCK_NUMBER = 86_515_073;
 
 /**
- * Build a transaction carrying one contract of the given type.
- *
- * @param txID - The transaction id, which the receipts join on.
- * @param type - The java-tron contract type.
- * @param value - The contract's parameter value.
- * @param extras - Fields to add or override on the transaction.
- * @returns A transaction in the shape `getblockbynum` returns.
+ * Build a `getblockbynum`-shaped transaction carrying one contract of the given
+ * java-tron type; receipts join on `txID`.
  */
 function buildTransaction(
     txID: string,
@@ -107,13 +102,7 @@ function trc20TransferLog(fromHex: string, toHex: string, amount: bigint): { add
     };
 }
 
-/**
- * Build a receipt for one transaction in the test block.
- *
- * @param id - The transaction id the receipt joins on.
- * @param extras - The logs or internal transactions the test needs.
- * @returns A receipt in the shape `gettransactioninfobyblocknum` returns.
- */
+/** Build a receipt for one transaction in the test block. */
 function buildReceipt(id: string, extras: Partial<TronGridTransactionInfo>): TronGridTransactionInfo {
     return { id, fee: 0, blockNumber: BLOCK_NUMBER, blockTimeStamp: BLOCK_TIME.getTime(), ...extras };
 }

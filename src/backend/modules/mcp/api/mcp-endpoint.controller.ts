@@ -424,9 +424,6 @@ export class McpEndpointController {
  * Building the served list and explaining a refused call must look at the
  * same groups and address, or the logged reason could disagree with what was
  * actually served, so both go through this one function.
- *
- * @param caller - The verified caller.
- * @returns The caller's groups and request address.
  */
 function audienceOf(caller: IMcpCaller): IMcpToolAudience {
     return { groups: caller.endUser.groups ?? [], ip: caller.ip };
@@ -461,12 +458,7 @@ function calledToolNames(body: unknown): string[] {
     return [...names];
 }
 
-/**
- * Read the bearer token from the `Authorization` header.
- *
- * @param req - The incoming request.
- * @returns The token, or null when the header is missing or not a bearer header.
- */
+/** Read the bearer token from the `Authorization` header, or null when missing or not a bearer header. */
 function readBearerToken(req: Request): string | null {
     const header = req.get('authorization');
     const match = header ? /^Bearer\s+(\S+)\s*$/i.exec(header) : null;

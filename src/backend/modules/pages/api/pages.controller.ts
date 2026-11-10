@@ -363,10 +363,7 @@ export class PagesController {
     /**
      * Send a write failure with the status its cause deserves: the mapped
      * status for a content service refusal, 400 for a page validation error.
-     *
-     * @param res - The response to write.
-     * @param label - The `error` field, naming the operation that failed.
-     * @param error - The caught error.
+     * `label` is the `error` field, naming the operation that failed.
      */
     private sendWriteError(res: Response, label: string, error: unknown): void {
         sendContentWriteError(res, label, error);

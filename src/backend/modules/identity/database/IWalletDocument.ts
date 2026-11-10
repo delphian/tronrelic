@@ -1,14 +1,10 @@
 /**
  * @fileoverview MongoDB document interface for Better Auth-keyed wallet links.
  *
- * Phase 4 of the Better Auth refactor introduces a dedicated
- * `module_user_wallets` collection keyed by the Better Auth user id,
- * replacing the legacy `users.wallets[]` embedded array that was keyed
- * by the UUID identity. The legacy embedded model carried a
- * register/verify two-stage flow and cross-browser identity
- * reconciliation because UUIDs were browser-local; Better Auth identity
- * is portable across devices via email-OTP / OAuth / passkey, so the
- * new model is deliberately simpler:
+ * The `module_user_wallets` collection is keyed by the Better Auth user id.
+ * Better Auth identity is portable across devices via email-OTP / OAuth /
+ * passkey, so the model needs no register/verify two-stage flow or
+ * cross-browser identity reconciliation, and is deliberately simple:
  *
  * - A wallet is only stored after a signature proves ownership, so
  *   there is no "registered (unverified)" wallet state and no `verified`

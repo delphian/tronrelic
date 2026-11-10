@@ -69,12 +69,7 @@ interface IMatchedEventsQuery {
     params: Record<string, unknown>;
 }
 
-/**
- * Convert a ClickHouse native date string to ISO-8601 UTC.
- *
- * @param value - ClickHouse `DateTime64` string.
- * @returns ISO string, or the input unchanged when it cannot be parsed.
- */
+/** Convert a ClickHouse `DateTime64` string to ISO-8601 UTC, or return it unchanged when unparseable. */
 function toIso(value: unknown): string {
     const text = String(value);
     const date = parseClickHouseDateTime64Utc(text);

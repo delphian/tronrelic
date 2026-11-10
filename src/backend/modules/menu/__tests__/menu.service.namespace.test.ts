@@ -204,12 +204,6 @@ describe('MenuService - Namespace Support', () => {
         mockDatabase.clear();
     });
 
-    /**
-     * Test: MenuService should create nodes in the default 'main' namespace when not specified.
-     *
-     * Verifies that nodes created without an explicit namespace are assigned
-     * to the default 'main' namespace.
-     */
     it('should create nodes in default main namespace when not specified', async () => {
         // Arrange: Initialize service
         await menuService.initialize();
@@ -231,12 +225,6 @@ describe('MenuService - Namespace Support', () => {
         expect(mainTree.all).toContainEqual(expect.objectContaining({ label: 'Test Node' }));
     });
 
-    /**
-     * Test: MenuService should create nodes in custom namespaces.
-     *
-     * Verifies that nodes can be created in custom namespaces (e.g., 'footer', 'admin-sidebar')
-     * and that they are isolated from other namespaces.
-     */
     it('should create nodes in custom namespaces', async () => {
         // Arrange: Initialize service
         await menuService.initialize();
@@ -293,12 +281,6 @@ describe('MenuService - Namespace Support', () => {
         expect(adminTree.all).toContainEqual(expect.objectContaining({ label: 'Admin Tool' }));
     });
 
-    /**
-     * Test: MenuService should return empty tree for non-existent namespaces.
-     *
-     * Verifies that requesting a namespace that doesn't exist returns an empty
-     * tree structure instead of throwing an error.
-     */
     it('should return empty tree for non-existent namespace', async () => {
         // Arrange: Initialize service
         await menuService.initialize();
@@ -312,12 +294,6 @@ describe('MenuService - Namespace Support', () => {
         expect(tree.generatedAt).toBeInstanceOf(Date);
     });
 
-    /**
-     * Test: MenuService should support hierarchical structures within namespaces.
-     *
-     * Verifies that parent-child relationships work correctly within a namespace
-     * and that getChildren() respects namespace boundaries.
-     */
     it('should support hierarchical structures within namespaces', async () => {
         // Arrange: Initialize service
         await menuService.initialize();
@@ -365,12 +341,6 @@ describe('MenuService - Namespace Support', () => {
         expect(children[1].label).toBe('Careers');
     });
 
-    /**
-     * Test: MenuService should update nodes across namespaces.
-     *
-     * Verifies that a node can be moved from one namespace to another via update,
-     * and that it is removed from the old namespace and added to the new one.
-     */
     it('should move nodes between namespaces via update', async () => {
         // Arrange: Create node in main namespace
         await menuService.initialize();
@@ -401,12 +371,6 @@ describe('MenuService - Namespace Support', () => {
         expect(footerTree.all).toContainEqual(expect.objectContaining({ label: 'Movable Item' }));
     });
 
-    /**
-     * Test: MenuService should delete nodes only from their namespace.
-     *
-     * Verifies that deleting a node removes it from its namespace but does not
-     * affect nodes in other namespaces.
-     */
     it('should delete nodes only from their namespace', async () => {
         // Arrange: Create nodes in different namespaces
         await menuService.initialize();
@@ -441,12 +405,6 @@ describe('MenuService - Namespace Support', () => {
         expect(footerTree.all).toContainEqual(expect.objectContaining({ label: 'Footer Item' }));
     });
 
-    /**
-     * Test: MenuService should list all available namespaces.
-     *
-     * Verifies that getNamespaces() returns all namespaces that have been created,
-     * sorted alphabetically.
-     */
     it('should list all available namespaces', async () => {
         // Arrange: Initialize and create nodes in multiple namespaces
         await menuService.initialize();
@@ -485,12 +443,6 @@ describe('MenuService - Namespace Support', () => {
         expect(namespaces).toEqual(['admin-sidebar', 'footer', 'main']);
     });
 
-    /**
-     * Test: MenuService should persist namespace to database when persist=true.
-     *
-     * Verifies that custom namespaces are saved to the database when creating
-     * persisted nodes, ensuring they survive service restarts.
-     */
     it('should persist namespace to database when persist=true', async () => {
         // Arrange: Initialize service
         await menuService.initialize();
@@ -515,12 +467,6 @@ describe('MenuService - Namespace Support', () => {
         expect(dbNode.namespace).toBe('footer');
     });
 
-    /**
-     * Test: MenuService should load nodes into correct namespaces during initialization.
-     *
-     * Verifies that when loading nodes from database on initialization, they are
-     * correctly organized by namespace in the in-memory tree.
-     */
     it('should load nodes into correct namespaces during initialization', async () => {
         // Arrange: Pre-populate database with nodes in different namespaces
         const collection = mockDatabase.getCollection('menu_nodes');
@@ -570,12 +516,7 @@ describe('MenuService - Namespace Support', () => {
         expect(namespaces).toEqual(['admin-sidebar', 'footer', 'main']);
     });
 
-    /**
-     * Test: MenuService should default to 'main' namespace for legacy nodes without namespace field.
-     *
-     * Verifies backward compatibility by ensuring nodes loaded from database without
-     * a namespace field are assigned to the default 'main' namespace.
-     */
+    /** Backward compatibility: stored nodes without a namespace field load into 'main'. */
     it('should default legacy nodes to main namespace', async () => {
         // Arrange: Pre-populate database with node missing namespace field
         const collection = mockDatabase.getCollection('menu_nodes');

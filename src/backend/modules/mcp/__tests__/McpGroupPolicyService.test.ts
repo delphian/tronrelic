@@ -21,11 +21,7 @@ const userGroups = {
     ])
 } as any;
 
-/**
- * Build a policy service over a fresh mock database.
- *
- * @returns The service.
- */
+/** Build a policy service over a fresh mock database. */
 function build(): McpGroupPolicyService {
     return new McpGroupPolicyService(createMockDatabaseService(), userGroups, logger);
 }

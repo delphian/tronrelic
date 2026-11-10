@@ -60,11 +60,7 @@ export class ChainParametersFetcher implements IChainParametersFetcher {
         this.database.registerModel(CHAIN_PARAMETERS_COLLECTION, ChainParametersModel);
     }
 
-    /**
-     * Get the registered chain parameters model for database operations.
-     *
-     * @returns The model used to store each snapshot
-     */
+    /** The registered chain parameters model, used to store each snapshot. */
     private getModel() {
         return this.database.getModel<IChainParametersDocument>(CHAIN_PARAMETERS_COLLECTION);
     }

@@ -74,10 +74,7 @@ export function TabBar({ namespace, maxTabs, menuTab, panelNamespace, languageSw
         .sort((a, b) => a.order - b.order)
         .slice(0, maxTabs), [roots, maxTabs]);
 
-    /**
-     * Open the Menu tab's panel. A stable callback so the tab button does not
-     * re-render on every bar render.
-     */
+    /** Open the Menu tab's panel; stable so the tab button does not re-render on every bar render. */
     const openPanel = useCallback(() => setPanelOpen(true), []);
 
     /**

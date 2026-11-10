@@ -552,15 +552,9 @@ export class MigrationScanner {
     }
 
     /**
-     * Dynamically import a migration module from filesystem.
-     *
-     * Thin wrapper around Node.js dynamic import. This method is intentionally simple
-     * to isolate the hard-to-test I/O operation from the business logic.
-     * The validation logic lives in validateMigrationObject() which is thoroughly unit tested.
-     *
-     * @param filePath - Absolute path to migration file
-     * @returns Imported module object
-     * @throws Error if import fails
+     * Dynamically import a migration module from an absolute file path. Kept as a
+     * thin wrapper to isolate the hard-to-test I/O from the validation logic in
+     * validateMigrationObject(), which is unit tested.
      */
     private async importMigrationModule(filePath: string): Promise<any> {
         return await import(`file://${filePath}`);

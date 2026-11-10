@@ -3,12 +3,11 @@
 /**
  * @fileoverview The add form shared by the localization admin tabs.
  *
- * Each tab used to put its add form in a second panel below the table, with a
- * label above every field, a hint below it, and the submit button on a line of
- * its own. That spent more height on adding one row than the table spent on
- * showing ten. This form opens from the panel's own header instead, holds its
- * fields and the submit button on a single row, and sits above the table so
- * the table can stay the last thing in the panel and run to its edges.
+ * The form opens from the panel's own header, holds its fields and the submit
+ * button on a single row, and sits above the table so the table can stay the
+ * last thing in the panel and run to its edges. A separate panel with a label
+ * above every field and a hint below it spends more height on adding one row
+ * than the table spends on showing ten.
  *
  * @module modules/localization/components/admin/InlineAddForm
  */

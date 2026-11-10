@@ -6,12 +6,11 @@
  * makes so the plugin loader can revoke all of them on `disable()` without each
  * plugin tracking its own observers by hand.
  *
- * Why this exists: observer subscriptions used to be permanent. Plugins are
- * toggleable at runtime, so a disabled plugin's observer kept receiving every
- * matching transaction — still writing to its collections, still emitting
- * WebSocket events — until the process restarted, while the admin observer table
- * went on listing it as live. Scoping registrations per plugin is what makes
- * "disabled" actually mean stopped.
+ * Why this exists: plugins are toggleable at runtime, and without this facade a
+ * disabled plugin's observer keeps receiving every matching transaction, writing
+ * to its collections and emitting WebSocket events, until the process restarts,
+ * while the admin observer table lists it as live. Scoping registrations per
+ * plugin is what makes "disabled" actually mean stopped.
  *
  * @module backend/observers/plugin-observer-registry
  */

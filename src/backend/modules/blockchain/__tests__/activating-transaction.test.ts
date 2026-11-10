@@ -33,9 +33,6 @@ const CREATE_TIME = 1_700_000_000_000;
  * Convert base58 back to the 41-hex wire form, why: the client converts hex to
  * base58 internally, so fixtures must supply hex or the address filters compare
  * mismatched formats and every row is discarded for the wrong reason.
- *
- * @param base58 - Address to encode.
- * @returns 41-prefixed hex string.
  */
 function toHex(base58: string): string {
     return TronWeb.address.toHex(base58);

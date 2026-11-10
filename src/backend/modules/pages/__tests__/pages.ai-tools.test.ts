@@ -37,12 +37,7 @@ function publicPage(overrides: Partial<IPublicPage> = {}): IPublicPage {
     };
 }
 
-/**
- * Build the tools over a fake service.
- *
- * @param service - The fake service methods the test needs.
- * @returns The tools keyed by name.
- */
+/** Build the tools over a fake service, keyed by name. */
 function buildTools(service: Partial<IPageService>): Record<string, ReturnType<typeof buildPageAiTools>[number]> {
     const logger = { error: vi.fn(), info: vi.fn(), warn: vi.fn() } as unknown as ISystemLogService;
     const tools = buildPageAiTools(service as IPageService, logger);

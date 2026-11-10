@@ -5,11 +5,10 @@
  * same list, drawn inside a table cell or a bar list beside the figure it
  * illustrates.
  *
- * The traffic tables used to give the bar a column of its own, which cost a
- * column of width in every table and pushed the figure and its bar apart. The
- * bar now sits directly beside the figure, so a reader sees the number and its
- * relative size together. It draws with the shared meter tokens, so it matches
- * every other meter on the site and follows the active theme.
+ * The bar sits directly beside the figure rather than in a column of its own,
+ * so a reader sees the number and its relative size together. It draws with the
+ * shared meter tokens, so it matches every other meter on the site and follows
+ * the active theme.
  */
 
 import styles from './ShareBar.module.scss';

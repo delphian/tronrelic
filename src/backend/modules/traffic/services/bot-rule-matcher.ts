@@ -117,12 +117,7 @@ export interface IBotRuleOutcome {
     botRule: string | null;
 }
 
-/**
- * Decide whether an event's referrer counts as absent.
- *
- * @param referrer - The referrer the event is judged by.
- * @returns True when there is no referrer or it is blank.
- */
+/** Decide whether an event's referrer counts as absent. */
 function isReferrerAbsent(referrer: string | null | undefined): boolean {
     return !referrer || referrer.trim() === '';
 }

@@ -56,12 +56,6 @@ describe('MigrationScanner', () => {
     });
 
     describe('Naming Convention Validation', () => {
-        /**
-         * Test: Scanner should accept valid migration filenames.
-         *
-         * Verifies that filenames matching the required pattern (3 digits, underscore, lowercase name)
-         * are accepted by the scanner.
-         */
         it('should accept valid migration filenames', () => {
             const validNames = [
                 '001_create_users.ts',
@@ -77,12 +71,7 @@ describe('MigrationScanner', () => {
             }
         });
 
-        /**
-         * Test: Scanner should accept both .ts and .js extensions.
-         *
-         * Verifies that both TypeScript (.ts) and JavaScript (.js) extensions are valid
-         * to support development and production/Docker deployments respectively.
-         */
+        /** .ts files serve development and .js files serve production/Docker deployments. */
         it('should accept both .ts and .js extensions', () => {
             const validExtensions = [
                 '001_create_users.ts',
@@ -98,13 +87,9 @@ describe('MigrationScanner', () => {
         });
 
         /**
-         * Test: File filtering logic should include both .ts and .js files.
-         *
-         * Verifies that the file filtering in scanDirectory() doesn't skip .js files.
-         * This is critical for production/Docker deployments where migrations are compiled to JavaScript.
-         *
-         * This test validates the fix at MigrationScanner.ts:365 where the code previously
-         * only checked `file.endsWith('.ts')` and would skip all .js files.
+         * Production/Docker deployments compile migrations to JavaScript, so
+         * scanDirectory() must not filter on `.ts` alone; an `endsWith('.ts')`
+         * check skips every compiled migration.
          */
         it('should include .js files in file filtering logic', () => {
             // Mock file list with both .ts and .js files
@@ -135,12 +120,6 @@ describe('MigrationScanner', () => {
             expect(filteredFiles).not.toContain('invalid.py');
         });
 
-        /**
-         * Test: Scanner should reject invalid migration filenames.
-         *
-         * Verifies that filenames not matching the required pattern are rejected
-         * with appropriate warnings.
-         */
         it('should reject invalid migration filenames', () => {
             const invalidNames = [
                 '1_create_users.ts',        // Not enough leading zeros
@@ -159,12 +138,6 @@ describe('MigrationScanner', () => {
     });
 
     describe('Dependency Validation', () => {
-        /**
-         * Test: Scanner should validate all dependencies exist.
-         *
-         * Verifies that the scanner throws an error when a migration references
-         * a dependency that doesn't exist in the discovered migrations.
-         */
         it('should throw error when dependency does not exist', async () => {
             const migrations = [
                 {
@@ -188,12 +161,6 @@ describe('MigrationScanner', () => {
             }).rejects.toThrow(/depends on '999_nonexistent'.*not found/);
         });
 
-        /**
-         * Test: Scanner should accept valid dependencies.
-         *
-         * Verifies that migrations with valid dependencies are sorted correctly
-         * in topological order.
-         */
         it('should accept valid dependencies', async () => {
             const migrations = [
                 createMigrationFixture('001_base'),
@@ -208,11 +175,7 @@ describe('MigrationScanner', () => {
     });
 
     describe('Phantom Dependency Resolution', () => {
-        /**
-         * Test: A dep absent from disk but listed in completed history is
-         * accepted as already-executed. Lets operators retire old
-         * migration source files once every environment has run them.
-         */
+        /** Lets operators retire old migration source files once every environment has run them. */
         it('should accept dep recorded as completed even when not on disk', async () => {
             const migrations = [
                 createMigrationFixture('002_dependent', { dependencies: ['001_retired'] })
@@ -224,11 +187,7 @@ describe('MigrationScanner', () => {
             expect(sorted[0].id).toBe('002_dependent');
         });
 
-        /**
-         * Test: A dep that is neither on disk nor in completed history
-         * still throws — fresh environments without history see the same
-         * fail-fast behavior as before.
-         */
+        /** Fresh environments without history keep the same fail-fast behavior. */
         it('should throw when dep is absent from both disk and history', async () => {
             const migrations = [
                 createMigrationFixture('002_dependent', { dependencies: ['999_phantom'] })
@@ -241,9 +200,8 @@ describe('MigrationScanner', () => {
         });
 
         /**
-         * Test: Phantom deps act as leaves — DFS does not recurse into
-         * them. Regression check: the previous code did
-         * `migrationMap.get(lookupId)!` and would have crashed.
+         * Regression check: the previous code did `migrationMap.get(lookupId)!`
+         * and would have crashed.
          */
         it('should treat phantom deps as DFS leaves without crashing', async () => {
             const migrations = [
@@ -258,11 +216,6 @@ describe('MigrationScanner', () => {
                 .toBeLessThan(sorted.findIndex((m: any) => m.id === 'B'));
         });
 
-        /**
-         * Test: Backward compatibility — calling topologicalSort without
-         * the completed-IDs argument behaves exactly as the legacy code
-         * did. Every dep must be on disk.
-         */
         it('should require deps on disk when no completed set is passed', async () => {
             const migrations = [
                 createMigrationFixture('002_dependent', { dependencies: ['001_missing'] })
@@ -275,12 +228,6 @@ describe('MigrationScanner', () => {
     });
 
     describe('Circular Dependency Detection', () => {
-        /**
-         * Test: Scanner should detect direct circular dependencies.
-         *
-         * Verifies that the scanner detects when two migrations directly depend
-         * on each other (A → B → A).
-         */
         it('should detect direct circular dependencies', async () => {
             const migrations = [
                 createMigrationFixture('A', { dependencies: ['B'] }),
@@ -292,12 +239,6 @@ describe('MigrationScanner', () => {
             }).rejects.toThrow(/Circular dependency detected.*A.*B.*A/);
         });
 
-        /**
-         * Test: Scanner should detect indirect circular dependencies.
-         *
-         * Verifies that the scanner detects cycles through multiple migrations
-         * (A → B → C → A).
-         */
         it('should detect indirect circular dependencies', async () => {
             const migrations = [
                 createMigrationFixture('A', { dependencies: ['B'] }),
@@ -310,12 +251,6 @@ describe('MigrationScanner', () => {
             }).rejects.toThrow(/Circular dependency detected/);
         });
 
-        /**
-         * Test: Scanner should handle complex dependency graphs without cycles.
-         *
-         * Verifies that complex dependency graphs are sorted correctly when
-         * no cycles exist.
-         */
         it('should handle complex dependency graphs without cycles', async () => {
             const migrations = [
                 createMigrationFixture('001'),
@@ -339,12 +274,6 @@ describe('MigrationScanner', () => {
     });
 
     describe('Topological Sorting', () => {
-        /**
-         * Test: Scanner should sort migrations in dependency order.
-         *
-         * Verifies that migrations are sorted so dependencies always come
-         * before their dependents.
-         */
         it('should sort migrations in dependency order', async () => {
             const migrations = [
                 createMigrationFixture('003_third', { dependencies: ['001_first', '002_second'] }),
@@ -359,12 +288,6 @@ describe('MigrationScanner', () => {
             expect(sorted[2].id).toBe('003_third');
         });
 
-        /**
-         * Test: Scanner should handle migrations with no dependencies.
-         *
-         * Verifies that independent migrations are sorted correctly (numeric order
-         * when no dependencies exist).
-         */
         it('should handle migrations with no dependencies', async () => {
             const migrations = [
                 createMigrationFixture('003_third'),
@@ -380,11 +303,6 @@ describe('MigrationScanner', () => {
     });
 
     describe('Checksum Calculation', () => {
-        /**
-         * Test: Scanner should calculate consistent checksums.
-         *
-         * Verifies that the same file content always produces the same checksum.
-         */
         it('should calculate consistent checksums', () => {
             const content = 'export const migration = { id: "001_test", up: async () => {} };';
             const checksum1 = (scanner as any).calculateChecksum(content);
@@ -394,11 +312,6 @@ describe('MigrationScanner', () => {
             expect(checksum1).toMatch(/^[a-f0-9]{64}$/); // SHA-256 hex format
         });
 
-        /**
-         * Test: Scanner should detect content changes via checksum.
-         *
-         * Verifies that different file content produces different checksums.
-         */
         it('should detect content changes via checksum', () => {
             const content1 = 'export const migration = { id: "001_test", up: async () => {} };';
             const content2 = 'export const migration = { id: "001_test", up: async () => { await db.set("key", "value"); } };';
@@ -411,12 +324,6 @@ describe('MigrationScanner', () => {
     });
 
     describe('Migration Object Validation', () => {
-        /**
-         * Test: Scanner should validate and accept valid migration object.
-         *
-         * Verifies that a properly structured migration module can be validated
-         * and converted to complete metadata.
-         */
         it('should validate valid migration object', () => {
             const mockModule = {
                 migration: {
@@ -444,12 +351,6 @@ describe('MigrationScanner', () => {
             expect(metadata.checksum).toBe('abc123checksum');
         });
 
-        /**
-         * Test: Scanner should reject migration with missing required fields.
-         *
-         * Verifies that migrations missing required fields (id, description, up)
-         * are rejected with clear error messages.
-         */
         it('should reject migration with missing required fields', () => {
             const invalidModule = {
                 migration: {
@@ -471,11 +372,6 @@ describe('MigrationScanner', () => {
             }).toThrow(/description/);
         });
 
-        /**
-         * Test: Scanner should reject migration with mismatched ID.
-         *
-         * Verifies that the migration ID must match the filename.
-         */
         it('should reject migration with mismatched ID', () => {
             const mockModule = {
                 migration: {
@@ -497,11 +393,6 @@ describe('MigrationScanner', () => {
             }).toThrow(/ID mismatch/);
         });
 
-        /**
-         * Test: Scanner should reject module without migration export.
-         *
-         * Verifies that modules must export a 'migration' object.
-         */
         it('should reject module without migration export', () => {
             const invalidModule = {
                 // Missing migration property
@@ -519,9 +410,6 @@ describe('MigrationScanner', () => {
             }).toThrow(/must export 'migration' object/);
         });
 
-        /**
-         * Test: Scanner should generate qualified IDs for module migrations.
-         */
         it('should generate qualified ID for module migration', () => {
             const mockModule = {
                 migration: {
@@ -545,9 +433,6 @@ describe('MigrationScanner', () => {
             expect(metadata.source).toBe('module:menu');
         });
 
-        /**
-         * Test: Scanner should generate qualified IDs for plugin migrations.
-         */
         it('should generate qualified ID for plugin migration', () => {
             const mockModule = {
                 migration: {
@@ -573,11 +458,10 @@ describe('MigrationScanner', () => {
     });
 
     /**
-     * The dist-vs-src branch decides whether migrations are discovered at all.
-     * The original bug — silent skip of plugin migrations because production
-     * shipped .ts source files at the path the scanner walked — turned on this
-     * exact resolution. Cover both production-strict and dev-prefer-src cases
-     * so a regression here cannot silently hide migrations again.
+     * The dist-vs-src branch decides whether migrations are discovered at all:
+     * if production walks a path holding .ts source files, plugin migrations are
+     * silently skipped. These cases cover both production-strict and
+     * dev-prefer-src resolution so that cannot happen unnoticed.
      */
     describe('Path Resolution (dist vs src)', () => {
         afterEach(() => {

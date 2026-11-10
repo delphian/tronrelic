@@ -129,8 +129,6 @@ interface IHoverState {
  * Builds the hover state for a pointer that is outside the toast viewport.
  * Shared by the initial value, the unmount cleanup, and `endHover`, so all
  * three reset to the same shape.
- *
- * @returns Hover state with nothing hovered and no arrivals recorded
  */
 function idleHoverState(): IHoverState {
     return { active: false, anchorId: null, arrivals: new Set() };
@@ -295,11 +293,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     /**
      * Schedules automatic dismissal for a toast based on its duration.
      *
-     * Any countdown already held under the same id is cleared first. Without
-     * that, pushing a replacement toast with a reused id left the old timeout
-     * running, and it closed the replacement early. When the pointer is
-     * already over the toast, the countdown is stored paused with its full
-     * duration, and it starts when the pointer leaves. Duration of 0 or
+     * Any countdown already held under the same id is cleared first, or the old
+     * timeout would close a replacement toast that reuses the id early. When the
+     * pointer is already over the toast, the countdown is stored paused with its
+     * full duration, and it starts when the pointer leaves. Duration of 0 or
      * negative values disables auto-dismissal.
      *
      * @param toast - Toast payload with duration property
@@ -359,10 +356,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         held.forEach(holdTimer);
     }, [holdTimer, releaseTimer]);
 
-    /**
-     * Marks the pointer as inside the toast area. Until it enters a card,
-     * there is no anchor, so every toast is held.
-     */
+    /** Mark the pointer as inside the toast area; with no anchor card yet, every toast is held. */
     const beginHover = useCallback(() => {
         hover.current.active = true;
         applyHover();
@@ -372,8 +366,6 @@ export function ToastProvider({ children }: { children: ReactNode }) {
      * Makes the card under the pointer the anchor, which holds it and every
      * older toast behind it. Also marks the hover active, so the result does
      * not depend on whether the viewport's enter event ran first.
-     *
-     * @param id - Toast the pointer has moved onto
      */
     const hoverToast = useCallback((id: string) => {
         hover.current.active = true;
@@ -381,10 +373,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         applyHover();
     }, [applyHover]);
 
-    /**
-     * Marks the pointer as outside the toast area and resumes every held
-     * countdown with the time it had left.
-     */
+    /** Mark the pointer as outside the toast area and resume every held countdown with its time left. */
     const endHover = useCallback(() => {
         hover.current = idleHoverState();
         applyHover();
@@ -472,8 +461,6 @@ export function ToastViewport() {
     /**
      * Pauses countdowns when a hovering pointer enters the toast area,
      * skipping touch for the reason given on `isHoverPointer`.
-     *
-     * @param event - Pointer event whose type separates hover from a tap
      */
     function handlePointerEnter(event: PointerEvent<HTMLElement>) {
         if (isHoverPointer(event)) {
@@ -481,11 +468,7 @@ export function ToastViewport() {
         }
     }
 
-    /**
-     * Resumes countdowns when a hovering pointer leaves the toast area.
-     *
-     * @param event - Pointer event whose type separates hover from a tap
-     */
+    /** Resume countdowns when a hovering pointer leaves the toast area. */
     function handlePointerLeave(event: PointerEvent<HTMLElement>) {
         if (isHoverPointer(event)) {
             endHover();
@@ -592,9 +575,6 @@ function toneClassName(tone: ToastTone) {
  * is a mouse or a pen. Touch input is ignored, because a tap fires an enter
  * event with no matching leave until the user taps somewhere else, which
  * would leave the toasts paused indefinitely.
- *
- * @param event - Pointer event from the viewport or a toast card
- * @returns True when the event should count toward pausing countdowns
  */
 function isHoverPointer(event: PointerEvent<HTMLElement>) {
     return event.pointerType !== 'touch';
@@ -623,11 +603,7 @@ function ToastItem({ toast, onDismiss, onHover }: {
 }) {
     const { tone = 'info', title, titleHref, description, actionLabel, onAction } = toast;
 
-    /**
-     * Reports the card as hovered when a hovering pointer enters it.
-     *
-     * @param event - Pointer event whose type separates hover from a tap
-     */
+    /** Report the card as hovered when a hovering pointer enters it. */
     function handlePointerEnter(event: PointerEvent<HTMLDivElement>) {
         if (isHoverPointer(event)) {
             onHover();

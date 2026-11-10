@@ -58,12 +58,9 @@ export interface ISegmentedControlProps<T extends string> {
  * Compact segmented toggle for the chart and toolbar controls that recur across
  * the app — time windows, metric pickers, chart views, data-source switches.
  *
- * The pattern was hand-rolled at eighteen call sites (raw `<button>` rows over
- * the `.segmented-control` utility), which is how behavior drifted: some rows
- * shipped `aria-pressed`, some shipped nothing, and one admin section grew its
- * own local `.window_button` styling that no longer matched the rest. Owning it
- * in one primitive fixes the ARIA and keyboard story once and gives every
- * consumer arrow-key traversal that none of the hand-rolled rows had.
+ * Hand-rolled `<button>` rows over the `.segmented-control` utility drift apart
+ * in their ARIA attributes and styling, so this one primitive owns the ARIA and
+ * keyboard behavior and gives every consumer arrow-key traversal.
  *
  * Styling deliberately stays on the global `.segmented-control` utility instead
  * of a colocated module, so this component and the remaining hand-rolled call

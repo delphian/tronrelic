@@ -22,9 +22,8 @@ export const DEFAULT_OG_IMAGE_HEIGHT = 630;
  * Constructs an absolute URL from a path using the provided site URL.
  *
  * Why siteUrl parameter:
- * Previously used deprecated build-time config which leaked Docker internal hostnames
- * (e.g., "http://backend:3000") into canonical URLs. Now requires explicit siteUrl
- * from runtime config to ensure correct public URLs.
+ * Build-time config leaks Docker internal hostnames (e.g., "http://backend:3000")
+ * into canonical URLs, so the public siteUrl comes from runtime config.
  *
  * @param siteUrl - Public site URL from runtime config (e.g., "https://tronrelic.com")
  * @param path - Relative path or absolute URL

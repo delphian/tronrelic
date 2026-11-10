@@ -135,10 +135,7 @@ export class CallPacer {
                 return;
             }
 
-            /**
-             * Settle once, from whichever of the two paths arrives first, leaving
-             * behind neither a live timer nor a listener that could fire later.
-             */
+            /** Settle once, from timer or abort, leaving no timer or listener that could fire later. */
             const settle = (): void => {
                 clearTimeout(timer);
                 this.signal?.removeEventListener('abort', settle);

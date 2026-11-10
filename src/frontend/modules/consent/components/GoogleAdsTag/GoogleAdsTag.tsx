@@ -21,12 +21,7 @@ import { useEffect } from 'react';
 import { useConsent } from '../../hooks/useConsent';
 import { loadGoogleAdsTag, recordGoogleAdsConversion } from '../../lib/loadGoogleAdsTag';
 
-/**
- * Whether a click landed on a sponsored link.
- *
- * @param target - The element the click started on, which may sit inside the link.
- * @returns True when the click is inside an `<a rel="… sponsored …">`.
- */
+/** Whether a click, whose target may sit inside the link, landed inside an `<a rel="… sponsored …">`. */
 function isSponsoredLinkClick(target: EventTarget | null): boolean {
     const link = target instanceof Element ? target.closest('a[rel]') : null;
     return link !== null && (link.getAttribute('rel') ?? '').split(/\s+/).includes('sponsored');
@@ -53,8 +48,6 @@ export function GoogleAdsTag(): null {
          * Record a conversion when a sponsored link is followed. Listens in
          * the capture phase so the conversion is queued before the link's own
          * handlers run or the browser starts leaving the page.
-         *
-         * @param event - The click anywhere in the document.
          */
         const handleClick = (event: MouseEvent): void => {
             if (googleAdsId && conversionLabel && isSponsoredLinkClick(event.target)) {

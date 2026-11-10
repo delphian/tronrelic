@@ -58,10 +58,7 @@ export function useAutoRefresh(intervalMs: number, enabled = true): number {
 
         let timer: ReturnType<typeof setInterval> | undefined;
 
-        /**
-         * Start the tick interval if it is not already running. Idempotent so a
-         * visibility change that fires while already visible cannot stack timers.
-         */
+        /** Start the tick interval if not running, so a repeat visibility change cannot stack timers. */
         const start = (): void => {
             if (timer === undefined) {
                 timer = setInterval(() => setSignal(previous => previous + 1), intervalMs);

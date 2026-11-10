@@ -94,13 +94,7 @@ function markdown(opts: { title: string; slug?: string; oldSlugs?: string[]; pub
     return lines.join('\n');
 }
 
-/**
- * Build translated values for a page.
- *
- * @param title - Translated title.
- * @param body - Translated body.
- * @returns Values for every page translation field.
- */
+/** Build translated values for a page. */
 function values(title: string, body = `# ${title}`): TranslationValues {
     return { title, description: '', keywords: [], body, ogImage: '' };
 }
@@ -142,13 +136,7 @@ describe('page translations', () => {
         contentService.registerType(pages.getContentType(), 'pages');
     });
 
-    /**
-     * Create a published English page as a curator.
-     *
-     * @param slug - Slug of the page.
-     * @param extra - Further frontmatter.
-     * @returns The page's core content id.
-     */
+    /** Create a published English page as a curator, returning its core content id. */
     async function createPage(slug: string, extra: { oldSlugs?: string[]; ogImage?: string } = {}): Promise<string> {
         const page = await pages.createPage(markdown({ title: 'About', slug, published: true, ...extra }), curator);
         return page.contentId as string;

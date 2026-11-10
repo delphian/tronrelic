@@ -135,7 +135,6 @@ function createRedirectServiceStub() {
  * @param trafficStub - Optional TrafficService double, so a caller can shape a
  *                      read's return — a wide trend series, for instance — that
  *                      the default sentinel stub deliberately keeps small.
- * @returns The registered tools keyed by name, plus the stub registry.
  */
 function registerAndCapture(
     gscStub: ReturnType<typeof createGscServiceStub> = createGscServiceStub(),

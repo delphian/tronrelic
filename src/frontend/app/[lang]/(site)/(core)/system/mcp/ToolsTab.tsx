@@ -44,11 +44,8 @@ interface IToolsTabProps {
 }
 
 /**
- * Decide whether a group may hold a grant for a tool right now.
- *
- * @param tool - The tool row.
- * @param group - The group being managed.
- * @returns True when the tool passes the safety rules, or the group allows restricted tools.
+ * Decide whether a group may hold a grant for a tool right now: true when the
+ * tool passes the safety rules, or the group allows restricted tools.
  */
 function groupMayHold(tool: IMcpToolExposure, group: IMcpGroup): boolean {
     return mcpGroupMayHoldTool(tool.restrictedReason !== null, group.policy);
@@ -202,11 +199,6 @@ export function ToolsTab({ initialTools, initialGroups, onToolsChanged }: ITools
                         <Select
                             value={selected.id}
                             onChange={
-                                /**
-                                 * Switch the group the protections card and the grant switches act on.
-                                 *
-                                 * @param event - The select's change event, carrying the chosen group id.
-                                 */
                                 event => setSelectedId(event.target.value)
                             }
                         >

@@ -55,12 +55,6 @@ const PALETTE = [
 /**
  * Convert a polar angle (degrees, measured clockwise from the top) to a cartesian
  * point on a circle — the primitive every arc endpoint is built from.
- *
- * @param cx - Circle center x.
- * @param cy - Circle center y.
- * @param radius - Circle radius.
- * @param angleDeg - Angle in degrees from the top, clockwise.
- * @returns The `{ x, y }` point.
  */
 function polar(cx: number, cy: number, radius: number, angleDeg: number): { x: number; y: number } {
     const rad = ((angleDeg - 90) * Math.PI) / 180;

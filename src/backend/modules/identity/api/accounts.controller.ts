@@ -1,9 +1,8 @@
 /**
  * @fileoverview Admin controller for the Better Auth account directory.
  *
- * Backs the `/system/users` admin dashboard now that it reads Better Auth
- * accounts instead of the legacy UUID `users` collection. Every read flows
- * through `AccountDirectoryService` — the sole sanctioned reader of
+ * Backs the `/system/users` admin dashboard. Every read flows through
+ * `AccountDirectoryService` — the sole sanctioned reader of
  * `module_user_auth_users` outside the identity module's own write paths — so
  * this controller never touches the collection directly.
  *
@@ -37,9 +36,6 @@ const BA_USER_ID_PATTERN = /^[0-9a-f]{24}$/i;
  * Narrow an {@link IAccountSummary} to the {@link IAccountMatch} projection the
  * picker/search surface exposes — dropping auth-internal fields (groups,
  * wallet, verification, timestamps) an account chooser never needs.
- *
- * @param account - The full directory summary.
- * @returns The minimal id/email/name match.
  */
 function toAccountMatch(account: IAccountSummary): IAccountMatch {
     return { id: account.id, email: account.email, name: account.name };

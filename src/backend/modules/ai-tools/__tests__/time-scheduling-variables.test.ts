@@ -123,13 +123,7 @@ describe('Time & Scheduling prompt variables', () => {
             const daily = await resolveAt('run-window-24', '2026-11-09T00:30:00.000Z');
             const weekly = await resolveAt('run-window-7d', '2026-11-09T00:30:00.000Z');
 
-            /**
-             * Reduce a window block to its line labels, ignoring values, so the
-             * two windows can be compared on shape alone.
-             *
-             * @param block - A resolved window block.
-             * @returns The label before the colon on every indented line.
-             */
+            /** Reduce a window block to its line labels so the two windows compare on shape alone. */
             const labelsOf = (block: string): string[] => block
                 .split('\n')
                 .slice(1)

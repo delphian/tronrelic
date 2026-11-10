@@ -4,9 +4,8 @@
  * The file keeps its old name from when this was the Overview tab. The tab
  * shows one staleness readout for its polling sections, which only works if
  * the readout and the sections agree on the cadence and on how an outcome is
- * reported. The interval used to be a private constant in each section and again
- * in the readout, held in step by a comment — so changing one section's poll rate
- * silently made the label wrong.
+ * reported, so the interval lives here: a copy in each section would let one
+ * section's poll rate change and silently make the label wrong.
  *
  * The reporting contract exists for a sharper reason: a readout that stamps a
  * fresh time on a timer of its own claims the screen is current at exactly the

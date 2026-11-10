@@ -101,11 +101,6 @@ describe('LogsModule', () => {
     });
 
     describe('Metadata', () => {
-        /**
-         * Test: Module should have correct metadata.
-         *
-         * Verifies that the module exposes its identity for introspection.
-         */
         it('should have correct metadata', () => {
             expect(module.metadata.id).toBe('logs');
             expect(module.metadata.name).toBe('Logs');
@@ -115,12 +110,6 @@ describe('LogsModule', () => {
     });
 
     describe('init()', () => {
-        /**
-         * Test: init should initialize SystemLogService.
-         *
-         * Verifies that the init phase configures the singleton logger
-         * with the Pino instance.
-         */
         it('should initialize SystemLogService with Pino logger', async () => {
             await module.init({
                 pinoLogger: mockPino as any,
@@ -133,11 +122,6 @@ describe('LogsModule', () => {
             expect(true).toBe(true);
         });
 
-        /**
-         * Test: init should store dependencies for later use.
-         *
-         * Verifies that dependencies are retained for the run() phase.
-         */
         it('should store dependencies for later use', async () => {
             await module.init({
                 pinoLogger: mockPino as any,
@@ -151,24 +135,12 @@ describe('LogsModule', () => {
             expect(logService).toBeDefined();
         });
 
-        /**
-         * Test: getLogService should throw if called before init.
-         *
-         * Verifies that attempting to access the service before initialization
-         * throws a clear error message.
-         */
         it('should throw if getLogService called before init', () => {
             expect(() => module.getLogService()).toThrow(
                 'LogsModule not initialized - call init() first'
             );
         });
 
-        /**
-         * Test: createRouter should throw if called before init.
-         *
-         * Verifies that attempting to create router before initialization
-         * throws a clear error message.
-         */
         it('should throw if createRouter called before init', () => {
             expect(() => module.createRouter()).toThrow(
                 'LogsModule not initialized - call init() first'
@@ -177,12 +149,6 @@ describe('LogsModule', () => {
     });
 
     describe('run()', () => {
-        /**
-         * Test: run should register menu item in system namespace.
-         *
-         * Verifies that the module registers its navigation menu item
-         * during the run phase.
-         */
         it('should register menu item under the System container in main', async () => {
             await module.init({
                 pinoLogger: mockPino as any,
@@ -205,12 +171,6 @@ describe('LogsModule', () => {
             );
         });
 
-        /**
-         * Test: run should handle menu registration errors gracefully.
-         *
-         * Verifies that errors during menu registration are caught and
-         * thrown with a descriptive message.
-         */
         it('should handle menu registration errors', async () => {
             // Configure mock to throw error
             mockMenuCreate.mockClear();
@@ -241,10 +201,8 @@ describe('LogsModule', () => {
         }
 
         /**
-         * Test: tools register when the `'ai-tools'` registry appears after run().
-         *
-         * Verifies the watch pattern handles the boot order where the AI tools
-         * module publishes the registry after this module's run() sets up the watch.
+         * Covers the boot order where the AI tools module publishes the registry
+         * after this module's run() sets up the watch.
          */
         it('should register log tools when the ai-tools registry becomes available', async () => {
             await module.init({
@@ -270,10 +228,8 @@ describe('LogsModule', () => {
         });
 
         /**
-         * Test: tools register when the `'ai-tools'` registry is already present.
-         *
-         * Verifies the synchronous-onAvailable semantics of watch() cover
-         * the case where the registry registered before run().
+         * The synchronous-onAvailable semantics of watch() cover the case where
+         * the registry registered before run().
          */
         it('should register log tools when the ai-tools registry is already registered', async () => {
             const ai = createMockAiToolRegistry();
@@ -291,10 +247,8 @@ describe('LogsModule', () => {
         });
 
         /**
-         * Test: run() survives a failing tool registration.
-         *
-         * Verifies that AI tooling stays optional — a throwing registerTool
-         * must not take the logs module (and thus the application) down.
+         * AI tooling stays optional — a throwing registerTool must not take the
+         * logs module (and thus the application) down.
          */
         it('should not throw when tool registration fails', async () => {
             const ai = createMockAiToolRegistry();
@@ -323,10 +277,8 @@ describe('LogsModule', () => {
         }
 
         /**
-         * Test: the preference registers when `'user-settings'` appears after run().
-         *
-         * Verifies the watch covers the boot order where the identity module
-         * publishes the store after this module's run() sets up the watch.
+         * Covers the boot order where the identity module publishes the store
+         * after this module's run() sets up the watch.
          */
         it('should register the preference when the user-settings store becomes available', async () => {
             await module.init({
@@ -348,11 +300,7 @@ describe('LogsModule', () => {
             expect(definition.defaultValue).toEqual(['error']);
         });
 
-        /**
-         * Test: run() survives a failing preference registration.
-         *
-         * Verifies a display preference can never take the logs module down.
-         */
+        /** A display preference can never take the logs module down. */
         it('should not throw when preference registration fails', async () => {
             const settings = createMockUserSettings();
             settings.registerDefinition.mockImplementation(() => {
@@ -371,8 +319,6 @@ describe('LogsModule', () => {
         });
 
         /**
-         * Test: the validator accepts only distinct, known severity levels.
-         *
          * The value comes from an untrusted request body, so anything other than
          * a short list of real levels must be rejected before it is stored.
          */
@@ -388,12 +334,6 @@ describe('LogsModule', () => {
     });
 
     describe('createRouter()', () => {
-        /**
-         * Test: createRouter should return Express router after init.
-         *
-         * Verifies that the module can create a router for mounting
-         * after initialization completes.
-         */
         it('should return router after init', async () => {
             await module.init({
                 pinoLogger: mockPino as any,
@@ -408,12 +348,6 @@ describe('LogsModule', () => {
     });
 
     describe('Lifecycle Integration', () => {
-        /**
-         * Test: Full module lifecycle should complete successfully.
-         *
-         * Verifies that init() → run() lifecycle completes without errors
-         * and module is ready for use.
-         */
         it('should complete full lifecycle', async () => {
             // Init phase
             await module.init({

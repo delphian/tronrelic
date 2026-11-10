@@ -133,26 +133,14 @@ function createMockTransaction(type: string, txId?: string): ITransaction {
     };
 }
 
-/**
- * Create an array of mock transactions.
- *
- * @param count - Number of transactions to create
- * @param type - Transaction type
- * @returns Array of mock transactions
- */
+/** Create an array of mock transactions. */
 function createMockTransactionArray(count: number, type: string = 'TransferContract'): ITransaction[] {
     return Array.from({ length: count }, (_, i) =>
         createMockTransaction(type, `batch_tx_${i}`)
     );
 }
 
-/**
- * Create a TransactionBatches object for testing.
- *
- * @param count - Number of transactions to create
- * @param type - Transaction type
- * @returns TransactionBatches object with single type
- */
+/** Create a single-type TransactionBatches object for testing. */
 function createMockBatch(count: number, type: string = 'TransferContract'): TransactionBatches {
     return {
         [type]: createMockTransactionArray(count, type)

@@ -34,13 +34,9 @@ type ToolStates = Record<string, boolean>;
 
 /**
  * Decide a newly-registered tool's default enabled state from its capability.
- *
  * Least privilege: external, irreversible, and money-spending tools ship
  * disabled so an operator must opt them in; everything else ships enabled. A
  * persisted admin toggle always overrides this default on later boots.
- *
- * @param tool - The tool being registered for the first time.
- * @returns Whether the tool should default to enabled.
  */
 function defaultEnabledFor(tool: IAiTool): boolean {
     const cap = tool.capability;

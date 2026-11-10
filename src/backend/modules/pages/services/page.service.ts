@@ -65,17 +65,11 @@ const PUBLIC_LIST_DEFAULT_LIMIT = 20;
 const PUBLIC_LIST_MAX_LIMIT = 100;
 
 /**
- * Turn an optional paging argument into a whole number within bounds.
+ * Turn an optional paging argument into a whole number from `min` to `max`.
  *
  * The public listing is reached from AI tools as well as code, so a missing,
  * fractional, or out-of-range value has to land somewhere safe rather than
  * reach the slice as `NaN` or a negative number.
- *
- * @param value - The caller's value, possibly absent or not a number.
- * @param fallback - Used when the value is absent or not a finite number.
- * @param min - The smallest value allowed.
- * @param max - The largest value allowed.
- * @returns A whole number from `min` to `max`.
  */
 function clampInteger(value: number | undefined, fallback: number, min: number, max: number): number {
     const whole = typeof value === 'number' && Number.isFinite(value) ? Math.floor(value) : fallback;
@@ -90,9 +84,7 @@ function clampInteger(value: number | undefined, fallback: number, min: number, 
  * expression, and it covers the body without its frontmatter so the text
  * `published` does not match every page through its `published: true` line.
  *
- * @param page - The page to test.
  * @param needle - The search text, already trimmed and lower-cased.
- * @returns True when the title, slug, description, a keyword, or the body contains it.
  */
 function publicPageContains(page: IPublicPage, needle: string): boolean {
     const haystacks = [page.title, page.slug, page.description, page.keywords.join(' '), page.body];

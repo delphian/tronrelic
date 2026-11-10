@@ -19,9 +19,6 @@ import type { IBlockNewPayload, IPreparedBlock } from '../block-emitter.js';
 /**
  * Build a transaction carrying only the fields the committer and the observer
  * service read, which is the contract type and the id used in log context.
- *
- * @param txId - Identifier making the transaction distinguishable in assertions.
- * @returns An object usable wherever the commit expects a transaction.
  */
 function buildTransaction(txId: string): ITransaction {
     return { payload: { txId, type: 'TransferContract' } } as unknown as ITransaction;
@@ -94,12 +91,9 @@ function createCommitter(overrides: Partial<IBlockCommitterDependencies> = {}) {
 }
 
 /**
- * Let the committer's promise chain settle.
- *
- * `submit` returns immediately by design, so every assertion about what a commit
- * did has to wait for the chain rather than for the call.
- *
- * @returns A promise resolving once pending microtasks have run.
+ * Let the committer's promise chain settle. `submit` returns immediately by
+ * design, so every assertion about what a commit did has to wait for the chain
+ * rather than for the call.
  */
 async function settle(): Promise<void> {
     await new Promise(resolve => setTimeout(resolve, 0));

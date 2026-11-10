@@ -3,14 +3,12 @@
  *
  * The `transactions` collection keeps four days of rows, and the chain adds
  * about 7,000 of them a minute (roughly 350 per block, 20 blocks a minute).
- * Pruning used to run once an hour as a single `deleteMany` covering an hour of
- * rows, about 400,000 documents. Each deletion has to update every index on the
- * collection, so that one statement kept MongoDB's disk and cache busy for up
- * to 16 minutes. Block commits write to the same indexes and fell from 20 a
- * minute to as few as 3 during it, which left production hundreds of blocks
- * behind the chain every hour.
+ * Each deletion has to update every index on the collection, the same indexes
+ * block commits write to. A single hourly `deleteMany` of about 400,000 rows
+ * keeps MongoDB's disk and cache busy for up to 16 minutes and cuts commits from
+ * 20 a minute to as few as 3, leaving production hundreds of blocks behind.
  *
- * This file does the same work as a series of bounded deletes with a pause
+ * This file therefore prunes as a series of bounded deletes with a pause
  * between each, so a commit can run between two batches instead of waiting
  * behind the whole hour. The loop is kept apart from `BlockchainService` and
  * talks to storage through {@link ITransactionPruneStore}, so its limits can be

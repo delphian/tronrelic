@@ -85,10 +85,6 @@ function buildLoggerStub(): ISystemLogService {
  * Build the controller the way `WidgetsModule` does, with a real scoped-CSS
  * validator in nested mode, so the `customCss` tests exercise the same
  * checks production runs rather than a stub that always passes.
- *
- * @param widgets - The widgets service stub the test configured.
- * @param logger - The logger stub, shared with the validator.
- * @returns A controller wired like production.
  */
 function buildController(widgets: IWidgetsService, logger: ISystemLogService): PlacementsController {
     return new PlacementsController(widgets, logger, new ScopedCssValidator(logger, { allowNestedRules: true }));

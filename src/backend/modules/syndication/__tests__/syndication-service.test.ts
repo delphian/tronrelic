@@ -15,12 +15,7 @@ import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-
 import { SyndicationService } from '../services/syndication-service.js';
 import { SYNDICATION_OUTBOX_COLLECTION } from '../database/ISyndicationOutboxDocument.js';
 
-/**
- * A no-op logger satisfying the methods the service calls, so tests run without
- * the real logging system.
- *
- * @returns A logger stub.
- */
+/** A no-op logger satisfying the methods the service calls, so tests run without the real logging system. */
 function makeLogger(): ISystemLogService {
     const stub = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
     return { ...stub, child: () => stub } as unknown as ISystemLogService;
@@ -30,9 +25,6 @@ function makeLogger(): ISystemLogService {
  * A content router stub exposing only `getSinks()` — the sole router method the
  * relay calls. The sink list is mutable so a test can simulate a sink being
  * absent (a disabled plugin).
- *
- * @param sinks - The sinks the relay will resolve from.
- * @returns A router stub plus a setter for the live sink list.
  */
 function makeRouter(sinks: IContentSink[]): { router: IContentRouter; setSinks: (s: IContentSink[]) => void } {
     let live = sinks;
@@ -40,13 +32,7 @@ function makeRouter(sinks: IContentSink[]): { router: IContentRouter; setSinks: 
     return { router, setSinks: (s) => { live = s; } };
 }
 
-/**
- * Build a publish sink whose `deliver` behaviour is supplied by the test.
- *
- * @param id - Sink id.
- * @param deliver - The deliver implementation.
- * @returns The sink.
- */
+/** Build a publish sink whose `deliver` behaviour is supplied by the test. */
 function makeSink(id: string, deliver: IContentSink['deliver']): IContentSink {
     return { id, kind: 'publish', accepts: ['body'], reach: { egress: 'external', audience: 'public' }, deliver };
 }
@@ -55,8 +41,6 @@ function makeSink(id: string, deliver: IContentSink['deliver']): IContentSink {
  * A hook-registry stub exposing only `invoke` — the sole registry method the
  * relay calls (to fire `scheduler.legDelivered` on success). Returned as a
  * `vi.fn` so a test can assert the delivered-hook fired with its payload.
- *
- * @returns A hook-registry stub.
  */
 function makeHookRegistry(): IHookRegistry {
     return { invoke: vi.fn().mockResolvedValue(undefined) } as unknown as IHookRegistry;

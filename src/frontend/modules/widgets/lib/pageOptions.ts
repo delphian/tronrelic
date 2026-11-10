@@ -1,13 +1,12 @@
 /**
  * @fileoverview Builds the page picker's option list.
  *
- * Operators previously had to type a URL from memory before they could see
- * a page's widgets. The picker now offers the site's real pages, taken from
- * the `main` menu tree, so choosing a page is a click. That includes pages
- * hidden from navigation, which still render widget zones. Route patterns that
- * placements already target are listed too, because a widget scoped to
- * `/tools/*` is only reachable through that pattern, and any path the
- * operator types during the session stays selectable until they leave.
+ * The picker offers the site's real pages, taken from the `main` menu tree, so
+ * choosing a page is a click rather than a URL typed from memory. That includes
+ * pages hidden from navigation, which still render widget zones. Route patterns
+ * that placements already target are listed too, because a widget scoped to
+ * `/tools/*` is only reachable through that pattern, and any path the operator
+ * types during the session stays selectable until they leave.
  *
  * @module modules/widgets/lib/pageOptions
  */

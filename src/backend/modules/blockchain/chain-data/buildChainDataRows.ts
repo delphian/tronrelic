@@ -131,22 +131,12 @@ function toInt(value: unknown): number | string {
     return result;
 }
 
-/**
- * Read a string field, defaulting to empty as the protobuf does.
- *
- * @param value - The raw JSON value.
- * @returns The string, or `''` when the field was absent or not a string.
- */
+/** Read a string field, defaulting to empty as the protobuf does. */
 function toText(value: unknown): string {
     return typeof value === 'string' ? value : '';
 }
 
-/**
- * Read a boolean field, defaulting to false as the protobuf does.
- *
- * @param value - The raw JSON value.
- * @returns True only when the field was literally true.
- */
+/** Read a boolean field, defaulting to false as the protobuf does. */
 function toFlag(value: unknown): boolean {
     return value === true;
 }
@@ -174,11 +164,8 @@ function toAddress(value: unknown): string {
 }
 
 /**
- * Serialize a nested message as canonical JSON, the form the schema keeps
- * nested messages in when they have no table of their own.
- *
- * @param value - The nested message, or undefined when java-tron omitted it.
- * @returns The JSON text, or `''` when the message was absent.
+ * Serialize a nested message as canonical JSON, the form the schema keeps nested
+ * messages in when they have no table of their own; `''` when absent.
  */
 function toJson(value: unknown): string {
     return value === undefined || value === null ? '' : JSON.stringify(value);
@@ -215,13 +202,9 @@ function readDateTime(milliseconds: unknown): string | null {
 }
 
 /**
- * Render an epoch-milliseconds value as ClickHouse's datetime form, for a
- * column that cannot be null.
- *
- * @param milliseconds - The raw JSON value in epoch milliseconds.
- * @returns The formatted instant, or the epoch when the value is unusable, since
- *          the column cannot be empty and an obviously-wrong time is easier to
- *          spot than a plausible invented one.
+ * Render an epoch-milliseconds value as ClickHouse's datetime form, for a column
+ * that cannot be null. An unusable value becomes the epoch, since an
+ * obviously-wrong time is easier to spot than a plausible invented one.
  */
 function toDateTime(milliseconds: unknown): string {
     return readDateTime(milliseconds) ?? formatClickHouseDateTime64Utc(new Date(0));

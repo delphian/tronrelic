@@ -30,9 +30,7 @@ const DEFAULT_MENU_NAMESPACE = 'main';
  * Read one namespace field from a widget's data, falling back to `main` the
  * way the backend fetchers do when the field is missing.
  *
- * @param data - The widget's resolved data payload.
  * @param field - Which field holds the namespace, such as `namespace` or `panelNamespace`.
- * @returns The namespace to fetch for that field.
  */
 function namespaceField(data: unknown, field: string): string {
     const value = (data as Record<string, unknown> | null)?.[field];

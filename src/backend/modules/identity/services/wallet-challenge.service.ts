@@ -1,11 +1,10 @@
 /**
  * @fileoverview Server-issued single-use challenges for wallet operations.
  *
- * Replaces the legacy client-supplied timestamp + 5-minute replay window with
- * a server-minted nonce bound to (userId, action, normalizedAddress). The
- * nonce expires after 60 seconds and is consumed atomically on verification,
- * so a captured signed message cannot be replayed within the window and the
- * client cannot manipulate the freshness signal.
+ * A server-minted nonce bound to (userId, action, normalizedAddress), not a
+ * client-supplied timestamp, expires after 60 seconds and is consumed
+ * atomically on verification, so a captured signed message cannot be replayed
+ * within the window and the client cannot manipulate the freshness signal.
  */
 
 import { randomBytes } from 'node:crypto';
