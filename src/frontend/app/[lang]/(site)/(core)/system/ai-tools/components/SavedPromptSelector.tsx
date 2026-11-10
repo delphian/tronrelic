@@ -4,10 +4,9 @@
  * @file SavedPromptSelector.tsx
  *
  * The saved-prompt library, collapsed into a single dropdown that sits beside
- * the "Conversation" header label. It replaces the standalone Saved Prompts
- * panel that used to hang below the chat card: the Conversation card is now the
- * prompt editor, so the library only has to answer "which prompt am I editing?"
- * — every action on a prompt lives in the prompt bar once one is loaded.
+ * the "Conversation" header label. The Conversation card is the prompt editor,
+ * so the library only has to answer "which prompt am I editing?" — every action
+ * on a prompt lives in the prompt bar once one is loaded.
  *
  * The panel renders into a `<body>` portal rather than inline. The chat card
  * clips its overflow to keep the transcript scrolling inside rounded corners, so
@@ -250,8 +249,6 @@ export function SavedPromptSelector({
      * Load a prompt and dismiss the panel. Closing here rather than in the parent
      * keeps the selector self-contained: the parent's job is to apply the prompt,
      * not to remember to shut the menu that asked for it.
-     *
-     * @param prompt - The prompt the operator picked.
      */
     const handleSelect = useCallback((prompt: ISavedPrompt) => {
         setOpen(false);

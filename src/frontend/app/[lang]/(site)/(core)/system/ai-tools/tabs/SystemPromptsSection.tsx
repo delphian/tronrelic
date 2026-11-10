@@ -156,11 +156,7 @@ export function SystemPromptsSection() {
         setUserIdDraft('');
     }, [userIdDraft]);
 
-    /**
-     * Drop a user id from the form's any-of target list.
-     *
-     * @param id - The user id to remove.
-     */
+    /** Drop a user id from the form's any-of target list. */
     const removeUserId = useCallback((id: string) => {
         setForm(current => ({ ...current, userIds: current.userIds.filter(existing => existing !== id) }));
     }, []);

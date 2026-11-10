@@ -12,9 +12,8 @@
  * its colour, so the reading never relies on colour alone.
  *
  * The holdings panel is a positions table with right-aligned tabular figures,
- * including each asset's share of net worth. That column replaces the donut
- * chart this view used to draw: the same allocation, stated exactly, in a
- * fraction of the space.
+ * including each asset's share of net worth, which states the allocation
+ * exactly in a fraction of the space a donut chart would take.
  *
  * The chart panel plots net worth over time with a 1M/3M/1Y/All range selector
  * that filters the returned series client-side — an honest zoom over data
@@ -107,11 +106,9 @@ function filterByRange(points: IPortfolioBalancePoint[], days: number | null): I
 }
 
 /**
- * Format a daily point's Date as `MMM D` for the x-axis. Uses UTC fields and a
- * fixed name table so the label is identical on server and client.
- *
- * @param date - The point's day (parsed UTC by the chart).
- * @returns The `MMM D` axis label.
+ * Format a daily point's Date, which the chart parses as UTC, as `MMM D` for the
+ * x-axis. Uses UTC fields and a fixed name table so the label is identical on
+ * server and client.
  */
 function formatAxisDay(date: Date): string {
     return `${MONTH_NAMES[date.getUTCMonth()]} ${date.getUTCDate()}`;
@@ -120,9 +117,6 @@ function formatAxisDay(date: Date): string {
 /**
  * Format a daily point's Date as `MMM D, YYYY` for the tooltip heading, giving
  * the absolute date the compact axis label omits. UTC-based for hydration safety.
- *
- * @param date - The hovered point's day.
- * @returns The `MMM D, YYYY` tooltip heading.
  */
 function formatTooltipDay(date: Date): string {
     return `${MONTH_NAMES[date.getUTCMonth()]} ${date.getUTCDate()}, ${date.getUTCFullYear()}`;
@@ -164,9 +158,9 @@ function formatPrice(value: number): string {
 }
 
 /**
- * Format a token quantity for the holdings table. Capped at two fraction digits
- * so the column reads as a scannable ledger — long six-place tails (TRX and
- * TRC20 alike) misalign the rows and bury magnitude. This only ever reduces
+ * Format a token quantity, in human units, for the holdings table. Capped at two
+ * fraction digits so the column reads as a scannable ledger — long six-place tails
+ * (TRX and TRC20 alike) misalign the rows and bury magnitude. This only ever reduces
  * precision: the default `minimumFractionDigits` of 0 leaves whole amounts
  * unpadded, so a sub-1 balance rounds to two places while `1234` stays `1,234`.
  *
@@ -174,9 +168,6 @@ function formatPrice(value: number): string {
  * round to `"0"` beside a positive Value and PnL in the same row — a visible
  * contradiction. It floors to `"<0.01"` instead, showing real activity without
  * a third decimal, keeping the two-place cap intact.
- *
- * @param value - Quantity in human units.
- * @returns A formatted quantity string.
  */
 function formatQty(value: number): string {
     return value > 0 && value < 0.005
@@ -185,12 +176,9 @@ function formatQty(value: number): string {
 }
 
 /**
- * Format an allocation fraction as a percentage with one decimal, the
- * precision a reader needs to compare positions without the column turning
- * into noise.
- *
- * @param fraction - Share of net worth, from 0 to 1.
- * @returns A formatted percentage such as `42.3%`.
+ * Format an allocation fraction (share of net worth, 0 to 1) as a percentage
+ * with one decimal, the precision a reader needs to compare positions without
+ * the column turning into noise.
  */
 function formatPercent(fraction: number): string {
     return `${(fraction * 100).toFixed(1)}%`;
@@ -199,9 +187,6 @@ function formatPercent(fraction: number): string {
 /**
  * Map a profit-and-loss amount to the stat tile tone that colours it, so the
  * summary tiles and the holdings table agree on what counts as a gain.
- *
- * @param value - USD profit or loss.
- * @returns `success` for zero or a gain, `danger` for a loss.
  */
 function pnlTone(value: number): StatTileTone {
     return value >= 0 ? 'success' : 'danger';

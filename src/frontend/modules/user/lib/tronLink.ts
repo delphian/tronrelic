@@ -53,21 +53,12 @@ declare global {
     }
 }
 
-/**
- * Read the page-level injected `tronWeb`, guarding against SSR where `window`
- * is undefined.
- *
- * @returns The injected provider, or undefined when absent or running on the server.
- */
+/** Read the page-level injected `tronWeb`, guarding against SSR where `window` is undefined. */
 function getTronWeb(): ITronWebProvider | undefined {
     return typeof window !== 'undefined' ? window.tronWeb : undefined;
 }
 
-/**
- * Read the injected `tronLink` wrapper, guarding against SSR.
- *
- * @returns The injected wrapper, or undefined when absent or running on the server.
- */
+/** Read the injected `tronLink` wrapper, guarding against SSR. */
 function getTronLink(): ITronLinkProvider | undefined {
     return typeof window !== 'undefined' ? window.tronLink : undefined;
 }

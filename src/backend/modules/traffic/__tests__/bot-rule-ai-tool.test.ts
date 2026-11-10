@@ -186,7 +186,6 @@ describe('traffic-list-bot-rules', () => {
      * Build the list tool over the real rules service and a stubbed stats read.
      *
      * @param stats - What `tryStats` resolves to; null models an unreadable analytics store.
-     * @returns The tool under test.
      */
     function buildTool(stats: Array<{ ruleId: string; matches24h: number; matches7d: number; lastMatchedAt: string | null }> | null) {
         const analytics = { tryStats: vi.fn().mockResolvedValue(stats) } as unknown as BotRuleAnalyticsService;

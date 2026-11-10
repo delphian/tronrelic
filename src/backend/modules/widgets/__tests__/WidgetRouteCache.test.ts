@@ -16,13 +16,7 @@ import { describe, it, expect, vi } from 'vitest';
 import type { IWidgetData } from '@/types';
 import { WidgetRouteCache } from '../placements/WidgetRouteCache.js';
 
-/**
- * Build a minimal widget payload so assertions can tell resolutions apart.
- *
- * @param label - Value placed in the widget's data to identify which
- *   resolution produced it.
- * @returns A one-widget result as the resolver would return it.
- */
+/** Build a one-widget payload whose `data.label` tells assertions which resolution produced it. */
 function widgetsLabelled(label: string): IWidgetData[] {
     return [{ id: 'test:widget', zone: 'main-after', pluginId: 'test', order: 1, data: { label } }];
 }

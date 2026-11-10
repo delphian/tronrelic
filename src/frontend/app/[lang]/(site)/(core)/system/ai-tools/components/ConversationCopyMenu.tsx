@@ -8,8 +8,7 @@
  * button because a conversation has more than one useful clipboard shape: a
  * readable Markdown transcript for pasting into a ticket, the full transcript
  * with thinking and tool payloads for explaining an agentic run, and plain text
- * for a field that will not render Markdown. A single button has to guess, and
- * the control this replaces guessed badly — it copied only the opening prompt.
+ * for a field that will not render Markdown. A single button has to guess.
  *
  * The panel renders into a `<body>` portal for the same reason the tool dropdown
  * beside the composer does: the chat card clips its overflow so the transcript
@@ -250,8 +249,6 @@ export function ConversationCopyMenu({
      * over an unexplained pause reads as a control that did not respond. The
      * confirmation an operator watches for is the checkmark on the trigger,
      * which the caller drives through `copied`.
-     *
-     * @param format - The format the operator picked.
      */
     const handleSelect = useCallback((format: ConversationCopyFormat): void => {
         setOpen(false);

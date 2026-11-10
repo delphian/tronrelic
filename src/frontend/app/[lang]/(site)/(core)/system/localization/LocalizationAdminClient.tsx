@@ -47,9 +47,6 @@ const LOG_SERVICE = 'tronrelic:localization';
 /**
  * Narrow an arbitrary `?tab=` string to a known tab, so the deep link and the
  * click handler share one list of valid tabs.
- *
- * @param tab - The raw `?tab=` value.
- * @returns True when the value names a real tab.
  */
 function isTabId(tab: string | undefined): tab is TabId {
     return TAB_IDS.includes(tab as TabId);
@@ -60,7 +57,6 @@ function isTabId(tab: string | undefined): tab is TabId {
  * malformed node never leaves the page on a blank panel.
  *
  * @param url - The clicked node's url, e.g. `/system/localization?tab=routes`.
- * @returns The matching tab id.
  */
 function tabFromUrl(url: string | undefined): TabId {
     const tab = url?.match(/[?&]tab=([^&]+)/)?.[1];
@@ -91,8 +87,6 @@ export function LocalizationAdminClient({ submenuTree, submenuGeneratedAt, initi
      * Switch to the clicked tab and keep the address bar a real deep link.
      * `MenuNavClient` suppresses navigation when `onItemSelect` is set, so the
      * URL is rewritten in place.
-     *
-     * @param item - The clicked submenu node.
      */
     const handleTabSelect = useCallback((item: MenuNodeSerialized) => {
         const tab = tabFromUrl(item.url);
@@ -103,8 +97,6 @@ export function LocalizationAdminClient({ submenuTree, submenuGeneratedAt, initi
     /**
      * Open the Translations tab filtered to the keys rendered on one route,
      * which is how an administrator fills a route's gaps before publishing it.
-     *
-     * @param pattern - The route pattern to filter by.
      */
     const handleShowKeys = useCallback((pattern: string) => {
         setRouteFilter(pattern);

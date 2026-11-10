@@ -2,19 +2,15 @@
  * Traffic events service — sibling of UserService.
  *
  * Captures cookieless and pre-session HTTP traffic in ClickHouse so it does
- * not pollute the Mongo `users` collection. Backs the traffic-events split
- * tracked in `PLAN-traffic-events.md`. Phase 0 lands the skeleton; later
- * phases add the callers.
+ * not pollute the Mongo `users` collection.
  *
  * ## Why This Service Exists
  *
- * The 2026-04-27 identity-cookie change moved bootstrap from a JS-runtime
- * mutation into a Next.js middleware → backend path. That removed the
- * implicit "client must run JavaScript" filter that previously kept bot
- * traffic out of `users`. Every cookieless GET now writes an empty row.
- * We keep wanting to *track* that traffic — just not in the identity
- * collection. ClickHouse is the right tool for high-volume append-only
- * event data with rich dimensions.
+ * Bootstrap runs on a Next.js middleware → backend path rather than in the
+ * browser, so no "client must run JavaScript" filter keeps bot traffic out and
+ * every cookieless GET produces a row. That traffic is worth tracking, just not
+ * in the identity collection. ClickHouse is the right tool for high-volume
+ * append-only event data with rich dimensions.
  *
  * ## Design Decisions
  *
@@ -26,10 +22,9 @@
  * - **Optional ClickHouse.** The `ClickHouseModule` skips initialization
  *   when `CLICKHOUSE_HOST` is unset. `TrafficService` mirrors that posture:
  *   when ClickHouse is unavailable every public method silently no-ops
- *   (writes drop, reads return `[]`). The orphan-row fix in later phases
- *   stays correct because Mongo writes are gated independently — losing
- *   the analytics is the only consequence of a missing CH host, not data
- *   corruption.
+ *   (writes drop, reads return `[]`). Mongo writes are gated independently,
+ *   so losing the analytics is the only consequence of a missing CH host,
+ *   not data corruption.
  * - **Async insert friendly.** `ClickHouseService` is configured with
  *   `wait_for_async_insert: 0`, so `recordEvent` returns once the row is
  *   buffered server-side. Errors surface via the async-insert error
@@ -1075,7 +1070,6 @@ function sourceBucketExpr(refererColumn: string, utmSourceColumn: string, source
  * @param prefix - Column-name prefix, `''` for raw `traffic_events` rows or
  *   `'entry_'` for derived sessions, which project the entry hit's values as
  *   `entry_utm_*`.
- * @returns A parenthesised boolean predicate.
  */
 function utmTaggedPredicate(prefix: string): string {
     return `(${prefix}utm_source IS NOT NULL OR ${prefix}utm_medium IS NOT NULL OR ${prefix}utm_campaign IS NOT NULL)`;
@@ -1418,8 +1412,7 @@ export class TrafficService {
      * The aggregate reads answer "how much" but hide the pattern a diagnosis
      * needs: two browsers arriving together, or one source walking the newest
      * posts every few hours, only shows up row by row. This read returns those
-     * rows directly, which previously took an SSH session and hand-written
-     * ClickHouse queries.
+     * rows directly.
      *
      * It goes through {@link rangeParams}, so the operator ignore list and the
      * optional country scope apply exactly as they do on the dashboard. No bot
@@ -2100,8 +2093,7 @@ export class TrafficService {
      * @param includeAcquisition - Also project the entry hit's geo, device, and
      *   UTM campaign. Opt-in because most session callers only need counts and
      *   durations, and every extra column widens the scan for all of them; the
-     *   source drill-down needs them to break a session cohort down by
-     *   dimensions that used to be read off `bootstrap` rows. The entry hit's
+     *   source drill-down needs them to break a session cohort down. The entry hit's
      *   `utm_source`, `utm_medium`, and `source_app` are always projected,
      *   because {@link sessionSourceExpr} needs them to name the session's
      *   source.
@@ -2189,9 +2181,6 @@ export class TrafficService {
      * Takes no arguments: {@link acquisitionSessionFilter} has already dropped
      * self-referral sessions by the time this expression runs, so no branch for
      * them is needed here.
-     *
-     * @returns A SQL expression yielding the source domain, a `utm_source`, a
-     *   source app, or `'direct'`.
      */
     private sessionSourceExpr(): string {
         return sourceBucketExpr('entry_referer', 'entry_utm_source', 'entry_source_app');
@@ -2301,11 +2290,10 @@ export class TrafficService {
      * **Session-scoped, not first-touch.** One derived session that *starts*
      * in the window contributes one entry, attributed to the referrer on its
      * first `page` hit — so a visitor who returns three times in the window
-     * appears under each of the three things that brought them back, and a
-     * returning visitor is no longer invisible here (the superseded
-     * `bootstrap`-only read counted arrivals, so it could only ever describe
-     * people whose first-ever touch fell inside the window). `count` is
-     * therefore a session count, not an event count.
+     * appears under each of the three things that brought them back. A
+     * `bootstrap`-only read would count arrivals and so describe only people whose
+     * first-ever touch fell inside the window. `count` is therefore a session
+     * count, not an event count.
      *
      * Attributing from `page` rows is what makes this possible. A continuation
      * hit reports the previous in-tab URL as its referrer (see
@@ -3594,14 +3582,13 @@ export class TrafficService {
      * the window, carrying first-touch acquisition and in-window behaviour
      * together, newest activity first.
      *
-     * This supersedes the three separate reads the Visitors tab used to need
-     * (new arrivals, anonymous activity, registered activity). Those were not
-     * three subsets of one population — two keyed on `candidate_uid` and one on
-     * `user_id` — so an operator could not see that a visitor was, say,
-     * returning *and* registered, and the bot filter applied to one of them but
-     * silently not the others. Collapsing to a single tid-keyed read makes new
-     * vs returning and anonymous vs registered two orthogonal attributes of one
-     * row, and gives the bot filter exactly one place to apply.
+     * One read rather than three (new arrivals, anonymous activity, registered
+     * activity), because those are not subsets of one population — two key on
+     * `candidate_uid` and one on `user_id` — so separately they cannot show that a
+     * visitor is returning *and* registered, and a bot filter can reach one but
+     * not the others. A single tid-keyed read makes new vs returning and anonymous
+     * vs registered two orthogonal attributes of one row, and gives the bot filter
+     * exactly one place to apply.
      *
      * @param range - Inclusive date window.
      * @param limit - Page size.
@@ -4128,9 +4115,8 @@ function readSingleHeader(value: string | string[] | undefined): string | undefi
 }
 
 /**
- * Parse the `Sec-CH-UA-Mobile` header (`"?0"` / `"?1"`) into the 0/1 form
- * the ClickHouse `Nullable(UInt8)` column expects. Anything else maps to
- * null so a malformed client header doesn't poison the row.
+ * Parse `Sec-CH-UA-Mobile` (`"?0"` / `"?1"`) into the 0/1 a ClickHouse `Nullable(UInt8)`
+ * column expects; anything else is null so a malformed header cannot poison the row.
  */
 function parseSecChUaMobile(value: string | undefined): number | null {
     if (value === '?1') return 1;
@@ -4159,9 +4145,6 @@ interface TrafficEventRow extends Omit<ITrafficEvent, 'timestamp' | 'bot_rule'> 
  * ages — west-of-UTC offsets push recent rows into the future, which renders
  * as "just now" indefinitely. Emitting ISO-8601 with the `Z` suffix keeps the
  * wire value unambiguously UTC so the client parses it correctly.
- *
- * @param value - ClickHouse native DateTime64 string.
- * @returns ISO-8601 UTC string (with `Z` suffix).
  */
 function clickHouseDateToIso(value: string): string {
     const date = parseClickHouseDateTime64Utc(value);
@@ -4196,10 +4179,8 @@ export function serializeTrafficEventForClickHouse(event: ITrafficEvent): Record
 const serializeEvent = serializeTrafficEventForClickHouse;
 
 /**
- * Inverse of `serializeEvent`. Re-hydrates the `Date` instance from
- * ClickHouse's native `DateTime64(3)` string form. `bot_rule` is not selected
- * by the per-visitor read (it would fail before migration 021), so it is
- * filled with `null` when absent.
+ * Inverse of `serializeEvent`. `bot_rule` is not selected by the per-visitor
+ * read (it would fail before migration 021), so it is filled with `null`.
  */
 function deserializeEvent(row: TrafficEventRow): ITrafficEvent {
     return { ...row, bot_rule: row.bot_rule ?? null, timestamp: parseClickHouseDateTime64Utc(row.timestamp) };

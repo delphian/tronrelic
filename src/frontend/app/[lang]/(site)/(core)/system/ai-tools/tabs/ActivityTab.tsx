@@ -119,8 +119,6 @@ export function ActivityTab({ fixedTriggerPath }: IActivityTabProps = {}) {
     /**
      * Apply a filter change and reset to the first page, so a narrowed result set
      * never strands the viewer on an out-of-range offset.
-     *
-     * @param apply - Setter that records the new filter value.
      */
     const changeFilter = useCallback((apply: () => void) => {
         apply();

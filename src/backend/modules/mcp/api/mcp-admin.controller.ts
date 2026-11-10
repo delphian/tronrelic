@@ -273,15 +273,7 @@ function parsePolicyPatch(body: unknown): IMcpGroupPolicyPatch | string {
     return result;
 }
 
-/**
- * Parse an integer query parameter and clamp it into a range.
- *
- * @param raw - The raw query value.
- * @param fallback - Value used when the parameter is missing or not a number.
- * @param min - Smallest allowed value.
- * @param max - Largest allowed value.
- * @returns The clamped integer.
- */
+/** Parse an integer query parameter and clamp it into a range, using `fallback` when missing or not a number. */
 function clampInt(raw: unknown, fallback: number, min: number, max: number): number {
     const parsed = typeof raw === 'string' ? Number.parseInt(raw, 10) : Number.NaN;
     const value = Number.isFinite(parsed) ? parsed : fallback;

@@ -5,9 +5,7 @@
  * ClickHouse connection, so traffic events are not being recorded.
  *
  * Without it, every panel on the tab reports zero rows, which reads as "no
- * crawler traffic" rather than "nothing is being measured". Both dashboards
- * used to carry their own copy of this message in a full card; it is now one
- * compact warning line built on the shared alert tokens.
+ * crawler traffic" rather than "nothing is being measured".
  */
 
 import { AlertTriangle } from 'lucide-react';

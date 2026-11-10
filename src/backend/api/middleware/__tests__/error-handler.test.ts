@@ -2,9 +2,8 @@
  * Tests for the application error handler.
  *
  * Pins the status each kind of error maps to, and the rule that a 500 never
- * echoes the underlying message: once the handler was moved to run after the
- * routers, internal errors from those routes started reaching it, and their
- * messages can carry database or library internals.
+ * echoes the underlying message: the handler runs after the routers, so their
+ * internal errors reach it, and those can carry database or library internals.
  */
 import { describe, it, expect, vi } from 'vitest';
 import type { Request, Response } from 'express';

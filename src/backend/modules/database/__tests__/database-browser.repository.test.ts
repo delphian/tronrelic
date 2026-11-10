@@ -59,9 +59,6 @@ describe('DatabaseBrowserRepository.deleteDocument', () => {
         logger = new MockLogger();
     });
 
-    /**
-     * Happy path: 24-hex string parses as ObjectId, matches, returns 1.
-     */
     it('matches as ObjectId on the first attempt for a 24-hex id', async () => {
         const { connection, collection } = createConnectionWith(async (filter) => {
             return filter._id instanceof ObjectId ? { deletedCount: 1 } : { deletedCount: 0 };
@@ -77,11 +74,6 @@ describe('DatabaseBrowserRepository.deleteDocument', () => {
         expect(filter._id.toHexString()).toBe(HEX_ID);
     });
 
-    /**
-     * Fallback path: 24-hex string fails as ObjectId (collection stores it as
-     * a literal string), so the repository retries with the raw string and
-     * returns 1.
-     */
     it('falls back to string _id when ObjectId match fails for a 24-hex id', async () => {
         const { connection, collection } = createConnectionWith(async (filter) => {
             // Collection stores _id as the raw 24-hex string, not as an ObjectId.
@@ -99,10 +91,6 @@ describe('DatabaseBrowserRepository.deleteDocument', () => {
         expect(collection.deleteOne.mock.calls[1][0]._id).toBe(HEX_ID);
     });
 
-    /**
-     * Non-hex id (slug, UUID, etc.) skips the ObjectId attempt entirely and
-     * goes straight to the string deleteOne.
-     */
     it('uses string _id directly for non-hex ids', async () => {
         const { connection, collection } = createConnectionWith(async (filter) => {
             return filter._id === SLUG_ID ? { deletedCount: 1 } : { deletedCount: 0 };
@@ -116,9 +104,6 @@ describe('DatabaseBrowserRepository.deleteDocument', () => {
         expect(collection.deleteOne.mock.calls[0][0]._id).toBe(SLUG_ID);
     });
 
-    /**
-     * Returns 0 when neither the ObjectId attempt nor the string fallback matches.
-     */
     it('returns 0 when no document matches either as ObjectId or string', async () => {
         const { connection, collection } = createConnectionWith(async () => ({ deletedCount: 0 }));
 
@@ -130,10 +115,7 @@ describe('DatabaseBrowserRepository.deleteDocument', () => {
         expect(collection.deleteOne).toHaveBeenCalledTimes(2);
     });
 
-    /**
-     * Connection without a `db` (uninitialized mongoose connection) throws,
-     * surfacing the misconfiguration to the caller instead of silently failing.
-     */
+    /** Throwing surfaces an uninitialized mongoose connection to the caller instead of failing silently. */
     it('throws when the connection has no active db', async () => {
         const connection = { db: undefined } as unknown as Connection;
         const repo = new DatabaseBrowserRepository(connection, logger as unknown as ISystemLogService);

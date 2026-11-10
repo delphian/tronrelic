@@ -82,11 +82,6 @@ export function AppsTab({ initialApps, initialTotal }: IAppsTabProps) {
                         confirmLabel="Revoke"
                         message={<>Revoke <strong>{app.clientName}</strong> for {app.userEmail ?? userId}? Its tokens stop working at once; the user can reconnect it later if they are still in the MCP group.</>}
                         onConfirm={
-                            /**
-                             * Revoke the grant once the admin confirms, drop its
-                             * row and the total on success, and close the dialog
-                             * either way so a failure is reported by toast.
-                             */
                             async () => {
                             const key = connectedAppKey(app);
                             setRevokingKey(key);

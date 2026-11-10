@@ -7,9 +7,7 @@
  * zones for every page under it, such as `/tools`, `/account`, and `/system`.
  * Next.js does not render a layout again when a visitor moves between two of
  * its pages without a full reload, so widgets fetched on the server for the
- * first page stayed on screen after a menu click took the visitor to the
- * next: a visitor who opened `/account` and then clicked Tools saw no
- * language switcher above the tools list until they reloaded.
+ * first page would stay on screen after a menu click to the next.
  *
  * This hook starts from the bundle the server rendered and, whenever the
  * current path no longer matches the path that bundle was resolved for,

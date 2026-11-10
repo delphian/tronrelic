@@ -97,11 +97,7 @@ export class MenuService implements IMenuService {
     // open would desync the admin nav across browser tabs without
     // securing anything, so the two enforcements must stay in lock-step.
 
-    /**
-     * Private constructor enforcing singleton pattern with dependency injection.
-     *
-     * @param database - Database service for menu node storage
-     */
+    /** Private constructor enforcing singleton pattern with dependency injection. */
     private constructor(database: IDatabaseService) {
         this.database = database;
     }
@@ -1424,9 +1420,8 @@ export class MenuService implements IMenuService {
     }
 
     /**
-     * Cache key for the `menu_node_overrides` collection. Joined with `|`
-     * because both `namespace` (NAMESPACE_REGEX-bounded) and `url` (slash-
-     * leading) cannot themselves contain the pipe character.
+     * Cache key for the `menu_node_overrides` collection, joined with `|` because
+     * neither `namespace` (NAMESPACE_REGEX-bounded) nor `url` (slash-leading) can contain it.
      */
     private overrideKey(namespace: string, url: string): string {
         return `${namespace}|${url}`;
@@ -1454,10 +1449,7 @@ export class MenuService implements IMenuService {
         return 'plugin';
     }
 
-    /**
-     * Project an `IMenuNode` to its admin-view shape by tagging the
-     * computed origin. Pure — does not touch the in-memory tree.
-     */
+    /** Project an `IMenuNode` to its admin-view shape by tagging the computed origin. */
     private toAdminView(node: IMenuNode): IMenuNodeAdminView {
         return { ...node, origin: this.resolveOrigin(node) };
     }

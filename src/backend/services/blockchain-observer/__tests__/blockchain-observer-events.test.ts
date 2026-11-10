@@ -76,15 +76,7 @@ class RecordingEventObserver implements IBaseEventObserver {
     }
 }
 
-/**
- * Build a normalised event.
- *
- * @param txId - Owning transaction.
- * @param logIndex - Position in the transaction's logs.
- * @param topic0 - Event signature hash.
- * @param contractAddress - Emitting contract.
- * @returns The event.
- */
+/** Build a normalised event; `topic0` is the event signature hash. */
 function event(txId: string, logIndex: number, topic0: string, contractAddress: string): IContractEvent {
     return { eventId: `${txId}:${logIndex}`, txId, logIndex, contractAddress, topics: [topic0], data: '' };
 }
@@ -136,11 +128,7 @@ function block(transactions: ITransaction[], receiptsFetched = true): IBlockData
     };
 }
 
-/**
- * Let fire-and-forget deliveries land.
- *
- * @returns A promise resolving after pending microtasks.
- */
+/** Let fire-and-forget deliveries land. */
 async function settle(): Promise<void> {
     await new Promise(resolve => setTimeout(resolve, 0));
 }

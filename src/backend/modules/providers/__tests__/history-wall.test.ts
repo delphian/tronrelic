@@ -18,13 +18,7 @@ import { ProviderConfigService, CoinGeckoClient, GeckoTerminalClient } from '../
 /** Stub logger matching the ISystemLogService shape the clients touch. */
 const stubLogger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), child: () => stubLogger };
 
-/**
- * Build an error shaped like the one axios throws for a refused request.
- *
- * @param status - The HTTP status the vendor returned.
- * @param data - The response body the vendor sent with it.
- * @returns An error carrying `response.status` and `response.data`.
- */
+/** Build an error shaped like the one axios throws for a refused request. */
 function httpError(status: number, data: unknown): Error {
     return Object.assign(new Error(`HTTP ${status}`), { response: { status, data, headers: {} } });
 }

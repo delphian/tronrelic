@@ -64,12 +64,7 @@ interface IDuplicateSlug {
     count: number;
 }
 
-/**
- * Whether an index is exactly a unique ascending index on `slug` alone.
- *
- * @param index - An index already on the collection.
- * @returns True when it already gives the guarantee this migration adds.
- */
+/** Whether an index is exactly a unique ascending index on `slug` alone. */
 function isUniqueSlugIndex(index: IIndexDescription): boolean {
     const keys = Object.keys(index.key);
     return keys.length === 1 && index.key.slug === 1 && index.unique === true;

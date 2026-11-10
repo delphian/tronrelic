@@ -124,11 +124,7 @@ export class UsdtParametersFetcher implements IUsdtParametersFetcher {
         this.database.registerModel(USDT_PARAMETERS_COLLECTION, UsdtParametersModel);
     }
 
-    /**
-     * Get the registered USDT parameters model for database operations.
-     *
-     * @returns The model used to store each measurement
-     */
+    /** The registered USDT parameters model, used to store each measurement. */
     private getModel() {
         return this.database.getModel<IUsdtParametersDocument>(USDT_PARAMETERS_COLLECTION);
     }
@@ -275,25 +271,18 @@ export class UsdtParametersFetcher implements IUsdtParametersFetcher {
     }
 
     /**
-     * Generate a recipient that is certain to hold no USDT.
+     * Generate a recipient that is certain to hold no USDT, as 20-byte lowercase hex.
      *
      * A fresh random address is used on every run rather than a fixed "empty"
      * one, because anyone can send dust to a fixed address and silently turn it
      * into a holder, which would make the first-time measurement report the
      * standard cost. The simulation is never broadcast, so nothing is sent.
-     *
-     * @returns A random 20-byte address as lowercase hex, ready for ABI encoding
      */
     private generateEmptyRecipient(): string {
         return randomBytes(ADDRESS_BYTES).toString('hex');
     }
 
-    /**
-     * Convert a base58 TRON address into the 20-byte hex form ABI encoding needs.
-     *
-     * @param base58Address - TRON address such as `T...`
-     * @returns The address as lowercase hex without the `41` network prefix
-     */
+    /** Convert a base58 TRON address to the lowercase 20-byte hex ABI encoding needs, without the `41` prefix. */
     private toAbiAddress(base58Address: string): string {
         return toHexAddress(base58Address).slice(2).toLowerCase();
     }

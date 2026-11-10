@@ -92,9 +92,6 @@ export function PlacementsWorkbench({ initial }: IPlacementsWorkbenchProps) {
      * `closestCorners` alone would resolve a drop just below the group to
      * the group itself. A rail claims a drop only when the pointer is
      * inside it, so it is checked first.
-     *
-     * @param args - dnd-kit collision arguments.
-     * @returns The rail hit when inside one, else the closest-corners result.
      */
     const collisionDetection = useCallback((args: Parameters<typeof closestCorners>[0]) => {
         const gapHit = pointerWithin(args).find(hit => String(hit.id).startsWith('gap:'));

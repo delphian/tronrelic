@@ -1,11 +1,10 @@
 /**
  * @fileoverview Turns a transaction receipt's event logs into typed facts.
  *
- * Core used to find token movements only in call data, which sees a direct
- * `transfer` call on a token and nothing else. Every token movement, including
- * the ones inside a DEX swap, a bridge, or a batch payout, emits a `Transfer`
- * event log from the token contract, and those logs arrive in the receipt that
- * block sync fetches when `fetchBlockReceipts` is on.
+ * Call data shows only a direct `transfer` call on a token. Every token movement,
+ * including the ones inside a DEX swap, a bridge, or a batch payout, emits a
+ * `Transfer` event log from the token contract, and those logs arrive in the
+ * receipt that block sync fetches when `fetchBlockReceipts` is on.
  *
  * This module does three things with them. It normalises every log into an
  * `IContractEvent` with a base58 address and a stable `eventId`. It fully

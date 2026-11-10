@@ -166,14 +166,7 @@ export class PriceHistoryAdminController {
         }
     };
 
-    /**
-     * Log and emit a uniform error response.
-     *
-     * @param res - The response to write.
-     * @param status - HTTP status.
-     * @param error - Operator-facing summary.
-     * @param cause - The underlying error.
-     */
+    /** Log and emit a uniform error response; `error` is the operator-facing summary. */
     private fail(res: Response, status: number, error: string, cause: unknown): void {
         this.logger.error({ error: cause }, error);
         res.status(status).json({ error, message: cause instanceof Error ? cause.message : 'Unknown error' });

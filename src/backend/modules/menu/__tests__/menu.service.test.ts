@@ -228,12 +228,6 @@ describe('MenuService', () => {
         mockDatabase.clear();
     });
 
-    /**
-     * Test: MenuService should load menu nodes from database during initialization.
-     *
-     * Verifies that initialize() loads nodes from the database collection
-     * and populates the in-memory tree.
-     */
     it('should load menu nodes from database during initialization', async () => {
         // Arrange: Pre-populate mock database with sample nodes
         const collection = mockDatabase.getCollection('menu_nodes');
@@ -263,12 +257,6 @@ describe('MenuService', () => {
         expect(tree.roots[1].label).toBe('Dashboard');
     });
 
-    /**
-     * Test: MenuService should create default Home node when database is empty.
-     *
-     * Verifies that initialize() creates a default root node if the menu
-     * tree is empty on first startup.
-     */
     it('should create default Home node when database is empty', async () => {
         // Arrange: Empty database (default state)
 
@@ -284,12 +272,6 @@ describe('MenuService', () => {
         expect(tree.roots[0].enabled).toBe(true);
     });
 
-    /**
-     * Test: MenuService should create memory-only menu nodes by default.
-     *
-     * Verifies that create() without persist flag creates in-memory entries
-     * that don't touch the database (for runtime plugin pages).
-     */
     it('should create memory-only menu nodes by default', async () => {
         // Arrange: Initialize with empty database
         await menuService.initialize();
@@ -321,12 +303,6 @@ describe('MenuService', () => {
         expect(dbNode).toBeNull();
     });
 
-    /**
-     * Test: MenuService should persist menu nodes when persist=true.
-     *
-     * Verifies that create() with persist=true saves to database
-     * (for admin-created entries that survive restarts).
-     */
     it('should persist menu nodes when persist=true', async () => {
         // Arrange: Initialize with empty database
         await menuService.initialize();
@@ -357,11 +333,6 @@ describe('MenuService', () => {
         expect(dbNode.label).toBe('Admin Entry');
     });
 
-    /**
-     * Test: MenuService should update memory-only nodes without database writes.
-     *
-     * Verifies that update() without persist flag only modifies in-memory tree.
-     */
     it('should update memory-only nodes without database writes', async () => {
         // Arrange: Create memory-only node
         await menuService.initialize();
@@ -393,12 +364,6 @@ describe('MenuService', () => {
         expect(dbNode).toBeNull();
     });
 
-    /**
-     * Test: MenuService should update persisted nodes in both memory and database.
-     *
-     * Verifies that update() with persist=true modifies both in-memory tree
-     * and database storage.
-     */
     it('should update persisted nodes in both memory and database', async () => {
         // Arrange: Create persisted node
         await menuService.initialize();
@@ -432,11 +397,6 @@ describe('MenuService', () => {
         expect(dbNode.url).toBe('/updated');
     });
 
-    /**
-     * Test: MenuService should delete memory-only nodes without database writes.
-     *
-     * Verifies that delete() without persist flag only removes from in-memory tree.
-     */
     it('should delete memory-only nodes without database writes', async () => {
         // Arrange: Create memory-only node
         await menuService.initialize();
@@ -461,12 +421,6 @@ describe('MenuService', () => {
         expect(dbNode).toBeNull();
     });
 
-    /**
-     * Test: MenuService should delete persisted nodes from both memory and database.
-     *
-     * Verifies that delete() with persist=true removes from both in-memory tree
-     * and database storage.
-     */
     it('should delete persisted nodes from both memory and database', async () => {
         // Arrange: Create persisted node
         await menuService.initialize();
@@ -495,12 +449,6 @@ describe('MenuService', () => {
         expect(dbNode).toBeNull();
     });
 
-    /**
-     * Test: MenuService should support hierarchical menu structures.
-     *
-     * Verifies that parent-child relationships are maintained correctly
-     * in the tree structure for both memory-only and persisted entries.
-     */
     it('should build hierarchical tree with parent-child relationships', async () => {
         // Arrange: Create parent and child nodes (memory-only by default)
         await menuService.initialize();
@@ -533,12 +481,6 @@ describe('MenuService', () => {
         expect(adminNode!.children[0]._id).toBe(child._id);
     });
 
-    /**
-     * Test: MenuService should allow subscribers to validate operations.
-     *
-     * Verifies that before:* events allow subscribers to halt operations
-     * by setting validation.continue = false.
-     */
     it('should allow subscribers to halt create operations', async () => {
         // Arrange: Subscribe to before:create and halt if label is 'Forbidden'
         await menuService.initialize();

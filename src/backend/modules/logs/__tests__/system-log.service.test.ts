@@ -61,12 +61,6 @@ describe('SystemLogService - Core Logging Methods', () => {
         await service.initialize(mockPino as any);
     });
 
-    /**
-     * Test: Singleton pattern should return same instance.
-     *
-     * Verifies that SystemLogService follows the singleton pattern
-     * for consistent logging across the application.
-     */
     it('should return same instance (singleton)', () => {
         const instance1 = SystemLogService.getInstance();
         const instance2 = SystemLogService.getInstance();
@@ -74,11 +68,6 @@ describe('SystemLogService - Core Logging Methods', () => {
         expect(instance1).toBe(service);
     });
 
-    /**
-     * Test: info() should save log to MongoDB when level permits.
-     *
-     * Verifies that info logs are persisted when log level is set to info or lower.
-     */
     it('should save info logs when level permits', async () => {
         service.level = 'info';
         service.info('Test info message');
@@ -91,11 +80,6 @@ describe('SystemLogService - Core Logging Methods', () => {
         expect(savedLog.message).toBe('Test info message');
     });
 
-    /**
-     * Test: warn() should save log to MongoDB when level permits.
-     *
-     * Verifies that warning logs are persisted when log level is set to warn or lower.
-     */
     it('should save warn logs when level permits', async () => {
         service.level = 'warn';
         service.warn('Test warning message');
@@ -108,11 +92,6 @@ describe('SystemLogService - Core Logging Methods', () => {
         expect(savedLog.message).toBe('Test warning message');
     });
 
-    /**
-     * Test: error() should save log to MongoDB when level permits.
-     *
-     * Verifies that error logs are persisted when log level is set to error or lower.
-     */
     it('should save error logs when level permits', async () => {
         service.level = 'error';
         service.error('Test error message');
@@ -125,11 +104,6 @@ describe('SystemLogService - Core Logging Methods', () => {
         expect(savedLog.message).toBe('Test error message');
     });
 
-    /**
-     * Test: debug() should save log to MongoDB when level permits.
-     *
-     * Verifies that debug logs are persisted when log level is set to debug or lower.
-     */
     it('should save debug logs when level permits', async () => {
         service.level = 'debug';
         service.debug('Test debug message');
@@ -142,11 +116,6 @@ describe('SystemLogService - Core Logging Methods', () => {
         expect(savedLog.message).toBe('Test debug message');
     });
 
-    /**
-     * Test: trace() should save log to MongoDB when level permits.
-     *
-     * Verifies that trace logs are persisted when log level is set to trace.
-     */
     it('should save trace logs when level permits', async () => {
         service.level = 'trace';
         service.trace('Test trace message');
@@ -159,11 +128,7 @@ describe('SystemLogService - Core Logging Methods', () => {
         expect(savedLog.message).toBe('Test trace message');
     });
 
-    /**
-     * Test: fatal() should save log to MongoDB when level permits.
-     *
-     * Verifies that fatal logs are persisted (always saved unless level is silent).
-     */
+    /** Fatal logs are always saved unless the level is silent. */
     it('should save fatal logs when level permits', async () => {
         service.level = 'fatal';
         service.fatal('Test fatal message');
@@ -176,12 +141,6 @@ describe('SystemLogService - Core Logging Methods', () => {
         expect(savedLog.message).toBe('Test fatal message');
     });
 
-    /**
-     * Test: Logging methods should support structured logging with metadata.
-     *
-     * Verifies that logging methods can accept object + message pattern
-     * for structured logging with context metadata.
-     */
     it('should support structured logging (object + message)', async () => {
         service.error({ userId: '123', action: 'login' }, 'Login failed');
 
@@ -194,12 +153,6 @@ describe('SystemLogService - Core Logging Methods', () => {
         expect(savedLog.context.action).toBe('login');
     });
 
-    /**
-     * Test: child() should create logger with inherited bindings.
-     *
-     * Verifies that child loggers add metadata to all their log messages
-     * without affecting the parent logger.
-     */
     it('should create child logger with bindings', async () => {
         const childLogger = service.child({ module: 'test-module' });
 
@@ -213,11 +166,6 @@ describe('SystemLogService - Core Logging Methods', () => {
         expect(savedLog.context.module).toBe('test-module');
     });
 
-    /**
-     * Test: child() should merge parent and child bindings.
-     *
-     * Verifies that nested child loggers inherit and merge bindings.
-     */
     it('should merge parent and child bindings', async () => {
         const parent = service.child({ service: 'api' });
         const child = parent.child({ module: 'auth' });
@@ -232,12 +180,6 @@ describe('SystemLogService - Core Logging Methods', () => {
         expect(savedLog.context.module).toBe('auth');
     });
 
-    /**
-     * Test: Log level can be changed at runtime.
-     *
-     * Verifies that the log level property can be set dynamically
-     * to control which logs are persisted.
-     */
     it('should allow runtime log level changes', () => {
         service.level = 'info';
         expect(service.level).toBe('info');
@@ -249,11 +191,6 @@ describe('SystemLogService - Core Logging Methods', () => {
         expect(service.level).toBe('error');
     });
 
-    /**
-     * Test: Service identifier extraction for plugin logs.
-     *
-     * Verifies that logs with pluginId metadata are prefixed with 'plugin:'.
-     */
     it('should extract service identifier from pluginId', async () => {
         service.error({ pluginId: 'whale-alerts' }, 'Plugin error');
 
@@ -264,11 +201,6 @@ describe('SystemLogService - Core Logging Methods', () => {
         expect(savedLog.service).toBe('plugin:whale-alerts');
     });
 
-    /**
-     * Test: Service identifier extraction from module metadata.
-     *
-     * Verifies that logs with module metadata are appended to base service name.
-     */
     it('should extract service identifier from module', async () => {
         service.info({ module: 'blockchain' }, 'Module log');
 
@@ -295,8 +227,6 @@ describe('SystemLogService - Child Loggers Created Before Initialization', () =>
     });
 
     /**
-     * Test: A child created before initialization persists once the root is initialized.
-     *
      * Guards against the child copying the root's "not initialized" state at
      * creation time, which left every module's Logs tab empty.
      */
@@ -315,10 +245,8 @@ describe('SystemLogService - Child Loggers Created Before Initialization', () =>
     });
 
     /**
-     * Test: A child created before initialization writes through Pino once the root is initialized.
-     *
-     * Verifies the child builds its Pino child from the root's logger with only
-     * its own bindings, instead of falling back to the console forever.
+     * The child builds its Pino child from the root's logger with only its own
+     * bindings, instead of falling back to the console forever.
      */
     it('should write through a Pino child after the root is initialized', async () => {
         const childLogger = service.child({ module: 'price-history' });
@@ -331,12 +259,6 @@ describe('SystemLogService - Child Loggers Created Before Initialization', () =>
         expect(pinoChild.warn).toHaveBeenCalledWith('Vendor failed', undefined);
     });
 
-    /**
-     * Test: A child does not persist while the root is still uninitialized.
-     *
-     * Verifies the pre-initialization behaviour is unchanged: output goes to
-     * the console and nothing is written to MongoDB.
-     */
     it('should not persist before the root is initialized', async () => {
         const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         const childLogger = service.child({ module: 'price-history' });
@@ -351,8 +273,6 @@ describe('SystemLogService - Child Loggers Created Before Initialization', () =>
     });
 
     /**
-     * Test: A child follows log level changes made on the root after it was created.
-     *
      * A Pino child keeps the level it was created with, so without syncing, a
      * level change from the admin interface would not reach existing children.
      */
@@ -372,10 +292,8 @@ describe('SystemLogService - Child Loggers Created Before Initialization', () =>
     });
 
     /**
-     * Test: Setting the level on a child changes the process-wide level on the root.
-     *
-     * Verifies the level stays one setting for the whole process instead of
-     * a child-only value that the next log call would overwrite.
+     * The level stays one setting for the whole process instead of a
+     * child-only value that the next log call would overwrite.
      */
     it('should forward a level set on a child to the root', async () => {
         await service.initialize(mockPino as any);
@@ -387,11 +305,7 @@ describe('SystemLogService - Child Loggers Created Before Initialization', () =>
         expect(childLogger.level).toBe('error');
     });
 
-    /**
-     * Test: waitUntilInitialized() on a child resolves when the root is initialized.
-     *
-     * Verifies a child waits on its parent, since only the root is ever initialized.
-     */
+    /** A child waits on its parent, since only the root is ever initialized. */
     it('should resolve waitUntilInitialized on a child once the root is initialized', async () => {
         const childLogger = service.child({ module: 'price-history' });
         const waiting = childLogger.waitUntilInitialized();
@@ -417,11 +331,8 @@ describe('SystemLogService - Metadata Sanitization', () => {
     });
 
     /**
-     * Test: Circular references should be detected and replaced.
-     *
-     * Verifies that objects with circular references (object references itself)
-     * are sanitized by replacing the circular reference with '[Circular Reference]'
-     * marker instead of causing infinite recursion or BSON serialization errors.
+     * A circular reference is replaced with a '[Circular Reference]' marker
+     * instead of causing infinite recursion or BSON serialization errors.
      */
     it('should sanitize circular references', async () => {
         // Create object with circular reference
@@ -444,10 +355,7 @@ describe('SystemLogService - Metadata Sanitization', () => {
     });
 
     /**
-     * Test: Error objects should be converted to serializable plain objects.
-     *
-     * Verifies that Error instances are sanitized by extracting name, message,
-     * and stack properties into a plain object that can be stored in MongoDB,
+     * Error instances become plain objects of name, message, and stack,
      * preventing BSON serialization errors from complex Error internal state.
      */
     it('should sanitize Error objects', async () => {
@@ -467,12 +375,6 @@ describe('SystemLogService - Metadata Sanitization', () => {
         expect(typeof savedLog.context.err.stack).toBe('string');
     });
 
-    /**
-     * Test: Custom error properties should be preserved.
-     *
-     * Verifies that Error objects with custom properties (code, statusCode, etc.)
-     * retain those properties after sanitization, not just the standard name/message/stack.
-     */
     it('should preserve custom Error properties', async () => {
         const error = new Error('Custom error') as any;
         error.code = 'ERR_CUSTOM';
@@ -490,11 +392,8 @@ describe('SystemLogService - Metadata Sanitization', () => {
     });
 
     /**
-     * Test: Functions should be converted to descriptive strings.
-     *
-     * Verifies that function values are sanitized to readable string representations
-     * like '[Function: myFunction]' instead of causing serialization errors or
-     * losing information entirely.
+     * Functions become strings like '[Function: myFunction]' instead of causing
+     * serialization errors or losing information entirely.
      */
     it('should sanitize functions to string representations', async () => {
         function namedFunction() {}
@@ -515,11 +414,8 @@ describe('SystemLogService - Metadata Sanitization', () => {
     });
 
     /**
-     * Test: Undefined values should be removed from sanitized output.
-     *
-     * Verifies that properties with undefined values are omitted from the
-     * sanitized object, as undefined is not serializable to BSON and would
-     * cause MongoDB storage errors.
+     * Undefined values are omitted, as undefined is not serializable to BSON and
+     * would cause MongoDB storage errors.
      */
     it('should remove undefined values', async () => {
         service.error({
@@ -538,13 +434,6 @@ describe('SystemLogService - Metadata Sanitization', () => {
         expect(savedLog.context.nullValue).toBeNull();
     });
 
-    /**
-     * Test: Deep nesting should be limited to prevent stack overflow.
-     *
-     * Verifies that deeply nested objects (beyond 10 levels) are truncated
-     * with '[Max depth exceeded]' marker to prevent infinite recursion and
-     * stack overflow errors during sanitization.
-     */
     it('should limit recursion depth to prevent stack overflow', async () => {
         // Create deeply nested object (15 levels)
         let deepObj: any = { value: 'leaf' };
@@ -571,12 +460,6 @@ describe('SystemLogService - Metadata Sanitization', () => {
         expect(current).toBe('[Max depth exceeded]');
     });
 
-    /**
-     * Test: Arrays should be sanitized recursively.
-     *
-     * Verifies that array elements are individually sanitized, handling
-     * circular references, errors, and functions within array items.
-     */
     it('should sanitize arrays recursively', async () => {
         const error = new Error('Array error');
         const circularObj: any = { name: 'circular' };
@@ -605,10 +488,8 @@ describe('SystemLogService - Metadata Sanitization', () => {
     });
 
     /**
-     * Test: Date objects should be preserved.
-     *
-     * Verifies that Date instances are not converted to strings or primitives,
-     * as MongoDB natively supports BSON Date type and can store them efficiently.
+     * Dates stay Date instances rather than strings, since MongoDB natively
+     * supports the BSON Date type and stores them efficiently.
      */
     it('should preserve Date objects', async () => {
         const now = new Date('2025-01-01T00:00:00.000Z');
@@ -624,12 +505,6 @@ describe('SystemLogService - Metadata Sanitization', () => {
         expect(savedLog.context.timestamp.toISOString()).toBe('2025-01-01T00:00:00.000Z');
     });
 
-    /**
-     * Test: Primitives should pass through unchanged.
-     *
-     * Verifies that primitive values (strings, numbers, booleans) are not
-     * modified during sanitization, as they are already BSON-compatible.
-     */
     it('should preserve primitives', async () => {
         service.error({
             str: 'hello',
@@ -649,12 +524,6 @@ describe('SystemLogService - Metadata Sanitization', () => {
         expect(savedLog.context.nil).toBeNull();
     });
 
-    /**
-     * Test: Nested circular references should be detected.
-     *
-     * Verifies that circular references deep within nested object structures
-     * are properly detected and replaced, not just top-level circular references.
-     */
     it('should detect circular references in nested structures', async () => {
         const parent: any = { name: 'parent' };
         const child: any = { name: 'child', parent };
@@ -672,13 +541,6 @@ describe('SystemLogService - Metadata Sanitization', () => {
         expect(savedLog.context.family.child.parent).toBe('[Circular Reference]');
     });
 
-    /**
-     * Test: Complex real-world error scenario.
-     *
-     * Verifies that a complex error object resembling real production errors
-     * (with nested config objects, circular axios request/response references,
-     * and error stacks) is properly sanitized without losing critical information.
-     */
     it('should handle complex real-world error scenario', async () => {
         // Simulate Axios error with circular references
         const axiosError: any = new Error('Request failed');
@@ -725,12 +587,6 @@ describe('SystemLogService - Metadata Sanitization', () => {
         expect(savedLog.context.err.response).toBeDefined();
     });
 
-    /**
-     * Test: Empty objects should remain empty.
-     *
-     * Verifies that empty objects {} are not mistakenly converted to null
-     * or other values during sanitization.
-     */
     it('should preserve empty objects', async () => {
         service.error({ empty: {} }, 'Error with empty object');
 
@@ -742,12 +598,6 @@ describe('SystemLogService - Metadata Sanitization', () => {
         expect(savedLog.context.empty).toEqual({});
     });
 
-    /**
-     * Test: Should not mutate original error object.
-     *
-     * Verifies that sanitization creates a new object and does not modify
-     * the original error metadata passed to the logger, preventing side effects.
-     */
     it('should not mutate original metadata object', async () => {
         const originalError = new Error('Original');
         const originalMetadata = { err: originalError };
@@ -775,11 +625,6 @@ describe('SystemLogService - Integration with Logging Methods', () => {
         await service.initialize(mockPino as any);
     });
 
-    /**
-     * Test: Error logging should sanitize and save to MongoDB.
-     *
-     * Verifies that calling logger.error() triggers sanitized MongoDB persistence.
-     */
     it('should sanitize metadata when logging errors', async () => {
         const error = new Error('Test error');
         const circularObj: any = { name: 'test' };
@@ -796,11 +641,6 @@ describe('SystemLogService - Integration with Logging Methods', () => {
         expect(savedLog.context.circular.self).toBe('[Circular Reference]');
     });
 
-    /**
-     * Test: Warning logging should sanitize metadata.
-     *
-     * Verifies that warn() also applies sanitization before MongoDB storage.
-     */
     it('should sanitize metadata when logging warnings', async () => {
         const func = () => {};
 
@@ -814,11 +654,6 @@ describe('SystemLogService - Integration with Logging Methods', () => {
         expect(savedLog.context.callback).toMatch(/\[Function:/);
     });
 
-    /**
-     * Test: Info logging should sanitize metadata.
-     *
-     * Verifies that info() applies sanitization (important for structured logging).
-     */
     it('should sanitize metadata when logging info', async () => {
         const date = new Date('2025-01-01');
 
@@ -847,9 +682,7 @@ describe('SystemLogService - Error Object Circular Reference Sanitization', () =
     });
 
     /**
-     * Test: Error objects with circular references in custom properties should be sanitized.
-     *
-     * Verifies that custom properties on Error objects (like AxiosError's config, request, response)
+     * Custom properties on Error objects (like AxiosError's config, request, response)
      * are recursively sanitized to remove circular references. This prevents BSON serialization
      * errors when logging Axios errors or other complex error types with circular object graphs.
      *
@@ -911,12 +744,6 @@ describe('SystemLogService - Error Object Circular Reference Sanitization', () =
         expect(JSON.stringify(savedLog.context.error)).toBeDefined();
     });
 
-    /**
-     * Test: Deeply nested Error custom properties with circular refs should be sanitized.
-     *
-     * Verifies that circular references several levels deep within Error custom properties
-     * are properly detected and replaced, not just direct circular references.
-     */
     it('should sanitize deeply nested circular references in Error custom properties', async () => {
         const error: any = new Error('Complex error');
         error.name = 'ComplexError';
@@ -952,10 +779,8 @@ describe('SystemLogService - Error Object Circular Reference Sanitization', () =
     });
 
     /**
-     * Test: Error custom properties with functions should be sanitized.
-     *
-     * Verifies that functions in Error custom properties are converted to string
-     * representations instead of being silently dropped or causing serialization errors.
+     * Functions on an Error become strings instead of being silently dropped or
+     * causing serialization errors.
      */
     it('should sanitize functions in Error custom properties', async () => {
         const error: any = new Error('Error with callbacks');
@@ -975,12 +800,7 @@ describe('SystemLogService - Error Object Circular Reference Sanitization', () =
         expect(savedLog.context.err.transform).toMatch(/\[Function:/);
     });
 
-    /**
-     * Test: Error custom properties with undefined values should be removed.
-     *
-     * Verifies that undefined custom properties on Error objects are removed
-     * during sanitization to prevent BSON serialization errors.
-     */
+    /** Undefined custom properties on an Error are removed to prevent BSON serialization errors. */
     it('should remove undefined values from Error custom properties', async () => {
         const error: any = new Error('Error with undefined props');
         error.definedProp = 'value';
@@ -1020,8 +840,6 @@ describe('SystemLogService - Two-Tier Fallback Error Handling', () => {
     });
 
     /**
-     * Test: When primary MongoDB save fails, should attempt simplified error record.
-     *
      * Verifies the two-tier fallback mechanism where a failed primary save triggers
      * a second attempt with simplified error metadata before falling back to console.
      *
@@ -1068,12 +886,7 @@ describe('SystemLogService - Two-Tier Fallback Error Handling', () => {
         expect(fallbackCall.context.errorType).toBeDefined();
     });
 
-    /**
-     * Test: When both primary and fallback saves fail, should only log to console.
-     *
-     * Verifies that if both MongoDB save attempts fail (database completely unavailable),
-     * the error is logged to console without throwing and crashing the application.
-     */
+    /** When both saves fail, the error goes to the console without throwing and crashing the application. */
     it('should fall back to console logging when MongoDB is completely unavailable', async () => {
         // Make all SystemLog.create() calls fail
         mockCreate.mockRejectedValue(new Error('MongoDB connection lost'));
@@ -1103,11 +916,8 @@ describe('SystemLogService - Two-Tier Fallback Error Handling', () => {
     });
 
     /**
-     * Test: Fallback error record should include debugging metadata.
-     *
-     * Verifies that the simplified error record includes useful debugging information
-     * like original message, level, error type, and metadata keys to help diagnose
-     * why the primary save failed.
+     * The fallback record carries the original message, level, error type, and
+     * metadata keys to help diagnose why the primary save failed.
      */
     it('should include debugging metadata in fallback error record', async () => {
         let callCount = 0;
@@ -1136,12 +946,6 @@ describe('SystemLogService - Two-Tier Fallback Error Handling', () => {
         expect(fallbackCall.context.metadataKeys).toEqual(['userId', 'action', 'complexData']);
     });
 
-    /**
-     * Test: Two-tier fallback should work for all log levels.
-     *
-     * Verifies that the fallback mechanism works for warn, info, debug, trace, and fatal
-     * levels, not just error.
-     */
     it('should use two-tier fallback for all log levels', async () => {
         let callCount = 0;
         mockCreate.mockImplementation(() => {
@@ -1179,12 +983,6 @@ describe('SystemLogService - MongoDB Operations', () => {
         await service.initialize(mockPino as any);
     });
 
-    /**
-     * Test: getLogs should fetch logs with pagination.
-     *
-     * Verifies that the getLogs method properly constructs MongoDB queries
-     * and returns paginated results.
-     */
     it('should fetch logs with pagination', async () => {
         const mockLogs = [
             { _id: '1', level: 'error', message: 'Error 1', timestamp: new Date() },
@@ -1219,11 +1017,6 @@ describe('SystemLogService - MongoDB Operations', () => {
         expect(result.totalPages).toBe(5);
     });
 
-    /**
-     * Test: getLogs should filter by log level.
-     *
-     * Verifies that level filtering constructs correct MongoDB $in query.
-     */
     it('should filter logs by level', async () => {
         const mockFind = {
             sort: vi.fn().mockReturnThis(),
@@ -1247,11 +1040,6 @@ describe('SystemLogService - MongoDB Operations', () => {
         });
     });
 
-    /**
-     * Test: getLogs should filter by service.
-     *
-     * Verifies that service filtering includes service name in query.
-     */
     it('should filter logs by service', async () => {
         const mockFind = {
             sort: vi.fn().mockReturnThis(),
@@ -1275,11 +1063,6 @@ describe('SystemLogService - MongoDB Operations', () => {
         });
     });
 
-    /**
-     * Test: getLogs should filter by date range.
-     *
-     * Verifies that date range filtering constructs $gte/$lte query.
-     */
     it('should filter logs by date range', async () => {
         const mockFind = {
             sort: vi.fn().mockReturnThis(),
@@ -1333,10 +1116,6 @@ describe('SystemLogService - MongoDB Operations', () => {
         /**
          * Make a log row with a 24-hex id derived from a single character,
          * which keeps the fixtures short and readable.
-         *
-         * @param idChar - Character repeated to form the ObjectId string.
-         * @param iso - The row's timestamp.
-         * @returns A lean log document shape.
          */
         function row(idChar: string, iso: string) {
             return { _id: idChar.repeat(24), level: 'error', message: idChar, timestamp: new Date(iso) };
@@ -1432,11 +1211,6 @@ describe('SystemLogService - MongoDB Operations', () => {
         });
     });
 
-    /**
-     * Test: getStatistics should return aggregated counts.
-     *
-     * Verifies that statistics method aggregates by level and service.
-     */
     it('should get log statistics', async () => {
         const mockEstimatedExec = vi.fn().mockResolvedValue(100);
         const mockCountExec = vi.fn().mockResolvedValue(25);
@@ -1468,8 +1242,6 @@ describe('SystemLogService - MongoDB Operations', () => {
     });
 
     /**
-     * Test: getStatistics with a service counts only that service.
-     *
      * A plugin's scoped Logs tab must never show deployment-wide totals, so
      * every query has to filter on the service and the total has to come from
      * that service's own level counts rather than the collection estimate.
@@ -1500,11 +1272,6 @@ describe('SystemLogService - MongoDB Operations', () => {
         expect(stats.byService).toEqual({ 'plugin:whale-alerts': 10 });
     });
 
-    /**
-     * Test: markAsResolved should update log entry.
-     *
-     * Verifies that marking a log as resolved updates the database document.
-     */
     it('should mark log as resolved', async () => {
         const mockExec = vi.fn().mockResolvedValue({
             _id: 'log123',
@@ -1529,11 +1296,6 @@ describe('SystemLogService - MongoDB Operations', () => {
         );
     });
 
-    /**
-     * Test: markAsUnresolved should clear resolved fields.
-     *
-     * Verifies that marking a log as unresolved removes resolved metadata.
-     */
     it('should mark log as unresolved', async () => {
         const mockLean = vi.fn().mockReturnThis();
         const mockExec = vi.fn().mockResolvedValue({
@@ -1561,11 +1323,6 @@ describe('SystemLogService - MongoDB Operations', () => {
         expect(result.resolved).toBe(false);
     });
 
-    /**
-     * Test: deleteOldLogs should remove logs before cutoff date.
-     *
-     * Verifies that cleanup operation deletes logs older than specified date.
-     */
     it('should delete old logs', async () => {
         const mockExec = vi.fn().mockResolvedValue({ deletedCount: 50 });
         const mockDeleteMany = vi.fn().mockReturnValue({ exec: mockExec });
@@ -1580,11 +1337,6 @@ describe('SystemLogService - MongoDB Operations', () => {
         expect(deletedCount).toBe(50);
     });
 
-    /**
-     * Test: deleteAllLogs should remove all log entries.
-     *
-     * Verifies that delete all operation clears the entire collection.
-     */
     it('should delete all logs', async () => {
         const mockExec = vi.fn().mockResolvedValue({ deletedCount: 1000 });
         const mockDeleteMany = vi.fn().mockReturnValue({ exec: mockExec });
@@ -1596,11 +1348,6 @@ describe('SystemLogService - MongoDB Operations', () => {
         expect(deletedCount).toBe(1000);
     });
 
-    /**
-     * Test: getLogById should fetch single log entry.
-     *
-     * Verifies that fetching by ID returns the log document.
-     */
     it('should get log by ID', async () => {
         const mockLog = {
             _id: 'log123',

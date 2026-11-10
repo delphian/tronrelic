@@ -437,9 +437,6 @@ function percentTone(percent: number | null): Tone | undefined {
  * An ungraded container is healthy, which the badge expresses as `success`
  * rather than `neutral` — a row with nothing wrong should read as confirmed
  * good, not as unknown.
- *
- * @param tone - The row's grade, if any.
- * @returns The tone to give the state badge.
  */
 function badgeTone(tone: Tone | undefined): 'success' | 'warning' | 'danger' {
     return tone ?? 'success';

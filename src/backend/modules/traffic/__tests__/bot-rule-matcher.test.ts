@@ -43,12 +43,7 @@ function signals(overrides: Partial<IBotRuleSignals> = {}): IBotRuleSignals {
     };
 }
 
-/**
- * Build a compiled rule with overrides.
- *
- * @param overrides - Fields to change for one test.
- * @returns A compiled rule.
- */
+/** Build a compiled rule with overrides. */
 function rule(overrides: Partial<ICompiledBotRule> = {}): ICompiledBotRule {
     return { id: 'r1', label: 'bot_other', mode: 'label', conditions: { asns: [45102] }, expiresAt: null, ...overrides };
 }

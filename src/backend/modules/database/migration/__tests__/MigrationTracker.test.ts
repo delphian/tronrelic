@@ -162,23 +162,11 @@ describe('MigrationTracker', () => {
     });
 
     describe('Initialization', () => {
-        /**
-         * Test: Tracker should initialize with empty database.
-         *
-         * Verifies that the tracker can initialize without errors when
-         * no migration records exist.
-         */
         it('should initialize with empty database', async () => {
             const completedIds = await tracker.getCompletedMigrationIds();
             expect(completedIds).toEqual([]);
         });
 
-        /**
-         * Test: Tracker should create indexes on initialization.
-         *
-         * Verifies that ensureIndexes() is called during initialization
-         * to set up required database indexes.
-         */
         it('should create indexes on initialization', async () => {
             const createIndexSpy = vi.spyOn(mockDatabase, 'createIndex');
             const newTracker = new MigrationTracker(mockDatabase);
@@ -193,12 +181,6 @@ describe('MigrationTracker', () => {
     });
 
     describe('Recording Success', () => {
-        /**
-         * Test: Tracker should record successful migration execution.
-         *
-         * Verifies that success records are saved with all required fields
-         * including execution duration and checksum.
-         */
         it('should record successful migration execution', async () => {
             const metadata: IMigrationMetadata = {
                 id: '001_test',
@@ -223,11 +205,6 @@ describe('MigrationTracker', () => {
             expect(records[0].error).toBeUndefined();
         });
 
-        /**
-         * Test: Tracker should include execution timestamp.
-         *
-         * Verifies that the executedAt timestamp is recorded.
-         */
         it('should include execution timestamp', async () => {
             const metadata: IMigrationMetadata = {
                 id: '001_test',
@@ -252,11 +229,6 @@ describe('MigrationTracker', () => {
     });
 
     describe('Recording Failure', () => {
-        /**
-         * Test: Tracker should record failed migration execution.
-         *
-         * Verifies that failure records include error message and stack trace.
-         */
         it('should record failed migration execution', async () => {
             const metadata: IMigrationMetadata = {
                 id: '001_test',
@@ -281,11 +253,6 @@ describe('MigrationTracker', () => {
             expect(records[0].executionDuration).toBe(500);
         });
 
-        /**
-         * Test: Tracker should handle non-Error objects.
-         *
-         * Verifies that string errors and other thrown values are recorded correctly.
-         */
         it('should handle non-Error objects', async () => {
             const metadata: IMigrationMetadata = {
                 id: '001_test',
@@ -310,10 +277,8 @@ describe('MigrationTracker', () => {
 
     describe('Retry After Failure', () => {
         /**
-         * Test: A retry of a previously-failed migration must upsert by
-         * migrationId rather than insert a second row. Prior behavior used
-         * insertOne, which collided with the unique index on { migrationId: 1 }
-         * and surfaced as an E11000 duplicate-key error that masked the
+         * A retry must upsert by migrationId: an insert collides with the unique
+         * { migrationId: 1 } index, and the E11000 duplicate-key error masks the
          * underlying migration failure.
          */
         it('should overwrite a prior failed record on successful retry', async () => {
@@ -340,10 +305,9 @@ describe('MigrationTracker', () => {
         });
 
         /**
-         * Test: A second consecutive failure must overwrite the prior failure
-         * record so the latest error context (message, stack, timestamp) is
-         * what operators see in the admin UI. Without upsert this used to
-         * throw a duplicate-key error before recording the new failure.
+         * Operators must see the latest error context (message, stack, timestamp)
+         * in the admin UI; without upsert, a second failure throws a duplicate-key
+         * error before it is recorded.
          */
         it('should overwrite a prior failed record with a new failure', async () => {
             const metadata: IMigrationMetadata = {
@@ -369,11 +333,7 @@ describe('MigrationTracker', () => {
     });
 
     describe('Single-Record Lookup', () => {
-        /**
-         * Test: getRecord returns the existing record for a migration ID,
-         * or null when the migration has never been attempted. Used by the
-         * executor to enforce the forward-only "no re-execution" contract.
-         */
+        /** The executor relies on getRecord to enforce the forward-only "no re-execution" contract. */
         it('should return the existing record by migrationId', async () => {
             await mockDatabase.insertOne('migrations', {
                 migrationId: '001_test',
@@ -396,12 +356,6 @@ describe('MigrationTracker', () => {
     });
 
     describe('Querying Completed Migrations', () => {
-        /**
-         * Test: Tracker should return completed migration IDs.
-         *
-         * Verifies that getCompletedMigrationIds() returns only IDs of
-         * successfully completed migrations.
-         */
         it('should return completed migration IDs', async () => {
             await mockDatabase.insertOne('migrations', {
                 migrationId: '001_first',
@@ -423,12 +377,6 @@ describe('MigrationTracker', () => {
             expect(completedIds).toEqual(['001_first', '002_second']);
         });
 
-        /**
-         * Test: Tracker should exclude failed migrations from completed IDs.
-         *
-         * Verifies that only migrations with status 'completed' are returned,
-         * not those with status 'failed'.
-         */
         it('should exclude failed migrations from completed IDs', async () => {
             await mockDatabase.insertOne('migrations', {
                 migrationId: '001_success',
@@ -453,12 +401,6 @@ describe('MigrationTracker', () => {
     });
 
     describe('Pending Migration Calculation', () => {
-        /**
-         * Test: Tracker should identify pending migrations.
-         *
-         * Verifies that getPendingMigrations() returns migrations that have
-         * not been completed yet.
-         */
         it('should identify pending migrations', async () => {
             await mockDatabase.insertOne('migrations', {
                 migrationId: '001_completed',
@@ -496,12 +438,6 @@ describe('MigrationTracker', () => {
             expect(pending[0].id).toBe('002_pending');
         });
 
-        /**
-         * Test: Tracker should return all migrations when none completed.
-         *
-         * Verifies that all discovered migrations are considered pending
-         * when the database is empty.
-         */
         it('should return all migrations when none completed', async () => {
             const discovered: IMigrationMetadata[] = [
                 {
@@ -530,11 +466,6 @@ describe('MigrationTracker', () => {
             expect(pending).toHaveLength(2);
         });
 
-        /**
-         * Test: Tracker should include failed migrations in pending list.
-         *
-         * Verifies that failed migrations can be retried (remain pending).
-         */
         it('should include failed migrations in pending list', async () => {
             await mockDatabase.insertOne('migrations', {
                 migrationId: '001_failed',
@@ -565,12 +496,6 @@ describe('MigrationTracker', () => {
     });
 
     describe('Orphan Cleanup', () => {
-        /**
-         * Test: Tracker should remove orphaned pending records.
-         *
-         * Verifies that migration records for migrations that no longer exist
-         * in the codebase are removed from the database.
-         */
         it('should remove orphaned pending records', async () => {
             // Insert a failed record for a migration that no longer exists
             // (completed records are preserved for history)
@@ -604,12 +529,6 @@ describe('MigrationTracker', () => {
             expect(remainingRecords).toHaveLength(0);
         });
 
-        /**
-         * Test: Tracker should preserve records for existing migrations.
-         *
-         * Verifies that records for migrations still in the codebase are
-         * not removed during orphan cleanup.
-         */
         it('should preserve records for existing migrations', async () => {
             await mockDatabase.insertOne('migrations', {
                 migrationId: '001_exists',
@@ -641,11 +560,6 @@ describe('MigrationTracker', () => {
     });
 
     describe('Migration History', () => {
-        /**
-         * Test: Tracker should return completed migrations with limit.
-         *
-         * Verifies that getCompletedMigrations() respects the limit parameter.
-         */
         it('should return completed migrations with limit', async () => {
             for (let i = 1; i <= 5; i++) {
                 await mockDatabase.insertOne('migrations', {
@@ -661,11 +575,6 @@ describe('MigrationTracker', () => {
             expect(history).toHaveLength(3);
         });
 
-        /**
-         * Test: Tracker should return migrations sorted by executedAt descending.
-         *
-         * Verifies that newest migrations appear first in the history.
-         */
         it('should return migrations sorted by executedAt descending', async () => {
             await mockDatabase.insertOne('migrations', {
                 migrationId: '001_old',

@@ -246,11 +246,7 @@ export function PriorityNav({
      * leave it without tabbing through every item.
      */
     useEffect(() => {
-        /**
-         * Close the open dropdown on Escape.
-         *
-         * @param event - The keydown event from the document
-         */
+        /** Close the open dropdown on Escape. */
         const handleEscape = (event: KeyboardEvent) => {
             if (event.key === 'Escape' && isDropdownOpen) {
                 closeDropdown();

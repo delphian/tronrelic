@@ -1,15 +1,11 @@
 /**
  * @fileoverview Which chain height a sync tick is allowed to schedule against.
  *
- * A sync tick begins by asking TronGrid for the chain head. That single call
- * used to decide the fate of the whole tick: if it failed, nothing was
- * scheduled, including the backfill queue — which is old work that never needed
- * the head at all. One flaky request therefore stopped repair work that would
- * have succeeded.
- *
- * Falling back to the height the previous tick recorded fixes that, but only
- * under a condition that is easy to state and easy to lose in a later edit. The
- * height is safe as the *ceiling* of the forward walk, because that walk starts
+ * A sync tick begins by asking TronGrid for the chain head. When that call
+ * fails, the tick falls back to the height the previous tick recorded, so one
+ * flaky request does not stop the backfill queue, old work that never needs the
+ * head. That is safe only under a condition that is easy to state and easy to
+ * lose in a later edit. The height is safe as the *ceiling* of the forward walk, because that walk starts
  * at the stored cursor and a stale ceiling can only make the batch smaller. It
  * is completely unsafe when there is no cursor, because the service then seeds
  * the cursor *from* the height instead of bounding a walk with it, and a stale

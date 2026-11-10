@@ -112,22 +112,14 @@ function InstanceConfigArrayField({ field, value, idPrefix, disabled, className,
     const { kind, itemSchema, fields: itemFields } = describeArrayItems(field.schema);
     const singular = singularizeLabel(field.label);
 
-    /**
-     * Replace one row and lift the new array to the parent.
-     *
-     * @param index - Row position to replace.
-     * @param nextItem - The row's new value.
-     */
+    /** Replace one row and lift the new array to the parent. */
     const updateItem = (index: number, nextItem: unknown) => {
         const next = items.slice();
         next[index] = nextItem;
         onChange(next);
     };
 
-    /**
-     * Append a blank row seeded from the item shape so it renders editable
-     * controls rather than nothing.
-     */
+    /** Append a blank row seeded from the item shape so it renders editable controls, not nothing. */
     const addItem = () => {
         const blank = kind === 'object' ? coerceInitialConfig(itemFields, undefined) : itemSchema.default ?? '';
         onChange([...items, blank]);
@@ -502,8 +494,6 @@ export function InstanceConfigField(props: IInstanceConfigFieldProps) {
         /**
          * Map the chosen option's string form back to the typed member so a
          * numeric or boolean enum keeps the type the server expects.
-         *
-         * @param selected - The option or segment value.
          */
         const selectMember = (selected: string) => {
             const match = members.find(member => String(member) === selected);

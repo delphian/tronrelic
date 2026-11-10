@@ -3,11 +3,10 @@
 /**
  * @fileoverview The observers that receive committed blocks, one row each.
  *
- * Admins said this table was the most useful part of the old console, so its
- * pattern is kept: one row per observer, recency under the name, the per-block
- * cost toned against the block period rather than a fixed number, and
- * exceptions shown only when they are non-zero. What changed is what made it
- * hard to read. Each row now says what kind of observer it is and what it is
+ * Admins find this table the most useful part of the console, so it keeps one
+ * row per observer, recency under the name, the per-block cost toned against
+ * the block period rather than a fixed number, and exceptions shown only when
+ * they are non-zero. Each row says what kind of observer it is and what it is
  * subscribed to, the processed count says what it counts, the queue is judged
  * against that observer's own capacity, and one error threshold colours both
  * the row and the badge.
@@ -108,12 +107,7 @@ function errorTone(errorRate: number): BadgeTone {
  * @returns A new array: failing and backed-up observers first, then by name.
  */
 function sortByAttention(observers: IObserverStats[]): IObserverStats[] {
-    /**
-     * Score one observer by how much attention it needs.
-     *
-     * @param stats - The observer's statistics.
-     * @returns Higher for more urgent.
-     */
+    /** Score one observer by how much attention it needs; higher is more urgent. */
     const score = (stats: IObserverStats): number => {
         const tones = [errorTone(stats.errorRate), queueTone(stats)];
         return (tones.includes('danger') ? 4 : 0) + (tones.includes('warning') ? 2 : 0) + (stats.totalDropped > 0 ? 1 : 0);

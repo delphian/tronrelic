@@ -213,8 +213,6 @@ export class SystemLogService implements ISystemLogService {
      * A child asks its parent rather than reading its own flag, so a child
      * created before initialization starts persisting as soon as the root is
      * initialized.
-     *
-     * @returns True once the root logger has been initialized
      */
     private isInitialized(): boolean {
         return this.parent ? this.parent.isInitialized() : this.initialized;
@@ -1223,10 +1221,8 @@ export class SystemLogService implements ISystemLogService {
     }
 
     /**
-     * Invalidate the in-memory statistics cache.
-     *
-     * Called after mutations (resolve, unresolve, delete) so the next
-     * getStatistics() call fetches fresh data from MongoDB.
+     * Invalidate the in-memory statistics cache after a mutation (resolve,
+     * unresolve, delete) so the next getStatistics() fetches fresh data from MongoDB.
      */
     private invalidateStatisticsCache(): void {
         this.cachedStatistics = null;

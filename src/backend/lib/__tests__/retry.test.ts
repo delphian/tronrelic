@@ -12,13 +12,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { retry, isRetryableError, retryAfterMs } from '../retry.js';
 
-/**
- * Build an error shaped like the one axios throws for an HTTP response.
- *
- * @param status - The response status the fake server returned.
- * @param headers - Response headers, such as `retry-after`.
- * @returns An error carrying `response.status` and `response.headers`.
- */
+/** Build an error shaped like the one axios throws for an HTTP response. */
 function httpError(status: number, headers: Record<string, string> = {}): Error {
     return Object.assign(new Error(`HTTP ${status}`), { response: { status, headers } });
 }

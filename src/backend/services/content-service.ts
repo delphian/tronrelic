@@ -733,11 +733,7 @@ export class ContentService implements IContentService {
 
     // ---------------------------------------------------------------- internals
 
-    /**
-     * The typed handle on the core content collection.
-     *
-     * @returns The raw `content_items` collection.
-     */
+    /** The typed handle on the core `content_items` collection. */
     private collection() {
         return this.database.getCollection<IContent>(CONTENT_COLLECTION);
     }
@@ -822,13 +818,7 @@ export class ContentService implements IContentService {
      */
     private bindCuration(curation: ICurationService, entry: IRegisteredManagedType): void {
         const typeId = entry.type.typeId;
-        /**
-         * Route a queue decision on this type back into the content service.
-         *
-         * @param ref - The queue item's ref, naming the content and its hold.
-         * @param decision - The curator's approve or reject.
-         * @returns Resolves once the decision is recorded.
-         */
+        /** Route a queue decision on this type back into the content service. */
         const onDecision = (
             ref: Record<string, unknown>,
             decision: Exclude<ContentCurationState, 'pending'>
@@ -873,13 +863,7 @@ export class ContentService implements IContentService {
         return curation;
     }
 
-    /**
-     * Load one core row.
-     *
-     * @param typeId - The managed content type the row must belong to.
-     * @param id - The content id.
-     * @returns The row, or null when none matches.
-     */
+    /** Load one core row of the given managed content type. */
     private async findRow(typeId: string, id: string): Promise<IContent | null> {
         const row = await this.collection().findOne({ id: String(id), typeId }, { projection: { _id: 0 } });
 
@@ -1121,10 +1105,7 @@ export class ContentService implements IContentService {
      * a curator's edit is approved directly and publishes nowhere, because
      * the item already reached its destinations when it first went live.
      *
-     * @param entry - The managed type.
-     * @param actor - Who is making the change.
      * @param row - The item's core row, or null for a create.
-     * @returns True when the change must be held for review.
      */
     private keepsCuratorChangeInQueue(entry: IRegisteredManagedType, actor: IContentActor, row: IContent | null): boolean {
         return actor.isCurator

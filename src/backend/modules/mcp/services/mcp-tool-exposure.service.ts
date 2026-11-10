@@ -127,9 +127,6 @@ export class McpToolExposureError extends Error {
  * group's grant for any tool as well as a fresh grant for a tool approved
  * before grants were per group. Recognising that case lets the admin see what
  * to do instead of a generic server error.
- *
- * @param error - What the database write threw.
- * @returns True when the error is MongoDB's duplicate-key error (code 11000).
  */
 function isDuplicateKeyError(error: unknown): boolean {
     return typeof error === 'object' && error !== null && (error as { code?: number }).code === 11000;
@@ -487,18 +484,12 @@ export class McpToolExposureService {
      * Read a group's stored policy fresh and decide whether it may hold a
      * restricted grant right now. Granting reads it fresh rather than from the
      * cache, because another instance may have just switched the setting off.
-     *
-     * @param groupId - The group being granted a restricted tool.
-     * @returns True when the group may hold restricted tools.
      */
     private async groupAllowsRestrictedNow(groupId: string): Promise<boolean> {
         return mcpGroupMayHoldTool(true, this.policies.policyFor(await this.policies.getPolicies(0), groupId));
     }
 
-    /**
-     * Drop the cached approvals so the next request reads the change, and stop
-     * a read already in flight from putting the old approvals back.
-     */
+    /** Drop the cached approvals and stop a read already in flight from putting the old approvals back. */
     private invalidateApprovals(): void {
         this.approvalsGeneration++;
         this.approvalsCache = null;

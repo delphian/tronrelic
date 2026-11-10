@@ -4,11 +4,9 @@
  * The loading, error, and empty states every traffic panel needs, rendered in
  * one place so each panel only supplies its content.
  *
- * Each traffic dashboard used to carry its own copy of these three messages
- * with its own padding, so one tab showed a short line and the next a tall
- * centred block. This renders all three as one compact line in the same type,
- * and keeps the order fixed — error, then loading, then empty — so a panel
- * that missed a check cannot render a phantom table.
+ * All three render as one compact line in the same type, in a fixed order —
+ * error, then loading, then empty — so a panel that missed a check cannot
+ * render a phantom table.
  */
 
 import type { ReactNode } from 'react';

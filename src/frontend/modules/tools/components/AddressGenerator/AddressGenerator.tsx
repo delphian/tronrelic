@@ -117,12 +117,7 @@ function getDifficultyEstimate(pattern: string, caseSensitive: boolean, t: ITran
     return t('tools.addressGenerator.difficulty.billions', '~{count}B attempts', { count: (expected / 1_000_000_000).toFixed(1) });
 }
 
-/**
- * Format a large number with thousand separators.
- *
- * @param num - Number to format
- * @returns Formatted string
- */
+/** Format a large number with thousand separators. */
 function formatNumber(num: number): string {
     return num.toLocaleString();
 }

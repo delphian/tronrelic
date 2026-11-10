@@ -47,8 +47,6 @@ export function ClickHouseAccountsPanel() {
     /**
      * Replace one account in the list with a fresh summary after a save or
      * apply, leaving the others as they are.
-     *
-     * @param updated - The account's new summary.
      */
     const handleUpdated = useCallback((updated: IClickHouseAccountSummary) => {
         setAccounts(current => current?.map(account => (account.id === updated.id ? updated : account)) ?? current);

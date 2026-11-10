@@ -229,11 +229,8 @@ describe('TrafficService', () => {
 
     describe('ASN recording', () => {
         /**
-         * Build the minimal Express request `buildTrafficEvent` reads, so a
-         * test only has to state the headers it cares about.
-         *
-         * @param headers - Request headers, lower-cased as Express delivers them.
-         * @returns A request stub carrying those headers.
+         * Build the minimal Express request `buildTrafficEvent` reads, so a test only
+         * states the headers it cares about, lower-cased as Express delivers them.
          */
         function requestWith(headers: Record<string, string>): Request {
             return { headers, ip: '203.0.113.7', path: '/' } as unknown as Request;
@@ -278,11 +275,8 @@ describe('TrafficService', () => {
 
     describe('source app recording', () => {
         /**
-         * Build the minimal Express request `buildTrafficEvent` reads, so a
-         * test only has to state the headers it cares about.
-         *
-         * @param headers - Request headers, lower-cased as Express delivers them.
-         * @returns A request stub carrying those headers.
+         * Build the minimal Express request `buildTrafficEvent` reads, so a test only
+         * states the headers it cares about, lower-cased as Express delivers them.
          */
         function requestWith(headers: Record<string, string>): Request {
             return { headers, ip: '203.0.113.7', path: '/' } as unknown as Request;
@@ -1240,9 +1234,6 @@ describe('TrafficService', () => {
          * WHERE clauses is what proves the totals describe exactly the rows the
          * caller sees, which is the only claim a mock can make about them —
          * distinctness itself is computed inside ClickHouse.
-         *
-         * @param sql - One generated read, as captured from the mock.
-         * @returns The WHERE clause with surrounding whitespace removed.
          */
         function whereClauseOf(sql: string): string {
             return sql.split('WHERE')[1]!.split('GROUP BY')[0]!.trim();
@@ -1506,9 +1497,7 @@ describe('TrafficService', () => {
          * the DISTINCT-resolution query (issued by setIgnoredUserIds) and captures
          * the last non-resolution read for assertions.
          *
-         * @param captured - Sink for the last read's sql/params.
          * @param readRow - Row shape a read query should return.
-         * @returns The configured mock ClickHouse double.
          */
         function mockWithResolver(
             captured: { sql?: string; params?: Record<string, unknown> },
@@ -1652,8 +1641,6 @@ describe('TrafficService', () => {
         /**
          * Build a ClickHouse double whose resolution query returns `tid-a` as
          * the one browser that has logged in as an ignored account.
-         *
-         * @returns The configured mock ClickHouse double.
          */
         function mockResolvingTidA(): ReturnType<typeof createMockClickHouse> {
             const ch = createMockClickHouse();

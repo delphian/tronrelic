@@ -14,9 +14,7 @@
  *
  * **Collection naming.** Better Auth's model names are remapped to the
  * `module_user_auth_*` convention so the BA-owned tables sit alongside the
- * user module's other collections in the database. The legacy unprefixed
- * `users` collection (UUID-based) is unrelated and decommissioned by the
- * cutover migration in Phase 6.
+ * user module's other collections in the database.
  *
  * **Native Db boundary.** `mongodbAdapter` requires the native MongoDB
  * driver's `Db` instance. This is the one documented exception to the

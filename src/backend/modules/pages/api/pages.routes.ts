@@ -11,9 +11,6 @@ import type { PagesController } from './pages.controller.js';
  * routes at `/api/admin/content/core:page/:id/translations`, which serve every
  * translatable content type.
  *
- * File endpoints used to live here under `/files/*` — they moved to the
- * Files module's router at `/api/admin/files`.
- *
  * @param controller - The pages controller the page routes bind to.
  * @returns The admin router.
  */

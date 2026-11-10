@@ -59,11 +59,8 @@ export function AddressOrigins() {
     const [rows, setRows] = useState<IWalletRow[]>([{ id: 'w0', value: '' }]);
 
     /**
-     * Wrap an address in a row with an id of its own, so React can follow the row
-     * through insertions and deletions.
-     *
-     * @param value - The address the row starts with, empty for a blank row.
-     * @returns The new row.
+     * Wrap an address (empty for a blank row) in a row with an id of its own, so
+     * React can follow the row through insertions and deletions.
      */
     const makeRow = (value: string): IWalletRow => ({ id: `w${nextRowId.current++}`, value });
 

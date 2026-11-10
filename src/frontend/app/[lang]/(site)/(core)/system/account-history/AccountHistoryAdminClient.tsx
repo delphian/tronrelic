@@ -40,9 +40,6 @@ type TabId = 'accounts' | 'activity' | 'settings' | 'schedules';
 /**
  * Type guard narrowing an arbitrary `?tab=` string to a known TabId, so the
  * deep-link seeding and click routing share one source of truth for valid tabs.
- *
- * @param tab - The raw `?tab=` value.
- * @returns True when the value names a real tab.
  */
 function isTabId(tab: string | undefined): tab is TabId {
     return tab === 'accounts' || tab === 'activity' || tab === 'settings' || tab === 'schedules';
@@ -71,9 +68,6 @@ interface IAccountHistoryAdminClientProps {
  * Predicate selecting only this module's scheduler jobs for the Schedules tab —
  * the same scheduler authority as /system/scheduler, filtered by name prefix so
  * edits here and there can never drift.
- *
- * @param job - A scheduler job.
- * @returns True for `account-history:`-prefixed jobs.
  */
 function isAccountHistoryJob(job: SchedulerJob): boolean {
     return job.name.startsWith('account-history:');
@@ -85,7 +79,6 @@ function isAccountHistoryJob(job: SchedulerJob): boolean {
  * leave the page on a blank panel.
  *
  * @param url - The clicked node's url (e.g. `/system/account-history?tab=settings`).
- * @returns The matching tab id.
  */
 function tabFromUrl(url: string | undefined): TabId {
     const tab = url?.match(/[?&]tab=([^&]+)/)?.[1];
@@ -120,8 +113,6 @@ export function AccountHistoryAdminClient({ submenuTree, submenuGeneratedAt, ini
      * `history.replaceState` — no server round-trip and no `useSearchParams`
      * Suspense boundary — so the registered `?tab=` URLs become true deep links;
      * `page.tsx` reads that value SSR-first to seed the panel on next load.
-     *
-     * @param item - The clicked submenu node, carrying its `?tab=` url.
      */
     const handleTabSelect = useCallback((item: MenuNodeSerialized) => {
         const tab = tabFromUrl(item.url);

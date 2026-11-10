@@ -2,10 +2,9 @@
  * @fileoverview A network whose recent traffic looks automated but is still
  * counted as human.
  *
- * Why it exists: finding a disguised crawler used to mean an operator or an AI
- * agent noticing a traffic spike and investigating it by hand. A daily-style
- * query can surface networks with a crawler's shape — many cookies, about one
- * page each, no referrer, no logins — so the operator can start a rule from it.
+ * Why it exists: a daily-style query can surface networks with a crawler's shape
+ * (many cookies, about one page each, no referrer, no logins), so an operator can
+ * start a rule from one instead of investigating a traffic spike by hand.
  */
 
 /**

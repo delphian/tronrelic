@@ -73,11 +73,7 @@ export function ProviderVendorSection({ provider }: IProviderVendorSectionProps)
     const [testResult, setTestResult] = useState<IProviderTestResult | null>(null);
     const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-    /**
-     * Seed local form state from a freshly-saved masked config.
-     *
-     * @param next - The masked config to apply.
-     */
+    /** Seed local form state from a freshly-saved masked config. */
     const applyConfig = useCallback((next: Record<string, unknown>) => {
         setConfig(next);
         setValues(editableValues(provider.fields, next));
@@ -161,12 +157,7 @@ export function ProviderVendorSection({ provider }: IProviderVendorSectionProps)
         }
     }, [provider.id]);
 
-    /**
-     * Update one editable value.
-     *
-     * @param key - The field key.
-     * @param value - The new value.
-     */
+    /** Update one editable value. */
     const setValue = useCallback((key: string, value: unknown) => {
         setValues((current) => ({ ...current, [key]: value }));
     }, []);

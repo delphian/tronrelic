@@ -25,23 +25,18 @@ import type { IContentClassification, ContentDescriptorFeature, ContentSinkKind,
 const CLASSIFICATION_DIMENSIONS = ['egress', 'audience'] as const;
 
 /**
- * Rank an egress level by its position in the ordered vocabulary. Returns -1
- * for an unknown level so a containment check against an unknown ceiling fails
- * closed (admits nothing) rather than throwing inside the routing hot path.
- *
- * @param level - A candidate egress value.
- * @returns The ascending-exposure rank, or -1 when the value is not a known level.
+ * Rank an egress level by its position in the ordered vocabulary (ascending
+ * exposure). Returns -1 for an unknown level so a containment check against an
+ * unknown ceiling fails closed (admits nothing) rather than throwing inside the
+ * routing hot path.
  */
 function egressRank(level: string): number {
     return (CONTENT_EGRESS_LEVELS as ReadonlyArray<string>).indexOf(level);
 }
 
 /**
- * Rank an audience level by its position in the ordered vocabulary. Same
- * fail-closed contract as {@link egressRank}.
- *
- * @param level - A candidate audience value.
- * @returns The ascending-breadth rank, or -1 when the value is not a known level.
+ * Rank an audience level by its position in the ordered vocabulary (ascending
+ * breadth). Same fail-closed contract as {@link egressRank}.
  */
 function audienceRank(level: string): number {
     return (CONTENT_AUDIENCE_LEVELS as ReadonlyArray<string>).indexOf(level);

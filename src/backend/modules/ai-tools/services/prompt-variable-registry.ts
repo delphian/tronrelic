@@ -2,11 +2,10 @@
  * @file prompt-variable-registry.ts
  *
  * Core-owned registry of prompt variables — the `{%name%}` tokens expanded into
- * a prompt before it reaches the model. Promoted out of the trp-ai-assistant
- * plugin so one service owns every variable, classification persists across
- * restarts, and the lethal-trifecta detector can see when a `secret` variable is
- * in play (the private-data ingress the tool-scoped trifecta signal historically
- * could not model).
+ * a prompt before it reaches the model. One service owns every variable, so
+ * classification persists across restarts and the lethal-trifecta detector can
+ * see when a `secret` variable is in play (private-data ingress a tool-scoped
+ * trifecta signal cannot model).
  *
  * Two kinds coexist behind one registry, following the Menu module's
  * dual-backing pattern (code-registered + DB-persisted in one service):
@@ -509,13 +508,7 @@ export class PromptVariableRegistry implements IPromptVariableRegistry {
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
-/**
- * Strip the driver-assigned `_id` Mongo includes on reads — it is not part of
- * the published {@link IStaticPromptVariable} shape.
- *
- * @param doc - The raw Mongo document.
- * @returns The document without `_id`.
- */
+/** Strip the driver-assigned `_id`; it is not part of the published {@link IStaticPromptVariable} shape. */
 function stripMongoId<T extends Record<string, unknown>>(doc: T): IStaticPromptVariable {
     const cleaned = { ...doc };
     delete (cleaned as Record<string, unknown>)._id;
@@ -525,10 +518,6 @@ function stripMongoId<T extends Record<string, unknown>>(doc: T): IStaticPromptV
 /**
  * Sort order shared by both variable listings, so the Registry tab and the
  * `ai-list-prompt-variables` tool show variables in the same order.
- *
- * @param a - First variable.
- * @param b - Second variable.
- * @returns Negative, zero, or positive, as `Array.prototype.sort` expects.
  */
 function compareByCategoryThenName(a: IPromptVariableSummary, b: IPromptVariableSummary): number {
     return a.category.localeCompare(b.category) || a.name.localeCompare(b.name);
@@ -564,12 +553,7 @@ function assertValidName(value: unknown): string {
     return name;
 }
 
-/**
- * Normalize a sensitivity value to the known set, or `null` when unrecognised.
- *
- * @param value - The candidate sensitivity.
- * @returns The validated sensitivity, or `null`.
- */
+/** Normalize a sensitivity value to the known set, or `null` when unrecognised. */
 function normalizeSensitivity(value: unknown): AiToolSensitivity | null {
     return value === 'public' || value === 'internal' || value === 'secret' ? value : null;
 }

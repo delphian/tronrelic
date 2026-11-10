@@ -112,9 +112,6 @@ function isTabId(tab: string | undefined): tab is TabId {
  * Select this module's scheduler jobs for the Schedules tab. A predicate
  * rather than a fixed list of names, so the tab keeps showing every job the
  * module owns when another one is added.
- *
- * @param job - A job row supplied by the scheduler monitor.
- * @returns True when the job belongs to this module.
  */
 function isPriceHistoryJob(job: SchedulerJob): boolean {
     return job.name.startsWith(JOB_PREFIX);
@@ -138,7 +135,6 @@ interface IPriceHistoryAdminClientProps {
  * leave the page on a blank panel.
  *
  * @param url - The clicked node's URL, such as `/system/price-history?tab=logs`.
- * @returns The matching tab id.
  */
 function tabFromUrl(url: string | undefined): TabId {
     const tab = url?.match(/[?&]tab=([^&]+)/)?.[1];
@@ -150,9 +146,6 @@ function tabFromUrl(url: string | undefined): TabId {
  * `tron/contract/<address>` path, so the row stays readable; the full value is
  * in the cell's title. A handle that is an address renders through
  * `TronContractAddress` instead and never reaches this.
- *
- * @param ref - The handle.
- * @returns The shortened handle.
  */
 function shortRef(ref: string): string {
     return ref.length > 14 ? `${ref.slice(0, 6)}…${ref.slice(-4)}` : ref;
@@ -165,9 +158,6 @@ function shortRef(ref: string): string {
  * contract, so it stays plain text. The checksum test decides which is which
  * instead of comparing against `'TRX'`, so a malformed stored value never
  * renders as a contract link that leads nowhere.
- *
- * @param asset - The stored asset id: `'TRX'` or a token contract address.
- * @returns The contract chip for a token, or the plain id otherwise.
  */
 function renderAsset(asset: string) {
     return isValidTronAddress(asset) ? <TronContractAddress address={asset} /> : asset;
@@ -178,9 +168,6 @@ function renderAsset(asset: string) {
  * handle is the SunSwap pool the price came from, which is itself a contract,
  * so it gets the contract chip. Any other handle is a vendor lookup key, not
  * an address, and is shown shortened and muted.
- *
- * @param ref - The `sourceRef` stored on the asset's cursor.
- * @returns The contract chip for a pool address, or the shortened key otherwise.
  */
 function renderSourceRef(ref: string) {
     return isValidTronAddress(ref)
@@ -417,11 +404,7 @@ export function PriceHistoryAdminClient({ submenuTree, submenuGeneratedAt, initi
             .catch((error) => push({ tone: 'danger', title: error instanceof Error ? error.message : 'Failed to load price sources' }));
     }, [activeTab, push]);
 
-    /**
-     * Drive the active panel from a tab click, deep-linking via the URL.
-     *
-     * @param item - The selected submenu node.
-     */
+    /** Drive the active panel from a tab click, deep-linking via the URL. */
     const handleTabSelect = useCallback((item: MenuNodeSerialized): void => {
         const tab = tabFromUrl(item.url);
         setActiveTab(tab);

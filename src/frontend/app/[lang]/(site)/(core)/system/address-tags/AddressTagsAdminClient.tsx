@@ -85,9 +85,6 @@ function isTabId(tab: string | undefined): tab is TabId {
  *
  * A predicate rather than a fixed list of names, so the tab keeps its promise
  * of showing "this module's schedules" when another ingestion job is added.
- *
- * @param job - A job row supplied by the scheduler monitor.
- * @returns True when the job belongs to this module.
  */
 function isAddressTagsJob(job: SchedulerJob): boolean {
     return job.name.startsWith(JOB_PREFIX);
@@ -99,7 +96,6 @@ function isAddressTagsJob(job: SchedulerJob): boolean {
  * leave the page on a blank panel.
  *
  * @param url - The clicked node's url (e.g. `/system/address-tags?tab=sources`).
- * @returns The matching tab id.
  */
 function tabFromUrl(url: string | undefined): TabId {
     const tab = url?.match(/[?&]tab=([^&]+)/)?.[1];
@@ -140,8 +136,6 @@ export function AddressTagsAdminClient({ submenuTree, submenuGeneratedAt, initia
      * panel. Rewriting the address in place with `history.replaceState` needs
      * no server round-trip and no `useSearchParams` Suspense boundary;
      * `page.tsx` reads the value SSR-first to seed the panel on next load.
-     *
-     * @param item - The clicked submenu node, carrying its `?tab=` url.
      */
     const handleTabSelect = useCallback((item: MenuNodeSerialized) => {
         const tab = tabFromUrl(item.url);

@@ -4,14 +4,13 @@
  * @fileoverview Shared surface for the System page's single-section tabs.
  *
  * Configuration and WebSockets each own a tab whose whole body is one subsystem
- * section. Those sections render bare — they were written to sit inside a
- * wrapper that supplied the surface, so neither carries a card of its own.
- * They share this wrapper rather than repeat the same `Stack` + `Card`, keeping
- * the panels visually identical to the Overview cards and to each other.
+ * section. Those sections render bare, with no card of their own, so they share
+ * this wrapper rather than repeat the same `Stack` + `Card`, keeping the panels
+ * visually identical to the Overview cards and to each other.
  *
- * MongoDB and ClickHouse are exceptions and no longer use this panel: each tab
- * holds several independent surfaces that each earn a card, so `MongoSection`
- * and `ClickHouseSection` build their own stacks.
+ * MongoDB and ClickHouse do not use this panel: each tab holds several
+ * independent surfaces that each earn a card, so `MongoSection` and
+ * `ClickHouseSection` build their own stacks.
  */
 
 import type { ReactNode } from 'react';

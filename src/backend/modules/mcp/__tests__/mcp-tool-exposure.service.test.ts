@@ -78,11 +78,8 @@ const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), c
 /**
  * Build the exposure service and the policy service it reads, over one database.
  *
- * @param database - The database both services share.
- * @param tools - The registered tools.
  * @param disabled - Names switched off in the registry.
  * @param providers - Owner id per tool name.
- * @returns Both services.
  */
 function build(database: IDatabaseService, tools: IAiTool[], disabled: string[] = [], providers: Record<string, string> = {}) {
     const policies = new McpGroupPolicyService(database, userGroups, logger);
@@ -90,14 +87,7 @@ function build(database: IDatabaseService, tools: IAiTool[], disabled: string[] 
     return { exposure, policies };
 }
 
-/**
- * Store a group policy change through the policy service.
- *
- * @param policies - The policy service.
- * @param groupId - The group to change.
- * @param patch - The settings to change.
- * @returns Resolves once stored.
- */
+/** Store a group policy change through the policy service. */
 async function setPolicy(policies: McpGroupPolicyService, groupId: string, patch: Parameters<McpGroupPolicyService['preview']>[1]): Promise<void> {
     const { next } = await policies.preview(groupId, patch);
     await policies.save(next, 'admin-1');

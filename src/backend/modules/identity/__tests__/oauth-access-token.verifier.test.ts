@@ -126,11 +126,6 @@ describe('OAuthAccessTokenVerifier', () => {
  * Stand-in for Better Auth's verifier that reads the key set, the way it does
  * for a token naming a key id it has not cached, and then refuses the token.
  * Lets the tests count how often a forged token reaches the key store.
- *
- * @param _token - The token under test; unused because the outcome is fixed.
- * @param opts - The options the verifier passed, carrying its `jwksFetch`.
- * @returns Nothing; the promise always rejects.
- * @throws The key-store error when the read fails, otherwise a no-matching-key error.
  */
 async function readKeysThenReject(_token: string, opts: { jwksFetch: () => Promise<unknown> }): Promise<never> {
     await opts.jwksFetch();

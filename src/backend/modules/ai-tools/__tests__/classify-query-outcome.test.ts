@@ -4,11 +4,9 @@
  * Tests for classifyAiQueryOutcome, the function that decides whether a settled
  * AI run actually answered.
  *
- * The behaviour under test is a distinction the code did not previously draw: a
- * provider returns an ordinary result for a run that was truncated, ran out of
- * tool rounds, paused, was refused, or produced nothing, and all five used to be
- * recorded as `completed`. These cases pin each one to its own outcome so a
- * regression cannot quietly fold them back into "success".
+ * A provider returns an ordinary result for a run that was truncated, ran out of
+ * tool rounds, paused, was refused, or produced nothing. These cases pin each to
+ * its own outcome so a regression cannot quietly record them as `completed`.
  */
 import { describe, it, expect } from 'vitest';
 import type { AiStopReason, IAiQueryResult } from '@/types';

@@ -13,12 +13,11 @@
  * "Pipeline" is the default tab, because block ingestion is what operators come
  * to this page to check. Its payload is fetched on the server so the tab renders
  * with real figures on first paint. "Server" holds the droplet, container,
- * Redis, and process readings that used to sit above the blockchain console on
- * the old Overview tab. "Schedules" and "Logs" are scoped to the blockchain
- * jobs and to the `tronrelic:blockchain` log service, so an operator diagnosing
- * sync stays on this page. Configuration, WebSockets, MongoDB, and ClickHouse
- * each own a tab; a panel mounts only while its tab is active, so its fetches
- * fire on arrival rather than on page load.
+ * Redis, and process readings. "Schedules" and "Logs" are scoped to the
+ * blockchain jobs and to the `tronrelic:blockchain` log service, so an operator
+ * diagnosing sync stays on this page. Configuration, WebSockets, MongoDB, and
+ * ClickHouse each own a tab; a panel mounts only while its tab is active, so its
+ * fetches fire on arrival rather than on page load.
  *
  * The tab row and the active panel are siblings inside ONE `Stack`, which is
  * what keeps the page's vertical rhythm coherent. `Page` is a grid whose gap is
@@ -58,9 +57,6 @@ const BLOCKCHAIN_LOG_SERVICE = 'tronrelic:blockchain';
  *
  * Matches by prefix rather than a fixed list, so a pipeline job added later
  * appears on the Schedules tab with no change here.
- *
- * @param job - One scheduler job.
- * @returns True for `blockchain:*` and `network-activity:*` jobs.
  */
 const isPipelineJob = (job: SchedulerJob): boolean =>
     job.name.startsWith('blockchain:') || job.name.startsWith('network-activity:');
@@ -86,7 +82,6 @@ interface ISystemAdminClientProps {
  * Resolve a submenu node's url to a known tab id.
  *
  * @param url - The clicked node's url (e.g. `/system/system?tab=mongo`).
- * @returns The matching tab id.
  */
 function tabFromUrl(url: string | undefined): SystemTabId {
     return toTabId(url?.match(/[?&]tab=([^&]+)/)?.[1]);
@@ -109,27 +104,18 @@ export function SystemAdminClient({ submenuTree, submenuGeneratedAt, initialTab,
      * so rewrite the address in place with `history.replaceState` — no server
      * round-trip — so the `?tab=` URLs become true deep links the server entry can
      * read SSR-first on next load.
-     *
-     * @param tab - The tab to activate.
      */
     const activateTab = useCallback((tab: SystemTabId) => {
         setActiveTab(tab);
         window.history.replaceState(null, '', `/system/system?tab=${tab}`);
     }, []);
 
-    /**
-     * Activate the clicked submenu tab.
-     *
-     * @param item - The clicked submenu node, carrying its `?tab=` url.
-     */
+    /** Activate the clicked submenu tab. */
     const handleTabSelect = useCallback((item: MenuNodeSerialized) => {
         activateTab(tabFromUrl(item.url));
     }, [activateTab]);
 
-    /**
-     * Open the Configuration tab from a control on another tab, such as the
-     * Buffer stage card's settings button.
-     */
+    /** Open the Configuration tab from a control on another tab, such as the Buffer stage settings button. */
     const openSettings = useCallback(() => {
         activateTab('config');
     }, [activateTab]);

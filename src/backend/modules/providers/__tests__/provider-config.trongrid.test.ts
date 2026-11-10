@@ -19,8 +19,6 @@ import { DEFAULT_TRONGRID_CONFIG, MAX_TRONGRID_API_KEYS, TRONGRID_CONFIG_KEY } f
 /**
  * Minimal ISystemLogService stand-in: the service only ever emits info lines, and
  * the test asserts on stored state rather than on logging.
- *
- * @returns A logger whose methods do nothing.
  */
 function createSilentLogger() {
     const noop = () => undefined;

@@ -76,11 +76,7 @@ export class ClickHouseService implements IClickHouseService, IClickHouseAccount
     /** Polling interval in milliseconds (default: 30 seconds) */
     private static readonly ERROR_POLL_INTERVAL_MS = 30_000;
 
-    /**
-     * Private constructor - use setDependencies() and getInstance().
-     *
-     * @param logger - Scoped logger for ClickHouse operations
-     */
+    /** Private constructor - use setDependencies() and getInstance(). */
     private constructor(logger: ISystemLogService) {
         this.logger = logger;
     }
@@ -289,9 +285,6 @@ export class ClickHouseService implements IClickHouseService, IClickHouseAccount
      * each account gets a different password, and rotating
      * `CLICKHOUSE_PASSWORD` rotates every account password with it once the
      * accounts are applied again at startup.
-     *
-     * @param accountId - Account the password is for.
-     * @returns 64-character hex password.
      */
     private deriveAccountPassword(accountId: string): string {
         return createHmac('sha256', this.requireConfig().password)

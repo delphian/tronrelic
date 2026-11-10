@@ -70,12 +70,7 @@ class PluginRegistry {
         };
     }
 
-    /**
-     * Notify all subscribers that the registry state has changed.
-     *
-     * This method is called internally after plugin registration to trigger
-     * reactive updates in subscribed components.
-     */
+    /** Notify all subscribers that the registry state has changed, after plugin registration. */
     private notify(): void {
         this.listeners.forEach(listener => listener());
     }
@@ -94,9 +89,8 @@ class PluginRegistry {
      * Defense in depth: although the generated registry already filters out
      * malformed plugin modules, this method revalidates each plugin's manifest
      * shape and skips with a logged error rather than throwing on a missing
-     * field. A bad plugin reaching this point used to crash the entire SSR
-     * pass on the first `.menuItems` access — see the post-mortem on the
-     * x-poster widget rollout for the failure mode.
+     * field, because a bad plugin reaching this point would otherwise crash the
+     * entire SSR pass on the first `.menuItems` access.
      *
      * @param plugin - The plugin definition containing menu items, pages, and/or admin pages
      */

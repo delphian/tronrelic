@@ -198,20 +198,12 @@ export class PriceHistoryService implements IPriceHistoryService {
     /**
      * Format an instant as ClickHouse `DateTime64(3,'UTC')` literal. The client
      * expects `YYYY-MM-DD HH:MM:SS.sss`, not ISO with `T`/`Z`.
-     *
-     * @param date - The instant to format.
-     * @returns The ClickHouse-formatted UTC datetime string.
      */
     private static formatVersionColumn(date: Date): string {
         return date.toISOString().replace('T', ' ').replace('Z', '');
     }
 
-    /**
-     * Non-blocking pause used to throttle back-to-back deep-backfill chunks.
-     *
-     * @param ms - Milliseconds to wait.
-     * @returns A promise resolving after the delay.
-     */
+    /** Non-blocking pause used to throttle back-to-back deep-backfill chunks. */
     private static delay(ms: number): Promise<void> {
         return new Promise((resolve) => setTimeout(resolve, ms));
     }
@@ -270,13 +262,7 @@ export class PriceHistoryService implements IPriceHistoryService {
         };
     }
 
-    /**
-     * Which routing class an asset belongs to, so the tick can group assets
-     * that share a vendor list.
-     *
-     * @param asset - The asset to classify.
-     * @returns `trx` for the native coin, `token` for any contract address.
-     */
+    /** Which routing class an asset belongs to, so the tick can group assets that share a vendor list. */
     private static assetClass(asset: PriceAsset): AssetClass {
         return asset === PRICE_ASSET_TRX ? 'trx' : 'token';
     }
@@ -296,13 +282,7 @@ export class PriceHistoryService implements IPriceHistoryService {
         );
     }
 
-    /**
-     * Persist a cursor mutation, stamping `updatedAt` for least-recently-advanced
-     * selection.
-     *
-     * @param asset - The asset whose cursor changed.
-     * @param patch - Fields to set.
-     */
+    /** Persist a cursor mutation, stamping `updatedAt` for least-recently-advanced selection. */
     private async patchAssetProgress(asset: PriceAsset, patch: Partial<IPriceAssetProgressDoc>): Promise<void> {
         const collection = this.database.getCollection<IPriceAssetProgressDoc>(PROGRESS_COLLECTION);
         await collection.updateOne({ asset }, { $set: { ...patch, updatedAt: new Date() } });
@@ -332,9 +312,7 @@ export class PriceHistoryService implements IPriceHistoryService {
      * Whether an asset's backoff has elapsed, so a tick may fetch for it again.
      * An asset that has never been parked is always due.
      *
-     * @param doc - The asset's cursor.
      * @param now - The tick's notion of the current time, in milliseconds.
-     * @returns True when the asset may be fetched this tick.
      */
     private static isDue(doc: IPriceAssetProgressDoc, now: number): boolean {
         return !doc.nextAttemptAt || doc.nextAttemptAt.getTime() <= now;

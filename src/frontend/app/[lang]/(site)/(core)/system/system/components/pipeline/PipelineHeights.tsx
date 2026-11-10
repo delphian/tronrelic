@@ -4,11 +4,9 @@
  * @fileoverview Where each part of the block pipeline has reached.
  *
  * The question an operator asks after "is it healthy?" is "where is it
- * stuck?". The old console answered with two lag figures that were nearly the
- * same number under different names, and never showed how far fetching had
- * got. This view lays the pipeline out left to right — chain head, fetched,
- * buffered, committed — with the gap between each pair written on the
- * connector, so a stall shows as one gap growing while the others hold.
+ * stuck?". This view lays the pipeline out left to right — chain head,
+ * fetched, buffered, committed — with the gap between each pair written on
+ * the connector, so a stall shows as one gap growing while the others hold.
  */
 
 import type { ReactNode } from 'react';
@@ -77,13 +75,7 @@ function Connector({ gap }: { gap: string }) {
     );
 }
 
-/**
- * Compute the distance between two heights, when both are known.
- *
- * @param upper - The further-along height.
- * @param lower - The height behind it.
- * @returns The non-negative difference, or null when either is unknown.
- */
+/** Compute the distance between two heights, or null when either is unknown. */
 function heightGap(upper: number | null, lower: number | null): number | null {
     return upper !== null && lower !== null ? Math.max(0, upper - lower) : null;
 }

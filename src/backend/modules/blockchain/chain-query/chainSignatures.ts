@@ -152,11 +152,8 @@ export interface IDecodedEvent {
 export function decodeKnownEvent(topics: readonly string[], data: string): IDecodedEvent | null {
     const [topic0, first, second, third] = topics;
     /**
-     * Read one 32-byte word of the event's data, so a short data field is
-     * reported as missing rather than sliced into a wrong value.
-     *
-     * @param index - Which word, counting from 0.
-     * @returns The word as 64 hex characters, or null when the data is too short.
+     * Read one 32-byte word of the event's data, or null when the data is too short,
+     * so a short field is reported as missing rather than sliced into a wrong value.
      */
     const word = (index: number): string | null => data.length >= (index + 1) * WORD_HEX ? data.slice(index * WORD_HEX, (index + 1) * WORD_HEX) : null;
     const name = topic0 ? eventSignature(topic0)?.split('(')[0] : undefined;

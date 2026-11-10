@@ -73,9 +73,8 @@ const SINCE_OPTIONS: ReadonlyArray<{ id: TrafficWindowId; label: string; hours: 
 ];
 
 /**
- * Render `null` bucket keys as a literal "(null)" so operators see the
- * distinction from `human` / `bot_other` — the NULL bucket is meaningful
- * (pre-classifier rows), not a missing-data placeholder.
+ * Render a `null` bucket key as a literal "(null)": the NULL bucket holds pre-classifier
+ * rows, distinct from `human` / `bot_other`, not a missing-data placeholder.
  */
 function renderKey(key: string | null): string {
     return key === null ? '(null)' : key;

@@ -433,11 +433,8 @@ describe('ContentService', () => {
 
     describe('applyDecision', () => {
         /**
-         * Look up the ref a queue item was opened with, which is what the
-         * real curation module hands back when that item is decided.
-         *
-         * @param itemId - The queue item id the stub issued.
-         * @returns The item's ref, `{ id, holdId }`.
+         * Look up the ref (`{ id, holdId }`) a queue item was opened with, which is
+         * what the real curation module hands back when that item is decided.
          */
         function refOf(itemId: string): Record<string, unknown> {
             return curation.items.get(itemId)!.ref;

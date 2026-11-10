@@ -784,14 +784,12 @@ export class AccountHistoryService implements IAccountHistoryService {
     }
 
     /**
-     * The shared outbound-TRC20 dedup predicate. An outbound TRC20 transfer is
-     * stored twice (a native `'tx'` row and a decoded `'trc20'` row with the same
-     * `tx_id`); every summary aggregate must suppress the native twin exactly as
-     * {@link getTransactions} does, or counts and sums double the token activity.
-     * The fragment references the `{address:String}` bind param, so every query
-     * using it must pass `address`.
-     *
-     * @returns A SQL boolean fragment, true for rows to keep.
+     * The shared outbound-TRC20 dedup predicate, a SQL boolean fragment true for
+     * rows to keep. An outbound TRC20 transfer is stored twice (a native `'tx'` row
+     * and a decoded `'trc20'` row with the same `tx_id`); every summary aggregate
+     * must suppress the native twin exactly as {@link getTransactions} does, or
+     * counts and sums double the token activity. The fragment references the
+     * `{address:String}` bind param, so every query using it must pass `address`.
      */
     private static dedupeFilter(): string {
         return `NOT (source = 'tx' AND tx_id IN (
@@ -911,15 +909,14 @@ export class AccountHistoryService implements IAccountHistoryService {
      * USD valuation, they share no axis. `toStartOfMonth` buckets in UTC for stable,
      * timezone-independent labels.
      *
-     * Reading the ledger is the fix the redesign delivers: TRX now spans both
-     * `native` and `internal` origins (both are real money movement), so a
-     * contract's TRX deposit — an `internal` leg invisible to the transaction table,
-     * which the old `type = 'TransferContract'` guard could never capture — finally
-     * shows as inflow. The ledger already excludes non-value rows at derivation
-     * (TRC10 counts, delegated/frozen stake never become legs), so no per-type guard
-     * is needed here. USDT keys on `asset_id` (the token contract) instead of a
-     * symbol string, and the ledger carries no `tx`/`trc20` twin, so no dedupe filter
-     * is needed either.
+     * TRX spans both `native` and `internal` origins (both are real money
+     * movement), so a contract's TRX deposit — an `internal` leg invisible to the
+     * transaction table and to a `type = 'TransferContract'` guard — shows as
+     * inflow. The ledger already excludes non-value rows at derivation (TRC10
+     * counts, delegated/frozen stake never become legs), so no per-type guard is
+     * needed here. USDT keys on `asset_id` (the token contract) instead of a symbol
+     * string, and the ledger carries no `tx`/`trc20` twin, so no dedupe filter is
+     * needed either.
      *
      * The bucket width is chosen by {@link FlowGranularity}: `toStartOfMonth`,
      * `toMonday` (ISO week, Monday start), or `toDate` (calendar day) — each a
@@ -1067,8 +1064,6 @@ export class AccountHistoryService implements IAccountHistoryService {
     /**
      * Zeroed per-source page counters, one fresh object per account per tick so
      * counter increments never leak across accounts.
-     *
-     * @returns A zeroed page-count record.
      */
     private static emptyPages(): IAccountHistorySourcePages {
         return { tx: 0, trc20: 0, internal: 0 };

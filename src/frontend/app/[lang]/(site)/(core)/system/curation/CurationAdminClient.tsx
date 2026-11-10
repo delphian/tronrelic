@@ -50,9 +50,6 @@ const COLLECTION_PREFIX = 'module_curation_';
 /**
  * Narrow an arbitrary `?tab=` string to a known tab, so the deep-link seed and
  * the click handler share one definition of what a valid tab is.
- *
- * @param tab - The raw `?tab=` value.
- * @returns True when the value names a real tab.
  */
 function isTabId(tab: string | undefined): tab is TabId {
     return tab === 'pending' || tab === 'history' || tab === 'database';
@@ -63,7 +60,6 @@ function isTabId(tab: string | undefined): tab is TabId {
  * malformed node can never leave the page on an empty panel.
  *
  * @param url - The clicked node's url, e.g. `/system/curation?tab=history`.
- * @returns The matching tab id.
  */
 function tabFromUrl(url: string | undefined): TabId {
     const tab = url?.match(/[?&]tab=([^&]+)/)?.[1];
@@ -127,8 +123,6 @@ export function CurationAdminClient({ submenuTree, submenuGeneratedAt, initialTa
      * `MenuNavClient` suppresses its link navigation when `onItemSelect` is set,
      * so this both switches the panel and rewrites the address in place, with no
      * server round trip; `page.tsx` reads that value on the next load.
-     *
-     * @param item - The clicked submenu node, carrying its `?tab=` url.
      */
     const handleTabSelect = useCallback((item: MenuNodeSerialized) => {
         const tab = tabFromUrl(item.url);

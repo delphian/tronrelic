@@ -104,9 +104,6 @@ export function PromptTriggersEditor({
     /**
      * Apply a partial edit to one row, addressed by its stable local key so
      * sibling rows keep their input state untouched.
-     *
-     * @param key - The row's local list key.
-     * @param patch - The fields to change on that row.
      */
     const updateDraft = useCallback((key: string, patch: Partial<ITriggerDraft>) => {
         onChange(drafts.map(draft => (draft.key === key ? { ...draft, ...patch } : draft)));
@@ -116,8 +113,6 @@ export function PromptTriggersEditor({
      * Drop one row. The removal only reaches the server on the next Save, which
      * is why the button's title says so — an operator should not think a trigger
      * has stopped firing the moment the row disappears.
-     *
-     * @param key - The row's local list key.
      */
     const removeDraft = useCallback((key: string) => {
         onChange(drafts.filter(draft => draft.key !== key));

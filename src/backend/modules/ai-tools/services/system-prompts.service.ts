@@ -353,12 +353,7 @@ export class SystemPromptsService {
         return this.promptVariables.expandAll(combined);
     }
 
-    /**
-     * Look up a single additional prompt by id.
-     *
-     * @param id - The prompt id.
-     * @returns The prompt, or `null` if not found.
-     */
+    /** Look up a single additional prompt by id, or `null` if not found. */
     private async get(id: string): Promise<ISystemPromptDoc | null> {
         const collection = this.database.getCollection<ISystemPromptDoc>(COLLECTION);
         const doc = await collection.findOne({ id: String(id) });
@@ -390,14 +385,7 @@ function matchesAudience(prompt: ISystemPromptDoc, principal?: IToolEndUserPrinc
     return false;
 }
 
-/**
- * Mongo includes the driver-assigned `_id` on every read. The published
- * {@link ISystemPromptDoc} shape doesn't include it, so strip it before
- * returning to callers.
- *
- * @param doc - The raw Mongo document.
- * @returns The document without `_id`.
- */
+/** Strip the driver-assigned `_id`; the published {@link ISystemPromptDoc} shape does not include it. */
 function stripMongoId<T extends Record<string, unknown>>(doc: T): ISystemPromptDoc {
     const cleaned = { ...doc };
     delete (cleaned as Record<string, unknown>)._id;

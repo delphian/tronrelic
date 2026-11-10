@@ -233,10 +233,9 @@ export class TranslationObservationService {
      * The admin page attributes a key to a published route only when one of
      * its remembered paths matches that route. Header and menu keys render on
      * every page, so their lists fill up with address and transaction pages,
-     * and simply dropping the oldest path used to drop the one path that tied
-     * the key to a published route. The route then reported fewer keys than
-     * it actually renders. See `selectRoutesToDrop` for the order paths are
-     * dropped in.
+     * and dropping the oldest path can drop the one path that ties the key to
+     * a published route, leaving the route reporting fewer keys than it
+     * renders. See `selectRoutesToDrop` for the order paths are dropped in.
      *
      * @param filter - Namespace and key of the document to trim.
      * @param patterns - Every published route pattern.

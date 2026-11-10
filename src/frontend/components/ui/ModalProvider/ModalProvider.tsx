@@ -322,14 +322,7 @@ function ModalRenderer({ descriptor, onClose }: { descriptor: ModalDescriptor; o
         };
     }, [dismissible]);
 
-    /**
-     * Handles backdrop click events to close dismissible modals.
-     *
-     * Only closes the modal if the click target is the backdrop itself
-     * (not bubbled from dialog content) and the modal is marked dismissible.
-     *
-     * @param event - React mouse event from backdrop click
-     */
+    /** Close a dismissible modal when the click lands on the backdrop itself, not bubbled from content. */
     const handleBackdropClick = (event: React.MouseEvent<HTMLDivElement>) => {
         if (event.target === event.currentTarget && dismissible) {
             onClose();

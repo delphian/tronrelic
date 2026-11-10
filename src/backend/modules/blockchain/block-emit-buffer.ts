@@ -1,18 +1,16 @@
 /**
  * @fileoverview How fast the block emitter releases what it is holding.
  *
- * The syncer used to hold each block for its three-second slot inside the
- * BullMQ worker, immediately before broadcasting it. That worker runs one job
- * at a time, so while it waited on block N it was not fetching block N+1, and
- * the pipeline could never accumulate fetched-but-unbroadcast blocks. Every
- * fetch stall, retry, or late scheduler tick therefore landed straight in the
- * visible feed as a gap, and nothing on the backend could cover it.
+ * Ingestion and broadcast run as separate loops. The BullMQ worker runs one job
+ * at a time, so holding a block for its three-second slot there would stop it
+ * fetching the next one, and every fetch stall, retry, or late scheduler tick
+ * would land in the visible feed as a gap.
  *
- * Splitting ingestion from broadcast fixes that, but only if the side doing the
- * broadcasting keeps a lead. The functions here decide how big that lead should
- * be and how fast to spend it: release slightly slower than the chain produces
- * while the lead is short so it rebuilds, at the chain's own cadence once it is
- * full, and faster when a scheduler tick has just delivered a burst.
+ * The split only helps if the broadcasting side keeps a lead. The functions here
+ * decide how big that lead should be and how fast to spend it: release slightly
+ * slower than the chain produces while the lead is short so it rebuilds, at the
+ * chain's own cadence once it is full, and faster when a scheduler tick has just
+ * delivered a burst.
  *
  * The arithmetic lives here as pure functions, like `sync-mode.ts` and
  * `block-pacer.ts`, so the behaviour can be pinned by tests rather than buried

@@ -75,12 +75,7 @@ interface IReorderOp {
  */
 type MutablePlacement = { -readonly [K in keyof IWidgetPlacement]: IWidgetPlacement[K] };
 
-/**
- * Sort a list of placements by their render order.
- *
- * @param list - Rows to sort; not mutated.
- * @returns A new array in ascending order.
- */
+/** Sort placements by render order into a new array, leaving the input unmutated. */
 function byOrder(list: ReadonlyArray<IWidgetPlacement>): IWidgetPlacement[] {
     return [...list].sort((a, b) => a.order - b.order);
 }
@@ -600,11 +595,7 @@ export function usePlacementsWorkbench(initial: IWidgetsAdminData): IPlacementsW
         void reload();
     }, [pushToast, reload]);
 
-    /**
-     * Reset a plugin row to what its plugin registered.
-     *
-     * @param id - The plugin-source row to reset.
-     */
+    /** Reset a plugin row to what its plugin registered. */
     const restorePlacement = useCallback(async (id: string): Promise<void> => {
         const restored = await apiRestoreDefaults(id);
         setPlacements(prev => prev.map(p => (p.id === restored.id ? restored : p)));

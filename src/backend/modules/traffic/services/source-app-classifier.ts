@@ -4,11 +4,10 @@
  * Names the social or messaging app whose in-app browser a request came
  * from, read from the User-Agent, and stores it on `traffic_events.source_app`
  * at write time. The point is attribution: those browsers open a link without
- * sending a `Referer` header, so a visit from a Douyin caption or a WeChat
- * chat used to read `direct` on every surface, and the app's name sat unread
- * in the User-Agent column. The source bucket reads this column after the
- * referrer and after `utm_source`, and the channel classifier files a visit
- * that has only this signal under `social`.
+ * sending a `Referer` header, so without this a visit from a Douyin caption or
+ * a WeChat chat reads `direct` on every surface. The source bucket reads this
+ * column after the referrer and after `utm_source`, and the channel classifier
+ * files a visit that has only this signal under `social`.
  *
  * Only social and messaging apps are listed, because the channel claim
  * depends on it: every app here is one whose visit is a social referral.

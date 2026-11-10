@@ -315,11 +315,6 @@ interface IListOptions {
  * the parsed permission. The query therefore reads up to `limit + 1` updates
  * and the page may hold fewer matches than `limit`; the cursor still continues
  * from the last update read, so no update is skipped.
- *
- * @param session - The call's session.
- * @param window - The window to cover.
- * @param options - Filters and paging.
- * @returns The payload, the addresses it names, and notes.
  */
 async function readUpdates(
     session: ChainQuerySession,
@@ -422,11 +417,6 @@ LIMIT {limit:UInt32}`,
  *
  * Filtering by account still reads the contract parameter of every match,
  * because the account lives only inside that JSON.
- *
- * @param session - The call's session.
- * @param window - The window to cover.
- * @param options - Filters, paging, and whether to recover each page row's signers.
- * @returns The payload, the addresses it names, and notes.
  */
 async function readSignedTransactions(
     session: ChainQuerySession,

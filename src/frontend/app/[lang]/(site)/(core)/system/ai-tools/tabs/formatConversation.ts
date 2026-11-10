@@ -2,10 +2,8 @@
  * @file formatConversation.ts
  *
  * Turns a Query-tab transcript into the plain text an operator puts on the
- * clipboard. The copy control beside a conversation used to hand over only its
- * opening prompt, which is almost never what someone copying a conversation
- * wants — they are pasting a run into a ticket, a message, or a document, and
- * the answer is the part that matters.
+ * clipboard. Someone copying a conversation is pasting a run into a ticket, a
+ * message, or a document, so the answer matters more than the opening prompt.
  *
  * Three formats exist because the destinations differ. A Markdown transcript is
  * the common case. The full transcript adds the thinking and tool activity, and

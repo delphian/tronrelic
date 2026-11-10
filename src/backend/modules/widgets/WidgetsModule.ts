@@ -9,10 +9,7 @@
  *
  * Consumers — plugins, core modules, admin controllers, the SSR
  * router — reach widget functionality exclusively through
- * `context.services.get<IWidgetsService>('widgets')`. The legacy
- * `WidgetService` shim, the per-plugin `context.zones` /
- * `context.widgetTypes` facades, and the `IWidgetConfig` type are all
- * gone.
+ * `context.services.get<IWidgetsService>('widgets')`.
  *
  * Mutations to placements broadcast a `widgets:placements-update`
  * refetch signal over WebSocket so connected clients pick up changes

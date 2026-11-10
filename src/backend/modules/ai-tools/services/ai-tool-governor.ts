@@ -68,12 +68,8 @@ export interface IGovernorScreenDeps {
 const WITHHELD_CONTENT_DEFAULT_REASON = 'Untrusted content was withheld by the output screen.';
 
 /**
- * Render a handler result as the text the screen classifies. A string passes
- * through; anything else is JSON-encoded so structured output is screened in
- * full rather than as `[object Object]`.
- *
- * @param result - The handler's raw return value.
- * @returns A string representation for the screen.
+ * Render a handler result as the text the screen classifies, JSON-encoding
+ * non-strings so structured output is screened in full, not as `[object Object]`.
  */
 function resultToText(result: unknown): string {
     return typeof result === 'string' ? result : JSON.stringify(result ?? '');
@@ -291,10 +287,7 @@ export class AiToolGovernor implements IAiToolGovernor {
         this.broadcast = fn;
     }
 
-    /**
-     * Emit a refetch signal that the approval queue changed (parked, approved,
-     * or rejected) — drives the Approvals tab and the nav pending-count badge.
-     */
+    /** Signal that the approval queue changed, refreshing the Approvals tab and nav pending-count badge. */
     private notifyApprovalsChanged(): void {
         this.broadcast?.('ai-tools:approvals-changed', { timestamp: new Date().toISOString() });
     }

@@ -109,9 +109,8 @@ describe('WalletService', () => {
     let service: WalletService;
 
     /**
-     * Mint a challenge through the service and build the signed mutation
-     * input a caller would submit. The mock signature service trusts any
-     * signature, so a fixed placeholder string suffices.
+     * Mint a challenge and build the signed mutation input a caller would submit.
+     * The mock signature service trusts any signature, so `'sig'` suffices.
      */
     async function buildInput(userId: string, action: 'link' | 'unlink' | 'set-primary', address: string) {
         const challenge = await service.issueChallenge(userId, action, address);

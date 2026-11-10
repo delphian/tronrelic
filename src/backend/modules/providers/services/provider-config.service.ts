@@ -74,10 +74,7 @@ export class ProviderConfigService {
     private readonly database: IDatabaseService;
     private readonly logger: ISystemLogService;
 
-    /**
-     * @param database - Core KV store the config blob persists to.
-     * @param logger - Child logger for diagnostics.
-     */
+    /** Hold the core KV store the config blob persists to, and a child logger for diagnostics. */
     private constructor(database: IDatabaseService, logger: ISystemLogService) {
         this.database = database;
         this.logger = logger;

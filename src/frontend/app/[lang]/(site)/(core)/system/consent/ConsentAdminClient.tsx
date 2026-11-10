@@ -41,12 +41,7 @@ const COLLECTION_PREFIX = 'module_consent_';
 /** Log service name a module logging through `logger.child({ module: 'consent' })` records under. */
 const LOG_SERVICE = 'tronrelic:consent';
 
-/**
- * Narrow an arbitrary `?tab=` string to a known tab.
- *
- * @param tab - The raw `?tab=` value.
- * @returns True when the value names a real tab.
- */
+/** Narrow an arbitrary `?tab=` string to a known tab. */
 function isTabId(tab: string | undefined): tab is TabId {
     return TAB_IDS.includes(tab as TabId);
 }
@@ -56,7 +51,6 @@ function isTabId(tab: string | undefined): tab is TabId {
  * malformed node never leaves the page on a blank panel.
  *
  * @param url - The clicked node's url, e.g. `/system/consent?tab=logs`.
- * @returns The matching tab id.
  */
 function tabFromUrl(url: string | undefined): TabId {
     const tab = url?.match(/[?&]tab=([^&]+)/)?.[1];
@@ -86,8 +80,6 @@ export function ConsentAdminClient({ submenuTree, submenuGeneratedAt, initialTab
      * Switch to the clicked tab and keep the address bar a real deep link.
      * `MenuNavClient` suppresses navigation when `onItemSelect` is set, so the
      * URL is rewritten in place.
-     *
-     * @param item - The clicked submenu node.
      */
     const handleTabSelect = useCallback((item: MenuNodeSerialized) => {
         const tab = tabFromUrl(item.url);

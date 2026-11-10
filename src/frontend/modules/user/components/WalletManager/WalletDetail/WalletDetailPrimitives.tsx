@@ -4,10 +4,9 @@
  * @fileoverview Small presentational primitives shared by the wallet-detail
  * panels.
  *
- * Section framing used to live here too (a titled card and a local stat tile),
- * but every panel now uses the core `Panel`, `FigureList`, and `StatTile`
- * components instead, so only the address renderer the counterparty table and
- * the transaction feed share remains.
+ * Holds the address renderer the counterparty table and the transaction feed
+ * share. Section framing comes from the core `Panel`, `FigureList`, and
+ * `StatTile` components.
  */
 
 import { Tooltip } from '../../../../../components/ui/Tooltip';

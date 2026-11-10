@@ -167,14 +167,7 @@ export class AccountHistoryController {
         }
     };
 
-    /**
-     * Log and emit a uniform error response.
-     *
-     * @param res - The response to write.
-     * @param status - HTTP status code.
-     * @param error - Human-facing summary; also the log message.
-     * @param cause - The caught error, surfaced as `message`.
-     */
+    /** Log and emit a uniform error response; `error` is the human-facing summary and log message. */
     private fail(res: Response, status: number, error: string, cause: unknown): void {
         this.logger.error({ error: cause }, error);
         res.status(status).json({ error, message: cause instanceof Error ? cause.message : 'Unknown error' });

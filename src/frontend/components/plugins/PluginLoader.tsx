@@ -9,12 +9,10 @@ import { getRuntimeConfig } from '../../lib/runtimeConfig';
 /**
  * Plugin Loader component.
  *
- * The plugin registry is now self-bootstrapping at module load (see
- * pluginRegistry.ts), so this component no longer fetches manifests to
- * dynamically import plugin frontend modules — every built-in plugin is
- * already in the registry by the time this component mounts.
+ * The plugin registry bootstraps itself at module load (see pluginRegistry.ts),
+ * so every built-in plugin is already registered when this component mounts.
  *
- * Its remaining responsibility is to render the global side-effect components
+ * Its one responsibility is to render the global side-effect components
  * that some plugins ship (e.g., AiAssistantToastHandler, WhaleAlertsToastHandler)
  * — but only for plugins that are currently enabled. To honor enabled state, it
  * fetches /api/plugins/manifests once on mount and intersects the result with

@@ -181,7 +181,6 @@ export function ToolAllowlistPicker({
      *        run. The two groups need different words: a governed tool is
      *        deliberately switched off, while a hosted one is merely not being
      *        reported, which may only mean the provider read failed.
-     * @returns The list element for that group.
      */
     const renderGroup = (options: IPickerOption[], unavailableTag: string) => (
         <ul className={styles.list}>

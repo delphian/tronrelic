@@ -96,12 +96,7 @@ function pickSelection(current: string | null, previous: ICurationItemView[], ne
     return selection;
 }
 
-/**
- * Pull a readable message out of whatever a failed request threw.
- *
- * @param err - The caught value.
- * @returns The error's message, or the value as text.
- */
+/** Pull a readable message out of whatever a failed request threw. */
 function messageOf(err: unknown): string {
     return err instanceof Error ? err.message : String(err);
 }
@@ -187,8 +182,6 @@ export function PendingTab({ onChanged }: { onChanged: () => void }) {
     /**
      * Open an item chosen from the list. Focus stays in the list so a keyboard
      * user can keep moving through it.
-     *
-     * @param id - The item to open.
      */
     const handleSelect = useCallback((id: string) => {
         setFocusSheet(false);

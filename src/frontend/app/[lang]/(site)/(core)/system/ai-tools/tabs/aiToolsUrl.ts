@@ -4,10 +4,9 @@
  * The one place the /system/ai-tools page rewrites its own address. The page
  * keeps two things in the query string — the active tab and the open
  * conversation — and two components write them: the shell writes `tab`, the
- * Query tab writes `conversation`. Each used to rebuild the whole query string
- * from what it knew, so switching tabs dropped the conversation and vice
- * versa. Routing both through here means a write touches only its own key and
- * every other key survives, which is what makes the address a real deep link.
+ * Query tab writes `conversation`. Rebuilding the whole query string from what
+ * one component knows drops the other key, so both route through here, where a
+ * write touches only its own key and the address stays a real deep link.
  */
 
 /**

@@ -37,8 +37,6 @@ function silentLogger(): ISystemLogService {
 /**
  * A fake `'user-groups'` service where `admin1` is the only admin, so tests can
  * compare an admin caller with an ordinary one.
- *
- * @returns The subset of `IUserGroupService` the resolver calls.
  */
 function fakeUserGroups(): IUserGroupService {
     return {
@@ -49,9 +47,6 @@ function fakeUserGroups(): IUserGroupService {
 /**
  * Wrap a spy as a `'user-groups'` service, so a test can count how many times
  * the resolver actually reads a user's memberships.
- *
- * @param getUserGroups - The spy standing in for the real membership read.
- * @returns The subset of `IUserGroupService` the resolver calls.
  */
 function countingUserGroups(getUserGroups: (userId: string) => Promise<string[]>): IUserGroupService {
     return { getUserGroups } as unknown as IUserGroupService;
@@ -98,13 +93,7 @@ function fakeNotifications(): NotificationService {
     } as unknown as NotificationService;
 }
 
-/**
- * Build a request carrying a resolved session for the given user.
- *
- * @param userId - Better Auth id of the caller.
- * @param body - Optional request body for PUT.
- * @returns A request the controller can read the session from.
- */
+/** Build a request carrying a resolved session for the given user. */
 function requestAs(userId: string, body?: unknown): Request {
     return { authSession: { user: { id: userId } }, body } as unknown as Request;
 }

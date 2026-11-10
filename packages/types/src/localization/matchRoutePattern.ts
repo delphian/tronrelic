@@ -7,12 +7,7 @@
  * page reports as published is exactly the route the middleware serves.
  */
 
-/**
- * Split a path into its non-empty segments, ignoring a trailing slash.
- *
- * @param path - Path such as `/blog/post/`.
- * @returns Segments such as `['blog', 'post']`; an empty array for `/`.
- */
+/** Split a path into its non-empty segments, ignoring a trailing slash. */
 function splitPath(path: string): string[] {
     return path.split('/').filter(segment => segment !== '');
 }

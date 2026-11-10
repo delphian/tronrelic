@@ -23,24 +23,14 @@ vi.mock('../blockchain.service.js', () => ({
 const { BlockchainController } = await import('../blockchain.controller.js');
 const { blockchainRouter } = await import('../../../api/routes/blockchain.router.js');
 
-/**
- * Build the smallest response double the controller needs, so a test can
- * read back what was sent.
- *
- * @returns A response whose `json` is a spy.
- */
+/** Build the smallest response double the controller needs, so a test can read back what was sent. */
 function buildRes(): Response {
     const res = { json: vi.fn(), status: vi.fn() } as unknown as Response;
     (res.status as unknown as ReturnType<typeof vi.fn>).mockReturnValue(res);
     return res;
 }
 
-/**
- * Wrap a query object as a request, since the handler reads nothing else.
- *
- * @param query - The query string values the caller supplied.
- * @returns A request carrying only that query.
- */
+/** Wrap a query object as a request, since the handler reads nothing else. */
 function buildReq(query: Record<string, unknown>): Request {
     return { query } as unknown as Request;
 }

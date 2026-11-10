@@ -1,10 +1,9 @@
 /**
  * @fileoverview Shared plugin-page path matching for wildcard routes.
  *
- * Plugin pages historically resolved by exact path string. Wildcard pages
- * (a registered path ending in '/*', e.g. '/blog/*') let one page config own
- * every strictly deeper path — the mechanism behind per-resource plugin URLs
- * like '/blog/my-post'.
+ * Wildcard pages (a registered path ending in '/*', e.g. '/blog/*') let one
+ * page config own every strictly deeper path — the mechanism behind
+ * per-resource plugin URLs like '/blog/my-post'.
  *
  * This module is deliberately pure and free of 'server-only' so BOTH the
  * server registry (serverPluginRegistry.ts) and the client registry

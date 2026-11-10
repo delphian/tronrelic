@@ -10,10 +10,8 @@ import { logger } from '../../lib/logger.js';
  * Single endpoint: fetches the widgets matching a route with their
  * pre-fetched data, ready to be embedded in the SSR response. The
  * unified `IWidgetsService` (singleton, registered as `'widgets'` on
- * the service registry) is the only consumer entry point — the legacy
- * `/api/widgets/all` and `/api/widgets/zones/:zone` admin reads have
- * been retired; that surface lives at `/api/admin/system/widgets/*`
- * now.
+ * the service registry) is the only consumer entry point; admin reads
+ * live at `/api/admin/system/widgets/*`.
  */
 export function widgetRouter(): Router {
     const router = Router();

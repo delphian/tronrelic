@@ -103,8 +103,6 @@ export function BotRuleForm({ rule, initial, onSaved, onCancel }: IBotRuleFormPr
      * Change the window the preview counts over. The window is part of what the
      * counts mean, so changing it invalidates a shown or in-flight preview the
      * same way a changed condition does.
-     *
-     * @param days - The window the operator picked, in days.
      */
     const handlePreviewDaysChange = useCallback((days: number): void => {
         setPreviewDays(days);

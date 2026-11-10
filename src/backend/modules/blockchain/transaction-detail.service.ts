@@ -41,10 +41,7 @@ export class TransactionDetailService implements ITransactionDetailService {
 
     private readonly logger = logger.child({ service: 'transaction-detail' });
 
-    /**
-     * @param database - Core database for the cache collection.
-     * @param provider - Block provider used to fill cache misses.
-     */
+    /** Inject the cache's database and the block provider that fills cache misses. */
     private constructor(
         private readonly database: IDatabaseService,
         private readonly provider: TronGridClient
@@ -227,10 +224,7 @@ export class TransactionDetailService implements ITransactionDetailService {
     }
 }
 
-/**
- * Drop Mongo's `_id` from a cached document so callers receive the clean
- * `IBlockTransaction` contract.
- */
+/** Drop Mongo's `_id` from a cached document so callers receive the clean `IBlockTransaction` contract. */
 function stripId(doc: CachedTransaction): IBlockTransaction {
     const { _id, ...tx } = doc;
     return tx;

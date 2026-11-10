@@ -169,7 +169,6 @@ async function fetchInitialConnectedApps(apiUrl: string): Promise<IConnectedApp[
  * place: the node's `requiresGroups` gate in the identity module.
  *
  * @param apiUrl - The resolved backend API base (already includes `/api`).
- * @param submenu - The pending submenu fetch whose result decides visibility.
  * @returns The caller's connected apps, or null when the tab is not available
  *   to them, which tells `ProfileView` to leave the panel out.
  */

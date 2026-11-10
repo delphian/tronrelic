@@ -47,13 +47,7 @@ function simulateEmits(processingTimes: number[], startAt = 1_000_000): number[]
     return emitTimes;
 }
 
-/**
- * Convert broadcast times into the gaps between them, which is what a viewer
- * perceives as the block cadence.
- *
- * @param emitTimes - Broadcast times in order.
- * @returns The interval preceding each broadcast after the first.
- */
+/** Convert broadcast times into the gaps between them, the block cadence a viewer perceives. */
 function gapsBetween(emitTimes: number[]): number[] {
     return emitTimes.slice(1).map((time, index) => time - emitTimes[index]);
 }

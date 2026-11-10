@@ -15,13 +15,7 @@
  * @module backend/lib/formatClickHouseDateTime64Utc
  */
 
-/**
- * Left-pad a number to a fixed width so each date component has a stable length.
- *
- * @param value - The numeric component to pad.
- * @param width - Target string width.
- * @returns Zero-padded string of at least `width` characters.
- */
+/** Left-pad a number to a fixed width so each date component has a stable length. */
 function pad(value: number, width: number): string {
     return String(value).padStart(width, '0');
 }

@@ -4,10 +4,8 @@
  * Better Auth login, the `/profile` settings hub (wallet management via
  * TronLink signing, notification preferences), and the `/system/users`
  * identity dashboards (account directory, groups). Better Auth is the sole
- * identity layer — the legacy UUID identity slice and its cookie utilities
- * were removed in the Phase 6 cutover. Traffic analytics and the GSC
- * integration moved to `modules/traffic` to mirror the backend
- * identity/traffic split.
+ * identity layer. Traffic analytics and the GSC integration live in
+ * `modules/traffic`, mirroring the backend identity/traffic split.
  *
  * ## Directory Structure
  *

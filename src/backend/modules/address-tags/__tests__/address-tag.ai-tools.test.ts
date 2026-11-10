@@ -33,12 +33,7 @@ function tagRecord(overrides: Partial<IAddressTag> = {}): IAddressTag {
     };
 }
 
-/**
- * Build the tools over a fake service.
- *
- * @param service - The fake service methods the test needs.
- * @returns The tools keyed by name.
- */
+/** Build the tools over a fake service, keyed by tool name. */
 function buildTools(service: Partial<IAddressTagService>): Record<string, ReturnType<typeof buildAddressTagAiTools>[number]> {
     const logger = { error: vi.fn(), info: vi.fn(), warn: vi.fn() } as unknown as ISystemLogService;
     const tools = buildAddressTagAiTools(service as IAddressTagService, logger);

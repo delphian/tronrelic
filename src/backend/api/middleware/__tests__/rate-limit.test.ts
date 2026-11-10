@@ -26,10 +26,8 @@ vi.mock('../../../loaders/redis.js', () => ({
 const { createGroupedAdminRateLimiter } = await import('../rate-limit.js');
 
 /**
- * Build a minimal Express request carrying only what the limiter reads.
- *
- * @param path - Router-relative path, as Express exposes it inside a mounted router.
- * @returns A request stub with the path and a fixed IP so bucket keys are stable.
+ * Request stub for a router-relative path (as Express exposes it inside a mounted
+ * router), with a fixed IP so bucket keys are stable.
  */
 function requestFor(path: string): Request {
     return { path, ip: '10.0.0.1' } as Request;

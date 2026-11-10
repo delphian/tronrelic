@@ -3,9 +3,8 @@
 /**
  * @fileoverview Median and 95th percentile timings for one pipeline stage card.
  *
- * The old console showed one block's timings, which changed on every poll and
- * could not say whether a stage was usually slow or slow once. Each stage card
- * now ends with this table of its own sub-steps over recent blocks.
+ * Each stage card ends with this table of its sub-steps over recent blocks,
+ * since one block's timings cannot say whether a stage is usually slow or slow once.
  */
 
 import type { IPipelineStageTiming } from '@/types';

@@ -80,10 +80,7 @@ export const DEFAULT_NARROWING_ADVICE = 'Ask for less: shorten the window with h
 
 /**
  * Read the numeric ClickHouse error code off an error from `@clickhouse/client`,
- * which carries it as a string `code` property.
- *
- * @param error - Whatever the reader threw.
- * @returns The code, or null when the error did not come from ClickHouse.
+ * which carries it as a string `code` property; null when it is not from ClickHouse.
  */
 function clickHouseCode(error: unknown): number | null {
     const raw = typeof error === 'object' && error !== null ? (error as { code?: unknown }).code : undefined;

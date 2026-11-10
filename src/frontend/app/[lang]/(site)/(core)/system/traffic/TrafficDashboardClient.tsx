@@ -93,9 +93,6 @@ const DASHBOARD_REFRESH_MS = 60_000;
 /**
  * Narrow an arbitrary `?tab=` string to a known TrafficTab, so deep-link seeding
  * and click routing share one source of truth for valid tabs.
- *
- * @param tab - The raw `?tab=` value.
- * @returns True when the value names a real tab.
  */
 function isTrafficTab(tab: string | undefined): tab is TrafficTab {
     return tab === 'analytics' || tab === 'visitors' || tab === 'crawlers'
@@ -108,7 +105,6 @@ function isTrafficTab(tab: string | undefined): tab is TrafficTab {
  * leave the page on a blank panel.
  *
  * @param url - The clicked node's url (e.g. `/system/traffic?tab=redirects`).
- * @returns The matching tab id.
  */
 function tabFromUrl(url: string | undefined): TrafficTab {
     const tab = url?.match(/[?&]tab=([^&]+)/)?.[1];
@@ -191,8 +187,6 @@ export function TrafficDashboardClient({ submenuTree, submenuGeneratedAt, initia
      * (it preventDefaults the click), so this rewrites the address in place with
      * `history.replaceState` — no server round-trip — so the registered `?tab=`
      * URLs become true deep links that `page.tsx` reads SSR-first on next load.
-     *
-     * @param item - The clicked submenu node, carrying its `?tab=` url.
      */
     const handleTabSelect = useCallback((item: MenuNodeSerialized) => {
         const tab = tabFromUrl(item.url);

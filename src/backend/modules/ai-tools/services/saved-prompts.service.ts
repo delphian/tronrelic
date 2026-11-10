@@ -717,15 +717,7 @@ export class SavedPromptsService {
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
-/**
- * Shape a raw Mongo document into the published `ISavedPrompt` by stripping
- * the driver-assigned `_id`. Triggers pass through verbatim — the deprecated
- * flat schedule projection the pre-`triggers[]` editor needed was removed
- * along with that editor.
- *
- * @param doc - The raw Mongo document.
- * @returns The API-shaped prompt.
- */
+/** Shape a raw Mongo document into the published `ISavedPrompt` by stripping the driver-assigned `_id`. */
 function stripMongoId<T extends Record<string, unknown>>(doc: T): ISavedPrompt {
     const cleaned = { ...doc } as Record<string, unknown>;
     delete cleaned._id;
@@ -847,12 +839,7 @@ async function assertNameUnique(
     }
 }
 
-/**
- * Escape a string for safe use inside a RegExp.
- *
- * @param value - The raw string.
- * @returns The escaped string.
- */
+/** Escape a string for safe use inside a RegExp. */
 function escapeRegex(value: string): string {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

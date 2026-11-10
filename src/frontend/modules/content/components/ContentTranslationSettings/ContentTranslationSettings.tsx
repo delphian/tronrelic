@@ -46,11 +46,7 @@ export function ContentTranslationSettings() {
     const [saving, setSaving] = useState(false);
     const { push } = useToast();
 
-    /**
-     * Put loaded or saved settings into the form.
-     *
-     * @param next - The settings to show.
-     */
+    /** Put loaded or saved settings into the form. */
     const apply = useCallback((next: IContentTranslationSettings) => {
         setSettings(next);
         setSystemPrompt(next.systemPrompt);

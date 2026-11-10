@@ -3,14 +3,10 @@
  *
  * Dependency surface the built-in dynamic prompt-variable resolvers close over.
  *
- * These resolvers were lifted out of the trp-ai-assistant plugin so the core
- * ai-tools module owns every built-in variable: the plugin used to register them
- * into the core `'prompt-variables'` registry through `IPluginContext`, which
- * coupled "what variables exist" to whether the Anthropic provider happened to be
- * enabled. Core registers them now, so the variables exist for whichever AI
- * provider is installed (or none). The resolvers reference the same core
- * singletons the plugin context exposed — declared here as interfaces so the
- * module injects them rather than importing concrete classes.
+ * Core registers the built-in variables so they exist for whichever AI provider is
+ * installed (or none), rather than coupling "what variables exist" to whether a
+ * provider plugin is enabled. The resolvers' core singletons are declared here as
+ * interfaces so the module injects them rather than importing concrete classes.
  */
 
 import type {

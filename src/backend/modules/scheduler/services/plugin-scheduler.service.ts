@@ -7,15 +7,12 @@
  * delete their stored configuration when it is uninstalled, without each plugin
  * tracking its own job names by hand.
  *
- * Why this exists: scheduler registrations used to be permanent. Plugins are
- * toggleable at runtime, so a disabled plugin's cron job kept firing on its
- * schedule — running handler closures that still held the old plugin context and
- * writing to collections the plugin no longer owned — until the process
- * restarted. Uninstalling was worse: the job kept firing and its
- * `scheduler_configs` document outlived the plugin entirely. Several shipped
- * plugins never called `unregister` at all, and one of them registers two jobs,
- * so relying on plugin authors to remember was not working. Scoping
- * registrations per plugin is what makes "disabled" actually mean stopped.
+ * Why this exists: plugins are toggleable at runtime, and without this facade a
+ * disabled plugin's cron job keeps firing until the process restarts, running
+ * handler closures that hold the old plugin context and writing to collections
+ * the plugin no longer owns. An uninstalled plugin's job keeps firing and its
+ * `scheduler_configs` document outlives the plugin. Plugin authors cannot be
+ * relied on to call `unregister`, so registrations are scoped per plugin.
  *
  * @module modules/scheduler/services/plugin-scheduler.service
  */

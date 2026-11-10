@@ -365,10 +365,6 @@ export class AccountAnalyticsService {
    * or use `lockPeriod`. All three forms are accepted so the analytics read the
    * same value across the stored history. A lock period is a block count far
    * below 2^53, so `Number` is exact here.
-   *
-   * @param params - The delegation's `contract.parameters`.
-   * @returns The lock period in blocks, or 0 when the delegation has none or
-   *          the value cannot be read.
    */
   private resolveLockPeriod(params: Record<string, unknown>): number {
     const raw = params.lock_period ?? params.lockPeriod;

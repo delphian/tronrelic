@@ -3,10 +3,9 @@
 /**
  * @fileoverview Tests for the per-plugin observer facade.
  *
- * These cover the regression the facade exists to prevent: a plugin disabled from
- * the admin UI used to leave its observers subscribed, so they kept consuming
- * transactions and writing to their collections for the life of the process while
- * still appearing in the admin observer performance table.
+ * These guard what the facade exists to prevent: a disabled plugin's observers
+ * staying subscribed, consuming transactions and writing to their collections
+ * for the life of the process while still listed in the admin observer table.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';

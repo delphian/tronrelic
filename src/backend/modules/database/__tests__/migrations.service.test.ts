@@ -53,11 +53,6 @@ describe('MigrationsService', () => {
     });
 
     describe('getStatus()', () => {
-        /**
-         * Test: Should return comprehensive migration status.
-         *
-         * Verifies that status includes pending, completed, and running state.
-         */
         it('should return comprehensive migration status', async () => {
             const pendingMigrations = [
                 {
@@ -95,11 +90,6 @@ describe('MigrationsService', () => {
             });
         });
 
-        /**
-         * Test: Should handle errors gracefully.
-         *
-         * Verifies that errors are logged and re-thrown with context.
-         */
         it('should handle errors gracefully', async () => {
             mockDatabase.getMigrationsPending.mockRejectedValueOnce(new Error('Database error'));
 
@@ -111,11 +101,6 @@ describe('MigrationsService', () => {
     });
 
     describe('getHistory()', () => {
-        /**
-         * Test: Should return all migration history.
-         *
-         * Verifies that history is returned without filtering by default.
-         */
         it('should return all migration history', async () => {
             const history = [
                 {
@@ -143,11 +128,6 @@ describe('MigrationsService', () => {
             expect(mockDatabase.getMigrationsCompleted).toHaveBeenCalledWith(100);
         });
 
-        /**
-         * Test: Should filter history by status.
-         *
-         * Verifies that history can be filtered to show only completed or failed migrations.
-         */
         it('should filter history by status', async () => {
             const history = [
                 {
@@ -175,11 +155,6 @@ describe('MigrationsService', () => {
             expect(result[0].migrationId).toBe('migration-1');
         });
 
-        /**
-         * Test: Should enforce maximum limit.
-         *
-         * Verifies that the limit cannot exceed 500 records.
-         */
         it('should enforce maximum limit', async () => {
             mockDatabase.getMigrationsCompleted.mockResolvedValueOnce([]);
 
@@ -188,9 +163,6 @@ describe('MigrationsService', () => {
             expect(mockDatabase.getMigrationsCompleted).toHaveBeenCalledWith(500);
         });
 
-        /**
-         * Test: Should handle errors gracefully.
-         */
         it('should handle errors gracefully', async () => {
             mockDatabase.getMigrationsCompleted.mockRejectedValueOnce(new Error('Database error'));
 
@@ -202,11 +174,6 @@ describe('MigrationsService', () => {
     });
 
     describe('executeOne()', () => {
-        /**
-         * Test: Should execute single migration successfully.
-         *
-         * Verifies that a specific migration can be executed by ID.
-         */
         it('should execute single migration successfully', async () => {
             mockDatabase.isMigrationRunning.mockReturnValueOnce(false);
             mockDatabase.executeMigration.mockResolvedValueOnce(undefined);
@@ -221,11 +188,6 @@ describe('MigrationsService', () => {
             expect(mockLogger.info).toHaveBeenCalled();
         });
 
-        /**
-         * Test: Should prevent concurrent migration execution.
-         *
-         * Verifies that migrations cannot run simultaneously.
-         */
         it('should prevent concurrent migration execution', async () => {
             mockDatabase.isMigrationRunning.mockReturnValueOnce(true);
 
@@ -234,11 +196,6 @@ describe('MigrationsService', () => {
             );
         });
 
-        /**
-         * Test: Should handle migration execution failure.
-         *
-         * Verifies that failed migrations return error details.
-         */
         it('should handle migration execution failure', async () => {
             mockDatabase.isMigrationRunning.mockReturnValueOnce(false);
             mockDatabase.executeMigration.mockRejectedValueOnce(new Error('Migration failed'));
@@ -258,11 +215,6 @@ describe('MigrationsService', () => {
     });
 
     describe('executeAll()', () => {
-        /**
-         * Test: Should execute all pending migrations successfully.
-         *
-         * Verifies that all pending migrations are executed in order.
-         */
         it('should execute all pending migrations successfully', async () => {
             const pendingMigrations = [
                 {
@@ -297,11 +249,6 @@ describe('MigrationsService', () => {
             expect(mockLogger.info).toHaveBeenCalled();
         });
 
-        /**
-         * Test: Should return success with empty array when no pending migrations.
-         *
-         * Verifies that executing with no pending migrations succeeds immediately.
-         */
         it('should return success with empty array when no pending migrations', async () => {
             mockDatabase.isMigrationRunning.mockReturnValueOnce(false);
             mockDatabase.getMigrationsPending.mockResolvedValueOnce([]);
@@ -315,9 +262,6 @@ describe('MigrationsService', () => {
             expect(mockDatabase.executeMigrationsAll).not.toHaveBeenCalled();
         });
 
-        /**
-         * Test: Should prevent concurrent migration execution.
-         */
         it('should prevent concurrent migration execution', async () => {
             mockDatabase.isMigrationRunning.mockReturnValueOnce(true);
 
@@ -326,12 +270,6 @@ describe('MigrationsService', () => {
             );
         });
 
-        /**
-         * Test: Should handle partial execution on failure.
-         *
-         * Verifies that when migrations fail, the result shows which migrations
-         * succeeded before failure occurred.
-         */
         it('should handle partial execution on failure', async () => {
             const pendingMigrations = [
                 {
@@ -384,11 +322,6 @@ describe('MigrationsService', () => {
     });
 
     describe('getMigrationDetails()', () => {
-        /**
-         * Test: Should return details for pending migration.
-         *
-         * Verifies that pending migrations include metadata and execution history.
-         */
         it('should return details for pending migration', async () => {
             const pendingMigration = {
                 id: 'migration-1',
@@ -422,11 +355,6 @@ describe('MigrationsService', () => {
             });
         });
 
-        /**
-         * Test: Should return details for completed migration.
-         *
-         * Verifies that completed migrations show execution history without metadata.
-         */
         it('should return details for completed migration', async () => {
             const executions = [
                 {
@@ -450,11 +378,6 @@ describe('MigrationsService', () => {
             });
         });
 
-        /**
-         * Test: Should throw error for non-existent migration.
-         *
-         * Verifies that requesting details for unknown migrations throws error.
-         */
         it('should throw error for non-existent migration', async () => {
             mockDatabase.getMigrationsPending.mockResolvedValueOnce([]);
             mockDatabase.getMigrationsCompleted.mockResolvedValueOnce([]);
@@ -464,9 +387,6 @@ describe('MigrationsService', () => {
             );
         });
 
-        /**
-         * Test: Should handle errors gracefully.
-         */
         it('should handle errors gracefully', async () => {
             mockDatabase.getMigrationsPending.mockRejectedValueOnce(new Error('Database error'));
 

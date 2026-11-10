@@ -389,10 +389,6 @@ function groupConversations(records: IAiQueryRecord[]): IConversationGroup[] {
  * Whether two string lists hold the same members in the same order. Used to
  * keep a per-turn array's identity stable across renders, which is what lets
  * the memoised turn component skip work when nothing about that turn changed.
- *
- * @param a - The previous list.
- * @param b - The freshly computed list.
- * @returns True when the two are equal element by element.
  */
 function sameList(a: readonly string[], b: readonly string[]): boolean {
     return a.length === b.length && a.every((value, index) => value === b[index]);
@@ -426,9 +422,6 @@ const TURN_PROMPT_NAME_PREFIX = 'Saved Prompt';
  * display prefix above; if that prefix ever gains a character like `(` or `.`,
  * an unescaped interpolation would compile into a pattern that quietly matches
  * the wrong names — or throws — instead of the literal text an operator sees.
- *
- * @param value - The literal text to embed.
- * @returns The same text with every metacharacter backslash-escaped.
  */
 function escapeRegex(value: string): string {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -735,10 +728,7 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
     const { atBottom, followRef, scrollToBottom, followIfEnabled } = useTranscriptScroll(transcriptRef);
     const paneTop = useViewportFill(workspaceRef, active);
 
-    /**
-     * Audit records keyed by their provider-neutral `toolUseId`, so a transcript
-     * tool_use segment resolves to its exact invocation record in O(1).
-     */
+    /** Audit records keyed by provider-neutral `toolUseId`, so a tool_use segment finds its record in O(1). */
     const toolRecordsById = useMemo(() => indexByToolUseId(conversationRecords), [conversationRecords]);
 
     /**
@@ -818,10 +808,7 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
         [messages, conversationRecords]
     );
 
-    /**
-     * The pending grant as chips under the composer, sorted so the row does not
-     * reshuffle as options are ticked in the dropdown.
-     */
+    /** The pending grant as composer chips, sorted so the row does not reshuffle as options are ticked. */
     const grantedTools = useMemo(
         () => [...toolSelection].sort((a, b) => a.localeCompare(b)),
         [toolSelection]
@@ -842,8 +829,6 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
      * does: while a saved prompt is loaded this chip row edits that prompt's
      * allowlist, and a removal here has to count as real intent or the save path
      * would discard it as part of the display-only pre-fill.
-     *
-     * @param name - The tool name to revoke.
      */
     const handleRevokeTool = useCallback((name: string) => {
         setToolsTouched(true);
@@ -1805,8 +1790,6 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
      * Record a real selection edit and update the grant. Wraps the tool dropdown's
      * onChange so every toggle marks the selection as engaged — distinguishing a
      * deliberate choice from the display-only pre-fill.
-     *
-     * @param names - The next selected tool names from the picker.
      */
     const handleToolSelectionChange = useCallback((names: string[]) => {
         setToolsTouched(true);
@@ -2241,10 +2224,9 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
     /**
      * Enter submits from the composer; Shift+Enter inserts a newline, which is
      * the convention every mainstream chat interface follows. Ctrl or Cmd with
-     * Enter still sends for anyone used to the old binding. A keystroke that is
-     * part of an input-method composition (typing Chinese or Japanese) is left
-     * alone, because Enter there confirms the composed text rather than the
-     * message.
+     * Enter also sends, for anyone used to that binding. A keystroke that is part
+     * of an input-method composition (typing Chinese or Japanese) is left alone,
+     * because Enter there confirms the composed text rather than the message.
      *
      * @param event - Keyboard event from the textarea.
      */

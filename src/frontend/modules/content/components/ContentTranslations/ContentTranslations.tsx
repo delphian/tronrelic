@@ -224,12 +224,7 @@ export function ContentTranslations({ typeId, contentId, title, publicPath, rend
         setError(null);
     };
 
-    /**
-     * Change one field of the draft.
-     *
-     * @param name - The field name.
-     * @param value - The input's new text.
-     */
+    /** Change one field of the draft. */
     const changeValue = (name: string, value: string) => {
         setDraft((current) => (current ? { ...current, values: { ...current.values, [name]: value } } : current));
     };

@@ -44,12 +44,7 @@ function countOutcomes(sinks: ICurationSinkOutcome[] | undefined): IOutcomeCount
     return Array.from(counts, ([status, count]) => ({ status, count }));
 }
 
-/**
- * Collapse an item's body to one run of text for the row's excerpt.
- *
- * @param item - The decided item.
- * @returns The body with whitespace collapsed, or an empty string.
- */
+/** Collapse an item's body to one run of text for the row's excerpt. */
 function excerptOf(item: ICurationItemView): string {
     return (item.preview.body ?? '').replace(/\s+/g, ' ').trim();
 }

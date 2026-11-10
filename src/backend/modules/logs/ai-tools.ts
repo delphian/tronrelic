@@ -95,9 +95,6 @@ const OBJECT_ID_PATTERN = /^[a-f0-9]{24}$/i;
  * The model only needs to pass the value back unchanged, so it gets one
  * string instead of a structure it might be tempted to edit. The string is
  * base64url-encoded JSON, which survives any transport without escaping.
- *
- * @param cursor - The `next` cursor the service returned for this page.
- * @returns The string the model passes as `cursor` to fetch the next page.
  */
 function encodeCursor(cursor: ISystemLogCursor): string {
     const payload = JSON.stringify({ t: cursor.timestamp.toISOString(), ids: cursor.seenIds });
@@ -187,11 +184,6 @@ interface ILogEntrySource {
 /**
  * Shorten text for the list view, marking the cut so the model knows the full
  * text exists and can fetch it.
- *
- * @param text - The stored text, which has no length limit of its own.
- * @param maxChars - The most characters to keep before the marker.
- * @returns The text unchanged when it fits, otherwise its first `maxChars`
- *          characters followed by `… [truncated]`.
  */
 function shortenText(text: string, maxChars: number): string {
     return text.length > maxChars ? `${text.slice(0, maxChars)}… [truncated]` : text;

@@ -116,9 +116,6 @@ export class RecipientResolver {
         /**
          * Answer the membership question from the already-loaded group set, so
          * no further lookup happens however many audiences the caller tests.
-         *
-         * @param audience - Groups and/or explicit user ids to test against.
-         * @returns True when the user is listed explicitly or is in one of the groups.
          */
         const matches = (audience: INotificationAudience): boolean => {
             const listed = (audience.userIds ?? []).includes(userId);

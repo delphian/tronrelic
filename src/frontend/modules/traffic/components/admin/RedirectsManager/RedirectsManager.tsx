@@ -185,10 +185,7 @@ export function RedirectsManager() {
         });
     }, []);
 
-    /**
-     * Abandon an in-progress edit, discarding the draft so the row reverts to
-     * its persisted values with no request sent.
-     */
+    /** Abandon an in-progress edit, discarding the draft so the row reverts with no request sent. */
     const handleCancelEdit = useCallback(() => {
         setEditingId(null);
         setDraft(null);
@@ -239,8 +236,6 @@ export function RedirectsManager() {
     /**
      * Submit the add-rule form. A real form submit, so Enter in any field adds
      * the rule the same way the button does.
-     *
-     * @param event - The form's submit event, whose page reload is cancelled.
      */
     const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {
         event.preventDefault();

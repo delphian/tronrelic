@@ -125,8 +125,6 @@ export function AccountSection({ account, onUpdated }: IAccountSectionProps) {
     /**
      * Take a saved summary from the Limits view and reload the Changes list,
      * so the admin's own change is there when they open it.
-     *
-     * @param updated - The summary after the save.
      */
     const handleLimitsSaved = (updated: IClickHouseAccountSummary) => {
         onUpdated(updated);

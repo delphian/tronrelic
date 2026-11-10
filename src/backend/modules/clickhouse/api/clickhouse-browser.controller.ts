@@ -8,8 +8,7 @@
  * straightforward frontend reuse.
  *
  * Why this controller exists:
- * - ClickHouse data was previously invisible from the admin UI; ops had
- *   no way to verify a table's row count, size, or sample contents.
+ * - Lets ops verify a table's row count, size, or sample contents from the admin UI.
  * - Mirroring the MongoDB browser keeps the admin mental model uniform.
  * - Centralizes identifier validation so the SELECT * query path cannot
  *   be coerced into reading a table that does not exist or into executing

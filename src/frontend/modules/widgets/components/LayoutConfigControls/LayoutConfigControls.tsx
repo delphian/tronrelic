@@ -73,7 +73,6 @@ export function LayoutConfigControls({ idPrefix, layout, disabled, onChange, chi
      * Apply one field. A flex-axis edit re-tags the config as custom; gap
      * and collapse do not belong to a preset, so they keep the label.
      *
-     * @param patch - The single field being changed.
      * @param keepPreset - True for gap and collapse.
      */
     const applyGranular = (patch: Partial<IZoneLayoutConfig>, keepPreset: boolean) => {

@@ -84,9 +84,6 @@ function PolicyToggle({ label, description, on, disabled, onChange }: IPolicyTog
  * same shared function the server stores the list with. After a save the
  * textarea then matches the stored list and the Save button goes back to
  * disabled, even when the admin pasted a line twice.
- *
- * @param text - The textarea's contents.
- * @returns The distinct entries in their original order.
  */
 function parseEntries(text: string): string[] {
     return normaliseIpAllowlistEntries(text.split('\n'));
@@ -166,17 +163,12 @@ export function GroupPolicyCard({ group, restrictedGrantCount, onPolicyChange }:
                         </>
                     )}
                     onConfirm={
-                        /**
-                         * Store the change once the admin confirms, then close
-                         * the dialog; `apply` reports the outcome.
-                         */
                         async () => {
                             await apply({ allowRestrictedTools: next }, next ? 'Restricted tools allowed' : 'Restricted tools withdrawn');
                             close(modalId);
                         }
                     }
                     onCancel={
-                        /** Close the dialog without changing the setting. */
                         () => close(modalId)
                     }
                 />
@@ -213,11 +205,6 @@ export function GroupPolicyCard({ group, restrictedGrantCount, onPolicyChange }:
                     on={policy.scrubSecrets}
                     disabled={working}
                     onChange={
-                        /**
-                         * Store the new scrubbing setting; `apply` reports the outcome.
-                         *
-                         * @param next - Whether results should be scrubbed.
-                         */
                         next => { void apply({ scrubSecrets: next }, next ? 'Secret scrubbing on' : 'Secret scrubbing off'); }
                     }
                 />
@@ -229,11 +216,6 @@ export function GroupPolicyCard({ group, restrictedGrantCount, onPolicyChange }:
                         on={policy.ipAllowlistEnabled}
                         disabled={working || (!policy.ipAllowlistEnabled && policy.ipAllowlist.length === 0)}
                         onChange={
-                            /**
-                             * Switch the stored allowlist on or off; `apply` reports the outcome.
-                             *
-                             * @param next - Whether the allowlist should apply.
-                             */
                             next => { void apply({ ipAllowlistEnabled: next }, next ? 'IP allowlist on' : 'IP allowlist off'); }
                         }
                     />
@@ -249,11 +231,6 @@ export function GroupPolicyCard({ group, restrictedGrantCount, onPolicyChange }:
                             rows={4}
                             value={draft}
                             onChange={
-                                /**
-                                 * Keep the unsaved list in local state until Save is pressed.
-                                 *
-                                 * @param event - The textarea's change event.
-                                 */
                                 event => setDraft(event.target.value)
                             }
                             invalid={listError.length > 0}
@@ -266,7 +243,6 @@ export function GroupPolicyCard({ group, restrictedGrantCount, onPolicyChange }:
                             size="sm"
                             variant="secondary"
                             onClick={
-                                /** Store the edited allowlist; `saveList` reports the outcome. */
                                 () => { void saveList(); }
                             }
                             disabled={!draftDirty}

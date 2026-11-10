@@ -10,14 +10,12 @@
  *
  * The sink's `accepts` is the router's *required-minimum floor*, not the
  * channel's capability *ceiling* — the two are inverted. The channel's `accepts`
- * field is a ceiling the legacy dispatch matches with `present ⊆ accepts` (a
- * channel must cover everything the content carries); a router sink's `accepts`
- * is a floor matched with `accepts ⊆ present` (the content must carry at least
- * what the sink needs). The settled migration maps the channel to the empty
- * floor (`[]`, a candidate for any content). The fidelity the ceiling enforced —
- * skipping a toast for content it cannot render — moves to a deliver-time
- * refusal when the dispatch cutover makes the router the matching authority and
- * retires the legacy ceiling check.
+ * field is a ceiling (`present ⊆ accepts`: a channel must cover everything the
+ * content carries); a router sink's `accepts` is a floor matched with
+ * `accepts ⊆ present` (the content must carry at least what the sink needs). The
+ * channel maps to the empty floor (`[]`, a candidate for any content), and the
+ * fidelity a ceiling would enforce — skipping a toast for content it cannot
+ * render — is a deliver-time refusal.
  *
  * `deliver()` is intentionally not wired. Delivering to a notification channel
  * requires the family's recipient resolution and per-user opt-out, producing a

@@ -115,16 +115,7 @@ export class GroupService {
      */
     private readonly membershipListener?: GroupMembershipListener;
 
-    /**
-     * Construct the service.
-     *
-     * Private so the only sanctioned creation path is
-     * {@link setDependencies}, preserving the singleton contract.
-     *
-     * @param database - Database abstraction.
-     * @param logger - Logger to derive a `component: 'group-service'` child from.
-     * @param membershipListener - Told which user changed after each membership write.
-     */
+    /** Private so {@link setDependencies} is the only creation path, preserving the singleton contract. */
     private constructor(database: IDatabaseService, logger: ISystemLogService, membershipListener?: GroupMembershipListener) {
         this.database = database;
         this.logger = logger.child({ component: 'group-service' });
@@ -427,8 +418,6 @@ export class GroupService {
      * Better Auth's adapter populates this collection; we read and
      * write the `groups` additional field directly because the
      * Mongoose model registry is not used for BA-owned tables.
-     *
-     * @returns Typed collection handle.
      */
     private getCollection(): Collection<IAuthUserDoc> {
         return this.database.getCollection<IAuthUserDoc>(AUTH_USERS_COLLECTION);

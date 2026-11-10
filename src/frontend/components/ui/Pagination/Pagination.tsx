@@ -25,15 +25,7 @@ export interface PaginationProps {
     className?: string;
 }
 
-/**
- * Creates an array of consecutive numbers from start to end (inclusive).
- *
- * Helper function for generating page number sequences in pagination ranges.
- *
- * @param start - First number in the range
- * @param end - Last number in the range
- * @returns Array of numbers from start to end
- */
+/** Consecutive numbers from start to end (inclusive), for pagination page sequences. */
 function range(start: number, end: number) {
     return Array.from({ length: end - start + 1 }).map((_, index) => start + index);
 }

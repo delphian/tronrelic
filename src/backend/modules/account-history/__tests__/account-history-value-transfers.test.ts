@@ -106,10 +106,7 @@ describe('TronGridAccountHistoryProvider.fetchInternalTransfersPage', () => {
     /**
      * Stub the shared client so the provider reads canned internal-transaction
      * items. Address conversion (`toBase58Address`) stays real so the hex→base58
-     * step is exercised end to end.
-     *
-     * @param data - Raw internal-transaction items to return.
-     * @param fingerprint - The page's continuation cursor.
+     * step is exercised end to end. `fingerprint` is the page's continuation cursor.
      */
     function stubClient(data: unknown[], fingerprint?: string): void {
         vi.spyOn(TronGridClient, 'getInstance').mockReturnValue({
@@ -200,8 +197,6 @@ describe('TronGridAccountHistoryProvider.fetchTokenTransferLegs', () => {
      * Stub the shared client so the provider reads canned transaction events.
      * Address conversion stays real so the 20-byte EVM (`0x…`) → base58 step,
      * including the `41` prefix normalization, is exercised end to end.
-     *
-     * @param events - Raw transaction event logs to return.
      */
     function stubEvents(events: unknown[]): void {
         vi.spyOn(TronGridClient, 'getInstance').mockReturnValue({

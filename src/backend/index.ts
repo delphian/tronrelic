@@ -1009,10 +1009,8 @@ async function registerTemporaryMenuItems(menuService: IMenuService): Promise<vo
  * Register plugin admin settings entries directly under the System container and keep them
  * synced to enabled plugins.
  *
- * Historically these entries were nested under a dedicated "Plugins" dropdown; they now sit
- * as direct children of the System container, siblings of Hooks, Pages, Markets, and the
- * like. A plain "Plugins" link to the /system/plugins management table is still registered
- * so the install/enable/disable surface stays reachable — it is no longer a dropdown parent.
+ * A plain "Plugins" link to the /system/plugins management table is also registered so the
+ * install/enable/disable surface stays reachable.
  *
  * Each enabled plugin that declares a `manifest.adminUrl` — the same value the cog icon uses
  * on the plugin management page — gets one menu node. The list stays current with plugin

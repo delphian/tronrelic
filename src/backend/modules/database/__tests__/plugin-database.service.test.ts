@@ -64,11 +64,6 @@ describe('PluginDatabaseService', () => {
     });
 
     describe('Constructor', () => {
-        /**
-         * Test: Should create plugin database service with automatic prefixing.
-         *
-         * Verifies that plugin ID is used to create collection name prefix.
-         */
         it('should create plugin database service with automatic prefixing', () => {
             const pluginService = new PluginDatabaseService(mockLogger as any, mongoose.connection, 'whale-alerts');
             expect(pluginService).toBeDefined();
@@ -76,23 +71,12 @@ describe('PluginDatabaseService', () => {
     });
 
     describe('Collection Name Prefixing', () => {
-        /**
-         * Test: Should automatically prefix collection names with plugin ID.
-         *
-         * Verifies that logical collection names are transformed into physical
-         * names with the plugin_ prefix.
-         */
         it('should automatically prefix collection names with plugin ID', () => {
             service.getCollection('subscriptions');
 
             expect(mockDb.collection).toHaveBeenCalledWith('plugin_test-plugin_subscriptions');
         });
 
-        /**
-         * Test: Should prefix KV store collection.
-         *
-         * Verifies that even the internal _kv collection is prefixed.
-         */
         it('should prefix KV store collection', async () => {
             mockCollection.findOne.mockResolvedValueOnce({ key: 'test_key', value: 'test_value' });
 
@@ -101,11 +85,6 @@ describe('PluginDatabaseService', () => {
             expect(mockDb.collection).toHaveBeenCalledWith('plugin_test-plugin__kv');
         });
 
-        /**
-         * Test: Should sanitize plugin ID in prefix.
-         *
-         * Verifies that invalid characters in plugin IDs are handled.
-         */
         it('should sanitize plugin ID in prefix', () => {
             const invalidPluginService = new PluginDatabaseService(mockLogger as any, mongoose.connection, 'invalid@plugin$id');
 
@@ -118,11 +97,6 @@ describe('PluginDatabaseService', () => {
     });
 
     describe('Namespace Isolation', () => {
-        /**
-         * Test: Multiple plugins should have isolated collections.
-         *
-         * Verifies that different plugins cannot access each other's collections.
-         */
         it('should isolate collections between plugins', () => {
             const plugin1 = new PluginDatabaseService(mockLogger as any, mongoose.connection, 'plugin-1');
             const plugin2 = new PluginDatabaseService(mockLogger as any, mongoose.connection, 'plugin-2');
@@ -136,12 +110,6 @@ describe('PluginDatabaseService', () => {
             expect(mockDb.collection).toHaveBeenCalledWith('plugin_plugin-2_data');
         });
 
-        /**
-         * Test: Should prevent plugins from accessing non-prefixed collections.
-         *
-         * Verifies that plugin databases cannot access system collections.
-         * Note: This test verifies the underlying DatabaseService prefix restriction.
-         */
         it('should restrict plugin to its own namespace', () => {
             // Plugin collections will always get prefixed, so this test verifies
             // that the service applies the prefix correctly
@@ -157,11 +125,6 @@ describe('PluginDatabaseService', () => {
     });
 
     describe('Inherited DatabaseService Features', () => {
-        /**
-         * Test: Should inherit key-value storage functionality.
-         *
-         * Verifies that plugin databases can use get/set/delete methods.
-         */
         it('should inherit key-value storage functionality', async () => {
             mockCollection.findOne.mockResolvedValueOnce({ key: 'config_key', value: { enabled: true } });
 
@@ -170,11 +133,6 @@ describe('PluginDatabaseService', () => {
             expect(value).toEqual({ enabled: true });
         });
 
-        /**
-         * Test: Should inherit CRUD operations.
-         *
-         * Verifies that plugin databases can use find, findOne, insertOne, etc.
-         */
         it('should inherit CRUD operations', async () => {
             mockCollection.findOne.mockResolvedValueOnce({ id: 1, userId: '123' });
 
@@ -183,11 +141,6 @@ describe('PluginDatabaseService', () => {
             expect(doc).toEqual({ id: 1, userId: '123' });
         });
 
-        /**
-         * Test: Should inherit index creation.
-         *
-         * Verifies that plugin databases can create indexes on their collections.
-         */
         it('should inherit index creation', async () => {
             await service.createIndex('subscriptions', { userId: 1 }, { unique: true });
 
@@ -197,11 +150,6 @@ describe('PluginDatabaseService', () => {
             );
         });
 
-        /**
-         * Test: Should inherit model registration.
-         *
-         * Verifies that plugin databases can register Mongoose models.
-         */
         it('should inherit model registration', () => {
             const mockModel = {
                 modelName: 'PluginModel',
@@ -217,12 +165,6 @@ describe('PluginDatabaseService', () => {
     });
 
     describe('Real-World Plugin Usage', () => {
-        /**
-         * Test: Simulate typical plugin database operations.
-         *
-         * Verifies that a plugin can perform common database operations
-         * in a realistic scenario.
-         */
         it('should support typical plugin workflow', async () => {
             // Plugin stores configuration
             await service.set('lastSync', new Date('2024-01-01'));
@@ -261,12 +203,6 @@ describe('PluginDatabaseService', () => {
             }
         });
 
-        /**
-         * Test: Multiple plugins operating simultaneously.
-         *
-         * Verifies that multiple plugins can operate on their own collections
-         * without interference.
-         */
         it('should support multiple plugins simultaneously', async () => {
             const plugin1 = new PluginDatabaseService(mockLogger as any, mongoose.connection, 'whale-alerts');
             const plugin2 = new PluginDatabaseService(mockLogger as any, mongoose.connection, 'delegation-tracker');

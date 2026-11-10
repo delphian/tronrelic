@@ -43,11 +43,7 @@ export function TransactionDetails({ transaction }: TransactionDetailsProps) {
     const energyCost = transaction.energy?.totalCost ?? 0;
     const bandwidthCost = transaction.bandwidth?.totalCost ?? 0;
 
-    /**
-     * Formats transaction type for display.
-     * Converts camelCase to spaced Title Case (e.g., "TransferContract" → "Transfer Contract").
-     * Memoized to avoid recalculation on re-renders.
-     */
+    /** Transaction type as spaced Title Case (e.g., "TransferContract" → "Transfer Contract"). */
     const formattedType = useMemo(() => {
         const base = transaction.type.replace(/([A-Z])/g, ' $1').trim();
         return base.charAt(0).toUpperCase() + base.slice(1);

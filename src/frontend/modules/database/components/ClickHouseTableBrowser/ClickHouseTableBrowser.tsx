@@ -60,9 +60,6 @@ interface ITableStat {
  * cannot key expansion state or React list items once the listing spans
  * databases. A dot cannot appear in an unquoted database name, so the key is
  * unambiguous.
- *
- * @param table - The table to identify.
- * @returns `database.name`.
  */
 function tableKey(table: ITableStat): string {
     return `${table.database}.${table.name}`;
@@ -75,10 +72,6 @@ function tableKey(table: ITableStat): string {
  * as it always has for the tables most operators come here for; a table in any
  * other database carries its database in front, so `tron.block` cannot be
  * mistaken for an application table.
- *
- * @param table - The table to label.
- * @param applicationDatabase - The database the server reports as current.
- * @returns The bare name, or `database.name` for another database.
  */
 function tableLabel(table: ITableStat, applicationDatabase: string): string {
     return table.database === applicationDatabase ? table.name : tableKey(table);
@@ -360,11 +353,7 @@ export function ClickHouseTableBrowser(props: IClickHouseTableBrowserProps) {
         }
     };
 
-    /**
-     * Unfold a row's full JSON, or fold it back up if it is already open.
-     *
-     * @param rowKey - Page-and-index key identifying the row.
-     */
+    /** Unfold a row's full JSON (keyed by page and index), or fold it back up if it is already open. */
     const toggleRow = (rowKey: string) => {
         setExpandedRowKey((prev) => (prev === rowKey ? null : rowKey));
     };

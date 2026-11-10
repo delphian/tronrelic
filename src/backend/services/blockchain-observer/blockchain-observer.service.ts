@@ -87,14 +87,7 @@ export class BlockchainObserverService implements IBlockchainObserverService {
     // Event subscribers - each observer's filters, matched against every block's events
     private eventObserverFilters = new Map<IBaseEventObserver, INormalizedEventFilter[]>();
 
-    /**
-     * Initialize the blockchain observer service.
-     *
-     * Creates the singleton instance with dependency-injected logger for structured telemetry.
-     * This constructor is private to enforce singleton usage through getInstance().
-     *
-     * @param logger - Structured logger for service telemetry and observer activity tracking
-     */
+    /** Private constructor enforcing singleton usage through getInstance(). */
     private constructor(logger: ISystemLogService) {
         this.logger = logger;
         this.logger.info('Blockchain observer service initialized');

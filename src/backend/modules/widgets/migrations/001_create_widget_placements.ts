@@ -3,9 +3,8 @@
  * supporting indexes.
  *
  * The new collection persists every widget placement — both
- * plugin-source (created by the legacy widget-service compatibility
- * shim) and operator-source (created by the admin API). Indexes back
- * the three hot read paths: SSR resolution by route, bulk
+ * plugin-source and operator-source (created by the admin API).
+ * Indexes back the three hot read paths: SSR resolution by route, bulk
  * soft-disable by plugin id, and listing within a zone for the admin
  * editor.
  *

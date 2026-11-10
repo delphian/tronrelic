@@ -1,11 +1,10 @@
 /**
  * @fileoverview Counts language switcher clicks and reports them to the admin page.
  *
- * The switcher's links cause a full page load, so the only record of a visitor
- * choosing another language used to be two unrelated page views. This service
- * stores the choice itself: one counter per UTC day, direction (`en → zh`), and
- * published route pattern, read back on the Switches tab of
- * `/system/localization`.
+ * The switcher's links cause a full page load, so a switch otherwise shows only
+ * as two unrelated page views. This service stores the choice itself: one
+ * counter per UTC day, direction (`en → zh`), and published route pattern, read
+ * back on the Switches tab of `/system/localization`.
  *
  * Clicks arrive on a public endpoint, so every field is treated as untrusted.
  * A click is counted only when both languages are live on the page it came
@@ -51,12 +50,7 @@ export interface ILanguageSwitchServiceDependencies {
     localization: Pick<ILocalizationService, 'getPublicConfig'>;
 }
 
-/**
- * Format a moment as the UTC day the counters are keyed by.
- *
- * @param date - Any moment.
- * @returns The UTC day as `YYYY-MM-DD`.
- */
+/** Format a moment as the UTC day (`YYYY-MM-DD`) the counters are keyed by. */
 function toDayKey(date: Date): string {
     return date.toISOString().slice(0, 10);
 }
@@ -206,9 +200,6 @@ export class LanguageSwitchService {
         /**
          * Whether a visitor can actually read this page in a language, which
          * is what makes a click towards or away from it a real switch.
-         *
-         * @param code - Language code from the click.
-         * @returns True when the language is enabled and published on the page.
          */
         const live = (code: string): boolean => enabled.has(code) && published.has(code);
         const anchor = click.to !== DEFAULT_LANGUAGE ? click.to : click.from;
@@ -242,11 +233,7 @@ export class LanguageSwitchService {
         }
     }
 
-    /**
-     * The daily counter collection, typed.
-     *
-     * @returns The raw collection handle.
-     */
+    /** The daily counter collection, typed. */
     private counters() {
         return this.database.getCollection<ILanguageSwitchDailyDocument>(SWITCH_DAILY_COLLECTION);
     }

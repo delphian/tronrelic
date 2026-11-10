@@ -8,9 +8,8 @@
  * compatibility shim; operator-source placements are created via the
  * admin API (forthcoming in a future PR).
  *
- * The split between widget *type* (code) and widget *placement* (data)
- * is the structural change PR 2 introduces. Type code change → new
- * deploy required. Placement change → operator action via admin UI,
+ * Widget *type* is code and widget *placement* is data: a type change needs a
+ * new deploy, while a placement change is an operator action via admin UI and
  * survives plugin disable/re-enable.
  *
  * @module types/widget-placements/IWidgetPlacement

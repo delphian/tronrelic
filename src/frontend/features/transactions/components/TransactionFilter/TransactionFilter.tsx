@@ -76,11 +76,7 @@ const DEFAULT_TYPES: TronTransactionType[] = [
  * @returns A card containing filter controls in a responsive grid
  */
 export function TransactionFilter({ value, onChange, availableTypes, onReset }: TransactionFilterProps) {
-    /**
-     * Determines which transaction types to show in the dropdown.
-     * Uses availableTypes if provided, otherwise falls back to defaults.
-     * Memoized to avoid recalculation on every render.
-     */
+    /** Transaction types for the dropdown: `availableTypes` when provided, otherwise the defaults. */
     const types = useMemo(() => availableTypes ?? DEFAULT_TYPES, [availableTypes]);
 
     /**
@@ -164,16 +160,8 @@ export function TransactionFilter({ value, onChange, availableTypes, onReset }: 
 }
 
 /**
- * Formats transaction type for human-readable display.
- *
- * Transforms contract type names from camelCase to spaced format:
- * - "TransferContract" → "Transfer"
- * - "DelegateResourceContract" → "Delegate Resource"
- *
- * The "Contract" suffix is removed as it's implied for all transaction types.
- *
- * @param type - Raw transaction type from TronTransactionType enum
- * @returns Formatted transaction type string
+ * Formats a contract type name for display, spacing camelCase and dropping the
+ * "Contract" suffix every type implies ("DelegateResourceContract" → "Delegate Resource").
  */
 function formatType(type: TronTransactionType) {
     return type.replace(/([A-Z])/g, ' $1').replace(/Contract/, '').trim();

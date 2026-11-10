@@ -528,10 +528,7 @@ export class BlockchainService implements IBlockchainService {
         logger.warn({ blockNumber, cooldownMinutes: 5 }, 'Block marked for cooldown after exhausting retries');
     }
 
-    /**
-     * Check if a block is currently in cooldown after a recent failure.
-     * Returns true if the block failed within the last 5 minutes, preventing wasteful retry attempts before the cooldown expires.
-     */
+    /** True while a block is in its 5-minute cooldown after a recent failure, so it is not retried wastefully. */
     private async isBlockInCooldown(blockNumber: number): Promise<boolean> {
         const key = `${env.REDIS_NAMESPACE}:block-sync:cooldown:${blockNumber}`;
         const value = await this.redis.get(key);
@@ -972,10 +969,9 @@ export class BlockchainService implements IBlockchainService {
      * pre-aggregated by the `network-activity:rollup` scheduler job into the
      * `core_network_activity_rollups` collection (see {@link runOverviewRollup}),
      * so this read is a bounded fetch of at most 168 small documents rather than
-     * a live aggregation over the multi-million-row transactions collection.
-     * That live aggregation previously exceeded the SSR widget resolver's
-     * 5-second budget, so the resolver silently dropped the widget from the page;
-     * reading pre-baked buckets keeps the request well inside the budget.
+     * a live aggregation over the multi-million-row transactions collection,
+     * which exceeds the SSR widget resolver's 5-second budget; the resolver
+     * silently drops a widget that misses it.
      *
      * Results anchor on the latest stored bucket (sort descending, take N, then
      * reverse to chronological), so the series stays correct even when sync lags.
@@ -1056,11 +1052,8 @@ export class BlockchainService implements IBlockchainService {
     }
 
     /**
-     * Build the Redis key holding one account's memoized activation edge.
-     *
-     * @param base58Address - Account the edge belongs to.
-     * @returns The namespaced key, so a deployment sharing a Redis instance with
-     *   another cannot read the other's entries.
+     * Redis key for one account's memoized activation edge, namespaced so a deployment
+     * sharing a Redis instance with another cannot read the other's entries.
      */
     private activationEdgeKey(base58Address: string): string {
         return `${env.REDIS_NAMESPACE}:${ACTIVATION_EDGE_CACHE_SEGMENT}:${base58Address}`;
@@ -1116,11 +1109,6 @@ export class BlockchainService implements IBlockchainService {
      * few hours forever. That path is rare and cheap; telling "no signer exists"
      * apart from "the signer lookup failed" would need another field on the
      * published edge.
-     *
-     * @param edge - The freshly resolved edge about to be memoized, checked
-     *        before it is written rather than after it is read.
-     * @returns True when the edge came from TVM execution but carries no
-     *          `callerAddress`, the one field a later retry can still fill in.
      */
     private isIncompleteActivationEdge(edge: IActivatingTransaction): boolean {
         return edge.contractType === INTERNAL_ACTIVATION_CONTRACT_TYPE && !edge.callerAddress;
@@ -1161,10 +1149,9 @@ export class BlockchainService implements IBlockchainService {
      * activator per hop via {@link getActivatingTransaction}.
      *
      * Why this lives here: the bounded loop — cap, cycle guard, per-hop streaming,
-     * and shared-tail caching — was previously re-implemented per caller (the
-     * address-origins tool, plugin discovery-provenance). Centralizing it on the
-     * published service keeps the one tricky piece (a mis-bounded climb silently
-     * misreports every address as its own origin) correct in a single place.
+     * and shared-tail caching — sits on the published service so the one tricky
+     * piece (a mis-bounded climb silently misreports every address as its own
+     * origin) stays correct in one place rather than re-implemented per caller.
      *
      * Which address each hop follows: `callerAddress ?? activatorAddress`. An
      * activation that ran through a contract names two parties, and the signer is
@@ -1350,10 +1337,7 @@ export class BlockchainService implements IBlockchainService {
         });
     }
 
-    /**
-     * Load the current blockchain sync cursor from MongoDB.
-     * Returns the last successfully processed block number and backfill queue, or null if this is a fresh install.
-     */
+    /** Load the sync cursor and backfill queue from MongoDB, or null on a fresh install. */
     private async getSyncState(): Promise<SyncStateFields | null> {
         const syncModel = BlockchainService.getDatabase().getModel<SyncStateDoc>(BlockchainService.SYNC_STATE_COLLECTION);
         return syncModel.findOne({ key: 'blockchain:last-block' }).lean() as Promise<SyncStateFields | null>;
@@ -2105,17 +2089,9 @@ export class BlockchainService implements IBlockchainService {
     }
 
     /**
-     * Pull the raw cursor field out of a sync state document.
-     *
-     * The reading rules for that field live in `chain-head.ts` so its two
-     * consumers cannot disagree about what counts as a usable cursor. This
-     * method only knows where the field sits, which is the part specific to
-     * this document's shape.
-     *
-     * @param state - Sync state as loaded from MongoDB, or null before the
-     *                document exists.
-     * @returns The `cursor.blockNumber` value untouched, for the pure reader to
-     *          interpret.
+     * Pull the raw `cursor.blockNumber` out of a sync state document, which is null
+     * before the document exists. The reading rules live in `chain-head.ts` so its
+     * two consumers cannot disagree about what counts as a usable cursor.
      */
     private readCursorField(state: SyncStateFields | null): unknown {
         return state?.cursor ? (state.cursor as Record<string, unknown>).blockNumber : undefined;
@@ -2124,12 +2100,10 @@ export class BlockchainService implements IBlockchainService {
     /**
      * Work out which chain height this tick should schedule against.
      *
-     * A single failed call to `getnowblock` used to abort the whole tick. That
-     * cost far more than the one lookup: the tick also schedules the backfill
-     * queue, and backfill blocks are old work that never needed the head at
-     * all, so one flaky request stopped repair work that would have succeeded.
-     * Falling back to the height recorded by the previous tick keeps that work
-     * moving while the head is unreachable.
+     * A failed `getnowblock` call falls back to the height recorded by the
+     * previous tick rather than aborting the tick, because the tick also
+     * schedules the backfill queue, old work that never needs the head, and one
+     * flaky request should not stop repair work that would succeed.
      *
      * The fallback cannot cause a block to be processed twice. The height is
      * only ever the *ceiling* of the forward walk in `computeBlockTargets`,
@@ -2326,10 +2300,9 @@ export class BlockchainService implements IBlockchainService {
      * corrupt record doesn't block the entire block, and blocks that fail completely enter cooldown before retry to avoid API waste.
      *
      * Nothing in this method waits on a clock. When the block is live work rather than backfill, its finished event goes to `BlockEmitter`,
-     * which holds a lead of already-fetched blocks and releases them at TRON's own three-second cadence. The wait used to sit here, right
-     * before the broadcast, but this runs inside a worker that processes one job at a time: waiting here blocked the next fetch, so the
-     * pipeline never accumulated a reserve and any upstream hiccup showed as a gap in the feed. Whether a block is live work at all is decided
-     * here from the block's own timestamp, not from the scheduler's flag, because that flag is stamped once per batch and goes stale within it.
+     * which holds a lead of already-fetched blocks and releases them at TRON's own three-second cadence; waiting in this one-job-at-a-time
+     * worker would block the next fetch and show any upstream hiccup as a gap. Whether a block is live work is decided here from the block's
+     * own timestamp, not the scheduler's flag, which is stamped once per batch and goes stale within it.
      *
      * @param blockNumber - The block number to process
      * @param isCaughtUp - The scheduler's answer from enqueue time. Only seeds the decision for the first block after a restart; every
@@ -2781,8 +2754,7 @@ export class BlockchainService implements IBlockchainService {
      * does today rather than stopping it.
      *
      * @returns True only when an operator has explicitly enabled receipt
-     *          fetching. Any failure to resolve the setting answers false, which
-     *          is the behaviour every deployment has had until now.
+     *          fetching. Any failure to resolve the setting answers false.
      */
     private async shouldFetchBlockReceipts(): Promise<boolean> {
         let enabled = false;

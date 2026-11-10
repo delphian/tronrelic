@@ -88,23 +88,14 @@ export function toUsdValue(value: string | null, price: IUsdPrice | undefined): 
 }
 
 /**
- * The asset name price history uses: `TRX`, or the TRC-20 contract address.
- *
- * @param assetType - Which kind of asset.
- * @param token - The `token` column value.
- * @returns The price-history asset, or null for TRC-10, which it does not price.
+ * The asset name price history uses: `TRX`, the TRC-20 contract address, or null
+ * for TRC-10, which it does not price.
  */
 function priceAsset(assetType: ChainAssetType, token: string): string | null {
     return assetType === 'trx' ? 'TRX' : assetType === 'trc20' ? token : null;
 }
 
-/**
- * The UTC day `offset` days before `day`.
- *
- * @param day - A `YYYY-MM-DD` day.
- * @param offset - How many days earlier.
- * @returns The earlier day, `YYYY-MM-DD`.
- */
+/** The UTC day `offset` days before `day`, both as `YYYY-MM-DD`. */
 function dayBefore(day: string, offset: number): string {
     return new Date(Date.parse(`${day}T00:00:00Z`) - offset * DAY_MS).toISOString().slice(0, 10);
 }

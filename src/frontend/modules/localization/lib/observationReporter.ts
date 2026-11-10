@@ -80,9 +80,6 @@ let backoffUntil = 0;
  * Identify a key report independently of the path it was seen on. The English
  * source is part of the identity so a changed wording is reported again, which
  * is how the backend learns that existing translations went stale.
- *
- * @param observation - A lookup to identify.
- * @returns A string unique to the namespace, key, source, and missing language.
  */
 function identify(observation: ITranslationObservation): string {
     return [observation.missingIn ?? '', observation.namespace, observation.key, observation.source].join('\u0000');

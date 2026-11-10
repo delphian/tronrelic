@@ -19,13 +19,7 @@ import styles from './CurationPreview.module.scss';
  */
 const COLLAPSE_AT = 600;
 
-/**
- * Shorten text to a limit for the collapsed view.
- *
- * @param text - The full body text.
- * @param max - The number of characters to keep.
- * @returns The text, cut at the limit with an ellipsis when it was longer.
- */
+/** Shorten text to `max` characters for the collapsed view, adding an ellipsis when it was longer. */
 function clip(text: string, max: number): string {
     return text.length > max ? `${text.slice(0, max).trimEnd()}…` : text;
 }

@@ -51,12 +51,7 @@ class StubLogger implements ISystemLogService {
     async getStats(): Promise<any> { return { total: 0, byLevel: {}, resolved: 0, unresolved: 0 }; }
 }
 
-/**
- * Build a minimal Express-like request used by the middleware.
- *
- * The middleware only reads `req.path` and `req.headers`; the rest
- * of the Express request surface is unused and can be omitted.
- */
+/** Minimal request stub; the middleware reads only `req.path` and `req.headers`. */
 function makeRequest(path: string, headers: Record<string, string> = {}): Request {
     return { path, headers } as unknown as Request;
 }

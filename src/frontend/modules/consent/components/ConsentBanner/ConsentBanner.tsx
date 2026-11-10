@@ -149,10 +149,7 @@ export function ConsentBanner() {
     ) : null;
 }
 
-/**
- * Ignore a change. The strictly-necessary switch is disabled and always on,
- * but `Switch` requires a handler.
- */
+/** Ignore a change: the strictly-necessary switch is disabled and always on, but `Switch` requires a handler. */
 function noopChange(): void {
     /* always on */
 }

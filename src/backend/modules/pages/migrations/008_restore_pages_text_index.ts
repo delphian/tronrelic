@@ -60,9 +60,6 @@ interface IIndexDescription {
  * Whether an existing text index covers exactly the fields this migration
  * would index. A text index lists its fields in `weights`, not in `key`,
  * which only holds the internal `_fts` and `_ftsx` entries.
- *
- * @param index - An index already on the collection.
- * @returns True when it indexes title, slug, and description and nothing else.
  */
 function coversSameFields(index: IIndexDescription): boolean {
     const fields = Object.keys(index.weights ?? {}).sort();

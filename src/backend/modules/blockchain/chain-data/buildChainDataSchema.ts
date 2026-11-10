@@ -103,10 +103,6 @@ SETTINGS ttl_only_drop_parts = 1, materialize_ttl_recalculate_only = 1`;
 /**
  * The expiry expression a data table carries, written in one place so the
  * `CREATE TABLE` statements and a later `MODIFY TTL` cannot disagree.
- *
- * @param timeColumn - The column the table is expired by.
- * @param retentionDays - How many days of data the table keeps.
- * @returns The `TTL … DELETE` clause.
  */
 function ttlClause(timeColumn: string, retentionDays: number): string {
     return `TTL toDateTime(${timeColumn}) + INTERVAL ${retentionDays} DAY DELETE`;

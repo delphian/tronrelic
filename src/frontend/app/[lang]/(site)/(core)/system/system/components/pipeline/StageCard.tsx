@@ -5,9 +5,8 @@
  *
  * Each stage of the pipeline — Fetch, Enrich, Buffer, Commit — gets a card
  * with the same header: the stage name, one sentence saying what the stage
- * does, and the control that acts on it. The old console put controls far
- * from the figures they affect (the receipts switch was the last card on the
- * Configuration tab), so each card now carries its own.
+ * does, and the control that acts on it, so a control sits beside the figures
+ * it affects.
  */
 
 import type { ReactNode } from 'react';

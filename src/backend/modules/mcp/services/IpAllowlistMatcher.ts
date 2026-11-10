@@ -78,9 +78,6 @@ export function validateIpAllowlist(entries: readonly string[]): string[] {
  * Node reports an IPv4 client on a dual-stack socket as an IPv4-mapped IPv6
  * address (`::ffff:203.0.113.7`). An admin lists the plain IPv4 form, so the
  * mapped form is unwrapped first; without this an IPv4 range would never match.
- *
- * @param ip - The request address as Express resolved it.
- * @returns The address to match, and its family.
  */
 function normaliseAddress(ip: string): { address: string; family: 'ipv4' | 'ipv6' } | null {
     const unwrapped = ip.toLowerCase().startsWith('::ffff:') && isIP(ip.slice(7)) === 4 ? ip.slice(7) : ip;

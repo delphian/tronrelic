@@ -9,8 +9,7 @@
  * from what an operator learns about it: its network, country, exact browser
  * build, the pages it reads, and how its requests relate to each other. This
  * service holds that knowledge as rules an operator edits on `/system/traffic`,
- * so a new crawler no longer needs a code change. It replaced the ASN-only
- * automated-network list; migration 022 moved each listed network into a rule.
+ * so a new crawler needs no code change.
  *
  * ## Design Decisions
  *

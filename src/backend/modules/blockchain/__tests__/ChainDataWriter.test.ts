@@ -134,10 +134,6 @@ const NOW = new Date(Date.UTC(2026, 8, 24, 3, 12, 40, 0));
 /**
  * Build a writer against the fake with a fixed clock and no real retry delay,
  * so a test that exercises every retry does not wait seconds for it.
- *
- * @param fake - The fake ClickHouse the writer talks to.
- * @param overrides - Options a test needs to change, such as the queue limit.
- * @returns The writer under test.
  */
 function createWriter(
     fake: ReturnType<typeof createFakeClickHouse>,
@@ -151,13 +147,7 @@ function createWriter(
     });
 }
 
-/**
- * Pick out the inserts into one table.
- *
- * @param fake - The fake whose recorded inserts to search.
- * @param table - The full table name, such as `tron._ingest_state`.
- * @returns Every recorded insert into that table, in order.
- */
+/** Pick out the inserts into one table, named in full such as `tron._ingest_state`. */
 function insertsInto(fake: ReturnType<typeof createFakeClickHouse>, table: string): IRecordedInsert[] {
     return fake.inserts.filter(insert => insert.table === table);
 }

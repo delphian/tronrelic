@@ -52,9 +52,6 @@ const SUBMENU_NAMESPACE = 'ai-tools';
 /**
  * Narrow an arbitrary `?tab=` string to a known TabId, so the deep-link seeding
  * and the click routing share one source of truth for valid tabs.
- *
- * @param tab - The raw `?tab=` value.
- * @returns True when the value names a real tab.
  */
 function isTabId(tab: string | undefined): tab is TabId {
     return tab === 'query' || tab === 'registry' || tab === 'activity' || tab === 'approvals';
@@ -66,7 +63,6 @@ function isTabId(tab: string | undefined): tab is TabId {
  * page on a blank panel.
  *
  * @param url - The clicked node's url (e.g. `/system/ai-tools?tab=registry`).
- * @returns The matching tab id.
  */
 function tabFromUrl(url: string | undefined): TabId {
     const tab = url?.match(/[?&]tab=([^&]+)/)?.[1];
@@ -74,10 +70,8 @@ function tabFromUrl(url: string | undefined): TabId {
 }
 
 /**
- * Stable no-op for RegistryTab's required `onChanged`. The callback used to
- * re-check the trifecta banner after a registry change; with that banner removed
- * there is nothing left for the page to do, and a module-level constant keeps
- * RegistryTab's memoized callbacks from re-creating each render.
+ * Stable no-op for RegistryTab's required `onChanged`, which the page has no use for. A
+ * module-level constant keeps RegistryTab's memoized callbacks from re-creating each render.
  */
 const noop = (): void => {};
 

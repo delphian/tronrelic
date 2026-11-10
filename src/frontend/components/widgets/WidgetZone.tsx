@@ -74,8 +74,6 @@ const PLACEMENT_ID_PATTERN = /^[a-f0-9]{24}$/;
  *
  * @param props.selector - The selector for the one element the CSS applies
  *   to, such as `[data-zone="footer"]`.
- * @param props.css - The operator's CSS, placed inside that selector's rule.
- * @returns The style element, or nothing when the CSS is blank.
  */
 function ScopedStyle({ selector, css }: { selector: string; css: string | undefined }) {
     const hasCss = typeof css === 'string' && css.trim().length > 0;

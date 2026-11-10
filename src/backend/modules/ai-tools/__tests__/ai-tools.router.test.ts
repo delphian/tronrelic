@@ -102,13 +102,10 @@ const EXPECTED_SESSION_ONLY = [
 ].sort();
 
 /**
- * Build a controller stand-in whose every handler is an inert function.
- *
- * The router only stores handler references, so the doubles need no behaviour —
- * but they must be distinct named functions rather than one shared spy, so a
- * handler is never mistaken for the `requireAdminUser` middleware by name.
- *
- * @returns A controller double satisfying the router factory's parameter type.
+ * Build a controller stand-in whose every handler is an inert function. The
+ * router only stores handler references, but each must be a distinct named
+ * function rather than one shared spy, so a handler is never mistaken for the
+ * `requireAdminUser` middleware by name.
  */
 function createControllerStub(): AiToolsController {
     return new Proxy({} as AiToolsController, {

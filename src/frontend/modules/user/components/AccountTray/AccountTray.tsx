@@ -216,10 +216,7 @@ export function AccountTray({ imageUrl = null, links, direction, opacity }: IAcc
         }
     }, [closeTray, isOpen]);
 
-    /**
-     * Start sign-in from the tray's built-in entry, closing the tray first so
-     * the dialog is the only thing on screen.
-     */
+    /** Start sign-in from the tray's built-in entry, closing the tray first so only the dialog shows. */
     const signInFromTray = useCallback(() => {
         closeTray();
         openSignInDialog();

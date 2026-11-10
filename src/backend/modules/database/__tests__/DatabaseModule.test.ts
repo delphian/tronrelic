@@ -104,11 +104,6 @@ describe('DatabaseModule', () => {
     });
 
     describe('Metadata', () => {
-        /**
-         * Test: Module should have correct metadata.
-         *
-         * Verifies that the module exposes its identity for introspection.
-         */
         it('should have correct metadata', () => {
             expect(module.metadata.id).toBe('database');
             expect(module.metadata.name).toBe('Database');
@@ -118,12 +113,6 @@ describe('DatabaseModule', () => {
     });
 
     describe('init()', () => {
-        /**
-         * Test: init should initialize core database service.
-         *
-         * Verifies that the init phase creates the DatabaseService instance
-         * used by the application.
-         */
         it('should initialize core database service', async () => {
             await module.init({
                 logger: mockLogger as any,
@@ -134,11 +123,6 @@ describe('DatabaseModule', () => {
             expect(true).toBe(true);
         });
 
-        /**
-         * Test: init should store dependencies for later use.
-         *
-         * Verifies that dependencies are retained for the run() phase.
-         */
         it('should store dependencies for later use', async () => {
             await module.init({
                 logger: mockLogger as any,
@@ -150,11 +134,6 @@ describe('DatabaseModule', () => {
             expect(dbService).toBeDefined();
         });
 
-        /**
-         * Test: init should initialize migration system.
-         *
-         * Verifies that the migration system is initialized during the init phase.
-         */
         it('should initialize migration system', async () => {
             await module.init({
                 logger: mockLogger as any,
@@ -167,37 +146,23 @@ describe('DatabaseModule', () => {
         });
 
         /**
-         * Test: init should fail-fast when migration initialization fails.
-         *
-         * Verifies that scan errors (missing dep, circular dep, malformed file)
-         * propagate out of init() so a bad migration crashes smoke-boot rather
-         * than silently breaking /api/admin/migrations/* at runtime. Skipped
-         * because vi.mock hoisting makes it difficult to conditionally override
-         * the DatabaseService mock; covered by integration tests.
+         * Scan errors (missing dep, circular dep, malformed file) must propagate
+         * out of init() so a bad migration crashes smoke-boot rather than
+         * silently breaking /api/admin/migrations/* at runtime. Skipped because
+         * vi.mock hoisting makes it difficult to conditionally override the
+         * DatabaseService mock; covered by integration tests.
          */
         it.skip('should fail-fast if migration initialization fails', async () => {
             // This test would require dynamically overriding the mocked DatabaseService
             // which conflicts with vi.mock hoisting. Tested in integration instead.
         });
 
-        /**
-         * Test: getDatabaseService should throw if called before init.
-         *
-         * Verifies that attempting to access the service before initialization
-         * throws a clear error message.
-         */
         it('should throw if getDatabaseService called before init', () => {
             expect(() => module.getDatabaseService()).toThrow(
                 'DatabaseModule not initialized'
             );
         });
 
-        /**
-         * Test: getMigrationsService should throw if called before init.
-         *
-         * Verifies that attempting to access migrations service before initialization
-         * throws a clear error message.
-         */
         it('should throw if getMigrationsService called before init', () => {
             expect(() => module.getMigrationsService()).toThrow(
                 'DatabaseModule not initialized'
@@ -207,11 +172,8 @@ describe('DatabaseModule', () => {
 
     describe('run()', () => {
         /**
-         * Test: run should not register a top-level menu item.
-         *
-         * The database admin UI is now surfaced inside the consolidated
-         * /system/system page, so the module no longer owns its own
-         * navigation entry.
+         * The database admin UI lives inside /system/system, so the module owns
+         * no navigation entry of its own.
          */
         it('should not register a system menu item', async () => {
             await module.init({
@@ -224,11 +186,6 @@ describe('DatabaseModule', () => {
             expect(mockMenuCreate).not.toHaveBeenCalled();
         });
 
-        /**
-         * Test: run should mount migrations router at correct path.
-         *
-         * Verifies that the migrations API is mounted at /api/admin/migrations.
-         */
         it('should mount migrations router at correct path', async () => {
             await module.init({
                 logger: mockLogger as any,
@@ -245,11 +202,6 @@ describe('DatabaseModule', () => {
             );
         });
 
-        /**
-         * Test: run should mount database browser router at correct path.
-         *
-         * Verifies that the database browser API is mounted at /api/admin/database.
-         */
         it('should mount database browser router at correct path', async () => {
             await module.init({
                 logger: mockLogger as any,
@@ -266,11 +218,6 @@ describe('DatabaseModule', () => {
             );
         });
 
-        /**
-         * Test: run should apply requireAdmin middleware to migrations routes.
-         *
-         * Verifies that the migrations API is protected with admin authentication.
-         */
         it('should apply requireAdmin middleware to migrations routes', async () => {
             await module.init({
                 logger: mockLogger as any,
@@ -296,11 +243,6 @@ describe('DatabaseModule', () => {
             expect(migrationsCall?.[3]).toBeTypeOf('function'); // router
         });
 
-        /**
-         * Test: run should apply requireAdmin middleware to database browser routes.
-         *
-         * Verifies that the database browser API is protected with admin authentication.
-         */
         it('should apply requireAdmin middleware to database browser routes', async () => {
             await module.init({
                 logger: mockLogger as any,
@@ -327,12 +269,6 @@ describe('DatabaseModule', () => {
     });
 
     describe('Lifecycle Integration', () => {
-        /**
-         * Test: Full module lifecycle should complete successfully.
-         *
-         * Verifies that init() → run() lifecycle completes without errors
-         * and module is ready for use.
-         */
         it('should complete full lifecycle', async () => {
             // Init phase
             await module.init({
@@ -354,11 +290,6 @@ describe('DatabaseModule', () => {
             expect(mockApp.use).toHaveBeenCalled();
         });
 
-        /**
-         * Test: Module should be usable after full lifecycle.
-         *
-         * Verifies that all public APIs work correctly after initialization.
-         */
         it('should be usable after full lifecycle', async () => {
             await module.init({
                 logger: mockLogger as any,

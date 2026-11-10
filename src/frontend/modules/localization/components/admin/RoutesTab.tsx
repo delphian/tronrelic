@@ -100,13 +100,7 @@ export function RoutesTab({ onShowKeys }: IRoutesTabProps) {
     const { push } = useToast();
     const { open, close } = useModal();
 
-    /**
-     * Show the outcome of an action with the backend's message on failure.
-     *
-     * @param tone - Success or failure.
-     * @param title - What happened.
-     * @param error - The thrown error, on failure.
-     */
+    /** Show the outcome of an action with the backend's message on failure. */
     const notify = useCallback((tone: 'success' | 'danger', title: string, error?: unknown) => {
         push({ tone, title, description: error ? (error instanceof Error ? error.message : String(error)) : undefined });
     }, [push]);
@@ -203,12 +197,7 @@ export function RoutesTab({ onShowKeys }: IRoutesTabProps) {
         });
     }, [close, load, notify, open]);
 
-    /**
-     * Toggle a language in the add-route form.
-     *
-     * @param code - The language code.
-     * @param on - Whether it is selected.
-     */
+    /** Toggle a language in the add-route form. */
     const toggleSelected = useCallback((code: string, on: boolean) => {
         setSelected(current => (on ? [...current, code] : current.filter(entry => entry !== code)));
     }, []);

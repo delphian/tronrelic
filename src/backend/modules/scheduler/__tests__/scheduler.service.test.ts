@@ -26,8 +26,6 @@ import { SchedulerService } from '../services/scheduler.service.js';
  * Drain pending micro/macro tasks so a fire-and-forget executeJob() reaches its
  * `finally` (lock release) before assertions run, and so a deferred missed
  * time (handled on setImmediate) has been processed.
- *
- * @returns A promise that resolves after several event-loop turns.
  */
 async function flush(): Promise<void> {
     for (let i = 0; i < 4; i += 1) {
@@ -188,8 +186,6 @@ describe('SchedulerService', () => {
         /**
          * Build a logger stand-in whose methods are spies, standing in for a
          * module's child logger so a test can see which logger an entry went to.
-         *
-         * @returns An object shaped like the logger the scheduler calls.
          */
         function createOwnerLogger(): { info: Mock; warn: Mock; error: Mock; debug: Mock } {
             return { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };

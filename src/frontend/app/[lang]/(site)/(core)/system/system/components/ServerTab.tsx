@@ -17,9 +17,8 @@ import styles from './ServerTab.module.scss';
 /**
  * Server tab — droplet, containers, Redis, and the backend process.
  *
- * This used to be the Overview tab, where the Server console sat above the
- * Blockchain console and pushed it below the fold. Block ingestion now has its
- * own Pipeline tab, the page's default, so this tab holds the server readings
+ * Block ingestion has its own Pipeline tab, the page's default, so the Server
+ * console never pushes it below the fold and this tab holds the server readings
  * alone. The card keeps its `id` so `#server` stays a working deep link.
  *
  * The tab owns the freshness state the refresh readout renders, folding each
@@ -40,8 +39,6 @@ export function ServerTab() {
      * available at the moment the outcome lands — the section itself keeps no
      * history. The empty dependency list holds this identity stable for the
      * whole mount, which the section's polling effect requires.
-     *
-     * @param report - The outcome the Server console just stamped.
      */
     const noteServerRefresh = useCallback((report: IRefreshReport) => {
         setServerFreshness(previous => foldRefresh(previous, report));

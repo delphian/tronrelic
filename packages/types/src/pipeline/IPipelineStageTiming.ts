@@ -1,9 +1,8 @@
 /**
  * How long one pipeline stage has taken across recent blocks.
  *
- * The console used to show the timings of the single most recent block, which
- * jumped around from poll to poll and hid whether a stage was usually slow or
- * slow once. A median and a 95th percentile over a rolling window answer both.
+ * A rolling median and 95th percentile show whether a stage is usually slow or
+ * slow once, which a single block's timings, jumping from poll to poll, hide.
  */
 export interface IPipelineStageTiming {
     /** Stage key as recorded in the block's timings, such as `'fetchReceipts'`. */

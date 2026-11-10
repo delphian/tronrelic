@@ -130,12 +130,9 @@ LIMIT 1 BY tx_id`,
 }
 
 /**
- * Let queued I/O run before the next batch of recoveries.
- *
- * Recovery is synchronous CPU work on the same event loop that commits
- * blocks and serves WebSockets, so a long page is broken into short slices.
- *
- * @returns A promise that settles on the next turn of the event loop.
+ * Let queued I/O run before the next batch of recoveries. Recovery is synchronous
+ * CPU work on the same event loop that commits blocks and serves WebSockets, so a
+ * long page is broken into short slices.
  */
 function yieldToEventLoop(): Promise<void> {
     return new Promise(resolve => setImmediate(resolve));

@@ -180,7 +180,6 @@ export function EmitBufferSection() {
     /**
      * Record what an operator typed into one field, leaving the others alone.
      *
-     * @param key - Which setting the input belongs to.
      * @param value - The raw text, kept unparsed so a partly-typed number is
      *                not corrected out from under the cursor.
      */

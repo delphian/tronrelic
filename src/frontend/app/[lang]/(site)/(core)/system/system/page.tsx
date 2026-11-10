@@ -25,8 +25,6 @@ const SUBMENU_NAMESPACE = 'system';
  *
  * Both server fetches below go to admin-gated endpoints, and on the server
  * the browser's cookies are not sent automatically.
- *
- * @returns Headers to pass to `fetch`, or undefined when there are no cookies.
  */
 async function adminHeaders(): Promise<Record<string, string> | undefined> {
     const cookieHeader = (await cookies()).toString();

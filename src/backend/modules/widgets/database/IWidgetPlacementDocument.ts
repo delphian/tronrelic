@@ -2,11 +2,10 @@
  * @fileoverview Mongo document interface for widget placements.
  *
  * The `module_widgets_placements` collection stores every placement
- * record — both plugin-source (created via the legacy widget-service
- * compatibility shim on plugin enable) and operator-source (created
- * via the admin API in a future PR). The document interface mirrors
- * `IWidgetPlacement` from the types package but with native Mongo
- * types (`ObjectId`, `Date`).
+ * record — both plugin-source (created on plugin enable) and
+ * operator-source (created via the admin API). The document interface
+ * mirrors `IWidgetPlacement` from the types package but with native
+ * Mongo types (`ObjectId`, `Date`).
  *
  * @see {@link ../../../../docs/system/system-database.md} for
  *   database access patterns and the manual `module_*_*` collection

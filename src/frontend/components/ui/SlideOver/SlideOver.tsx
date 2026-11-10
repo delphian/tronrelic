@@ -83,12 +83,7 @@ export function SlideOver({ open, onClose, title, label, width = 'md', children 
         };
     }, [open, onClose]);
 
-    /**
-     * Close only when the backdrop itself is clicked, not when the click bubbles
-     * up from panel content.
-     *
-     * @param event - The backdrop mouse event.
-     */
+    /** Close only when the backdrop itself is clicked, not when the click bubbles up from panel content. */
     const handleBackdropClick = useCallback((event: MouseEvent<HTMLDivElement>) => {
         if (event.target === event.currentTarget) {
             onClose();

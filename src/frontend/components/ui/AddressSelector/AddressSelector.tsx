@@ -153,9 +153,6 @@ export interface AddressSelectorProps {
  * Checksum-verified, not merely base58-shaped: a mistyped character usually
  * lands on another alphabet character, so a shape test would commit a typo as
  * a real address and every consumer downstream would trust it.
- *
- * @param text - Raw contents of the search field.
- * @returns True when the text can be committed as a selection as-is.
  */
 function isCompleteAddress(text: string): boolean {
     return isValidTronAddress(text.trim());
@@ -361,15 +358,14 @@ export function AddressSelector({
     }, [onChange]);
 
     /**
-     * Keyboard access to the portaled suggestions, why: the list used to sit in
-     * the DOM directly after the input, so Tab reached the first suggestion for
-     * free. Portaling it to `<body>` moves those buttons to the end of the tab
-     * order, and inside a dialog they leave the focus scope entirely — the
-     * modal trap only cycles descendants of the dialog — so without explicit
-     * focus management the list becomes mouse-only. ArrowDown/ArrowUp therefore
-     * rove across the suggestions, Enter activates the focused one natively
-     * (they are real buttons), and Escape closes the list and returns the caret
-     * to the field so focus is never stranded on a button React just unmounted.
+     * Keyboard access to the portaled suggestions, why: portaling the list to
+     * `<body>` moves its buttons to the end of the tab order, and inside a
+     * dialog they leave the focus scope entirely — the modal trap only cycles
+     * descendants of the dialog — so without explicit focus management the list
+     * becomes mouse-only. ArrowDown/ArrowUp therefore rove across the
+     * suggestions, Enter activates the focused one natively (they are real
+     * buttons), and Escape closes the list and returns the caret to the field so
+     * focus is never stranded on a button React just unmounted.
      *
      * Bound to the search row rather than to each element because React bubbles
      * events out of a portal through the component tree, not the DOM tree, so

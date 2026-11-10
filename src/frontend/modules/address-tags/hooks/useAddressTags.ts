@@ -58,11 +58,7 @@ const MAX_ATTEMPTS = 3;
 /** Backoff before a failed batch is retried, so a flapping backend gets air. */
 const RETRY_DELAY_MS = 2000;
 
-/**
- * Notify every chip watching an address that its tags changed.
- *
- * @param address - The address whose subscribers should re-read the cache.
- */
+/** Notify every chip watching an address that its tags changed, so it re-reads the cache. */
 function notify(address: string): void {
     subscribers.get(address)?.forEach(listener => listener());
 }
@@ -129,10 +125,7 @@ async function flush(): Promise<void> {
     }
 }
 
-/**
- * Schedule a flush on the next macrotask, why: chips mount in one render pass,
- * so deferring by a tick lets the whole page's addresses land in one request.
- */
+/** Defer the flush one tick so every chip mounted in the same render pass lands in one request. */
 function schedule(): void {
     if (flushHandle === null) {
         flushHandle = setTimeout(() => { void flush(); }, 0);

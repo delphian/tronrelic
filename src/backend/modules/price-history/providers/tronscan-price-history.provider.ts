@@ -89,8 +89,6 @@ export class TronScanPriceHistoryProvider implements IPriceHistoryProvider {
      * on a clean write.
      *
      * @param asset - The asset the points belong to (always TRX here).
-     * @param rows - Raw TronScan volume rows.
-     * @returns One point per UTC day, oldest first.
      */
     private collapseToDaily(
         asset: PriceAsset,

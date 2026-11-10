@@ -4,11 +4,10 @@
  * @fileoverview The Enrich stage card: are receipts, and so decoded events, arriving?
  *
  * Receipts carry each transaction's energy, bandwidth, and event logs, and the
- * event logs are what core decodes into token transfers for plugins. The old
- * console did not show receipts at all, and their switch was the last card on
- * the Configuration tab. This card shows the switch beside the figures it
- * changes: coverage over recent blocks, what happened to the ones that were
- * not covered, and how many events were decoded.
+ * event logs are what core decodes into token transfers for plugins. This card
+ * shows the receipts switch beside the figures it changes: coverage over recent
+ * blocks, what happened to the ones that were not covered, and how many events
+ * were decoded.
  */
 
 import { useState } from 'react';

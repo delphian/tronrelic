@@ -5,22 +5,19 @@
  * (tid) in the window, carrying first-touch acquisition and in-window behaviour
  * together, with a per-row clickstream drill-down.
  *
- * Why one table, not three views. The tab previously offered "New visitors /
- * Anonymous / Registered" behind a selector, which read as three subsets of one
- * population but was not: new-vs-returning is a time property, anonymous-vs-
- * registered an identity property, and the two are orthogonal — a visitor can
- * be returning *and* registered, which no single view could say. Worse, two of
- * the three keyed on the tid while "Registered" keyed on the account, and the
- * bot filter reached only the first. Collapsing to one tid-keyed table turns
- * both distinctions into attributes of a row (`isNew`, `accountId`), gives the
- * bot filter one place to apply, and surfaces `botClass` and `channel`, which
- * are stored on every event row and were previously displayed nowhere.
+ * Why one table, not three views. New-vs-returning is a time property and
+ * anonymous-vs-registered an identity property; the two are orthogonal — a
+ * visitor can be returning *and* registered — so separate "New / Anonymous /
+ * Registered" views would read as subsets of one population when they are not,
+ * and would key on different things (tid versus account). One tid-keyed table
+ * turns both distinctions into attributes of a row (`isNew`, `accountId`), gives
+ * the bot filter one place to apply, and surfaces `botClass` and `channel`,
+ * which are stored on every event row.
  *
  * The tradeoff, taken deliberately: an account that browses from three browsers
  * is three rows sharing one account id, because the tid is the unit the Metrics
  * Contract defines a Visitor in and the only key an anonymous row has. Clicking
- * an account id filters the table to that account's tids, which is the
- * replacement for the per-account rollup the old Registered view provided.
+ * an account id filters the table to that account's tids.
  *
  * Expanding a row publishes that visitor's *complete* record — every stored
  * attribute for the tid and its account, then the clickstream. That is what

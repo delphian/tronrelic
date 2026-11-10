@@ -33,10 +33,8 @@ interface SkeletonProps extends HTMLAttributes<HTMLDivElement>, ISkeletonProps {
  * shortcut, so a caller passing both gets the more specific one.
  *
  * The props plugins may use come from the published {@link ISkeletonProps},
- * which this component's own props extend. The `width`/`height` shortcuts were
- * previously advertised to plugins while the component accepted only raw
- * `HTMLAttributes`, so plugin callers typechecked green and had both props
- * silently dropped — their skeletons collapsed to the stylesheet default.
+ * which this component's own props extend. If they did not, a plugin passing
+ * `width`/`height` would typecheck and have both props silently dropped.
  *
  * @example
  * ```tsx

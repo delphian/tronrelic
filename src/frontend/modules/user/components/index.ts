@@ -2,8 +2,7 @@
  * User module components barrel export.
  *
  * Better Auth login, the profile settings hub (ProfileView, WalletManager,
- * ProfileAuthGate), and the `/system/users` admin dashboards. The legacy
- * UUID identity provider was removed in the Phase 6 cutover.
+ * ProfileAuthGate), and the `/system/users` admin dashboards.
  */
 
 export { WalletButton } from './WalletButton';

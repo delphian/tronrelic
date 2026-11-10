@@ -90,10 +90,9 @@ function NotAdminScreen({
  * Authenticated layout containing optional sub-navigation and child page
  * content.
  *
- * The system surface no longer renders its own sub-nav — admin items live in
- * the main navigation under the System container — but the prop is retained
- * for future per-section sub-navs and only rendered when supplied so an
- * absent prop doesn't introduce a blank row.
+ * Admin items live in the main navigation under the System container. The
+ * `navigation` prop is kept for future per-section sub-navs and renders only
+ * when supplied, so an absent prop adds no blank row.
  *
  * @param props - Component props
  * @param props.navigation - Optional sub-navigation rendered above content

@@ -257,9 +257,6 @@ function toDate(value: string) {
  * Default formatter for the tooltip's date heading: short date plus 24-hour
  * time. Gives the hovered bucket an hour/minute even when the x-axis label is
  * date-only, without the caller having to wire a formatter through.
- *
- * @param value - The hovered category's Date
- * @returns A localized "date HH:MM" string
  */
 function defaultTooltipDateFormatter(value: Date) {
     const date = value.toLocaleDateString();
@@ -273,10 +270,6 @@ function defaultTooltipDateFormatter(value: Date) {
  * The fallback references `--chart-color-*` (a token, not a hardcoded hex) so
  * series colors stay theme-aware while remaining a deliberate data-viz literal
  * when the caller supplies one.
- *
- * @param color - Caller-supplied color, if any
- * @param index - Series index used to cycle the palette
- * @returns A CSS color string suitable for an SVG fill
  */
 function resolveColor(color: string | undefined, index: number) {
     return color ?? `var(--chart-color-${(index % 10) + 1})`;
@@ -499,10 +492,9 @@ export function BarChart({
 
     /**
      * Stable fallback colors keyed by series id, derived from each series' index
-     * in the original `series` array. Because the index never depends on which
-     * series are hidden or empty, a series renders the same color in its bars,
-     * tooltip, and legend dot — the three would otherwise desync once an earlier
-     * series is hidden and the filtered indices shift.
+     * in the original `series` array, so a series keeps one color in its bars,
+     * tooltip, and legend dot even after an earlier series is hidden and the
+     * filtered indices shift.
      */
     const seriesColors = useMemo(
         () => new Map(series.map((item, index) => [item.id, resolveColor(item.color, index)])),

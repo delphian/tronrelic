@@ -85,9 +85,6 @@ export function LanguagesTab() {
      * Show the outcome of an action, carrying the backend's message on failure
      * so the administrator learns why, for example, a language cannot be enabled.
      *
-     * @param tone - Success or failure.
-     * @param title - What happened.
-     * @param error - The thrown error, on failure.
      * @param description - What the change means for visitors, on success.
      */
     const notify = useCallback((tone: 'success' | 'danger', title: string, error?: unknown, description?: string) => {

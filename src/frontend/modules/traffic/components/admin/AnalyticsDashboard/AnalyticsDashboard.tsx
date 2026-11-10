@@ -77,8 +77,6 @@ const SOURCE_COLUMN_COUNT = 5;
  * (e.g., during SSR when document is unavailable).
  *
  * @param varName - CSS variable name (e.g., '--color-primary')
- * @param fallback - Hex fallback value
- * @returns Resolved hex color string
  */
 function resolveCSSColor(varName: string, fallback: string): string {
     if (typeof document === 'undefined') return fallback;
@@ -137,9 +135,8 @@ interface IShareFigureProps {
 /**
  * A table cell's figure with its share bar in front of it.
  *
- * The three ranked tables on this tab used to spend a whole column on the bar;
- * drawing it beside the figure gives that column back to the labels and keeps
- * the number and its relative size together.
+ * Drawing the bar beside the figure rather than in its own column leaves that
+ * column to the labels and keeps the number and its relative size together.
  *
  * @param props - The row's value and the table maximum.
  * @returns The bar followed by the formatted figure.

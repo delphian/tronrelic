@@ -113,22 +113,12 @@ export class ContentRouterController {
         return;
     };
 
-    /**
-     * Narrow an unknown query value to a known egress level.
-     *
-     * @param value - Candidate egress string.
-     * @returns True when the value is a known egress level.
-     */
+    /** Narrow an unknown query value to a known egress level. */
     private isEgress(value: string | undefined): value is ContentEgress {
         return value !== undefined && (CONTENT_EGRESS_LEVELS as ReadonlyArray<string>).includes(value);
     }
 
-    /**
-     * Narrow an unknown query value to a known audience level.
-     *
-     * @param value - Candidate audience string.
-     * @returns True when the value is a known audience level.
-     */
+    /** Narrow an unknown query value to a known audience level. */
     private isAudience(value: string | undefined): value is ContentAudience {
         return value !== undefined && (CONTENT_AUDIENCE_LEVELS as ReadonlyArray<string>).includes(value);
     }

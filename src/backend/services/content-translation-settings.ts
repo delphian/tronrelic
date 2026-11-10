@@ -41,9 +41,6 @@ export interface IContentTranslationSettingsDocument {
 /**
  * Build the plain error a settings validation failure throws, which the admin
  * route answers with 400.
- *
- * @param message - Explanation shown to the administrator.
- * @returns The error to throw.
  */
 const invalidSetting = (message: string): Error => new Error(message);
 
@@ -100,11 +97,7 @@ export class ContentTranslationSettingsService {
         return this.getSettings();
     }
 
-    /**
-     * The typed handle on the settings collection.
-     *
-     * @returns The collection.
-     */
+    /** The typed handle on the settings collection. */
     private collection() {
         return this.database.getCollection<IContentTranslationSettingsDocument>(CONTENT_TRANSLATION_SETTINGS_COLLECTION);
     }

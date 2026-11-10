@@ -46,22 +46,12 @@ const COLLECTION_PREFIX = 'module_mcp_';
 /** Log service name the module's `logger.child({ module: 'mcp' })` records under. */
 const LOG_SERVICE = 'tronrelic:mcp';
 
-/**
- * Narrow a `?tab=` value to a known tab.
- *
- * @param tab - The raw value.
- * @returns True when it names a tab.
- */
+/** Narrow a `?tab=` value to a known tab. */
 function isTabId(tab: string | undefined): tab is TabId {
     return tab === 'overview' || tab === 'tools' || tab === 'apps' || tab === 'activity' || tab === 'database' || tab === 'logs';
 }
 
-/**
- * Resolve a submenu node's url to its tab, defaulting to the overview.
- *
- * @param url - The clicked node's url.
- * @returns The tab id.
- */
+/** Resolve a submenu node's url to its tab, defaulting to the overview. */
 function tabFromUrl(url: string | undefined): TabId {
     const tab = url?.match(/[?&]tab=([^&]+)/)?.[1];
     return isTabId(tab) ? tab : 'overview';
@@ -108,11 +98,7 @@ export function McpAdminClient({
     const [activeTab, setActiveTab] = useState<TabId>(isTabId(initialTab) ? initialTab : 'overview');
     const [status, setStatus] = useState<IMcpStatus | null>(initialStatus);
 
-    /**
-     * Switch tabs and keep the URL a real deep link, without navigating.
-     *
-     * @param item - The clicked submenu node.
-     */
+    /** Switch tabs and keep the URL a real deep link, without navigating. */
     const handleTabSelect = useCallback((item: MenuNodeSerialized) => {
         const tab = tabFromUrl(item.url);
         setActiveTab(tab);
@@ -122,8 +108,6 @@ export function McpAdminClient({
     /**
      * Fold a tool change into the overview counts without a round trip, so
      * the served and stale counts beside the kill switch stay accurate.
-     *
-     * @param tools - The tool rows after the change.
      */
     const handleToolsChanged = useCallback((tools: IMcpToolExposure[]) => {
         setStatus(current => current
@@ -135,8 +119,6 @@ export function McpAdminClient({
      * Fold a kill-switch change into the current status. A functional update
      * keeps the tool counts current even when a tool changed while the
      * switch request was in flight.
-     *
-     * @param settings - The stored settings returned by the switch request.
      */
     const handleSettingsChanged = useCallback((settings: IMcpSettings) => {
         setStatus(current => current ? { ...current, settings } : current);

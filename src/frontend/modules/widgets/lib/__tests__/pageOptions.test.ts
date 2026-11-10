@@ -15,9 +15,6 @@ import { pageOptionsFromMenu } from '../pageOptions';
 /**
  * Build a menu node with the fields the picker reads, so each test states
  * only what makes its case different.
- *
- * @param overrides - Fields that differ from an enabled, shown root leaf
- * @returns A serialized menu node
  */
 function node(overrides: Partial<MenuNodeSerialized>): MenuNodeSerialized {
     return { _id: overrides.url ?? 'id', label: 'Page', order: 0, enabled: true, children: [], ...overrides };

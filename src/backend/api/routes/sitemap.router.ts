@@ -11,10 +11,9 @@
  *
  * Core never names a plugin URL itself. A plugin's pages are under the
  * plugin's authority, so a plugin that wants a page listed declares it
- * through the hook, and a plugin that declares nothing is left out. Core
- * used to guess `/{plugin-id}` for every enabled plugin, which put 404s and
- * redirects into the sitemap because most plugins serve their pages
- * elsewhere.
+ * through the hook, and a plugin that declares nothing is left out. Guessing
+ * `/{plugin-id}` would put 404s and redirects into the sitemap, because most
+ * plugins serve their pages elsewhere.
  *
  * Cached for 10 minutes to avoid repeated database queries from
  * sitemap.xml requests.

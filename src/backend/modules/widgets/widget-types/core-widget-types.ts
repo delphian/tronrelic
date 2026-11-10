@@ -22,10 +22,9 @@
  * the administrator's sign-in image from the system configuration, and
  * `AuthButtonWidget` decides between sign-in and profile from the
  * visitor's session. `core:site-logo` and the menu widget (`core:main-menu`,
- * which renders whichever menu namespace its placement names) are the rest
- * of what used to be the fixed site header. The menu's items are
- * per-visitor, so they reach the component through `MenuSeedProvider`,
- * never through this cached payload.
+ * which renders whichever menu namespace its placement names) build the rest
+ * of the site header. The menu's items are per-visitor, so they reach the
+ * component through `MenuSeedProvider`, never through this cached payload.
  *
  * Because the block-ticker fetcher needs a runtime dependency the other
  * two do not, the catalog is a *factory* — `buildCoreWidgetTypeDescriptors`
@@ -1230,9 +1229,6 @@ export const MENU_CONFIG_SCHEMA: JSONSchema7 = {
  * setting existed has no value, and a row edited in the database by hand may
  * hold anything. The root layout puts every namespace a widget names into a
  * menu API URL, so each fetcher that reads one checks it again here.
- *
- * @param raw - The namespace value read from the placement's instance config.
- * @returns The stored namespace when it is a valid namespace name, otherwise `main`.
  */
 function normalizeMenuNamespace(raw: unknown): string {
     return typeof raw === 'string' && MENU_NAMESPACE_PATTERN.test(raw) ? raw : MENU_DEFAULT_NAMESPACE;

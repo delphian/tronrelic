@@ -1,21 +1,15 @@
 /**
  * @fileoverview Wallet linking service keyed by Better Auth user id.
  *
- * Phase 4 of the Better Auth refactor. Owns the `module_user_wallets`
- * collection — the post-login profile feature that lets an authenticated
- * Better Auth account attach one or more TRON wallets it has proven
- * ownership of. This replaces the legacy UUID-keyed `users.wallets[]`
- * embedded array (and its register/verify two-stage flow plus
- * cross-browser identity reconciliation), which the Phase 6 cutover
- * removes.
+ * Owns the `module_user_wallets` collection — the post-login profile feature
+ * that lets an authenticated Better Auth account attach one or more TRON
+ * wallets it has proven ownership of.
  *
- * **Why simpler than the legacy flow.** UUID identity was browser-local,
- * so the legacy code needed "registered (unverified)" wallets and a
- * winner/loser merge to bridge a wallet across browsers. Better Auth
- * identity is already portable (email-OTP / OAuth / passkey), so a
- * wallet is purely a profile attachment: prove ownership with a
- * signature, attach it, done. A wallet already held by another account
- * is a hard conflict, never a merge.
+ * **No unverified state, no merge.** Better Auth identity is portable
+ * (email-OTP / OAuth / passkey), so a wallet needs no "registered
+ * (unverified)" state and no cross-browser winner/loser merge: prove
+ * ownership with a signature, attach it, done. A wallet already held by
+ * another account is a hard conflict, never a merge.
  *
  * **Identity boundary.** Callers resolve the Better Auth user id from
  * the session (`req.authSession.user.id`) *before* invoking this
@@ -469,10 +463,9 @@ export class WalletService implements IWalletService {
     /**
      * Verify a wallet challenge and signature, returning the normalized address.
      *
-     * Mirrors the legacy `verifyWalletAction` order so a malformed message
-     * cannot waste the user's nonce: normalize, assert the canonical
-     * message form, consume the nonce atomically, then verify the
-     * signature recovers to the same address.
+     * Checks in this order so a malformed message cannot waste the user's
+     * nonce: normalize, assert the canonical message form, consume the nonce
+     * atomically, then verify the signature recovers to the same address.
      *
      * @param userId - Better Auth user id the nonce is scoped to.
      * @param action - Action the nonce was minted for.

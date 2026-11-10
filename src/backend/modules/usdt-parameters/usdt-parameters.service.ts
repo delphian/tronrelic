@@ -31,10 +31,7 @@ export class UsdtParametersService implements IUsdtParametersService {
     private cacheExpiry: number = 0;
     private readonly CACHE_TTL_MS = 60_000; // 1 minute
 
-    /**
-     * Private constructor to enforce singleton pattern.
-     * Use setDependencies() then getInstance() to access the service.
-     */
+    /** Private to enforce the singleton; call setDependencies() then getInstance() to access the service. */
     private constructor() {}
 
     /**

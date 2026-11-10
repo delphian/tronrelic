@@ -6,8 +6,7 @@
  * A commit writes the block, advances the cursor, notifies observers, and
  * broadcasts `block:new`. The one failure this stage can have that no other
  * figure shows is writing falling behind the release clock, which appears as
- * a commit queue above zero. The old console received that figure and never
- * displayed it; this card leads with it.
+ * a commit queue above zero. This card leads with it.
  */
 
 import type { IPipelineStatus } from '@/types';

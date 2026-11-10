@@ -198,13 +198,11 @@ export class ToolAuditStore {
     /**
      * Aggregate per-tool usage tallies from the persistent invocation trail.
      *
-     * The Policy tab's "Usage" column previously read the policy engine's
-     * in-memory counters, which reset to empty on every server restart — so a
-     * freshly-restarted process showed "no activity" for every tool regardless
-     * of history. This counts the durable audit records instead, grouped by tool
-     * and status, so the column reflects real cumulative activity across the
-     * retention window (90 days) and survives restarts. A single grouped
-     * aggregation keeps it to one round-trip regardless of tool count.
+     * Counts the durable audit records, grouped by tool and status, so the Policy
+     * tab's "Usage" column reflects cumulative activity across the retention window
+     * (90 days) and survives restarts, which the policy engine's in-memory counters
+     * do not. A single grouped aggregation keeps it to one round-trip regardless of
+     * tool count.
      *
      * @returns Tally per tool name; tools with no recorded calls are absent.
      */

@@ -1,15 +1,14 @@
 /**
  * @fileoverview Backfill the denormalized `paused` brake onto progress docs.
  *
- * Why this migration exists: the ingest, forward-sync, and snapshot scheduler
- * ticks used to load the entire tracked set *and* the entire progress set every
- * tick, then join, filter, sort, and slice in memory — the predicate spans two
- * collections (`paused` on tracked, dueness fields on progress), so a single
- * indexed query was impossible. The selectors now push their whole predicate
- * into one indexed query on the progress collection, which requires `paused` to
- * live there too. New and re-paused accounts get the field at write time; this
- * migration backfills the documents that predate the change so the selectors do
- * not read a stale `unpaused` for an account the operator had paused.
+ * Why this migration exists: the ingest, forward-sync, and snapshot tick
+ * selectors run their whole predicate as one indexed query on the progress
+ * collection, instead of loading the tracked and progress sets and joining them
+ * in memory. The predicate spans `paused` (on tracked) and the dueness fields
+ * (on progress), so `paused` must live on progress too. New and re-paused
+ * accounts get the field at write time; this migration backfills the documents
+ * that predate it so the selectors do not read a stale `unpaused` for an
+ * account the operator had paused.
  *
  * Idempotent: re-running sets the same values. The tick-selector indexes are
  * created by the module's `ensureIndexes()` on every boot, so this migration

@@ -4,10 +4,6 @@
  * Provides unified database access and migration system for all application components.
  * The module follows TronRelic's two-phase initialization pattern with dependency injection.
  *
- * This module consolidates two previously separate systems:
- * - DatabaseService (from services/database/database.service.ts)
- * - Migration system (from modules/migrations and services/database/migration/)
- *
  * Why this module exists:
  * - Centralizes database abstraction layer used by all other modules
  * - Provides migration system for schema evolution
@@ -180,10 +176,8 @@ export class DatabaseModule implements IModule<IDatabaseModuleDependencies> {
     /**
      * Run the database module after all modules have initialized.
      *
-     * Mounts the migrations and collection-browser admin routers. The
-     * database admin UI is now surfaced inside the consolidated
-     * /system/system page rather than its own top-level admin tab, so
-     * this module no longer registers a menu item.
+     * Mounts the migrations and collection-browser admin routers. It registers
+     * no menu item, because the database admin UI lives inside /system/system.
      *
      * By this point, all dependencies are guaranteed to be initialized and ready.
      */

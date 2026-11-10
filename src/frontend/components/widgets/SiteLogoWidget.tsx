@@ -1,10 +1,9 @@
 /**
  * @fileoverview Core "site logo" widget renderer.
  *
- * Renders the `core:site-logo` widget type: the site wordmark, with an
- * optional image such as the site icon before it, as a link to the home
- * page. It used to be fixed in the site header; as a widget an operator
- * places it from `/system/widgets` and sets its text and image there.
+ * Renders the `core:site-logo` widget type: the site wordmark, with an optional
+ * image such as the site icon before it, as a link to the home page. An
+ * operator places it from `/system/widgets` and sets its text and image there.
  *
  * The wordmark and image come straight from the SSR `data` prop, so server
  * and client output are identical. The `'use client'` directive is required

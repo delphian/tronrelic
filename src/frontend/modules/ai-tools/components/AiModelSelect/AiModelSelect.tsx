@@ -39,9 +39,6 @@ interface IAiModelSelectProps {
 /**
  * Encode a provider and model as one select value. The empty string is the
  * automatic choice: the active provider with its own default model.
- *
- * @param choice - The provider and model.
- * @returns The select value.
  */
 function encodeChoice(choice: IAiModelChoice): string {
     return choice.providerId ? `${choice.providerId}|${choice.model ?? ''}` : '';

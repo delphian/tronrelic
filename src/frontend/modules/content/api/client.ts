@@ -44,13 +44,7 @@ async function send<T>(method: string, path: string, what: string, body?: unknow
     return (response.status === 204 ? undefined : await response.json()) as T;
 }
 
-/**
- * Build the path of one item's translations.
- *
- * @param typeId - The managed content type, such as `core:page`.
- * @param id - Core content id of the item.
- * @returns The path below `/api/admin/content`.
- */
+/** Build the path of one item's translations, relative to `/api/admin/content`. */
 function itemPath(typeId: string, id: string): string {
     return `/${encodeURIComponent(typeId)}/${encodeURIComponent(id)}/translations`;
 }

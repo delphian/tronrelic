@@ -3,13 +3,12 @@
 /**
  * @fileoverview The Chain data card: is the ClickHouse copy of the chain complete?
  *
- * Every committed block is copied into ClickHouse once, and a block that misses
- * that copy used to stay missing with nothing on screen to say so; operators
- * found out when a report built on the data came back incomplete. The repair job
- * now checks the copy every few minutes and refetches what is missing, and this
- * card shows its last result: how many blocks were missing, how many it
- * refetched, and how many remain. A deployment without ClickHouse has no copy,
- * so the card is not shown there.
+ * Every committed block is copied into ClickHouse once, and nothing else on
+ * screen shows a block that missed that copy until a report built on the data
+ * comes back incomplete. The repair job checks the copy every few minutes and
+ * refetches what is missing, and this card shows its last result: how many
+ * blocks were missing, how many it refetched, and how many remain. A
+ * deployment without ClickHouse has no copy, so the card is not shown there.
  */
 
 import type { IPipelineStatus } from '@/types';

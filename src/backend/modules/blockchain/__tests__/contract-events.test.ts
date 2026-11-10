@@ -25,12 +25,7 @@ const ADDRESS_BODY = 'a614f803b6fd780986a42c78ec9c7f77e6ded13c';
 /** Base58 of the all-zero address, which marks a mint or a burn. */
 const ZERO_ADDRESS = 'T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb';
 
-/**
- * Left-pad hex to one 32-byte word.
- *
- * @param hex Hex digits to pad.
- * @returns 64 hex characters.
- */
+/** Left-pad hex to one 32-byte word. */
 function word(hex: string): string {
     return hex.padStart(64, '0');
 }
@@ -44,12 +39,8 @@ const TRC20_TRANSFER_LOG = {
 
 /**
  * Encode an internal transaction note the way java-tron's receipt carries it.
- *
  * Receipts give the note as hex bytes (`63616c6c` for `call`), so a fixture
  * written with the plain word would test a shape the chain never sends.
- *
- * @param text - The note as a word, such as `call` or `delegateResourceOfEnergy`.
- * @returns The note as lowercase hex.
  */
 function hexNote(text: string): string {
     return Buffer.from(text, 'utf8').toString('hex');

@@ -17,10 +17,8 @@ import {
 } from '../chain-data/buildChainDataSchema.js';
 
 /**
- * Pull the table name out of a `CREATE TABLE IF NOT EXISTS tron.<name>` statement.
- *
- * @param statement - One statement from `buildChainDataSchema()`.
- * @returns The table name, or null when the statement creates no table.
+ * Pull the table name out of a `CREATE TABLE IF NOT EXISTS tron.<name>` statement,
+ * or null when the statement creates no table.
  */
 function createdTableName(statement: string): string | null {
     const match = /^CREATE TABLE IF NOT EXISTS tron\.(\w+)/.exec(statement);

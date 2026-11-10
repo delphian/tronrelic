@@ -1,10 +1,9 @@
 /**
  * Plugin registry contract tests.
  *
- * Locks in the failure-isolation guarantees that the x-poster widget rollout
- * exposed as missing — a single malformed plugin module used to take down
- * SSR for every route. These tests assert the registry skips bad entries
- * with a logged error instead of throwing.
+ * Locks in the failure-isolation guarantee that a single malformed plugin
+ * module cannot take down SSR for every route. These tests assert the registry
+ * skips bad entries with a logged error instead of throwing.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { IPlugin } from '@/types';

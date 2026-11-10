@@ -105,11 +105,9 @@ const useCoreTranslation = createTranslationHook('core');
  * Authentication rides the same-origin Better Auth session cookie. The
  * cookie is HttpOnly, set by the auth pipeline on sign-in, and travels
  * automatically with `credentials: 'include'`. The client does not — and
- * cannot — read any admin secret from `localStorage`; the legacy
- * `admin_token` value is gone, and consulting it here was duplicated five
- * times for a value that is always null. Admin endpoints validate the
- * session cookie via `requireAdmin` middleware (which also accepts the
- * service-token path for CI/scripts that don't run in a browser).
+ * cannot — read any admin secret from `localStorage`. Admin endpoints
+ * validate the session cookie via `requireAdmin` middleware (which also
+ * accepts the service-token path for CI/scripts that don't run in a browser).
  */
 class ApiClient implements IApiClient {
     private _baseUrl: string | null = null;

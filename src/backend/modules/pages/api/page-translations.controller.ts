@@ -17,24 +17,14 @@ import type { NextFunction, Request, Response } from 'express';
 import type { IPageService, IPageTranslationService, ISystemLogService } from '@/types';
 import { DEFAULT_LANGUAGE } from '@/types';
 
-/**
- * Read the language a public request asks for.
- *
- * @param req - The request, whose `language` query is optional.
- * @returns The language code, or null when the request wants the English page.
- */
+/** Read the language a public request asks for, or null when it wants the English page. */
 function requestedLanguage(req: Request): string | null {
     const language = typeof req.query.language === 'string' ? req.query.language : '';
 
     return language && language !== DEFAULT_LANGUAGE ? language : null;
 }
 
-/**
- * Turn a route's slug parameter into a page slug.
- *
- * @param slug - The decoded `:slug` parameter.
- * @returns The slug with its leading `/`.
- */
+/** Turn a route's decoded `:slug` parameter into a page slug with its leading `/`. */
 function normalizeSlug(slug: string): string {
     return slug.startsWith('/') ? slug : `/${slug}`;
 }

@@ -86,13 +86,7 @@ const PATH_BOT_CLASSES: Array<{ key: string; label: string }> = [
     { key: 'bot_other', label: 'Other bots' }
 ];
 
-/**
- * Resolve a CSS variable to its computed value with an SSR-safe fallback.
- *
- * @param varName - CSS variable name (e.g. '--chart-color-1')
- * @param fallback - Hex fallback when document is unavailable
- * @returns Resolved color string
- */
+/** Resolve a CSS variable (such as '--chart-color-1') to its computed value with an SSR-safe fallback. */
 function resolveCSSColor(varName: string, fallback: string): string {
     if (typeof document === 'undefined') return fallback;
     const value = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();

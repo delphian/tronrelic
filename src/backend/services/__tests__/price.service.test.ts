@@ -21,21 +21,12 @@ vi.mock('../../loaders/redis.js', () => ({
 import { PriceService } from '../price.service.js';
 import { ProviderDisabledError } from '../../modules/providers/capabilities/ProviderDisabledError.js';
 
-/**
- * Build an in-memory stand-in for the Redis calls the service makes.
- *
- * @returns A fake with `get` and `setex` that always miss and record writes.
- */
+/** Build an in-memory stand-in for the Redis calls the service makes. */
 function fakeRedis() {
     return { get: vi.fn().mockResolvedValue(null), setex: vi.fn().mockResolvedValue('OK') };
 }
 
-/**
- * Build an error shaped like an axios rate-limit response.
- *
- * @param headers - Response headers, such as `retry-after`.
- * @returns An error carrying `response.status` 429.
- */
+/** Build an error shaped like an axios rate-limit response, with headers such as `retry-after`. */
 function rateLimited(headers: Record<string, string> = {}): Error {
     return Object.assign(new Error('HTTP 429'), { response: { status: 429, headers } });
 }

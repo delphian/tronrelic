@@ -96,8 +96,6 @@ export function ApprovalsTab({ onChanged }: { onChanged: () => void }) {
      * arguments and the risk caution are already on screen — opening the panel
      * and approving there is itself the deliberate step (and avoids stacking a
      * modal over the open slide-over).
-     *
-     * @param approval - The held action to approve.
      */
     const approveNow = useCallback((approval: IPendingApproval) => {
         void resolve(approval.id, 'approve');
@@ -131,11 +129,7 @@ export function ApprovalsTab({ onChanged }: { onChanged: () => void }) {
         });
     }, [resolve, open, close]);
 
-    /**
-     * Reject (discard) a held action without running it.
-     *
-     * @param approval - The held action to reject.
-     */
+    /** Reject (discard) a held action without running it. */
     const handleReject = useCallback((approval: IPendingApproval) => {
         void resolve(approval.id, 'reject');
     }, [resolve]);

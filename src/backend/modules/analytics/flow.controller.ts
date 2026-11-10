@@ -25,9 +25,6 @@ const flowFieldsSchema = z.object({
  * Applied as a refinement on both request schemas so the bound is checked
  * during parsing, before the service builds a query or a bucket list. The
  * resulting `ZodError` reaches the error middleware as a 400.
- *
- * @param payload - Parsed request carrying the two millisecond timestamps.
- * @returns True when the span is within the limit.
  */
 function isRangeWithinLimit(payload: { startDate: number; endDate: number }): boolean {
   return Math.abs(payload.endDate - payload.startDate) <= MAX_FLOW_RANGE_MS;

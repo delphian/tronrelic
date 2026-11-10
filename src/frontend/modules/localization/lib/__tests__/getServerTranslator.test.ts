@@ -41,12 +41,7 @@ const CONFIG: ILocalizationPublicConfig = {
     routes: [{ pattern: '/about', languages: ['zh', 'ar'] }]
 };
 
-/**
- * Point the mocked request at one routed language and path.
- *
- * @param language - The language the middleware routed to.
- * @param path - The unprefixed request path.
- */
+/** Point the mocked request at one routed language and unprefixed path. */
 function routeTo(language: string, path = '/about'): void {
     vi.mocked(resolveRequestLanguage).mockResolvedValue({ language, routed: true, path });
 }

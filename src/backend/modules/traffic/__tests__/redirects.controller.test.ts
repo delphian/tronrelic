@@ -22,12 +22,7 @@ import { RedirectsController } from '../api/redirects.controller.js';
 /** A rule labeling AS139341, which stands in for a confirmed automated network. */
 const NETWORK_RULE: ICompiledBotRule = { id: 'rule-asn', label: 'bot_other', mode: 'label', conditions: { asns: [139341] }, expiresAt: null };
 
-/**
- * Build an Express request double with sensible empty defaults.
- *
- * @param overrides - Fields to set (body, headers, query).
- * @returns A minimal Request.
- */
+/** Build an Express request double with sensible empty defaults. */
 function buildReq(overrides: Partial<Request> = {}): Request {
     return { body: {}, query: {}, headers: {}, ...overrides } as unknown as Request;
 }

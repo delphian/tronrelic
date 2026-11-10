@@ -92,16 +92,7 @@ const BATCH_PAUSE_MS = 50;
  */
 const MAX_BATCHES = 2_000;
 
-/**
- * Wait for a fixed period.
- *
- * Exists so the drain loop can pace itself in plain `await` form rather than
- * building a promise inline on every iteration, which would bury the intent.
- *
- * @param ms - How long to wait. The caller chooses this from how much room it
- *             wants to leave for other work on the same connection.
- * @returns A promise that settles once the period has passed.
- */
+/** Wait `ms` milliseconds, so the drain loop can pace itself in plain `await` form. */
 function pause(ms: number): Promise<void> {
     return new Promise(resolve => {
         setTimeout(resolve, ms);

@@ -72,9 +72,6 @@ const recordingMiddleware: ApiMiddleware = (_req, _res, next) => {
  * Terminal handler shared by every fixture route. Records that control reached
  * the end of the chain, which is what distinguishes "gate rejected the call"
  * from "gate admitted it and everything ran in order".
- *
- * @param _req - Unused; the fixture asserts on ordering, not request contents
- * @param res - Used to close the response so the test's fetch resolves
  */
 const recordingHandler = async (_req: IHttpRequest, res: IHttpResponse): Promise<void> => {
     callOrder.push('handler');

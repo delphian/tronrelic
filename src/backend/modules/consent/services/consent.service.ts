@@ -72,11 +72,7 @@ export class ConsentService implements IConsentService {
      */
     private publicConfig: Promise<IConsentPublicConfig> | null = null;
 
-    /**
-     * Private so construction only happens through `setDependencies`.
-     *
-     * @param deps - Bootstrap-wired collaborators.
-     */
+    /** Private so construction only happens through `setDependencies`. */
     private constructor(deps: IConsentServiceDependencies) {
         this.database = deps.database;
         this.logger = deps.logger;

@@ -67,8 +67,7 @@ export class ProcessedTransaction implements ITransaction {
      * Check if this transaction qualifies as a token creation.
      *
      * A transaction is considered token creation if it's an AssetIssueContract or
-     * CreateSmartContract transaction. This method replaces the old
-     * `categories.isTokenCreation` flag.
+     * CreateSmartContract transaction.
      */
     isTokenCreation(): boolean {
         return (

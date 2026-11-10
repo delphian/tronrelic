@@ -4,10 +4,9 @@
  * @fileoverview Recent pipeline failures and the backfill queue.
  *
  * The sync state document keeps one error, and the next healthy tick erases
- * it, so an operator polling the old console usually never saw a block
- * failure. The backend now keeps a short history, and this card lists it with
- * the stage and a short class such as `HTTP 429`, beside the blocks waiting to
- * be fetched again.
+ * it, so polling that document rarely shows a block failure. The backend keeps
+ * a short history, and this card lists it with the stage and a short class
+ * such as `HTTP 429`, beside the blocks waiting to be fetched again.
  */
 
 import type { IPipelineStatus } from '@/types';

@@ -96,8 +96,7 @@ export class PlacementService implements IPlacementService {
      * successful create/update/delete/restore. `WidgetsModule.init()`
      * passes a closure that emits a `widgets:placements-update`
      * envelope through `WebSocketService`. Optional — when unset, the
-     * service operates silently (useful for tests and for the legacy
-     * unwired code path that predates the broadcast hook).
+     * service operates silently, which is useful for tests.
      *
      * @param callback - Function the service invokes post-write.
      */
@@ -414,12 +413,11 @@ export class PlacementService implements IPlacementService {
      * with the plugin's original registration args, then re-enable
      * the row. Used by the admin "restore plugin defaults" endpoint.
      *
-     * The controller is responsible for verifying the placement is
-     * plugin-source and resolving the defaults from the legacy widget
-     * service's cache before calling this method. The service only
-     * applies the patch atomically and broadcasts the dedicated
-     * `placement:restored` event so receivers can distinguish a
-     * restore from a plain update.
+     * The controller verifies the placement is plugin-source and resolves
+     * the defaults from the widget service's cache before calling this
+     * method. The service only applies the patch atomically and broadcasts
+     * the dedicated `placement:restored` event so receivers can distinguish
+     * a restore from a plain update.
      *
      * @param id - Placement id (stringified ObjectId).
      * @param defaults - Plugin defaults to apply. `instanceConfig`,

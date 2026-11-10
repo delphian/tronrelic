@@ -2,8 +2,7 @@
  * Traffic module API barrel export.
  *
  * Surfaces the admin analytics, crawler, and Google Search Console client
- * used by the `/system/traffic` dashboards. The legacy UUID user/wallet/
- * session/profile/referral calls were removed in the Better Auth cutover.
+ * used by the `/system/traffic` dashboards.
  */
 
 export {

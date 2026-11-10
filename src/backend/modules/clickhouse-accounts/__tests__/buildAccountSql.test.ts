@@ -22,11 +22,7 @@ import {
 
 const HASH = 'a'.repeat(64);
 
-/**
- * The declared AI agent account, used as the fixture for every test.
- *
- * @returns The agent definition as the module declares it.
- */
+/** The declared AI agent account, used as the fixture for every test. */
 function agentDefinition(): IClickHouseAccountDefinition {
     return buildAccountDefinitions('default').find(definition => definition.id === AI_AGENT_ACCOUNT_ID)!;
 }

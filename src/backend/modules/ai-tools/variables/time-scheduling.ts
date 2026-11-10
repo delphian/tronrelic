@@ -93,7 +93,6 @@ function formatCitationUtc(date: Date): string {
  * sorts lexicographically in true chronological order, which is a comparison a
  * small model can be trusted to perform where date arithmetic is not.
  *
- * @param date - The instant to render.
  * @returns The instant as `2026-08-08T21:47:25Z`.
  */
 function formatIsoUtc(date: Date): string {
@@ -110,7 +109,6 @@ function formatIsoUtc(date: Date): string {
  * value names the same instant as the ISO form beside it, and a record never
  * qualifies under one form while failing under the other.
  *
- * @param date - The instant to render.
  * @returns The instant as a 13-digit integer string such as `1787627991000`.
  */
 function formatEpochMsUtc(date: Date): string {

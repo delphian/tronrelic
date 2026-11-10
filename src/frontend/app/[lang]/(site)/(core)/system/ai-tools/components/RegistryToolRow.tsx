@@ -43,12 +43,7 @@ export function RegistryToolRow({ tool, hasOverride, busy, indented = false, onT
     onToggle: (name: string, enabled: boolean) => void;
     onSelect: (tool: IAiToolInfo) => void;
 }) {
-    /**
-     * Keep a click inside the enable cell from bubbling to the row's open
-     * handler, so toggling a tool never also opens the panel.
-     *
-     * @param event - The cell click event.
-     */
+    /** Stop an enable-cell click bubbling to the row's open handler, so toggling never opens the panel. */
     const stopCellClick = (event: MouseEvent<HTMLTableCellElement>) => {
         event.stopPropagation();
     };

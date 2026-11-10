@@ -25,12 +25,7 @@ import { LocalizationContext } from '../components/LocalizationProvider';
 export function useLocalizedHref(): (href: string) => string {
     const { language, config } = useContext(LocalizationContext);
 
-    /**
-     * Localize one link against the page's language and snapshot.
-     *
-     * @param href - The link as stored, such as a menu item's URL.
-     * @returns The link to render.
-     */
+    /** Localize one stored link (such as a menu item's URL) against the page's language and snapshot. */
     const localize = useCallback((href: string): string => localizeHref(href, language, config), [language, config]);
 
     return localize;

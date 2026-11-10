@@ -5,12 +5,10 @@
  * used for the conversion funnel and the device breakdown on the Analytics
  * tab.
  *
- * Both sections used to carry their own copy of this markup with a 16px-tall
- * bar and a label column held open by a fixed width, which made a three-row
- * list take the height of a small chart. The list is now one grid whose rows
- * share its columns through subgrid: the label column is as wide as the
- * longest label, every bar gets the same length, and the figures line up on
- * the right. Bars draw at the shared meter height.
+ * The list is one grid whose rows share its columns through subgrid: the label
+ * column is as wide as the longest label, every bar gets the same length, and
+ * the figures line up on the right. Bars draw at the shared meter height, so a
+ * three-row list stays short rather than taking the height of a small chart.
  */
 
 import type { ReactNode } from 'react';

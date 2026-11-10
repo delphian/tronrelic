@@ -55,12 +55,7 @@ function resolveDirection(tx: IBlockTransaction, wallet: string): TransactionDir
     return 'none';
 }
 
-/**
- * Format a SUN amount for display, or an empty string when the type carries none.
- *
- * @param amountSun - The transaction's `amountSun` field, if the contract type populates it.
- * @returns The formatted TRX amount, or `''` when `amountSun` is absent.
- */
+/** Format a transaction's `amountSun` as TRX, or `''` when the contract type does not populate it. */
 function formatSunAmount(amountSun: number | undefined): string {
     return typeof amountSun === 'number' ? formatTrxFromSun(amountSun) : '';
 }

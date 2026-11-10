@@ -4,11 +4,10 @@
  * The provider-neutral social-posting primitive: one core content type
  * (`core:social-post`) and one AI tool (`propose-social-post`) that together let
  * a model draft a sink-agnostic post and a curator fan it out to whatever publish
- * sinks an operator selects (X, Telegram, a future Mastodon). This is the
- * deliberate inversion of the old per-sink model — where each transport plugin
- * owned its own send tool and single-sink curation type — into "core owns the
- * noun and the proposing verb; plugins are pure transport adapters registering
- * publish sinks on the content router."
+ * sinks an operator selects (X, Telegram, a future Mastodon). Core owns the noun
+ * and the proposing verb; plugins are pure transport adapters registering publish
+ * sinks on the content router, rather than each owning a send tool and a
+ * single-sink curation type.
  *
  * The type sets `publishesToSinks: true`, so approval is not a single baked-in
  * effect but the curator's mandated-subset selection: core computes the eligible

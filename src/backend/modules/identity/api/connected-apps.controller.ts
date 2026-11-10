@@ -130,12 +130,7 @@ export class ConnectedAppsController {
     };
 }
 
-/**
- * Read the signed-in user's id from the resolved session.
- *
- * @param req - The request carrying `authSession`.
- * @returns The user id, or null when nobody is signed in.
- */
+/** Read the signed-in user's id from the resolved session. */
 function sessionUserId(req: Request): string | null {
     const withSession = req as unknown as IHasAuthSession;
     return isLoggedIn(withSession) ? withSession.authSession.user.id : null;

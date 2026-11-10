@@ -39,9 +39,6 @@ interface IContentSinkRecord {
  * Map an egress level to a Badge tone so more-exposed reach reads as more
  * cautionary at a glance: `external` (leaves the platform) warns, `user` informs,
  * `internal` is neutral.
- *
- * @param egress - The sink's egress level.
- * @returns The Badge tone for that level.
  */
 function egressTone(egress: string): 'neutral' | 'info' | 'warning' {
     if (egress === 'external') return 'warning';
@@ -52,9 +49,6 @@ function egressTone(egress: string): 'neutral' | 'info' | 'warning' {
 /**
  * Map an audience level to a Badge tone on the same more-exposed-reads-cautionary
  * scale: `public` warns, `user` informs, `admin` is neutral.
- *
- * @param audience - The sink's audience level.
- * @returns The Badge tone for that level.
  */
 function audienceTone(audience: string): 'neutral' | 'info' | 'warning' {
     if (audience === 'public') return 'warning';

@@ -2,9 +2,8 @@
  * @file cors.test.ts
  *
  * Pins which origins may make credentialed requests and open WebSocket
- * connections. The localhost development ports used to be allowed in every
- * environment, so in production any page served from a visitor's own machine
- * could act as that visitor; they are now added only outside production.
+ * connections. Localhost development ports are allowed only outside production,
+ * because in production any page served from a visitor's own machine could act as them.
  */
 
 import { describe, it, expect } from 'vitest';

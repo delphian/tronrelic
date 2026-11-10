@@ -8,9 +8,8 @@
  * the top (disabled tools sink to the bottom) with the most dangerous tools
  * first within each group. Clicking a row opens a right slide-over holding the
  * full model-facing description, the input schema, and the per-tool policy
- * editor — the heavy surfaces that used to bloat each row. Toggling a tool or
- * saving a policy override re-checks the trifecta via the `onChanged` callback
- * the page owns, since both can form or break it.
+ * editor. Toggling a tool or saving a policy override re-checks the trifecta
+ * via the `onChanged` callback the page owns, since both can form or break it.
  */
 
 import { useEffect, useState, useCallback } from 'react';

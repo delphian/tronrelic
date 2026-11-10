@@ -87,14 +87,10 @@ const HEX_BYTES = /^([0-9a-fA-F]{2})+$/;
 const TOKEN_ID = /^\d+$/;
 
 /**
- * Convert an address from java-tron's hex form to base58.
- *
- * A movement whose party cannot be read is left out of the ledger rather than
- * stored under a raw value, because every query against this table starts
- * from a base58 address and could never find it.
- *
- * @param value - The raw JSON value.
- * @returns The base58 address, or null when the value is not a readable address.
+ * Convert an address from java-tron's hex form to base58, or null when the value
+ * is not a readable address. A movement whose party cannot be read is left out of
+ * the ledger rather than stored under a raw value, because every query against
+ * this table starts from a base58 address and could never find it.
  */
 function readAddress(value: unknown): string | null {
     return typeof value === 'string' && value.length > 0 ? TronGridClient.toBase58Address(value) : null;

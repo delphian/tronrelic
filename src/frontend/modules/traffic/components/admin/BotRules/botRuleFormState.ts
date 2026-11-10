@@ -49,12 +49,7 @@ export interface IBotRuleFormState {
 /** Default mismatch window offered when the operator switches the test on. */
 const DEFAULT_MISMATCH_SECONDS = '30';
 
-/**
- * Split free text into non-empty tokens on commas, spaces, and line breaks.
- *
- * @param text - The field's text.
- * @returns The tokens, trimmed.
- */
+/** Split free text into trimmed, non-empty tokens on commas, spaces, and line breaks. */
 function tokens(text: string): string[] {
     return text.split(/[\s,]+/).map(t => t.trim()).filter(Boolean);
 }

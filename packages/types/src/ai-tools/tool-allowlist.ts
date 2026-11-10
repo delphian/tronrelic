@@ -6,21 +6,18 @@
  *
  * Why this file exists: a provider-hosted tool (Anthropic's `web_search` /
  * `web_fetch`) runs on the vendor's own infrastructure, so it never reaches
- * `governor.invoke()` and the core registry has no record of it. Until now an
- * allowlist could not name one, which meant a saved prompt granting no tools at
- * all still ran with web search whenever the provider config had it switched on
- * for that model. The only way to stop a hosted tool is to leave it out of the
- * request's `tools` array, so the allowlist has to be able to say something
- * about it.
+ * `governor.invoke()` and the core registry has no record of it. The only way
+ * to stop a hosted tool is to leave it out of the request's `tools` array, so
+ * the allowlist has to be able to name it; otherwise a saved prompt granting no
+ * tools still runs with web search whenever the provider config enables it.
  *
  * Rather than add a second field that every layer would have to carry, validate,
  * and keep in step with the first, a hosted tool is named in the same array
  * behind the reserved `hosted:` prefix. Registry tool names are constrained to
  * `AI_TOOL_NAME_PATTERN` (`^[a-zA-Z0-9_-]{1,64}$`), which admits no colon, so a
  * prefixed entry can never be mistaken for a registry tool and no existing
- * stored allowlist can accidentally contain one. That last point is what makes
- * the change safe to deploy: every allowlist written before this existed reads
- * as "no hosted tools", which is the default-deny posture the platform wants.
+ * stored allowlist can contain one by accident, so every stored allowlist
+ * without one reads as "no hosted tools": the platform's default-deny posture.
  *
  * The prefix deliberately carries no provider id. A grant means "this run may
  * search the web", not "this run may use Anthropic's search", so the grant

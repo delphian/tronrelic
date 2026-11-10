@@ -101,13 +101,7 @@ describe('UsdtParametersService - Error Handling', () => {
         (UsdtParametersService as any).database = null;
     });
 
-    /**
-     * Test: Service must throw error when database is empty (no fallback).
-     *
-     * **Expected behavior:**
-     * Service throws error instead of returning arbitrary fallback values.
-     * Using fallback values produces incorrect calculations.
-     */
+    /** Fallback values would produce incorrect calculations, so the service throws instead. */
     it('should throw error when database is empty', async () => {
         // Create mock that returns null (empty database)
         const modelMock = createChainableFindOneMock(null);
@@ -123,12 +117,6 @@ describe('UsdtParametersService - Error Handling', () => {
         );
     });
 
-    /**
-     * Test: Service must throw error when database query fails.
-     *
-     * **Expected behavior:**
-     * Database errors propagate as exceptions instead of silently using fallback values.
-     */
     it('should throw error when database query fails', async () => {
         // Create mock that rejects with error
         const modelMock = createChainableFindOneErrorMock(new Error('DB connection failed'));
@@ -142,11 +130,6 @@ describe('UsdtParametersService - Error Handling', () => {
         await expect(service.getStandardTransferEnergy()).rejects.toThrow('DB connection failed');
     });
 
-    /**
-     * Test: getParameters() throws error when no data available.
-     *
-     * Tests the root method to ensure it throws instead of using fallback.
-     */
     it('should throw error from getParameters() when database is empty', async () => {
         const modelMock = createChainableFindOneMock(null);
         const mockDatabase = createMockDatabase(modelMock);
@@ -160,9 +143,6 @@ describe('UsdtParametersService - Error Handling', () => {
         );
     });
 
-    /**
-     * Test: First-time transfer energy also throws error when data unavailable.
-     */
     it('should throw error from getFirstTimeTransferEnergy() when database is empty', async () => {
         const modelMock = createChainableFindOneMock(null);
         const mockDatabase = createMockDatabase(modelMock);
@@ -189,11 +169,6 @@ describe('UsdtParametersService - Correct Behavior', () => {
         (UsdtParametersService as any).database = null;
     });
 
-    /**
-     * Test: Normal operation when database has valid data.
-     *
-     * Service should cache valid parameters and reuse them.
-     */
     it('should cache valid database values', async () => {
         const mockParams = {
             network: 'mainnet',
@@ -224,11 +199,6 @@ describe('UsdtParametersService - Correct Behavior', () => {
         expect(modelMock.findOne).toHaveBeenCalledOnce();
     });
 
-    /**
-     * Test: Cache expiry causes DB re-query.
-     *
-     * Verifies cache TTL mechanism works correctly.
-     */
     it('should re-query database after cache expires', async () => {
         const mockParams = {
             network: 'mainnet',
@@ -262,9 +232,6 @@ describe('UsdtParametersService - Correct Behavior', () => {
         vi.useRealTimers();
     });
 
-    /**
-     * Test: First-time transfer energy uses cached parameters.
-     */
     it('should return first-time transfer energy from cached parameters', async () => {
         const mockParams = {
             network: 'mainnet',

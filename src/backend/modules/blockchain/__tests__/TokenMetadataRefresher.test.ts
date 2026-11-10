@@ -19,12 +19,7 @@ const SPAM = 'TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf';
 /** A fixed clock, so every stamped time is predictable. */
 const NOW = new Date(Date.UTC(2026, 8, 24, 3, 17, 0, 0));
 
-/**
- * Build a ClickHouse fake whose candidate query answers the given tokens.
- *
- * @param tokens - The token addresses the candidate query returns, busiest first.
- * @returns The fake, with spies on `query` and `insert` for assertions.
- */
+/** Build a ClickHouse fake whose candidate query answers the given token addresses, busiest first. */
 function buildClickHouse(tokens: string[]): { clickhouse: IClickHouseService; query: ReturnType<typeof vi.fn>; insert: ReturnType<typeof vi.fn> } {
     const query = vi.fn().mockResolvedValue(tokens.map(token => ({ token, transfers: '100' })));
     const insert = vi.fn().mockResolvedValue(undefined);

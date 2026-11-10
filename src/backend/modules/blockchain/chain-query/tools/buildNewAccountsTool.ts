@@ -175,13 +175,7 @@ interface IHourRow {
 function activationRows(funderFilter: boolean, accountFilter: boolean): string {
     const db = CHAIN_DATA_DATABASE;
     const window = windowCondition();
-    /**
-     * The conditions one source table adds, naming its own funder and account columns.
-     *
-     * @param funderColumn - The column holding who paid for the activation.
-     * @param accountColumn - The column holding the activated address.
-     * @returns The extra conditions, joined for a WHERE clause.
-     */
+    /** The conditions one source table adds, naming its own funder and account columns. */
     const partyConditions = (funderColumn: string, accountColumn: string): string => [
         ...(funderFilter ? [`${funderColumn} = {funder:String}`] : []),
         ...(accountFilter ? [`${accountColumn} = {account:String}`] : [])

@@ -1,17 +1,16 @@
 /**
  * @fileoverview Traffic module — cookieless behavioral analytics.
  *
- * Carved out of the former omnibus user module. Owns the ClickHouse
- * `traffic_events` pipeline (`TrafficService`), Google Search Console keyword
- * integration (`GscService`), the User-Agent bot classifier, geo/IP derivation,
- * the admin traffic dashboard reads, and the public traffic-event ingestion
- * endpoints. Mounts `/api/admin/users/{traffic,analytics}`, the public
- * `/api/user/bootstrap` (first touch) and `/api/user/track` (page navigation),
- * and registers the daily `gsc:fetch` job.
+ * Owns the ClickHouse `traffic_events` pipeline (`TrafficService`), Google
+ * Search Console keyword integration (`GscService`), the User-Agent bot
+ * classifier, geo/IP derivation, the admin traffic dashboard reads, and the
+ * public traffic-event ingestion endpoints. Mounts
+ * `/api/admin/users/{traffic,analytics}`, the public `/api/user/bootstrap`
+ * (first touch) and `/api/user/track` (page navigation), and registers the
+ * daily `gsc:fetch` job.
  *
  * Analytics are keyed off the cookieless `tronrelic_tid`, independent of
- * identity, so this surface survived the Better Auth cutover that removed the
- * legacy UUID identity system.
+ * identity.
  *
  * Two-phase lifecycle: `init()` constructs services without activating; `run()`
  * mounts the routers and registers the scheduled job.

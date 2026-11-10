@@ -98,10 +98,7 @@ class FakeCollection {
         }
     }
 
-    /**
-     * @param doc - Document to mutate.
-     * @param update - Operators to apply.
-     */
+    /** Apply the update operators to the document, mutating it. */
     private apply(
         doc: Record<string, unknown>,
         update: { $set?: Record<string, unknown>; $inc?: Record<string, number> }

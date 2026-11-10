@@ -215,12 +215,7 @@ export class PriceService {
         return price;
     }
 
-    /**
-     * Pick the price to serve while fetches are failing or backing off.
-     *
-     * @param now - The current time, to check the last price's age.
-     * @returns The last-known price when it is under {@link MAX_STALE_MS} old, otherwise null.
-     */
+    /** Pick the price to serve while fetches are failing or backing off. */
     private staleFallback(now: number): number | null {
         return this.lastGood && now - this.lastGood.fetchedAt <= MAX_STALE_MS ? this.lastGood.value : null;
     }

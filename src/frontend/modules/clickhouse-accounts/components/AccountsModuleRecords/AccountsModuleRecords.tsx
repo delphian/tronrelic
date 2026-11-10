@@ -40,13 +40,7 @@ const TABLES = ['clickhouse_account_usage_daily'];
 /** Log service name the module's logger records under. */
 const LOG_SERVICE = 'tronrelic:clickhouse-accounts';
 
-/**
- * Select the jobs this module registers, by prefix, so a job added later
- * appears without a change here.
- *
- * @param job - One scheduler job.
- * @returns True for `clickhouse-accounts:*` jobs.
- */
+/** Select the jobs this module registers, by prefix, so a job added later appears without a change here. */
 const isAccountsJob = (job: SchedulerJob): boolean => job.name.startsWith(JOB_PREFIX);
 
 /**
