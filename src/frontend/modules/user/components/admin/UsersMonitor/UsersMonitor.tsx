@@ -163,7 +163,8 @@ export function UsersMonitor() {
     return (
         <div className={styles.container}>
             <header className={styles.header}>
-                <h1 className={styles.title}>User Accounts</h1>
+                {/* h2: the /system/users shell owns the page's single h1. */}
+                <h2 className={styles.title}>User Accounts</h2>
                 <p className={styles.subtitle}>
                     Better Auth accounts — search by email or name and manage group membership
                 </p>

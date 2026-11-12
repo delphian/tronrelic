@@ -12,7 +12,8 @@ TronRelic's Model Context Protocol (MCP) endpoint. Members of the `mcp-users` gr
 | Discovery | `GET /.well-known/oauth-protected-resource/mcp` and `GET /.well-known/oauth-protected-resource` (RFC 9728). The authorization server metadata at `/.well-known/oauth-authorization-server` is served by the identity module |
 | Admin page | `/system/mcp` (menu item `MCP`, order 46): kill switch above the tab row; tabs Overview · Tools · Connected apps · Activity · Database · Logs |
 | Admin API base | `/api/admin/mcp` (rate-limited + `requireAdmin`) |
-| Types package | `@delphian/tronrelic-types` → `IMcpSettings`, `IMcpStatus`, `IMcpToolExposure`, `IMcpToolGrant`, `IMcpGroup`, `IMcpGroupPolicy`, `IMcpGroupPolicyPatch`, `mcpGroupMayHoldTool`, `normaliseIpAllowlistEntries`, `IMcpAccessTokenClaims`, `IMcpAccessTokenVerifier`, `MCP_TOOLS_SCOPE`, `MCP_OAUTH_SCOPES`, `MCP_USERS_GROUP_ID`, `getMcpToolIneligibility`, `IToolInvocationOrigin` |
+| Types package | `@delphian/tronrelic-types` → `IMcpSettings`, `IMcpStatus`, `IMcpToolExposure`, `IMcpToolGrant`, `IMcpGroup`, `IMcpGroupPolicy`, `IMcpGroupPolicyPatch`, `mcpGroupMayHoldTool`, `normaliseIpAllowlistEntries`, `IMcpAccessTokenClaims`, `IMcpAccessTokenVerifier`, `IMcpClientAdmissionPolicy`, `IMcpClientDetails`, `MCP_TOOLS_SCOPE`, `MCP_OAUTH_SCOPES`, `MCP_USERS_GROUP_ID`, `getMcpToolIneligibility`, `IToolInvocationOrigin` |
+| Allowed apps | `MCP_ALLOWED_CLIENT_HOSTS` in `services/McpClientAdmissionPolicy.ts` (`claude.ai`). See [App Admission](#app-admission) |
 | Owned collections | `module_mcp_settings` (one document: the kill switch), `module_mcp_tool_approvals` (one per tool and group), `module_mcp_group_policies` (one per configured group) |
 | Migrations | `module:mcp:001_tool_approvals_group_id` — assigns approvals stored before per-group grants to `mcp-users` and drops the old unique `toolName` index. Operator-run at `/system/database`; until it runs, those approvals are not served |
 | OAuth tables | Owned by identity: `module_user_auth_oauth_*`, `module_user_auth_jwks` |
@@ -44,6 +45,7 @@ The endpoint needs raw Express requests (the MCP SDK reads Node request and resp
 | `migrations/001_tool_approvals_group_id.ts` | Backfills `groupId: 'mcp-users'` on pre-group approvals and drops the `toolName_1` index |
 | `services/mcp-caller.resolver.ts` | Token → verified caller, with scope and `mcp-users` membership checks and a 30-second principal cache; tells the identity module (`recordUse`) about each accepted request, which feeds the "Last used" column |
 | `services/mcp-server.factory.ts` | Builds the per-request `McpServer`, maps tools and annotations, routes each call through the governor, and scrubs results where a group asks for it |
+| `services/McpClientAdmissionPolicy.ts` | `IMcpClientAdmissionPolicy`: which apps may register with the OAuth server, the refusal log and its limits, and the warning when a registered app changes its details |
 
 ## Request Pipeline
 
@@ -67,6 +69,36 @@ The global Express body parsers skip `/mcp` (`loaders/express.ts`), so nothing i
 A `tools/call` for a tool that was not served gets the SDK's bare "Tool not found" answer. Before handing the request over, the endpoint writes an `error` entry under `tronrelic:mcp` naming the tool, the user, the client, the request address, the caller's groups, and a `reason` from `explainWithheld`: `not-registered`, `disabled`, `not-granted`, `stale-grant`, `restricted-not-allowed`, or `ip-not-allowed` (`changed-during-request` when a grant changed between the two reads). At most 10 entries are written per request.
 
 **Token verification** is done by the identity module's `OAuthAccessTokenVerifier`, injected as `IMcpAccessTokenVerifier`. It checks the JWT locally against the signing keys (no HTTP), requires `typ: at+jwt`, the site issuer, and `aud` equal to the resource URL, refuses DPoP-bound tokens, and confirms the consent for `(user, client)` still exists and was created no later than the token's `iat` (cached 30 seconds), so reconnecting an app does not revive tokens issued before a revocation. A token issued for any other audience is refused.
+
+## App Admission
+
+An app (Claude, Claude Code) identifies itself to the OAuth server with the HTTPS address of a JSON document it publishes, and the server fetches that document and stores a client row for it. The standard lets any address do this, so on 11 Nov 2026 a scanner registered an app of its own by pointing the server at a document it hosted. `McpClientAdmissionPolicy` closes that: an address is accepted only when it is HTTPS on the default port, carries no user name or password, and its host is in `MCP_ALLOWED_CLIENT_HOSTS`. The host is compared exactly and after parsing, so neither `sub.claude.ai` nor `claude.ai.example.com` passes.
+
+The identity module calls the policy, because it builds the OAuth server, and it starts before this module. The bootstrap therefore constructs the policy and passes it to `IdentityModule.init()` as `oauthClientAdmission`. The policy belongs to this module because the OAuth server exists only for MCP, and because its entries must be written under `tronrelic:mcp` to appear on this module's Logs tab.
+
+A refused app is never fetched and no row is stored for it. The OAuth library runs the check before every fetch of an app's document and keeps fetched documents only in memory, so a row stored before the rule existed is refused on its first use after a restart.
+
+**To admit another app**, open the Logs tab of `/system/mcp`, find the `OAuth app refused` entry written when the app tried to connect, confirm the host belongs to the app's vendor, and add that host to `MCP_ALLOWED_CLIENT_HOSTS`. There is no public registry of these addresses, so the refusal entry is the reliable source. An app that only supports Dynamic Client Registration cannot connect at all, because the identity module keeps that switched off.
+
+| Log entry (`warn`, under `tronrelic:mcp`) | Fields | Written when |
+|---|---|---|
+| `OAuth app refused: its address is not on the allowed list` | `callerSuppliedHost`, `callerSuppliedAddress`, `addressTruncated` | An address is refused |
+| `OAuth app refused: the address it supplied could not be read` | `suppliedLength` | The text is not a URL |
+| `OAuth app refusals are no longer being logged this window: the limit on distinct addresses was reached` | `loggedAddresses`, `windowMinutes` | The ceiling below is reached, once per window |
+| `Connected app changed its name or redirect addresses` | `clientId`, `nameChanged`, `redirectsChanged`, and the name and redirect addresses before and after | A registered app's document is re-read and differs |
+
+**The refused address is written by the caller**, who also decides how many requests to send, so the refusal log is bounded on both counts.
+
+| Limit | Value | Constant |
+|---|---|---|
+| Entries per address | One per hour | `REFUSAL_LOG_WINDOW_MS` |
+| Distinct addresses logged | 50 per hour, then one entry saying the ceiling was reached | `REFUSAL_LOG_MAX_ADDRESSES` |
+| Logged address length | 300 characters | `REFUSAL_LOG_MAX_ADDRESS_LENGTH` |
+| Logged parts | Scheme, host, and path only. The query string, fragment, user name, and password are dropped | `describeAddress` |
+
+The logged address comes from the URL parser, which lowercases the host and percent-encodes spaces, control characters, and non-ASCII characters, so it is printable ASCII. That bounds its form and not its meaning: ordinary letters can still spell a sentence, so treat both `callerSupplied` fields as untrusted wherever they are displayed or handed to an AI model. The counters are per process, so two backend instances each log a refused address once.
+
+A changed name or redirect address is logged and nothing is revoked. Only an app on an allowed host reaches that point, so the change is the vendor editing its own document, and revoking would disconnect every user of that app each time.
 
 ## Tool Exposure
 

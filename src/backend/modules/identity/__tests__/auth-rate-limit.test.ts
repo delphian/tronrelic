@@ -100,6 +100,25 @@ describe('createRedisRateLimitStorage', () => {
         expect([...redis.counts.keys()]).toEqual(['tronrelic:auth:ratelimit:1.2.3.4/sign-in/email-otp']);
     });
 
+    // A caller who keeps sending after a refusal must not be able to write one
+    // persisted log entry per request.
+    it('logs a refusal once per key per window, however many requests are refused', async () => {
+        const redis = new FakeRedis();
+        const logger = buildLogger();
+        const storage = createRedisRateLimitStorage(redis, 'tronrelic', logger);
+
+        for (let i = 0; i < 5; i++) {
+            await storage.consume('1.2.3.4/sign-in/email-otp', { window: 60, max: 1 });
+        }
+        await storage.consume('5.6.7.8/sign-in/email-otp', { window: 60, max: 0 });
+
+        expect(logger.warn).toHaveBeenCalledTimes(2);
+        expect(logger.warn).toHaveBeenCalledWith(
+            { key: '1.2.3.4/sign-in/email-otp', retryAfter: 60 },
+            'Auth rate limit reached; request refused'
+        );
+    });
+
     it('allows the request and logs an error when Redis fails', async () => {
         const redis = new FakeRedis();
         redis.fail = true;

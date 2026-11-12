@@ -21,6 +21,9 @@ import { consumeRedisWindow } from './consumeRedisWindow.js';
 /** The storage contract Better Auth accepts for `rateLimit.customStorage`. */
 type RateLimitStorage = NonNullable<NonNullable<BetterAuthOptions['rateLimit']>['customStorage']>;
 
+/** Most refused keys remembered for log de-duplication before the list is emptied. */
+const MAX_TRACKED_REFUSALS = 1000;
+
 /**
  * Build a Better Auth rate-limit storage whose counters live in Redis.
  *
@@ -46,6 +49,31 @@ export function createRedisRateLimitStorage(
     logger: ISystemLogService
 ): RateLimitStorage {
     const prefix = `${namespace}:auth:ratelimit:`;
+    const loggedUntil = new Map<string, number>();
+
+    /**
+     * Decide whether a refusal is worth a log entry. A caller who keeps
+     * sending after being refused would otherwise write one persisted entry
+     * per request, which lets anyone fill the log store from outside. One
+     * entry per key per window says the same thing.
+     *
+     * @param key - Better Auth's counter key for the refused request.
+     * @param windowSeconds - Length of the window the key is counted over.
+     * @returns True the first time a key is refused in a window.
+     */
+    const shouldLogRefusal = (key: string, windowSeconds: number): boolean => {
+        const now = Date.now();
+        const isNew = (loggedUntil.get(key) ?? 0) <= now;
+        if (isNew) {
+            // Keys are caller-controlled, so the map is emptied when it grows
+            // past a fixed size instead of being left to grow without limit.
+            if (loggedUntil.size >= MAX_TRACKED_REFUSALS) {
+                loggedUntil.clear();
+            }
+            loggedUntil.set(key, now + windowSeconds * 1000);
+        }
+        return isNew;
+    };
 
     const storage: RateLimitStorage = {
         /**
@@ -70,6 +98,12 @@ export function createRedisRateLimitStorage(
                 result = await consumeRedisWindow(redis, prefix + key, rule.window, rule.max);
             } catch (error) {
                 logger.error({ error, key }, 'Auth rate-limit check failed; allowing the request');
+            }
+            if (!result.allowed && shouldLogRefusal(key, rule.window)) {
+                // Better Auth answers the caller with 429 and logs nothing
+                // itself, and a refused request never reaches the sign-in
+                // audit hook. The key holds the caller's address and the path.
+                logger.warn({ key, retryAfter: result.retryAfter }, 'Auth rate limit reached; request refused');
             }
             return result;
         }

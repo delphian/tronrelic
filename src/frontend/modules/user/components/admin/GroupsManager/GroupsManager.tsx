@@ -197,7 +197,8 @@ export function GroupsManager() {
         <div className={styles.container}>
             <header className={styles.header}>
                 <div>
-                    <h1 className={styles.title}>User Groups</h1>
+                    {/* h2: the /system/users shell owns the page's single h1. */}
+                    <h2 className={styles.title}>User Groups</h2>
                     <p className={styles.subtitle}>
                         Admin-defined tags that plugins consume for permission
                         controls. System groups are reserved by the platform.

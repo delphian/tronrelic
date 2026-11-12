@@ -8,14 +8,16 @@ Owns Better Auth and everything keyed by the Better Auth user id: the auth insta
 |---------|-------|
 | Module id | `identity` |
 | Module class | `src/backend/modules/identity/IdentityModule.ts` |
-| Admin page | `/system/users` (menu item `Users`, order 25, registered in `run()`) |
+| Admin page | `/system/users` (menu item `Users`, order 25, registered in `run()`); tabs Users, Groups, Database, Logs, registered as nodes in the `identity` menu namespace |
+| Log service name | `tronrelic:identity`, which the Logs tab is scoped to |
 | Service registry names | `'user-groups'`, `'wallets'`, `'accounts'`, `'user-settings'` |
 | Mounted routes | `/api/auth/*`, `/.well-known/oauth-authorization-server`, `/api/user/wallets/*`, `/api/user/settings`, `/api/user/connected-apps`, `/api/user/oauth/authorize-context`, `/api/admin/users/groups/*`, `/api/admin/users` (accounts), `/api/admin/accounts/search` |
 | Types package | `@delphian/tronrelic-types` → `IWalletService`, `IAccountDirectoryService`, `IUserGroupService`, `IUserSettingsService`, `IConnectedAppsService`, `IConnectedApp`, `IConnectedAppAdminRow`, `IOAuthConsentContext`, `IMcpAccessTokenVerifier` |
 | Auth collections | `module_user_auth_users` / `_sessions` / `_accounts` / `_verifications` / `_passkeys` / `_jwks` / `_oauth_clients` / `_oauth_resources` / `_oauth_client_resources` / `_oauth_refresh_tokens` / `_oauth_access_tokens` / `_oauth_consents` / `_oauth_client_assertions` |
 | OAuth authorization server | Issuer = site origin; access tokens are JWTs bound to the MCP resource URL; consent page `/oauth/authorize`. See [OAuth Authorization Server](#oauth-authorization-server) |
 | Bootstrap getters | `getAccessTokenVerifier()`, `getConnectedAppsService()`, `getOAuthServerConfig()`, `getUserGroupService()`, `getAccountDirectoryService()` — consumed by the MCP module |
-| Owned collections | `module_user_wallets`, `module_user_groups`, `module_user_settings`, `module_user_connected_app_usage` |
+| Owned collections | `module_user_wallets`, `module_user_groups`, `module_user_settings`, `module_user_connected_app_usage`, `module_user_sign_in_events` (90-day expiry) |
+| AI tools | `identity-list-accounts`, `identity-get-account`, `identity-list-sign-in-events` — read-only, `secret`, admin-only. See [AI Tools](#ai-tools) |
 | Bootstrap order | Inits/runs after `TrafficModule` so traffic's `/api/admin/users/{traffic,analytics}` routers mount before the accounts `/api/admin/users` catch-all |
 
 ## Why This Module Exists Separately
@@ -35,6 +37,11 @@ Better Auth is the sole identity layer — the legacy UUID identity system was r
 | `services/consumeRedisWindow.ts` | Atomic fixed-window counter in Redis (one Lua step for increment + expiry); shared by both limiters below |
 | `services/createRedisRateLimitStorage.ts` | Better Auth `rateLimit.customStorage` — moves BA's per-IP counters from process memory to Redis |
 | `services/createEmailOtpThrottle.ts` | `hooks.before` middleware adding per-email limits to the OTP send and check endpoints (`EMAIL_OTP_THROTTLE`) |
+| `services/createSignInAuditLog.ts` | `hooks.after` middleware logging every sign-in code request and sign-in attempt (`logAuthAttempt`) |
+| `services/SignInEventStore.ts` | `module_user_sign_in_events`: writes from the audit hook, filtered reads for the AI tools, and the indexes including the 90-day expiry |
+| `services/ISignInEventRecorder.ts` | The one storage operation the audit hook needs (`record`) |
+| `database/ISignInEventDocument.ts` | Sign-in event document, its kinds, the collection name, and the retention period |
+| `ai-tools.ts` | The three read-only identity AI tools and their registration on the core `'ai-tools'` registry |
 | `services/createMcpConsentGate.ts` | Better Auth plugin refusing `/oauth2/consent` approvals from users outside `mcp-users` (`enforceMcpConsentMembership`) |
 | `services/userGroups.ts` | `userGroups` — reads the loosely typed `groups` field off a Better Auth user; shared by the OAuth callbacks and the consent gate |
 | `services/IAuthRateLimitRedis.ts` | The one Redis command the limiters use (`eval`); the bootstrap ioredis client satisfies it |
@@ -74,6 +81,56 @@ The per-email layer exists because the per-IP layer alone lets anyone who rotate
 
 Both layers let a request through and log an error when Redis is unreachable, because refusing would stop every sign-in for the length of the outage. Codes are stored hashed (`storeOTP: 'hashed'`), so reading `module_user_auth_verifications` does not reveal a pending code. A recipient Resend refuses as invalid (`validation_error`) is logged as a warning; any other send failure is an error, because it stops all email sign-in.
 
+## Sign-in Audit Log
+
+Every sign-in code request and sign-in attempt writes a log entry under `tronrelic:identity`, so an operator who receives a code they did not ask for can see who requested it and whether a sign-in followed. Read the entries on the Logs tab of `/system/users`.
+
+| Message | Level | Written by | Fields |
+|---------|-------|------------|--------|
+| `Sign-in code sent` | info | `createSignInAuditLog` | `email`, `ip`, `forwardedFor`, `country`, `userAgent` |
+| `Sign-in code request failed` | warn | `createSignInAuditLog` | the same, plus `status`, `reason` |
+| `Sign-in succeeded` | info | `createSignInAuditLog` | `method` (`email-otp`, `passkey`, `oauth:<provider>`), `email`, `userId`, `sessionId`, caller fields |
+| `Sign-in failed` | warn | `createSignInAuditLog` | `method`, `email` when the request named one, `status`, `reason`, caller fields |
+| `Account created` | info | `databaseHooks.user.create.after` | `userId`, `email`, `emailVerified` |
+| `Session ended` | info | `databaseHooks.session.delete.after` | `userId`, `sessionId`; covers sign-out, revocation, and expiry cleanup |
+| `Auth rate limit reached; request refused` | warn | `createRedisRateLimitStorage` | `key` (caller address and path), `retryAfter`; once per key per window |
+| `Per-email OTP limit reached; request refused` | warn | `createEmailOtpThrottle` | `emailDomain`, `bucket`, `retryAfter` |
+
+`ip` is `CF-Connecting-IP`, which Cloudflare sets, falling back to the first `X-Forwarded-For` entry. The full email address is logged, so anyone who can read these logs, including a user group granted the system-log AI tools on `/system/mcp`, can see which addresses signed in. The one-time code and the session token are never logged, and every value copied from the request is cut to a fixed length.
+
+A request refused by either limiter never reaches the audit hook, which is why the two limiters log their own refusals.
+
+### Stored sign-in events
+
+The four `createSignInAuditLog` rows above are also stored in `module_user_sign_in_events`, one document per event, because a log entry keeps its details in an unindexed context payload and cannot be searched by address or caller. A failure to store an event is logged at `error` and does not fail the sign-in.
+
+| Field | Contents |
+|-------|----------|
+| `kind` | `code-sent`, `code-request-failed`, `sign-in-succeeded`, or `sign-in-failed` |
+| `method`, `path` | Sign-in method and the Better Auth endpoint |
+| `email`, `userId`, `sessionId` | Who the event concerns; `userId` and `sessionId` only on a success |
+| `ip`, `forwardedFor`, `country`, `userAgent` | The caller |
+| `status`, `reason` | Why a request failed; null on a success |
+| `occurredAt` | A Date, so the expiry index can act on it |
+
+Indexes: `{ occurredAt }` with a 90-day time-to-live (`SIGN_IN_EVENT_RETENTION_DAYS`), and `{ email, occurredAt }`, `{ userId, occurredAt }`, `{ ip, occurredAt }` for lookups. MongoDB deletes expired documents itself, so the module needs no scheduler job. `Account created`, `Session ended`, and the limiter refusals are log entries only.
+
+## AI Tools
+
+Three read-only tools let an AI agent review accounts and sign-in activity. They register on the core `'ai-tools'` registry through `watch()` under provider id `identity`.
+
+| Tool | Input | Returns |
+|------|-------|---------|
+| `identity-list-accounts` | `search` (substring of email or name), `limit` (default 25, at most 100), `offset` | `total`, `offset`, `returned`, `nextOffset`, and `accounts[]` of `{ id, email, name, emailVerified, createdAt, groups, primaryWallet }`, newest first |
+| `identity-get-account` | Exactly one of `userId` and `email` (exact address) | `found`; when true, `account`, `sessions[]` (at most 25: `id`, `createdAt`, `updatedAt`, `expiresAt`, `ipAddress`, `userAgent`), `sessionsTruncated`, `wallets[]`, `connectedApps[]`, `recentSignInEvents[]` (at most 20, matched by the account's email), `signInEventsTotal` |
+| `identity-list-sign-in-events` | All optional: `email`, `userId`, `ip`, `method`, `kind`, `since`, `until` (ISO 8601), `limit` (default 50, at most 200), `offset` | `filters` as applied, `total`, `offset`, `returned`, `nextOffset`, and `events[]` newest first with every stored field except `path` |
+
+**Classification.** All three declare `read` / reversible / `secret` / `surfacesUntrustedContent`. `secret` because every result holds other users' email addresses and network addresses. As a result they fail the MCP safety floor, so an admin must clear a user group for restricted tools on `/system/mcp` before granting one, and they count as a private-data leg of the trifecta banner while enabled. Like every read tool they ship enabled; disable them on the Registry tab of `/system/ai-tools` if the deployment does not need them. `surfacesUntrustedContent` because names, addresses, and `userAgent` values are written by the people the records describe.
+
+**Admin check.** Each handler refuses a signed-in caller who is not in the `admin` group, using the principal the governor supplies, and logs the refusal at `warn`. A call with no principal comes from the server itself and is allowed. This is on top of the MCP grant, so a group granted a tool by mistake still cannot read other users' data.
+
+**What is never returned.** Session tokens (sessions are copied field by field in `IdentityModule.listAccountSessions`), one-time codes and their hashes, OAuth tokens, and passkey credentials. The tools change nothing: ending a session or changing a group stays on `/system/users`.
+
 ## OAuth Authorization Server
 
 The Better Auth instance is also an OAuth 2.1 authorization server, so connected apps (MCP clients such as Claude) can act for a user after that user signs in and approves them. `buildOAuthPlugins` in `auth.ts` adds four plugins:
@@ -83,7 +140,9 @@ The Better Auth instance is also an OAuth 2.1 authorization server, so connected
 | `jwt` | `issuer` set to the site origin (unset it would be `<origin>/api/auth`); session JWT header disabled; keys in `module_user_auth_jwks` |
 | `oauthProvider` | Scopes `mcp:tools` and `offline_access` (no `openid`); grants `authorization_code` and `refresh_token` only; one resource, the MCP URL, linked to every client by default; access tokens 15 minutes, refresh tokens 30 days with rotation and a 30-second reuse window; dynamic client registration off; only admins may create clients (`clientPrivileges`); login and consent page `/oauth/authorize` |
 | `mcp-consent-gate` | A `hooks.before` on `/oauth2/consent` that answers `403 access_denied` when a user outside `mcp-users` approves. Denials pass through |
-| `cimd` | Clients identify themselves with a metadata document URL, fetched through `@better-auth/cimd/node` (resolve-once, public addresses only, no redirects) after `assertPublicHttpUrl`; `metadataProfile: 'mcp-2026-07-28'` |
+| `cimd` | Clients identify themselves with a metadata document URL, fetched through `@better-auth/cimd/node` (resolve-once, public addresses only, no redirects) after `assertPublicHttpUrl` and the MCP module's admission rule both accept it; `onClientRefreshed` hands that rule the app's details before and after a re-read; `metadataProfile: 'mcp-2026-07-28'` |
+
+**Which apps may register.** The rule is the MCP module's, not this module's. `IdentityModule.init()` receives it as `oauthClientAdmission` (`IMcpClientAdmissionPolicy`) and `auth.ts` calls `isAllowed` before any metadata document is fetched, so an app on a host outside the MCP module's allowed list is never fetched and never stored. Refusals are logged by that rule under `tronrelic:mcp`, and so appear on the Logs tab of `/system/mcp` and not on this module's. See [App Admission](../mcp/README.md#app-admission) for the allowed hosts and how to add one.
 
 **Who may hold a token.** `customAccessTokenClaims` runs on every issue and every refresh of a JWT access token (a request that names the MCP resource) and throws `invalid_grant` unless the user is in `mcp-users`. Better Auth does not call it when it issues an opaque token for a request without `resource`, so a user with a lingering consent can still obtain an opaque token; the MCP endpoint refuses those, which is what keeps them harmless. The consent gate refuses the approval itself for non-members, because Better Auth's consent endpoint needs only a session and would otherwise store a consent row that shows as a connected app and counts as a live grant, even though no token is ever issued for it. The MCP module re-checks membership per request as well.
 
@@ -187,7 +246,7 @@ First consumer: the notifications module persists per-user opt-outs here under t
 
 ## Lifecycle
 
-**`init()`** constructs (in order) `GroupService` (with a membership listener that disconnects the user's sockets), `WalletService`, `UserGroupService` (seeds the `admin` group), `AccountDirectoryService`, `UserSettingsService`, the OAuth server config (from `BETTER_AUTH_URL`, falling back to `SITE_URL`, then to `http://localhost:3000` outside production; the same resolved URL becomes Better Auth's `baseURL`, so the auth server and the OAuth issuer cannot disagree), and the Better Auth instance (handed the injected `redis` client for its rate-limit counters, `socketDisconnector` for its session-delete hook, and the OAuth config), then wires the auth facade, builds `ConnectedAppsService` (creating its last-use index) and `OAuthAccessTokenVerifier`, and builds the wallet + group + user-settings + connected-apps controllers. **`run()`** registers the `Users` menu item under the System container and the profile tab row (the `Connected apps` tab carries `requiresGroups: ['mcp-users']`), mounts `/api/auth/*`, `/.well-known/oauth-authorization-server`, the connected-apps and consent-context routers, the wallet router, the user-settings router, the admin group router, the admin accounts router (`/api/admin/users`, the `/:id` catch-all, last), and the admin account-search router (`/api/admin/accounts`, a dedicated literal prefix), then registers `'user-groups'`, `'wallets'`, `'accounts'`, `'user-settings'`.
+**`init()`** constructs (in order) `GroupService` (with a membership listener that disconnects the user's sockets), `WalletService`, `UserGroupService` (seeds the `admin` group), `AccountDirectoryService`, `UserSettingsService`, the OAuth server config (from `BETTER_AUTH_URL`, falling back to `SITE_URL`, then to `http://localhost:3000` outside production; the same resolved URL becomes Better Auth's `baseURL`, so the auth server and the OAuth issuer cannot disagree), and the Better Auth instance (handed the injected `redis` client for its rate-limit counters, `socketDisconnector` for its session-delete hook, the OAuth config, and the injected `oauthClientAdmission` rule for which apps may register), then wires the auth facade, builds `ConnectedAppsService` (creating its last-use index) and `OAuthAccessTokenVerifier`, and builds the wallet + group + user-settings + connected-apps controllers. **`run()`** registers the `Users` menu item under the System container, the `/system/users` tab row (the `identity` namespace, every node `requiresAdmin`), and the profile tab row (the `Connected apps` tab carries `requiresGroups: ['mcp-users']`), mounts `/api/auth/*`, `/.well-known/oauth-authorization-server`, the connected-apps and consent-context routers, the wallet router, the user-settings router, the admin group router, the admin accounts router (`/api/admin/users`, the `/:id` catch-all, last), and the admin account-search router (`/api/admin/accounts`, a dedicated literal prefix), then registers `'user-groups'`, `'wallets'`, `'accounts'`, `'user-settings'`, and watches `'ai-tools'` to register the three identity AI tools. `init()` also builds `SignInEventStore` and creates its indexes before the Better Auth instance, which receives it as the audit hook's recorder.
 
 ## Related
 

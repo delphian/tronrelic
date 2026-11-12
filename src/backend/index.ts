@@ -56,7 +56,7 @@ import { LocalizationModule, LocalizationService } from './modules/localization/
 import { ConsentModule } from './modules/consent/index.js';
 import { ToolsModule } from './modules/tools/index.js';
 import { AiToolsModule, createAccountEndUserResolver } from './modules/ai-tools/index.js';
-import { McpModule } from './modules/mcp/index.js';
+import { McpModule, McpClientAdmissionPolicy, MCP_ALLOWED_CLIENT_HOSTS } from './modules/mcp/index.js';
 import { CurationModule } from './modules/curation/index.js';
 import { NotificationsModule } from './modules/notifications/index.js';
 import { SyndicationModule } from './modules/syndication/index.js';
@@ -515,7 +515,18 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     // Identity also receives Redis for the sign-in rate-limit counters, so
     // those limits survive a backend restart, and the WebSocket service so it
     // can drop a user's sockets when their session ends or their groups change.
-    await identityModule.init({ ...sharedDeps, redis, socketDisconnector: WebSocketService.getInstance() });
+    // The rule for which apps may register with the OAuth server belongs to
+    // the MCP module, which is the only reason the OAuth server exists. The
+    // MCP module initializes after identity, so the rule is built here and
+    // passed in. It logs under the MCP module's name, so refused apps appear
+    // on the Logs tab of /system/mcp.
+    const mcpClientAdmission = new McpClientAdmissionPolicy(MCP_ALLOWED_CLIENT_HOSTS, logger.child({ module: 'mcp' }));
+    await identityModule.init({
+        ...sharedDeps,
+        redis,
+        socketDisconnector: WebSocketService.getInstance(),
+        oauthClientAdmission: mcpClientAdmission
+    });
     // Consent initializes before traffic because traffic's page-view endpoint
     // asks it, per request, whether the visitor allowed the analytics cookie.
     const consentModule = new ConsentModule();
