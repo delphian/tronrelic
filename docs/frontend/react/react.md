@@ -176,9 +176,13 @@ Memoize the subscription object — passing a fresh identity each render re-regi
 
 ## Inline Scripts and the Content-Security-Policy
 
-Every page carries a Content-Security-Policy whose `script-src` allows only scripts with a nonce generated fresh for that request. That stops a script injected into page markup from running. The middleware builds the policy in `lib/buildContentSecurityPolicy.ts` and passes the nonce to server rendering in the `CSP_NONCE_HEADER` request header. It is sent as `Content-Security-Policy-Report-Only` while it is rolled out, so for now a violation is reported in the browser console rather than blocked.
+Every page carries a Content-Security-Policy whose `script-src` allows only scripts with a nonce generated fresh for that request. That stops a script injected into page markup from running. The middleware builds the policy in `lib/buildContentSecurityPolicy.ts` and passes the nonce to server rendering in the `CSP_NONCE_HEADER` request header. The policy is enforced: the browser blocks a script that does not carry the nonce and logs the violation in the console.
 
 Next.js stamps the nonce on its own scripts. A script you write inline must carry it too: in a server component, read `(await headers()).get(CSP_NONCE_HEADER)` and pass it as `nonce={nonce}`, as the root layout does for `window.__RUNTIME_CONFIG__`. A script a plugin or module contributes through the `ssr.headFragments` hook gets the nonce from the layout automatically. JSON-LD blocks (`type="application/ld+json"`) are data, not code, so they need no nonce.
+
+Write the content of any inline JSON block, a JSON-LD block included, with `serializeInlineJson(value)` from `@/types` and never with `JSON.stringify` alone. Stored text containing `</script>` would otherwise end the element early and let what follows run as markup. A plugin imports the same function from `@delphian/tronrelic-types`.
+
+Two things outside the application can be blocked by the policy. Cloudflare's Email Address Obfuscation adds a script without a nonce to any page that holds an email address, so that feature must stay off for the zone. Markup an admin puts in a raw HTML widget cannot run script either, whether as a `<script>` element or as an event handler attribute.
 
 Never use an inline event handler attribute such as `onclick="..."` in markup that reaches the browser as HTML. A nonce cannot cover it, so the policy blocks it.
 

@@ -630,3 +630,11 @@
         flex-wrap: wrap;
     }
 }
+
+/* The Groups and Delete buttons at the end of an account row. They wrap
+   instead of forcing the table wider when the column is narrow. */
+.row_actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-xs);
+}

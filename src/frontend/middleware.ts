@@ -581,15 +581,18 @@ export async function middleware(request: NextRequest, event: NextFetchEvent) {
     // A fresh nonce per request for the Content-Security-Policy. Next.js reads
     // the nonce from the request's CSP header and stamps it on its own inline
     // scripts; the root layout reads CSP_NONCE_HEADER for the scripts it
-    // writes. Next.js checks the enforcing header before the report-only one,
-    // so any CSP header a visitor sent is dropped rather than left to supply a
-    // nonce of their choosing. The policy is report-only while it is rolled
-    // out: browsers report what it would block without blocking anything.
+    // writes. Both CSP request headers are replaced, so a header a visitor
+    // sent can never supply a nonce of their choosing. The policy is enforced:
+    // the browser blocks any script that does not carry this nonce.
+    //
+    // The OAuth consent pages must never be framed, matching the stricter
+    // header next.config.mjs sets for /oauth.
     const nonce = btoa(crypto.randomUUID());
-    const contentSecurityPolicy = buildContentSecurityPolicy(nonce, process.env.NODE_ENV === 'development');
+    const forbidFraming = pathname === '/oauth' || pathname.startsWith('/oauth/');
+    const contentSecurityPolicy = buildContentSecurityPolicy(nonce, process.env.NODE_ENV === 'development', forbidFraming);
     requestHeaders.set(CSP_NONCE_HEADER, nonce);
-    requestHeaders.delete('content-security-policy');
-    requestHeaders.set('content-security-policy-report-only', contentSecurityPolicy);
+    requestHeaders.delete('content-security-policy-report-only');
+    requestHeaders.set('content-security-policy', contentSecurityPolicy);
 
     // The path pages and widgets see. For a translated page it drops the
     // language prefix, so widgets and head fragments placed on /markets also
@@ -647,7 +650,7 @@ export async function middleware(request: NextRequest, event: NextFetchEvent) {
 
     // Set pathname header for widget zone routing
     response.headers.set('x-pathname', routedPath);
-    response.headers.set('Content-Security-Policy-Report-Only', contentSecurityPolicy);
+    response.headers.set('Content-Security-Policy', contentSecurityPolicy);
 
     return response;
 }

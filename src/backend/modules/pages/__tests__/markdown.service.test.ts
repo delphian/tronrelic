@@ -257,6 +257,33 @@ function hello() {
             expect(html).not.toContain('alert(');
         });
 
+        // The page route writes this HTML with dangerouslySetInnerHTML, so the
+        // sanitizer is the only thing between stored page text and a visitor's
+        // browser. These are the ways markup runs script without a <script>
+        // element. The test exists so a library upgrade or a change to the
+        // pipeline's options cannot let one through unnoticed.
+        it('removes event handlers, javascript: links, and frames', async () => {
+            const markdown = [
+                '<img src="x" onerror="alert(1)">',
+                '[markdown link](javascript:alert(2))',
+                '<a href="javascript:alert(3)">html link</a>',
+                '<iframe src="https://example.com"></iframe>',
+                '<div onclick="alert(4)" style="position:fixed">styled</div>'
+            ].join('\n\n');
+
+            const html = await markdownService.renderMarkdown(markdown);
+
+            expect(html).not.toMatch(/onerror|onclick/i);
+            expect(html).not.toMatch(/javascript:/i);
+            expect(html).not.toMatch(/<iframe/i);
+            expect(html).not.toMatch(/style=/i);
+            expect(html).not.toContain('alert(');
+            // The harmless parts survive, so the test is not passing because
+            // the renderer returned nothing.
+            expect(html).toContain('markdown link');
+            expect(html).toContain('html link');
+        });
+
         it('should handle empty markdown', async () => {
             const html = await markdownService.renderMarkdown('');
 

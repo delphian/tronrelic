@@ -6,3 +6,4 @@
 
 export type { IHeadFragment, HeadFragmentTag } from './IHeadFragment.js';
 export type { ISsrHeadContext } from './ISsrHeadContext.js';
+export { serializeInlineJson } from './serializeInlineJson.js';

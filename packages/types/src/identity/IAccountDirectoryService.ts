@@ -39,6 +39,16 @@ export interface IAccountSummary {
 
     /** Denormalized primary wallet address, or null when no wallet is linked. */
     primaryWallet: string | null;
+
+    /**
+     * When an admin deleted the account, or null for a live account.
+     *
+     * Deleting an account keeps its record, so audit logs and sign-in events
+     * that name the user id still resolve to an email. A deleted account
+     * cannot sign in, holds no sessions, connected apps, or groups, and should
+     * be treated as inactive by any consumer that acts on behalf of a user.
+     */
+    deletedAt: Date | null;
 }
 
 /**

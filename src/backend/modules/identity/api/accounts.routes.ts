@@ -13,9 +13,10 @@
  * coupling the accounts controller to group concerns.
  */
 
-import { Router } from 'express';
+import { Router, type RequestHandler } from 'express';
 import type { AccountsController } from './accounts.controller.js';
 import type { UserGroupController } from './user-group.controller.js';
+import { requireAdminUser } from '../../../api/middleware/admin-auth.js';
 
 /**
  * Create the admin account-directory router.
@@ -24,13 +25,22 @@ import type { UserGroupController } from './user-group.controller.js';
  * the parent. `/:id` is registered last so the literal `/groups` segment on
  * the membership route is matched as a sub-path, not captured as an id.
  *
- * @param controller - Account-directory read controller.
+ * Deleting an account is the one route here with extra gates. It refuses the
+ * `ADMIN_API_TOKEN` service path through `requireAdminUser`, so every deletion
+ * is made by a signed-in admin whose id can be stored on the account, and it
+ * has its own rate limit so a hijacked session cannot delete the whole
+ * directory in one burst.
+ *
+ * @param controller - Account-directory controller.
  * @param groupController - User-group controller for the membership editor.
+ * @param deleteRateLimiter - Rate limiter for account deletion. Injected so
+ *   the module chooses the limit and tests can pass a pass-through.
  * @returns Configured admin accounts router.
  */
 export function createAdminAccountsRouter(
     controller: AccountsController,
-    groupController: UserGroupController
+    groupController: UserGroupController,
+    deleteRateLimiter: RequestHandler
 ): Router {
     const router = Router();
 
@@ -41,6 +51,10 @@ export function createAdminAccountsRouter(
 
     // Registered last so the more specific `/:id/groups` path wins first.
     router.get('/:id', controller.getAccount.bind(controller));
+
+    // Soft delete. The limiter runs before the signed-in-admin check so a
+    // caller the check refuses is still counted.
+    router.delete('/:id', deleteRateLimiter, requireAdminUser, controller.deleteAccount.bind(controller));
 
     return router;
 }

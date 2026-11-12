@@ -6,11 +6,20 @@
  * `script-src`: an attacker who manages to inject markup into a page cannot run
  * a script, because only scripts carrying this request's nonce are allowed.
  *
- * The middleware sends this policy as `Content-Security-Policy-Report-Only`
- * while it is being rolled out, so the browser reports what it would block
- * without blocking it. The enforcing baseline in `next.config.mjs`
- * (`object-src`, `base-uri`, `frame-ancestors`) is a separate header and stays
- * in force alongside it.
+ * The middleware sends this policy as an enforcing `Content-Security-Policy`
+ * header, so the browser blocks what the policy does not allow.
+ *
+ * - `next.config.mjs` also sets a `Content-Security-Policy` header holding only
+ *   the baseline directives (`object-src`, `base-uri`, `frame-ancestors`). It
+ *   still covers the paths the middleware does not run on.
+ * - This policy repeats those three directives, so a page is fully covered
+ *   whether the browser receives this header alone or both.
+ * - A parser-inserted `<script>` without the nonce is blocked. Cloudflare's
+ *   Email Address Obfuscation adds one to any page holding an email address,
+ *   so that Cloudflare feature must stay off for the zone.
+ * - A `<link rel="preload" as="script">` without the nonce is refused too.
+ *   Next.js emits these for `next/dynamic` chunks; the chunk still loads when
+ *   the page asks for it, only the early fetch is lost.
  */
 
 /**
@@ -60,11 +69,19 @@ const GOOGLE_ADS_FRAME_SOURCES = ['https://td.doubleclick.net', 'https://www.goo
  *
  * @param nonce - The base64 nonce generated for this request; the same value
  *   must be stamped on every inline script the page writes.
+ * `frame-ancestors` says which pages may show this one in a frame. Most pages
+ * allow only the site itself. The OAuth consent page allows none, because a
+ * framed consent page could be used to trick a user into approving an app.
+ *
+ * @param nonce - The base64 nonce generated for this request; the same value
+ *   must be stamped on every inline script the page writes.
  * @param isDevelopment - True under `next dev`, which needs eval and a
  *   cross-port backend connection that production must not allow.
+ * @param forbidFraming - True for a page that must never be shown in a frame,
+ *   such as the OAuth consent page. The middleware decides this from the path.
  * @returns The policy as a single header value.
  */
-export function buildContentSecurityPolicy(nonce: string, isDevelopment: boolean): string {
+export function buildContentSecurityPolicy(nonce: string, isDevelopment: boolean, forbidFraming = false): string {
     const scriptSources = ["'self'", `'nonce-${nonce}'`, "'strict-dynamic'"];
     const connectSources = ["'self'", ...GOOGLE_ADS_CONNECT_SOURCES];
     if (isDevelopment) {
@@ -82,7 +99,8 @@ export function buildContentSecurityPolicy(nonce: string, isDevelopment: boolean
         `frame-src 'self' ${GOOGLE_ADS_FRAME_SOURCES.join(' ')}`,
         "worker-src 'self' blob:",
         "object-src 'none'",
-        "base-uri 'self'"
+        "base-uri 'self'",
+        `frame-ancestors ${forbidFraming ? "'none'" : "'self'"}`
     ];
 
     return directives.join('; ');
