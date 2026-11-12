@@ -10,7 +10,7 @@ import { MobileTabBarZone, WidgetZone, collectMenuNamespaces, fetchWidgetsForRou
 import { fetchMenuNamespace } from '../../modules/menu/server';
 import type { IMenuSeed } from '../../modules/menu/types';
 import { getServerSession, type ISSRSession } from '../../modules/user/lib/session-server';
-import { CONSENT_COOKIE_NAME, DEFAULT_LANGUAGE } from '@/types';
+import { CONSENT_COOKIE_NAME, DEFAULT_LANGUAGE, serializeInlineJson } from '@/types';
 import { fetchLocalizationSeed, getServerTranslator } from '../../modules/localization/server';
 import { translateKeywords } from '../../lib/translateKeywords';
 import { fetchConsentSeed } from '../../modules/consent/server';
@@ -407,14 +407,17 @@ export default async function RootLayout({ children, params }: { children: React
         <script
           nonce={nonce}
           dangerouslySetInnerHTML={{
-            __html: `window.__RUNTIME_CONFIG__=${JSON.stringify(runtimeConfig)};`
+            // serializeInlineJson, not JSON.stringify: the site URL is
+            // editable by an admin, and a value containing "</script>"
+            // would otherwise end this element and run as markup.
+            __html: `window.__RUNTIME_CONFIG__=${serializeInlineJson(runtimeConfig)};`
           }}
         />
         {/* Site-wide structured data for SEO (Organization + WebSite schemas) */}
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
-            __html: JSON.stringify(buildSiteStructuredData(runtimeConfig.siteUrl))
+            __html: serializeInlineJson(buildSiteStructuredData(runtimeConfig.siteUrl))
           }}
         />
         {/* Inject every hook-driven head fragment unfiltered — the

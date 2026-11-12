@@ -63,6 +63,8 @@ import { revokeGrantsOnGroupExit } from './services/revokeGrantsOnGroupExit.js';
 import { OAuthAccessTokenVerifier } from './services/oauth-access-token.verifier.js';
 import { resolveOAuthServerConfig, type IOAuthServerConfig } from './services/oauth-server-config.js';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
+import { createRateLimiter } from '../../api/middleware/rate-limit.js';
+import { AccountDeletionService } from './services/AccountDeletionService.js';
 import type { IAuthRateLimitRedis } from './services/IAuthRateLimitRedis.js';
 import type { IIdentitySocketDisconnector } from './services/IIdentitySocketDisconnector.js';
 import { SignInEventStore } from './services/SignInEventStore.js';
@@ -170,6 +172,14 @@ const USERS_ADMIN_SUBMENU_TABS: ReadonlyArray<{ label: string; tab: string; icon
 ];
 
 /**
+ * Rate limit on deleting accounts, per caller IP address: at most 20 in ten
+ * minutes. An admin clearing out a batch of spam accounts stays under it,
+ * while a hijacked admin session cannot delete the whole directory in one
+ * burst.
+ */
+const ACCOUNT_DELETE_RATE_LIMIT = { windowSeconds: 600, maxRequests: 20, keyPrefix: 'admin-user-delete' };
+
+/**
  * Better Auth identity module.
  */
 export class IdentityModule implements IModule<IIdentityModuleDependencies> {
@@ -192,6 +202,7 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
     private accountDirectoryService!: AccountDirectoryService;
     private userSettingsService!: UserSettingsService;
     private connectedAppsService!: ConnectedAppsService;
+    private accountDeletionService!: AccountDeletionService;
     private accessTokenVerifier!: OAuthAccessTokenVerifier;
     private oauthConfig!: IOAuthServerConfig;
     private auth!: Auth;
@@ -311,7 +322,16 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
             socketDisconnector: dependencies.socketDisconnector,
             signInEvents: this.signInEventStore,
             oauth: this.oauthConfig,
-            clientAdmission: dependencies.oauthClientAdmission
+            clientAdmission: dependencies.oauthClientAdmission,
+            /**
+             * Tell the session-create hook whether an admin deleted the
+             * account, read through the directory like every other account
+             * read.
+             *
+             * @param userId - Better Auth user id a session is being created for.
+             * @returns True when the account is marked deleted.
+             */
+            isAccountDeleted: async (userId) => Boolean((await this.accountDirectoryService.getAccount(userId))?.deletedAt)
         });
         setAuthInstance(this.auth);
         this.logger.info('Better Auth instance configured and facade wired');
@@ -348,10 +368,43 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
             this.logger
         );
 
+        // Soft deletion of accounts from /system/users. Built after the auth
+        // instance and the connected-apps service, because it revokes through
+        // both. Each revocation is passed as a narrow function, so the service
+        // never holds the auth instance or the socket server.
+        this.accountDeletionService = new AccountDeletionService({
+            database: this.database,
+            groups: this.groupService,
+            /**
+             * Delete every session of the account through Better Auth, whose
+             * session-delete hook also drops the sockets opened with each one.
+             *
+             * @param userId - Better Auth user id of the deleted account.
+             */
+            revokeSessions: async (userId) => {
+                const context = await auth.$context;
+                await context.internalAdapter.deleteUserSessions(userId);
+            },
+            /**
+             * Revoke every connected app of the account, with its tokens.
+             *
+             * @param userId - Better Auth user id of the deleted account.
+             * @returns How many apps were revoked.
+             */
+            revokeConnectedApps: (userId) => this.connectedAppsService.revokeAllForUser(userId),
+            /**
+             * Drop every open socket of the account.
+             *
+             * @param userId - Better Auth user id of the deleted account.
+             */
+            disconnectSockets: (userId) => socketDisconnector.disconnectUser(userId),
+            logger: this.logger
+        });
+
         // Controllers over the BA-keyed services.
         this.walletController = new WalletController(this.walletService, this.logger);
         this.groupController = new UserGroupController(this.userGroupService, this.logger);
-        this.accountsController = new AccountsController(this.accountDirectoryService, this.logger);
+        this.accountsController = new AccountsController(this.accountDirectoryService, this.accountDeletionService, this.logger);
         this.userSettingsController = new UserSettingsController(this.userSettingsService, this.logger);
         this.connectedAppsController = new ConnectedAppsController(
             this.connectedAppsService,
@@ -590,7 +643,11 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
         // module's `/api/admin/users/analytics` + `/traffic` routers, so its
         // `/:id` matcher never shadows those more-specific prefixes. Replaces
         // the legacy UUID user-list surface the user module used to mount.
-        const adminAccountsRouter: Router = createAdminAccountsRouter(this.accountsController, this.groupController);
+        const adminAccountsRouter: Router = createAdminAccountsRouter(
+            this.accountsController,
+            this.groupController,
+            createRateLimiter(ACCOUNT_DELETE_RATE_LIMIT)
+        );
         this.app.use('/api/admin/users', requireAdmin, adminAccountsRouter);
         this.logger.info('Admin accounts router mounted at /api/admin/users');
 

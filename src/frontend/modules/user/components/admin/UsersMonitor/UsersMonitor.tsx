@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { Users as UsersIcon } from 'lucide-react';
+import { Trash2, Users as UsersIcon } from 'lucide-react';
 import { Button } from '../../../../../components/ui/Button';
 import { Input } from '../../../../../components/ui/Input';
 import { Badge } from '../../../../../components/ui/Badge';
@@ -9,6 +9,7 @@ import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { useModal } from '../../../../../components/ui/ModalProvider';
 import { useToast } from '../../../../../components/ui/ToastProvider';
 import { UserGroupsForm } from './UserGroupsForm';
+import { DeleteUserForm } from './DeleteUserForm';
 import styles from './UsersMonitor.module.scss';
 
 /** Page size for the account directory table. */
@@ -29,6 +30,8 @@ interface AccountRow {
     createdAt: string;
     groups: string[];
     primaryWallet: string | null;
+    /** When an admin deleted the account, as an ISO string; null for a live account. */
+    deletedAt: string | null;
 }
 
 /** Response shape of the paginated account-directory endpoint. */
@@ -141,6 +144,51 @@ export function UsersMonitor() {
         });
     }, [openModal, closeModal, pushToast, fetchAccounts]);
 
+    /**
+     * Open the confirmation modal for deleting an account. The form makes the
+     * admin type the account's email, and the handler sends that address with
+     * the DELETE request so the server can check it too. On success the table
+     * is refreshed, so the row shows as deleted from the server's own answer.
+     * A refusal, such as deleting your own account or the only admin, comes
+     * back as a message and is shown as a toast with the modal left open.
+     */
+    const openDeleteModal = useCallback((account: AccountRow) => {
+        const modalId = openModal({
+            title: 'Delete User',
+            size: 'sm',
+            content: (
+                <DeleteUserForm
+                    email={account.email}
+                    onCancel={() => closeModal(modalId)}
+                    onSubmit={async (confirmEmail) => {
+                        try {
+                            const response = await fetch(
+                                `/api/admin/users/${encodeURIComponent(account.id)}`,
+                                {
+                                    method: 'DELETE',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ confirmEmail })
+                                }
+                            );
+                            if (!response.ok) {
+                                const payload = await response.json().catch(() => null);
+                                throw new Error(payload?.message ?? payload?.error ?? `Delete failed (${response.status})`);
+                            }
+                            pushToast({ tone: 'success', title: 'User deleted' });
+                            closeModal(modalId);
+                            await fetchAccounts();
+                        } catch (error) {
+                            pushToast({
+                                tone: 'danger',
+                                title: error instanceof Error ? error.message : 'Delete failed'
+                            });
+                        }
+                    }}
+                />
+            )
+        });
+    }, [openModal, closeModal, pushToast, fetchAccounts]);
+
     const handleSearch = () => {
         setPage(1);
         setSearch(searchInput);
@@ -222,7 +270,9 @@ export function UsersMonitor() {
                                         <td>{account.email}</td>
                                         <td>{account.name || <span className="text-muted">—</span>}</td>
                                         <td>
-                                            {account.emailVerified ? (
+                                            {account.deletedAt ? (
+                                                <Badge tone="danger">Deleted</Badge>
+                                            ) : account.emailVerified ? (
                                                 <Badge tone="success">Verified</Badge>
                                             ) : (
                                                 <Badge tone="neutral">Unverified</Badge>
@@ -250,14 +300,30 @@ export function UsersMonitor() {
                                         </td>
                                         <td><ClientTime date={account.createdAt} format="short" /></td>
                                         <td>
-                                            <Button
-                                                size="sm"
-                                                variant="secondary"
-                                                onClick={() => openGroupsModal(account)}
-                                                aria-label={`Manage groups for ${account.email}`}
-                                            >
-                                                <UsersIcon size={14} aria-hidden="true" /> Groups
-                                            </Button>
+                                            {/* A deleted account holds no groups and cannot be deleted
+                                                again, so it offers neither action. */}
+                                            {account.deletedAt ? (
+                                                <span className="text-muted">—</span>
+                                            ) : (
+                                                <div className={styles.row_actions}>
+                                                    <Button
+                                                        size="sm"
+                                                        variant="secondary"
+                                                        onClick={() => openGroupsModal(account)}
+                                                        aria-label={`Manage groups for ${account.email}`}
+                                                    >
+                                                        <UsersIcon size={14} aria-hidden="true" /> Groups
+                                                    </Button>
+                                                    <Button
+                                                        size="sm"
+                                                        variant="danger"
+                                                        onClick={() => openDeleteModal(account)}
+                                                        aria-label={`Delete ${account.email}`}
+                                                    >
+                                                        <Trash2 size={14} aria-hidden="true" /> Delete
+                                                    </Button>
+                                                </div>
+                                            )}
                                         </td>
                                     </tr>
                                 ))}

@@ -219,7 +219,8 @@ function toAccountView(account: IAccountSummary): Record<string, unknown> {
         emailVerified: account.emailVerified,
         createdAt: new Date(account.createdAt).toISOString(),
         groups: account.groups,
-        primaryWallet: account.primaryWallet
+        primaryWallet: account.primaryWallet,
+        deletedAt: account.deletedAt ? new Date(account.deletedAt).toISOString() : null
     };
 }
 
@@ -364,7 +365,7 @@ export function buildIdentityAiTools(deps: IIdentityAiToolDependencies, logger: 
             'List TronRelic user accounts, newest first, optionally only those whose email or display name contains a search text. ' +
             `Use to find an account's id before calling ${AI_TOOL_NAMES.getAccount} or filtering ${AI_TOOL_NAMES.listSignInEvents} by userId, or to see who is in the admin group. ` +
             `Parameters: search (optional, case-insensitive substring of email or name); limit (default ${DEFAULT_ACCOUNT_LIMIT}, at most ${MAX_ACCOUNT_LIMIT}); offset (default 0). ` +
-            'Returns total (all matching accounts), offset, returned, nextOffset (null on the last page), and accounts[] of { id, email, name, emailVerified, createdAt, groups, primaryWallet }. ' +
+            'Returns total (all matching accounts), offset, returned, nextOffset (null on the last page), and accounts[] of { id, email, name, emailVerified, createdAt, groups, primaryWallet, deletedAt }. deletedAt is null for a live account and the time an admin deleted it otherwise; a deleted account cannot sign in and holds no sessions, groups, or connected apps. ' +
             SHARED_DESCRIPTION,
         capability: IDENTITY_CAPABILITY,
         inputSchema: {

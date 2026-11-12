@@ -37,7 +37,8 @@ const owner: IAccountSummary = {
     emailVerified: true,
     createdAt: new Date('2026-01-01T00:00:00Z'),
     groups: ['admin'],
-    primaryWallet: null
+    primaryWallet: null,
+    deletedAt: null
 };
 
 /** A stored sign-in event the event double returns. */

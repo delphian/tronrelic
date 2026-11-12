@@ -106,7 +106,9 @@ function resolveInternalApiOrigin() {
  *
  * The script policy is not here. It needs a fresh nonce on every request, so
  * the middleware builds it (`lib/buildContentSecurityPolicy.ts`) and sends it as
- * a separate report-only header while it is rolled out. `form-action` is left
+ * an enforcing header of its own on every page it runs for. That policy repeats
+ * the directives below, so a page is covered whichever header the browser
+ * receives; this one still covers the paths the middleware skips. `form-action` is left
  * out of both: the OAuth consent form redirects to the connecting app's
  * callback address, which Chrome checks against `form-action`.
  */

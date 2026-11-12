@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { serializeInlineJson } from '@/types';
 import { Page } from '../../../components/layout';
 import { WidgetZone, fetchWidgetsForRoute } from '../../../components/widgets';
 import { buildMetadata } from '../../../lib/seo';
@@ -93,7 +94,7 @@ export default async function HomePage(): Promise<JSX.Element> {
       <script
         suppressHydrationWarning
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }}
+        dangerouslySetInnerHTML={{ __html: serializeInlineJson(faqSchema) }}
       />
       {/* The home page has no fixed content of its own, so the two zones
           are its whole body. Both are drawn so a widget placed in either

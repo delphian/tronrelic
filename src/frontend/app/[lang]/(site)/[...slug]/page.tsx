@@ -8,7 +8,7 @@ import { CorePageZones } from '../../../../components/widgets';
 import { CategoryLandingPage } from '../../../../modules/menu';
 import { getServerSideApiUrlWithPath } from '../../../../lib/api-url';
 import { buildMetadata, buildArticleStructuredData, localizedAbsoluteUrl, toOpenGraphLocale } from '../../../../lib/seo';
-import { DEFAULT_LANGUAGE, localizeHref, localizePath } from '@/types';
+import { DEFAULT_LANGUAGE, localizeHref, localizePath, serializeInlineJson } from '@/types';
 import { fetchLocalizationSeed, getServerTranslator, resolveMetadataLanguage } from '../../../../modules/localization/server';
 import { menuTranslationKey } from '../../../../modules/menu/lib/menuTranslationKey';
 import { getServerConfig } from '../../../../lib/serverConfig';
@@ -483,7 +483,10 @@ export default async function UnifiedPage({ params }: { params: Promise<IPagePar
                     {articleJsonLd && (
                         <script
                             type="application/ld+json"
-                            dangerouslySetInnerHTML={{ __html: JSON.stringify(articleJsonLd) }}
+                            // The title, description, and keywords are stored
+                            // page content, so they are escaped for an inline
+                            // script rather than written with JSON.stringify.
+                            dangerouslySetInnerHTML={{ __html: serializeInlineJson(articleJsonLd) }}
                         />
                     )}
                     <article>
@@ -562,11 +565,9 @@ export default async function UnifiedPage({ params }: { params: Promise<IPagePar
     // PluginPageWithZones wraps with widget zones for cross-plugin content injection.
     // The structured data JSON is escaped so any string value containing
     // '</script>' (or any '<') can't break out of the script tag and become an
-    // injection vector. Replacing '<' with the unicode escape '\u003c' is
-    // sufficient because JSON.stringify never emits unescaped '\u003c' on its
-    // own and the JSON parser still treats the escape as a literal '<'.
+    // injection vector. serializeInlineJson in @/types does the escaping.
     const pluginStructuredDataJson = pluginStructuredData
-        ? JSON.stringify(pluginStructuredData).replace(/</g, '\\u003c')
+        ? serializeInlineJson(pluginStructuredData)
         : null;
 
     return (

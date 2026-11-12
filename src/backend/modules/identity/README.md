@@ -52,12 +52,13 @@ Better Auth is the sole identity layer — the legacy UUID identity system was r
 | `services/wallet.service.ts` | BA-keyed wallet store (`module_user_wallets`); the `'wallets'` contract |
 | `services/wallet-challenge.service.ts` | Single-use nonce mint/consume for wallet mutations (utility, not a singleton) |
 | `services/account-directory.service.ts` | Read-only directory over BA accounts; the `'accounts'` contract |
+| `services/AccountDeletionService.ts` | Soft-deletes an account for `/system/users`: the refusal rules, the `deletedAt` mark, and the revocation of sessions, groups, connected apps, and sockets |
 | `services/user-settings.service.ts` | Central per-user settings store (`module_user_settings`); the `'user-settings'` contract + definition registry |
 | `api/user-settings.{controller,routes}.ts` | `/api/user/settings` self-service surface (BA-session-resolved, registered-definition allow-list) |
 | `database/IUserSettingDocument.ts` | `module_user_settings` document (`(userId, namespace, key)` → opaque value) |
 | `api/wallet.{controller,routes}.ts` | `/api/user/wallets/*` (BA-session-resolved, no `:id` on the wire) |
 | `api/user-group.{controller,routes}.ts` | `/api/admin/users/groups/*` admin CRUD + membership |
-| `api/accounts.{controller,routes}.ts` | `/api/admin/users` admin account directory (list + per-account group assignment) over the `'accounts'` service |
+| `api/accounts.{controller,routes}.ts` | `/api/admin/users` admin account directory (list, per-account group assignment, and soft delete) over the `'accounts'` service and `AccountDeletionService` |
 | `database/IWalletDocument.ts` | `module_user_wallets` document + `ILinkedWallet` public shape |
 | `database/IUserGroupDocument.ts` | `module_user_groups` document |
 | `services/oauth-server-config.ts` | `resolveOAuthServerConfig` — issuer, MCP resource URL, metadata URL, and consent page path from one base URL |
@@ -115,13 +116,40 @@ The four `createSignInAuditLog` rows above are also stored in `module_user_sign_
 
 Indexes: `{ occurredAt }` with a 90-day time-to-live (`SIGN_IN_EVENT_RETENTION_DAYS`), and `{ email, occurredAt }`, `{ userId, occurredAt }`, `{ ip, occurredAt }` for lookups. MongoDB deletes expired documents itself, so the module needs no scheduler job. `Account created`, `Session ended`, and the limiter refusals are log entries only.
 
+## Deleting an Account
+
+An admin deletes an account from the Users tab of `/system/users`. The deletion is a soft delete: the row in `module_user_auth_users` is kept and marked, because audit logs, sign-in events, and content records name the user id and must still resolve to a person. The kept row also keeps the email address reserved, so nobody can register it again and be mistaken for the original owner. There is no restore action and no hard delete.
+
+`AccountDeletionService.softDelete` does the work, in this order:
+
+| Step | Effect |
+|------|--------|
+| Mark the row | Sets `deletedAt`, `deletedBy` (the admin's user id), and `groupsAtDeletion` |
+| Delete sessions | Through Better Auth's `deleteUserSessions`, so every device is signed out |
+| Clear groups | `setUserGroups(userId, [])`, so the account no longer counts as an admin or an `mcp-users` member |
+| Revoke connected apps | `ConnectedAppsService.revokeAllForUser` |
+| Disconnect sockets | Through `IIdentitySocketDisconnector` |
+
+A deleted account cannot sign in again. `databaseHooks.session.create.before` in `auth.ts` asks `isAccountDeleted` before every new session and answers `403` for a marked account, whichever sign-in method was used. Repeating the request for an already deleted account runs the revocations again and leaves the original mark, so a request that failed partway can be retried.
+
+`DELETE /api/admin/users/:id` is protected by four checks:
+
+| Check | Where | Result when it fails |
+|-------|-------|----------------------|
+| Signed-in admin only | `requireAdminUser` on the route; the `ADMIN_API_TOKEN` service path is refused, so every deletion has a named admin | `403` |
+| Rate limit | 20 deletions per 10 minutes per caller IP address (`ACCOUNT_DELETE_RATE_LIMIT` in `IdentityModule.ts`) | `429` |
+| Typed email | The body's `confirmEmail` must equal the account's email, compared case-insensitively by the service | `400 EmailMismatch` |
+| Guards | The service refuses the caller's own account and the only member of the `admin` group | `409 CannotDeleteSelf`, `409 LastAdmin` |
+
+`IAccountSummary.deletedAt` is null for a live account. The Users tab shows a deleted account with a `Deleted` badge and no actions. Sign-in events for the account stay in `module_user_sign_in_events` until their normal 90-day expiry.
+
 ## AI Tools
 
 Three read-only tools let an AI agent review accounts and sign-in activity. They register on the core `'ai-tools'` registry through `watch()` under provider id `identity`.
 
 | Tool | Input | Returns |
 |------|-------|---------|
-| `identity-list-accounts` | `search` (substring of email or name), `limit` (default 25, at most 100), `offset` | `total`, `offset`, `returned`, `nextOffset`, and `accounts[]` of `{ id, email, name, emailVerified, createdAt, groups, primaryWallet }`, newest first |
+| `identity-list-accounts` | `search` (substring of email or name), `limit` (default 25, at most 100), `offset` | `total`, `offset`, `returned`, `nextOffset`, and `accounts[]` of `{ id, email, name, emailVerified, createdAt, groups, primaryWallet, deletedAt }`, newest first; `deletedAt` is null unless an admin deleted the account |
 | `identity-get-account` | Exactly one of `userId` and `email` (exact address) | `found`; when true, `account`, `sessions[]` (at most 25: `id`, `createdAt`, `updatedAt`, `expiresAt`, `ipAddress`, `userAgent`), `sessionsTruncated`, `wallets[]`, `connectedApps[]`, `recentSignInEvents[]` (at most 20, matched by the account's email), `signInEventsTotal` |
 | `identity-list-sign-in-events` | All optional: `email`, `userId`, `ip`, `method`, `kind`, `since`, `until` (ISO 8601), `limit` (default 50, at most 200), `offset` | `filters` as applied, `total`, `offset`, `returned`, `nextOffset`, and `events[]` newest first with every stored field except `path` |
 
@@ -241,13 +269,14 @@ First consumer: the notifications module persists per-user opt-outs here under t
 | GET | `/api/admin/users` | `requireAdmin` | Paginated / searched account summaries (`IAccountSummary[]` + total) |
 | GET | `/api/admin/users/:id` | `requireAdmin` | One account summary, or 404 |
 | PUT | `/api/admin/users/:id/groups` | `requireAdmin` | Set an account's group membership |
+| DELETE | `/api/admin/users/:id` | `requireAdmin` + `requireAdminUser`, rate-limited | Soft-delete an account; body `{ confirmEmail }`. See [Deleting an Account](#deleting-an-account) |
 | GET | `/api/admin/accounts/search?q=` | `requireAdmin` | Typeahead account search → `{ accounts: IAccountMatch[] }`; backs `context.ui.AccountPicker` |
 
 `/api/admin/users` is a `/:id` catch-all, so it mounts **last**. The literal-segment routers must mount ahead of it: the groups router here, and the traffic module's `/api/admin/users/{traffic,analytics}` routers (TrafficModule runs before this module). Without that order the catch-all would shadow `traffic`, `analytics`, and `groups`.
 
 ## Lifecycle
 
-**`init()`** constructs (in order) `GroupService` (with a membership listener that disconnects the user's sockets), `WalletService`, `UserGroupService` (seeds the `admin` group), `AccountDirectoryService`, `UserSettingsService`, the OAuth server config (from `BETTER_AUTH_URL`, falling back to `SITE_URL`, then to `http://localhost:3000` outside production; the same resolved URL becomes Better Auth's `baseURL`, so the auth server and the OAuth issuer cannot disagree), and the Better Auth instance (handed the injected `redis` client for its rate-limit counters, `socketDisconnector` for its session-delete hook, the OAuth config, and the injected `oauthClientAdmission` rule for which apps may register), then wires the auth facade, builds `ConnectedAppsService` (creating its last-use index) and `OAuthAccessTokenVerifier`, and builds the wallet + group + user-settings + connected-apps controllers. **`run()`** registers the `Users` menu item under the System container, the `/system/users` tab row (the `identity` namespace, every node `requiresAdmin`), and the profile tab row (the `Connected apps` tab carries `requiresGroups: ['mcp-users']`), mounts `/api/auth/*`, `/.well-known/oauth-authorization-server`, the connected-apps and consent-context routers, the wallet router, the user-settings router, the admin group router, the admin accounts router (`/api/admin/users`, the `/:id` catch-all, last), and the admin account-search router (`/api/admin/accounts`, a dedicated literal prefix), then registers `'user-groups'`, `'wallets'`, `'accounts'`, `'user-settings'`, and watches `'ai-tools'` to register the three identity AI tools. `init()` also builds `SignInEventStore` and creates its indexes before the Better Auth instance, which receives it as the audit hook's recorder.
+**`init()`** constructs (in order) `GroupService` (with a membership listener that disconnects the user's sockets), `WalletService`, `UserGroupService` (seeds the `admin` group), `AccountDirectoryService`, `UserSettingsService`, the OAuth server config (from `BETTER_AUTH_URL`, falling back to `SITE_URL`, then to `http://localhost:3000` outside production; the same resolved URL becomes Better Auth's `baseURL`, so the auth server and the OAuth issuer cannot disagree), and the Better Auth instance (handed the injected `redis` client for its rate-limit counters, `socketDisconnector` for its session-delete hook, the OAuth config, and the injected `oauthClientAdmission` rule for which apps may register), then wires the auth facade, builds `ConnectedAppsService` (creating its last-use index), `OAuthAccessTokenVerifier`, and `AccountDeletionService`, and builds the wallet + group + user-settings + connected-apps controllers. **`run()`** registers the `Users` menu item under the System container, the `/system/users` tab row (the `identity` namespace, every node `requiresAdmin`), and the profile tab row (the `Connected apps` tab carries `requiresGroups: ['mcp-users']`), mounts `/api/auth/*`, `/.well-known/oauth-authorization-server`, the connected-apps and consent-context routers, the wallet router, the user-settings router, the admin group router, the admin accounts router (`/api/admin/users`, the `/:id` catch-all, last), and the admin account-search router (`/api/admin/accounts`, a dedicated literal prefix), then registers `'user-groups'`, `'wallets'`, `'accounts'`, `'user-settings'`, and watches `'ai-tools'` to register the three identity AI tools. `init()` also builds `SignInEventStore` and creates its indexes before the Better Auth instance, which receives it as the audit hook's recorder.
 
 ## Related
 

@@ -47,6 +47,8 @@ interface IAuthUserDocument {
     createdAt: Date;
     groups?: string[];
     primaryWallet?: string | null;
+    /** Set by `AccountDeletionService` when an admin deletes the account. */
+    deletedAt?: Date | null;
 }
 
 /**
@@ -225,7 +227,8 @@ export class AccountDirectoryService implements IAccountDirectoryService {
             emailVerified: doc.emailVerified ?? false,
             createdAt: doc.createdAt,
             groups: doc.groups ?? [],
-            primaryWallet: doc.primaryWallet ?? null
+            primaryWallet: doc.primaryWallet ?? null,
+            deletedAt: doc.deletedAt ?? null
         };
     }
 }

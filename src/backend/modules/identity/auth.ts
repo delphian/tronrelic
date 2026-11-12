@@ -129,6 +129,17 @@ export interface ICreateAuthDependencies {
      * after this one.
      */
     clientAdmission: IMcpClientAdmissionPolicy;
+
+    /**
+     * Reports whether an admin has deleted an account. A deleted account keeps
+     * its user row, so Better Auth would otherwise sign it in as normal. The
+     * session-create hook asks this before every new session and refuses a
+     * deleted account, whichever sign-in method was used.
+     *
+     * @param userId - Better Auth user id the session is being created for.
+     * @returns True when the account is marked deleted.
+     */
+    isAccountDeleted: (userId: string) => Promise<boolean>;
 }
 
 /**
@@ -244,6 +255,18 @@ export function createAuth(deps: ICreateAuthDependencies) {
                 }
             },
             session: {
+                create: {
+                    before: async (session): Promise<void> => {
+                        // Every sign-in method ends by creating a session, so
+                        // this one check keeps a deleted account out whether
+                        // it used a code, a passkey, or a social provider.
+                        await refuseDeletedAccount({
+                            userId: session.userId,
+                            isAccountDeleted: deps.isAccountDeleted,
+                            log
+                        });
+                    }
+                },
                 delete: {
                     after: async (session): Promise<void> => {
                         // Sign-out and revocation both delete the session row,
@@ -261,6 +284,30 @@ export function createAuth(deps: ICreateAuthDependencies) {
         }
     });
     return auth;
+}
+
+/**
+ * Refuse to create a session for an account an admin has deleted.
+ *
+ * A deleted account keeps its user row so audit records still resolve, which
+ * means Better Auth finds the user and would sign it in. Throwing here stops
+ * the sign-in with a 403 before any session row or cookie exists.
+ *
+ * @param params.userId - The user the session is being created for.
+ * @param params.isAccountDeleted - Lookup that reports a deleted account.
+ * @param params.log - Logger scoped to the auth component.
+ * @throws {APIError} `FORBIDDEN` when the account is deleted.
+ */
+async function refuseDeletedAccount(params: {
+    userId: string;
+    isAccountDeleted: (userId: string) => Promise<boolean>;
+    log: ISystemLogService;
+}): Promise<void> {
+    const { userId, isAccountDeleted, log } = params;
+    if (await isAccountDeleted(userId)) {
+        log.warn({ userId }, 'Sign-in refused: the account has been deleted');
+        throw new APIError('FORBIDDEN', { message: 'This account has been deleted.' });
+    }
 }
 
 /**
