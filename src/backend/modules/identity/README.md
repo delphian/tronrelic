@@ -193,6 +193,7 @@ Every method takes the resolved Better Auth user id first — the service never 
 |--------|---------|
 | `countAccounts()` | Total BA account count |
 | `getAccount(baUserId)` | One account summary, or null |
+| `getAccountByEmail(email)` | One account summary matched on the whole address, case-insensitively, or null. Use instead of searching `listAccounts` for an address, whose substring match plus page limit can hide the account |
 | `getAccountsByIds(baUserIds)` | Summaries for a page of ids in one `$in` query; ids with no account are left out, order not guaranteed |
 | `listAccounts(options?)` | Paginated/searched summaries + unpaginated total |
 
