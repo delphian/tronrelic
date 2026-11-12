@@ -18,8 +18,8 @@
 import type { Collection, ObjectId } from 'mongodb';
 import type { IDatabaseService, ISystemLogService } from '@/types';
 import { AUTH_USERS_COLLECTION } from './auth-constants.js';
-import { ADMIN_GROUP_ID } from './group.service.js';
-import { toUserKey } from './user-id.js';
+import type { AdminRemovalOutcome } from './group.service.js';
+import { toUserKey, userIdFromKey } from './user-id.js';
 
 /**
  * How a deletion request ended. Every value other than `deleted` means nothing
@@ -51,13 +51,15 @@ export interface IAccountDeletionRequest {
  */
 export interface IAccountDeletionGroups {
     /**
-     * Count the members of a group, to tell whether the target is the last admin.
+     * Take the target out of the `admin` group unless they are the only live
+     * admin. The group service owns this rule and applies it the same way for
+     * the group editor, so two requests running together cannot remove the
+     * last admin between them.
      *
-     * @param groupId - Group to count.
-     * @param options - Page window; only the total is read.
-     * @returns The unpaginated member total.
+     * @param userId - Better Auth user id of the account being deleted.
+     * @returns `last-admin` when the deletion must be refused.
      */
-    getMembers(groupId: string, options?: { limit?: number; skip?: number }): Promise<{ userIds: string[]; total: number }>;
+    removeAdminKeepingOne(userId: string): Promise<AdminRemovalOutcome>;
 
     /**
      * Replace a user's memberships. Called with an empty list so a deleted
@@ -146,6 +148,12 @@ export class AccountDeletionService {
     /**
      * Soft-delete one account.
      *
+     * The target id is converted to its canonical lowercase hex form before
+     * any rule is applied, because sessions, OAuth rows, and socket rooms are
+     * keyed by that exact string. An id that differs from the caller's only in
+     * letter case names the same account, so comparing the raw string would
+     * let an admin delete their own account and then revoke nothing.
+     *
      * The row is marked first, because that is what stops a new sign-in, and
      * the sessions, groups, connected apps, and sockets are removed after it.
      * Repeating the call for an account that is already marked runs the
@@ -162,9 +170,16 @@ export class AccountDeletionService {
         const doc = key ? await this.authUsers.findOne({ _id: key }) : null;
         let outcome: AccountDeletionOutcome = 'not-found';
         if (key && doc) {
-            const refusal = await this.findRefusal(request, doc);
+            const targetUserId = userIdFromKey(key);
+            const refusal = this.findRefusal(request, doc, targetUserId);
             if (refusal) {
                 outcome = refusal;
+            } else if ((await this.deps.groups.removeAdminKeepingOne(targetUserId)) === 'last-admin') {
+                // Deleting the only admin would leave nobody able to sign in
+                // to the admin pages. This runs last among the refusals
+                // because it is the one check that writes: on success the
+                // target has already left the admin group.
+                outcome = 'last-admin';
             } else {
                 if (!doc.deletedAt) {
                     await this.authUsers.updateOne(
@@ -172,7 +187,7 @@ export class AccountDeletionService {
                         { $set: { deletedAt: new Date(), deletedBy: request.actorUserId, groupsAtDeletion: doc.groups ?? [] } }
                     );
                 }
-                await this.revokeAccess(request.targetUserId);
+                await this.revokeAccess(targetUserId);
                 outcome = 'deleted';
             }
         }
@@ -180,28 +195,26 @@ export class AccountDeletionService {
     }
 
     /**
-     * Apply the rules that refuse a deletion.
+     * Apply the rules that refuse a deletion without reading or writing
+     * anything else. The last-admin rule is not here: it has to remove the
+     * target from the admin group to be safe against two requests running
+     * together, so `softDelete` applies it after these pass.
      *
      * The email check comes first so a wrong address is reported as that,
      * whatever else is true of the account.
      *
      * @param request - The deletion request.
      * @param doc - The target's stored user row.
+     * @param targetUserId - The target's canonical id, so a target that differs
+     *   from the caller's id only in letter case is still recognized as the caller.
      * @returns The reason to refuse, or null when the deletion may go ahead.
      */
-    private async findRefusal(request: IAccountDeletionRequest, doc: IDeletableUserDocument): Promise<AccountDeletionOutcome | null> {
+    private findRefusal(request: IAccountDeletionRequest, doc: IDeletableUserDocument, targetUserId: string): AccountDeletionOutcome | null {
         let refusal: AccountDeletionOutcome | null = null;
         if (request.confirmEmail.trim().toLowerCase() !== doc.email.toLowerCase()) {
             refusal = 'email-mismatch';
-        } else if (request.targetUserId === request.actorUserId) {
+        } else if (targetUserId === request.actorUserId) {
             refusal = 'self';
-        } else if ((doc.groups ?? []).includes(ADMIN_GROUP_ID)) {
-            // Deleting the only admin would leave nobody able to sign in to
-            // the admin pages.
-            const { total } = await this.deps.groups.getMembers(ADMIN_GROUP_ID, { limit: 1 });
-            if (total <= 1) {
-                refusal = 'last-admin';
-            }
         }
         return refusal;
     }

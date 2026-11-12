@@ -199,6 +199,8 @@ describe('GroupService', () => {
             const listener = useListener();
             const collection = mockDatabase.getCollection(AUTH_USERS_COLLECTION);
             vi.spyOn(collection, 'updateOne').mockResolvedValue({ matchedCount: 1 } as never);
+            // Another admin remains, so removing this one is allowed.
+            vi.spyOn(collection, 'countDocuments').mockResolvedValue(1 as never);
 
             await service.addMember(USER_ABC, 'admin');
             await service.removeMember(USER_ABC, 'admin');
@@ -239,6 +241,66 @@ describe('GroupService', () => {
             const [filter, update] = spy.mock.calls[0];
             expect((filter._id as ObjectId).toHexString()).toBe(USER_ABC);
             expect(update).toEqual({ $pull: { groups: 'admin' } });
+        });
+    });
+
+    // With no admin left nobody can reach the admin pages to add one back, so
+    // every path that removes an admin has to refuse the last one. The order
+    // of the steps is what makes that hold when two requests run together:
+    // the removal comes first and the count second.
+    describe('removeAdminKeepingOne', () => {
+        /**
+         * Stub the collection so the guarded removal matches an admin and the
+         * count of remaining live admins is the given number.
+         *
+         * @param remaining - Live admins left after the removal.
+         * @returns The updateOne and countDocuments spies.
+         */
+        function stubAdminRemoval(remaining: number) {
+            const collection = mockDatabase.getCollection(AUTH_USERS_COLLECTION);
+            const updateOne = vi.spyOn(collection, 'updateOne').mockResolvedValue({ matchedCount: 1 } as never);
+            const countDocuments = vi.spyOn(collection, 'countDocuments').mockResolvedValue(remaining as never);
+            return { updateOne, countDocuments };
+        }
+
+        it('removes an admin when another live admin remains, counting only after the removal', async () => {
+            const { updateOne, countDocuments } = stubAdminRemoval(1);
+
+            const outcome = await service.removeAdminKeepingOne(USER_ABC);
+
+            expect(outcome).toBe('removed');
+            expect(updateOne).toHaveBeenCalledTimes(1);
+            const [filter, update] = updateOne.mock.calls[0];
+            expect(filter).toMatchObject({ groups: 'admin' });
+            expect(update).toEqual({ $pull: { groups: 'admin' } });
+            expect(countDocuments.mock.calls[0][0]).toEqual({ groups: 'admin', deletedAt: null });
+            expect(updateOne.mock.invocationCallOrder[0]).toBeLessThan(countDocuments.mock.invocationCallOrder[0]);
+        });
+
+        it('puts admin back and refuses when no live admin would remain', async () => {
+            const { updateOne } = stubAdminRemoval(0);
+
+            const outcome = await service.removeAdminKeepingOne(USER_ABC);
+
+            expect(outcome).toBe('last-admin');
+            expect(updateOne).toHaveBeenCalledTimes(2);
+            expect(updateOne.mock.calls[1][1]).toEqual({ $addToSet: { groups: 'admin' } });
+        });
+
+        it('reports a user who is not an admin without counting', async () => {
+            const collection = mockDatabase.getCollection(AUTH_USERS_COLLECTION);
+            vi.spyOn(collection, 'updateOne').mockResolvedValue({ matchedCount: 0 } as never);
+            const countDocuments = vi.spyOn(collection, 'countDocuments');
+
+            expect(await service.removeAdminKeepingOne(USER_ABC)).toBe('not-admin');
+            expect(countDocuments).not.toHaveBeenCalled();
+        });
+
+        it('makes removeMember and setUserGroups refuse the only admin', async () => {
+            stubAdminRemoval(0);
+
+            await expect(service.removeMember(USER_ABC, 'admin')).rejects.toThrow(/only admin/i);
+            await expect(service.setUserGroups(USER_ABC, ['vip'])).rejects.toThrow(/only admin/i);
         });
     });
 

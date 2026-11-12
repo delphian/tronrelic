@@ -52,6 +52,18 @@ export class UserGroupSystemProtectedError extends Error {
 }
 
 /**
+ * A membership write would have left the `admin` group with no live member.
+ * With no admin, nobody can sign in to the admin pages to add one back, so
+ * the write is refused and nothing is changed. Maps to HTTP 409.
+ */
+export class UserGroupLastAdminError extends Error {
+    readonly name = 'UserGroupLastAdminError';
+    constructor(public readonly userId: string) {
+        super(`User "${userId}" is the only admin, so they cannot be removed from the admin group`);
+    }
+}
+
+/**
  * Membership write target user does not exist. Maps to HTTP 404.
  */
 export class UserGroupMemberNotFoundError extends Error {

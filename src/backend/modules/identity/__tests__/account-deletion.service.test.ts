@@ -29,7 +29,7 @@ describe('AccountDeletionService.softDelete', () => {
         deps = {
             database: { getCollection: () => ({ findOne, updateOne }) } as any,
             groups: {
-                getMembers: vi.fn(async () => ({ userIds: [], total: 2 })),
+                removeAdminKeepingOne: vi.fn(async () => 'not-admin' as const),
                 setUserGroups: vi.fn(async () => true)
             },
             revokeSessions: vi.fn(async () => undefined),
@@ -91,11 +91,38 @@ describe('AccountDeletionService.softDelete', () => {
         expect(updateOne).not.toHaveBeenCalled();
     });
 
+    // The route only checks that the id is hex, in either case, and ObjectId
+    // accepts both, so an uppercase copy of the caller's own id used to pass
+    // the self check and delete the caller.
+    it('refuses self-deletion when the target id differs from the caller only in case', async () => {
+        const outcome = await service.softDelete({ targetUserId: targetId.toUpperCase(), actorUserId: targetId, confirmEmail: 'target@example.com' });
+
+        expect(outcome).toBe('self');
+        expect(updateOne).not.toHaveBeenCalled();
+        expect(deps.revokeSessions).not.toHaveBeenCalled();
+    });
+
+    // Sessions, OAuth rows, and socket rooms are keyed by the canonical
+    // lowercase id, so a mixed-case id must never be passed on to them.
+    it('revokes with the canonical id when the submitted id is uppercase', async () => {
+        const outcome = await service.softDelete({ targetUserId: targetId.toUpperCase(), actorUserId: actorId, confirmEmail: 'target@example.com' });
+
+        expect(outcome).toBe('deleted');
+        expect(deps.revokeSessions).toHaveBeenCalledWith(targetId);
+        expect(deps.groups.setUserGroups).toHaveBeenCalledWith(targetId, []);
+        expect(deps.revokeConnectedApps).toHaveBeenCalledWith(targetId);
+        expect(deps.disconnectSockets).toHaveBeenCalledWith(targetId);
+    });
+
     // Without this rule the last admin could be removed, leaving nobody able
-    // to reach the admin pages.
+    // to reach the admin pages. The group service decides it, because it is
+    // the one place that can remove an admin safely when two requests run
+    // together.
     it('refuses to delete the only admin, and allows it when another admin exists', async () => {
         doc = { _id: targetKey, email: 'target@example.com', groups: ['admin'] };
-        vi.mocked(deps.groups.getMembers).mockResolvedValueOnce({ userIds: [], total: 1 });
+        vi.mocked(deps.groups.removeAdminKeepingOne)
+            .mockResolvedValueOnce('last-admin')
+            .mockResolvedValueOnce('removed');
 
         const onlyAdmin = await service.softDelete({ targetUserId: targetId, actorUserId: actorId, confirmEmail: 'target@example.com' });
         const oneOfTwo = await service.softDelete({ targetUserId: targetId, actorUserId: actorId, confirmEmail: 'target@example.com' });
@@ -103,6 +130,16 @@ describe('AccountDeletionService.softDelete', () => {
         expect(onlyAdmin).toBe('last-admin');
         expect(oneOfTwo).toBe('deleted');
         expect(updateOne).toHaveBeenCalledTimes(1);
+        expect(deps.revokeSessions).toHaveBeenCalledTimes(1);
+    });
+
+    // The admin removal writes, so a request refused for another reason must
+    // never reach it.
+    it('does not touch admin membership when the email or self check refuses', async () => {
+        await service.softDelete({ targetUserId: targetId, actorUserId: actorId, confirmEmail: 'wrong@example.com' });
+        await service.softDelete({ targetUserId: targetId, actorUserId: targetId, confirmEmail: 'target@example.com' });
+
+        expect(deps.groups.removeAdminKeepingOne).not.toHaveBeenCalled();
     });
 
     // A request that failed after marking the row must be repeatable, and the

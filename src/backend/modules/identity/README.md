@@ -124,6 +124,7 @@ An admin deletes an account from the Users tab of `/system/users`. The deletion 
 
 | Step | Effect |
 |------|--------|
+| Leave the admin group | `GroupService.removeAdminKeepingOne`; the deletion is refused here when the target is the only live admin |
 | Mark the row | Sets `deletedAt`, `deletedBy` (the admin's user id), and `groupsAtDeletion` |
 | Delete sessions | Through Better Auth's `deleteUserSessions`, so every device is signed out |
 | Clear groups | `setUserGroups(userId, [])`, so the account no longer counts as an admin or an `mcp-users` member |
@@ -141,7 +142,9 @@ A deleted account cannot sign in again. `databaseHooks.session.create.before` in
 | Typed email | The body's `confirmEmail` must equal the account's email, compared case-insensitively by the service | `400 EmailMismatch` |
 | Guards | The service refuses the caller's own account and the only member of the `admin` group | `409 CannotDeleteSelf`, `409 LastAdmin` |
 
-`IAccountSummary.deletedAt` is null for a live account. The Users tab shows a deleted account with a `Deleted` badge and no actions. Sign-in events for the account stay in `module_user_sign_in_events` until their normal 90-day expiry.
+**At least one live admin always remains.** `GroupService.removeAdminKeepingOne` is the one place an admin is removed, and account deletion, `removeMember`, and `setUserGroups` (the group editor on the Users tab) all go through it. It removes `admin` from the user in one atomic update, then counts the live admins left, and puts `admin` back and refuses when there are none. The count comes after the removal so that two requests running together cannot both succeed; the database has no multi-document transactions to do it another way. A deleted account is not counted as live. The group editor answers `409 LastAdmin` when refused.
+
+`IAccountSummary.deletedAt` is null for a live account. The Users tab shows a deleted account with a `Deleted` badge and one action, `Revoke again`, which opens the same confirmation modal and repeats the request. That action is there because a deletion that failed at the session, group, or connected-app step leaves the account marked while its existing sessions and connected apps still work; `deletedAt` is enforced only when a new session is created. Sign-in events for the account stay in `module_user_sign_in_events` until their normal 90-day expiry.
 
 ## AI Tools
 
