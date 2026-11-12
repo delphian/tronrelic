@@ -326,8 +326,10 @@ function readEventQuery(input: Record<string, unknown>): ISignInEventQuery {
 /**
  * Find the one account `identity-get-account` was asked about.
  *
- * A lookup by address searches the directory, which matches substrings, and
- * then keeps only the exact address, so `a@x.com` never returns `aa@x.com`.
+ * A lookup by address goes through the directory's exact-email lookup rather
+ * than its substring search. The search returns the newest matches up to a page
+ * limit, so an account whose address appears in enough newer emails or display
+ * names would be reported absent to an administrator investigating it.
  *
  * @param deps - Used for the directory reads.
  * @param input - The raw tool arguments: exactly one of `userId` and `email`.
@@ -339,12 +341,11 @@ async function findAccount(deps: IIdentityAiToolDependencies, input: Record<stri
     if ((userId === undefined) === (email === undefined)) {
         throw new IdentityToolInputError('Give either userId or email, not both and not neither.');
     }
-    let account: IAccountSummary | null;
+    let account: IAccountSummary | null = null;
     if (userId !== undefined) {
         account = await deps.accounts.getAccount(userId);
-    } else {
-        const { accounts } = await deps.accounts.listAccounts({ search: email, limit: MAX_ACCOUNT_LIMIT });
-        account = accounts.find(candidate => candidate.email.toLowerCase() === email) ?? null;
+    } else if (email !== undefined) {
+        account = await deps.accounts.getAccountByEmail(email);
     }
     return account;
 }

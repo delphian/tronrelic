@@ -127,6 +127,27 @@ export class AccountDirectoryService implements IAccountDirectoryService {
     }
 
     /**
+     * Fetch one account by its exact email address.
+     *
+     * Admin tooling handed an address has to reach that one account directly.
+     * Paging {@link listAccounts} cannot do it safely: that search matches the
+     * term anywhere in an email or display name, and the page limit keeps the
+     * newest matches. Anyone can put an address in their own display name, so
+     * enough newer matches push the real account off the page and make it look
+     * absent. Matching the whole address in one query cannot be hidden that
+     * way. The match is case-insensitive because the caller passes whatever an
+     * administrator typed.
+     *
+     * @param email - The full address to match.
+     * @returns The summary, or null when no account has that address.
+     */
+    public async getAccountByEmail(email: string): Promise<IAccountSummary | null> {
+        const pattern = `^${AccountDirectoryService.escapeRegex(email.trim())}$`;
+        const doc = await this.authUsers.findOne({ email: { $regex: pattern, $options: 'i' } });
+        return doc ? AccountDirectoryService.toSummary(doc) : null;
+    }
+
+    /**
      * Fetch several account summaries with one `$in` query, so a caller
      * labelling a page of rows does not pay one round trip per row.
      *

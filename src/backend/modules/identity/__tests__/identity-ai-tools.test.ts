@@ -83,6 +83,7 @@ describe('identity AI tools', () => {
             accounts: {
                 countAccounts: vi.fn(async () => 1),
                 getAccount: vi.fn(async (id: string) => (id === owner.id ? owner : null)),
+                getAccountByEmail: vi.fn(async (email: string) => (email.toLowerCase() === owner.email.toLowerCase() ? owner : null)),
                 getAccountsByIds: vi.fn(async () => [owner]),
                 listAccounts: vi.fn(async () => ({ accounts: [owner], total: 1 }))
             },
@@ -148,12 +149,14 @@ describe('identity AI tools', () => {
         expect(String(answer.error)).toContain('limit');
     });
 
-    it('finds an account by exact email only, ignoring a longer address that contains it', async () => {
-        const lookalike = { ...owner, id: 'b'.repeat(24), email: 'not-owner@example.com' };
-        vi.mocked(deps.accounts.listAccounts).mockResolvedValue({ accounts: [lookalike, owner], total: 2 });
-
+    // Resolving the address by paging the substring search would let anyone
+    // hide an account from this tool by putting its address in enough newer
+    // display names, so the exact lookup is what the tool must call.
+    it('resolves an email through the directory exact lookup, never the substring search', async () => {
         const answer = await call(AI_TOOL_NAMES.getAccount, { email: 'owner@example.com' }, adminCaller);
 
+        expect(deps.accounts.getAccountByEmail).toHaveBeenCalledWith('owner@example.com');
+        expect(deps.accounts.listAccounts).not.toHaveBeenCalled();
         expect(answer).toMatchObject({ found: true, account: { id: owner.id } });
         expect(deps.listSessions).toHaveBeenCalledWith(owner.id);
         expect(deps.listSignInEvents).toHaveBeenCalledWith({ email: 'owner@example.com' }, { limit: 20, offset: 0 });

@@ -105,6 +105,19 @@ export interface IAccountDirectoryService {
     getAccount(baUserId: string): Promise<IAccountSummary | null>;
 
     /**
+     * Fetch one account by its exact email address, matched case-insensitively.
+     *
+     * Use this rather than searching `listAccounts` for an address. That search
+     * matches the term anywhere in an email or display name and returns the
+     * newest matches first, so the account being looked for can sit past the
+     * page limit and look as though it does not exist.
+     *
+     * @param email - The full email address to match.
+     * @returns The summary, or null when no account has that address.
+     */
+    getAccountByEmail(email: string): Promise<IAccountSummary | null>;
+
+    /**
      * Fetch several account summaries in one query, for callers that label a
      * page of rows with account details. Calling `getAccount` once per row
      * costs one database round trip per row instead.
