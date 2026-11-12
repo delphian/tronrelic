@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { Trash2, Users as UsersIcon } from 'lucide-react';
+import { RotateCcw, Trash2, Users as UsersIcon } from 'lucide-react';
 import { Button } from '../../../../../components/ui/Button';
 import { Input } from '../../../../../components/ui/Input';
 import { Badge } from '../../../../../components/ui/Badge';
@@ -151,6 +151,10 @@ export function UsersMonitor() {
      * is refreshed, so the row shows as deleted from the server's own answer.
      * A refusal, such as deleting your own account or the only admin, comes
      * back as a message and is shown as a toast with the modal left open.
+     *
+     * This is also the retry path for an already-marked account. The service
+     * reruns the revocations and keeps the original mark, so an admin can
+     * finish a deletion whose revocation step failed.
      */
     const openDeleteModal = useCallback((account: AccountRow) => {
         const modalId = openModal({
@@ -300,10 +304,23 @@ export function UsersMonitor() {
                                         </td>
                                         <td><ClientTime date={account.createdAt} format="short" /></td>
                                         <td>
-                                            {/* A deleted account holds no groups and cannot be deleted
-                                                again, so it offers neither action. */}
+                                            {/* A deleted account holds no groups, so it offers no
+                                                membership editor. It keeps a revocation action because
+                                                a deletion whose session, group, or connected-app
+                                                revocation failed leaves the account marked while its
+                                                existing sessions and connected apps still work, and
+                                                repeating the request is how the service finishes it. */}
                                             {account.deletedAt ? (
-                                                <span className="text-muted">—</span>
+                                                <div className={styles.row_actions}>
+                                                    <Button
+                                                        size="sm"
+                                                        variant="secondary"
+                                                        onClick={() => openDeleteModal(account)}
+                                                        aria-label={`Re-run revocation for ${account.email}`}
+                                                    >
+                                                        <RotateCcw size={14} aria-hidden="true" /> Revoke again
+                                                    </Button>
+                                                </div>
                                             ) : (
                                                 <div className={styles.row_actions}>
                                                     <Button

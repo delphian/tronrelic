@@ -7,7 +7,8 @@ import {
     UserGroupNotFoundError,
     UserGroupConflictError,
     UserGroupSystemProtectedError,
-    UserGroupMemberNotFoundError
+    UserGroupMemberNotFoundError,
+    UserGroupLastAdminError
 } from '../services/user-group.errors.js';
 import { parsePositiveInt, parseNonNegativeInt } from '../../../api/query-params.js';
 
@@ -169,6 +170,10 @@ export class UserGroupController {
         }
         if (error instanceof UserGroupConflictError) {
             res.status(409).json({ error: 'Conflict', message: error.message });
+            return;
+        }
+        if (error instanceof UserGroupLastAdminError) {
+            res.status(409).json({ error: 'LastAdmin', message: 'This is the only admin account, so it must stay in the admin group' });
             return;
         }
         if (error instanceof UserGroupSystemProtectedError) {

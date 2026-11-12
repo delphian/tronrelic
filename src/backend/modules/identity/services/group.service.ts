@@ -26,6 +26,16 @@ import type { Collection, ObjectId } from 'mongodb';
 import type { IDatabaseService, ISystemLogService } from '@/types';
 import { AUTH_USERS_COLLECTION } from './auth-constants.js';
 import { toUserKey, userIdFromKey } from './user-id.js';
+import { UserGroupLastAdminError } from './user-group.errors.js';
+
+/**
+ * How an attempt to take a user out of the `admin` group ended.
+ *
+ * - `removed`: the user was an admin and no longer is.
+ * - `not-admin`: the user was not an admin, or does not exist; nothing changed.
+ * - `last-admin`: the user is the only live admin; nothing changed.
+ */
+export type AdminRemovalOutcome = 'removed' | 'not-admin' | 'last-admin';
 
 /**
  * Called after a user's group membership changes.
@@ -69,6 +79,12 @@ interface IAuthUserDoc {
      * `$set` writes from this service.
      */
     groups?: string[];
+
+    /**
+     * Set when an admin deleted the account. A deleted account cannot sign
+     * in, so it is never counted as a live admin.
+     */
+    deletedAt?: Date | null;
 }
 
 /**
@@ -269,15 +285,28 @@ export class GroupService {
      *
      * Idempotent — removing a non-member is a no-op via `$pull`.
      *
+     * Removing the `admin` group goes through
+     * {@link removeAdminKeepingOne}, so the only live admin cannot be removed.
+     *
      * @param userId - Better Auth user id.
      * @param groupId - Group id to remove.
      * @returns `true` when the user existed and the write matched,
      *          `false` when no user matched the id.
+     * @throws {UserGroupLastAdminError} When the user is the only live admin.
      */
     public async removeMember(userId: string, groupId: string): Promise<boolean> {
         const key = toUserKey(userId);
         let matched = false;
-        if (key) {
+        if (key && groupId === ADMIN_GROUP_ID) {
+            const outcome = await this.removeAdminKeepingOne(userId);
+            if (outcome === 'last-admin') {
+                throw new UserGroupLastAdminError(userId);
+            }
+            // The guarded removal only matches an admin, so a user who was not
+            // one is looked up separately to keep this method's return value.
+            matched = outcome === 'removed'
+                || (await this.getCollection().countDocuments({ _id: key }, { limit: 1 })) > 0;
+        } else if (key) {
             const result = await this.getCollection().updateOne(
                 { _id: key },
                 { $pull: { groups: groupId } }
@@ -298,16 +327,25 @@ export class GroupService {
      * {@link addMember} / {@link removeMember} for single-group
      * transitions because they avoid clobbering concurrent edits.
      *
+     * A list without `admin` first takes the user out of that group through
+     * {@link removeAdminKeepingOne}, so this write cannot remove the only live
+     * admin either.
+     *
      * @param userId - Better Auth user id.
      * @param groupIds - Complete list of group ids the user should belong to.
      * @returns `true` when the user existed and the write matched,
      *          `false` when no user matched the id.
+     * @throws {UserGroupLastAdminError} When the list drops `admin` from the
+     *   only live admin. Nothing is written in that case.
      */
     public async setUserGroups(userId: string, groupIds: string[]): Promise<boolean> {
         const key = toUserKey(userId);
         let matched = false;
         if (key) {
             const unique = Array.from(new Set(groupIds));
+            if (!unique.includes(ADMIN_GROUP_ID) && (await this.removeAdminKeepingOne(userId)) === 'last-admin') {
+                throw new UserGroupLastAdminError(userId);
+            }
             const result = await this.getCollection().updateOne(
                 { _id: key },
                 { $set: { groups: unique } }
@@ -318,6 +356,58 @@ export class GroupService {
             this.notifyMembershipChanged(userId);
         }
         return matched;
+    }
+
+    /**
+     * Take a user out of the `admin` group unless they are the only live admin.
+     *
+     * With no admin left, nobody can sign in to the admin pages to add one
+     * back. Every path that removes an admin goes through this method: the
+     * group editor, `removeMember`, and account deletion.
+     *
+     * A count followed by a separate write does not hold when two requests
+     * run together, because both can count two admins and both then remove
+     * one. The database here has no multi-document transactions, so the
+     * steps run in the opposite order:
+     *
+     * 1. Remove `admin` from the user in one atomic update that only matches
+     *    a user who has it.
+     * 2. Count the live admins that remain. A deleted account is not counted.
+     * 3. If none remain, put `admin` back on the user and refuse.
+     *
+     * Each request counts only after its own removal, so of two requests
+     * running together the later one always sees the earlier removal. At
+     * least one of them is refused, and both can be; an admin always remains.
+     *
+     * This method does not call the membership listener. Its callers do, once
+     * their own write is complete.
+     *
+     * @param userId - Better Auth user id to take out of the admin group.
+     * @returns How the attempt ended; see {@link AdminRemovalOutcome}.
+     */
+    public async removeAdminKeepingOne(userId: string): Promise<AdminRemovalOutcome> {
+        const key = toUserKey(userId);
+        let outcome: AdminRemovalOutcome = 'not-admin';
+        if (key) {
+            const collection = this.getCollection();
+            const claim = await collection.updateOne(
+                { _id: key, groups: ADMIN_GROUP_ID },
+                { $pull: { groups: ADMIN_GROUP_ID } }
+            );
+            if (claim.matchedCount > 0) {
+                const remaining = await collection.countDocuments(
+                    { groups: ADMIN_GROUP_ID, deletedAt: null },
+                    { limit: 1 }
+                );
+                if (remaining > 0) {
+                    outcome = 'removed';
+                } else {
+                    await collection.updateOne({ _id: key }, { $addToSet: { groups: ADMIN_GROUP_ID } });
+                    outcome = 'last-admin';
+                }
+            }
+        }
+        return outcome;
     }
 
     /**
