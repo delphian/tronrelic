@@ -35,15 +35,17 @@ import { cimd } from '@better-auth/cimd';
 import { fetchClientMetadataResource } from '@better-auth/cimd/node';
 import { Resend } from 'resend';
 import type { Db } from 'mongodb';
-import type { ISystemLogService } from '@/types';
+import type { IMcpClientAdmissionPolicy, ISystemLogService } from '@/types';
 import { MCP_OAUTH_SCOPES, MCP_USERS_GROUP_ID, assertPublicHttpUrl } from '@/types';
 import { env } from '../../config/env.js';
 import type { GroupService } from './services/group.service.js';
 import type { IAuthRateLimitRedis } from './services/IAuthRateLimitRedis.js';
 import type { IIdentitySocketDisconnector } from './services/IIdentitySocketDisconnector.js';
 import type { IOAuthServerConfig } from './services/oauth-server-config.js';
+import type { ISignInEventRecorder } from './services/ISignInEventRecorder.js';
 import { createRedisRateLimitStorage } from './services/createRedisRateLimitStorage.js';
 import { createEmailOtpThrottle } from './services/createEmailOtpThrottle.js';
+import { createSignInAuditLog } from './services/createSignInAuditLog.js';
 import { createMcpConsentGate } from './services/createMcpConsentGate.js';
 import { userGroups } from './services/userGroups.js';
 
@@ -105,12 +107,28 @@ export interface ICreateAuthDependencies {
     socketDisconnector: IIdentitySocketDisconnector;
 
     /**
+     * Stores each sign-in code request and sign-in attempt. The system log
+     * records the same events, but only this store can be searched by address,
+     * account, or caller.
+     */
+    signInEvents: ISignInEventRecorder;
+
+    /**
      * Public URLs of the OAuth authorization server: the base URL Better Auth
      * runs under, the issuer written into access tokens, the MCP resource URL
      * tokens are bound to, and the page that signs users in and asks for
      * consent.
      */
     oauth: IOAuthServerConfig;
+
+    /**
+     * The MCP module's rule for which apps may register with the OAuth
+     * server. Without it any HTTPS address is accepted as an app, and the
+     * server fetches and stores whatever document that address serves. The
+     * rule is injected rather than imported because the MCP module starts
+     * after this one.
+     */
+    clientAdmission: IMcpClientAdmissionPolicy;
 }
 
 /**
@@ -173,14 +191,18 @@ export function createAuth(deps: ICreateAuthDependencies) {
         baseURL: deps.oauth.baseUrl,
         emailAndPassword: { enabled: false },
         socialProviders: buildSocialProviders(),
-        plugins: buildPlugins(log, deps.oauth),
+        plugins: buildPlugins(log, deps.oauth, deps.clientAdmission),
         // Only the storage changes here; Better Auth still decides the limits
         // and still enables limiting in production only.
         rateLimit: {
             customStorage: createRedisRateLimitStorage(deps.rateLimitRedis, env.REDIS_NAMESPACE, log)
         },
         hooks: {
-            before: createEmailOtpThrottle(deps.rateLimitRedis, env.REDIS_NAMESPACE, log)
+            before: createEmailOtpThrottle(deps.rateLimitRedis, env.REDIS_NAMESPACE, log),
+            // Records every sign-in code request and sign-in attempt, so an
+            // operator can see who asked for a code and whether a sign-in
+            // followed.
+            after: createSignInAuditLog(log, deps.signInEvents)
         },
         user: {
             modelName: AUTH_COLLECTIONS.users,
@@ -205,6 +227,13 @@ export function createAuth(deps: ICreateAuthDependencies) {
             user: {
                 create: {
                     after: async (user): Promise<void> => {
+                        // A first sign-in creates the account, so this entry
+                        // is what tells a new account apart from a returning
+                        // one in the sign-in log.
+                        log.info(
+                            { userId: user.id, email: user.email, emailVerified: user.emailVerified },
+                            'Account created'
+                        );
                         await maybePromoteToAdmin({
                             user,
                             adminEmails,
@@ -217,6 +246,10 @@ export function createAuth(deps: ICreateAuthDependencies) {
             session: {
                 delete: {
                     after: async (session): Promise<void> => {
+                        // Sign-out and revocation both delete the session row,
+                        // so this is the one place both are recorded. Only the
+                        // ids are logged, never the session token.
+                        log.info({ userId: session.userId, sessionId: session.id }, 'Session ended');
                         await disconnectSessionSockets({
                             session,
                             socketDisconnector: deps.socketDisconnector,
@@ -339,9 +372,10 @@ type AuthPlugin = ReturnType<
  *
  * @param log - Logger passed into the OTP sender for fallback diagnostics.
  * @param oauth - Public URLs of the OAuth server and the MCP resource.
+ * @param clientAdmission - The MCP module's rule for which apps may register.
  * @returns Ordered list of Better Auth plugins for the instance.
  */
-function buildPlugins(log: ISystemLogService, oauth: IOAuthServerConfig): AuthPlugin[] {
+function buildPlugins(log: ISystemLogService, oauth: IOAuthServerConfig, clientAdmission: IMcpClientAdmissionPolicy): AuthPlugin[] {
     const plugins: AuthPlugin[] = [
         passkey({
             // Remap the plugin's owned `passkey` table to the project's
@@ -349,7 +383,7 @@ function buildPlugins(log: ISystemLogService, oauth: IOAuthServerConfig): AuthPl
             // other BA-managed collections.
             schema: { passkey: { modelName: AUTH_COLLECTIONS.passkeys } }
         }),
-        ...buildOAuthPlugins(log, oauth)
+        ...buildOAuthPlugins(log, oauth, clientAdmission)
     ];
     const isProduction = env.NODE_ENV === 'production' || env.ENV === 'production';
     const hasResend = Boolean(env.RESEND_API_KEY && env.RESEND_FROM_ADDRESS);
@@ -398,16 +432,24 @@ function buildPlugins(log: ISystemLogService, oauth: IOAuthServerConfig): AuthPl
  *   without it a non-member posting to `/oauth2/consent` directly would leave
  *   a stored grant behind even though no token is ever issued.
  * - `cimd` lets a client identify itself with the HTTPS URL of a metadata
- *   document, which is how Claude connects without registering first. The
- *   document is fetched through the plugin's Node transport, which resolves
- *   the host once, refuses private addresses, and pins the connection; the
- *   platform's own URL guard runs first as a cheap pre-check.
+ *   document, which is how Claude connects without registering first. Two
+ *   checks run before any document is fetched: the platform's own URL guard,
+ *   which refuses a private or non-HTTPS address, and the MCP module's
+ *   admission rule, which refuses an app whose host is not on its allowed
+ *   list. The plugin runs both again before every later fetch of a stored
+ *   app's document, and it keeps fetched documents only in memory, so an app
+ *   registered before the rule existed is refused on its first use after a
+ *   restart. The document is then fetched through the plugin's Node transport, which
+ *   resolves the host once, refuses private addresses, and pins the
+ *   connection.
  *
  * @param log - Logger for client-creation audit lines and refusals.
  * @param oauth - Public URLs of the OAuth server and the MCP resource.
+ * @param clientAdmission - The MCP module's rule for which apps may register.
+ *   It also receives each app's details when its document is re-read.
  * @returns The four plugins, in the order they must load.
  */
-function buildOAuthPlugins(log: ISystemLogService, oauth: IOAuthServerConfig): AuthPlugin[] {
+function buildOAuthPlugins(log: ISystemLogService, oauth: IOAuthServerConfig, clientAdmission: IMcpClientAdmissionPolicy): AuthPlugin[] {
     return [
         jwt({
             jwt: { issuer: oauth.issuer },
@@ -479,14 +521,21 @@ function buildOAuthPlugins(log: ISystemLogService, oauth: IOAuthServerConfig): A
             fetchClientMetadataResource,
             metadataProfile: 'mcp-2026-07-28',
             /**
-             * Cheap pre-check that refuses a metadata URL pointing at a
-             * private or non-HTTPS target before the plugin's pinned fetch
-             * runs, so an obviously internal address never reaches the network.
+             * Decide whether an app's metadata document may be fetched at all.
+             *
+             * The URL guard runs first and refuses a private or non-HTTPS
+             * target, so an obviously internal address never reaches the
+             * network. The MCP module's admission rule runs second and
+             * refuses an app whose host is not on its allowed list, which
+             * stops an unknown party from registering an app by pointing the
+             * server at a document of its own. A refused app is never
+             * fetched and no client row is stored for it.
              *
              * @param clientIdUrl - The client id URL an app presented.
-             * @returns True when the URL is an HTTPS URL on a public host.
+             * @returns True when the URL is public HTTPS and its host is allowed.
              */
-            isMetadataDocumentUrlAllowed: (clientIdUrl: string) => assertPublicHttpUrl(clientIdUrl).ok,
+            isMetadataDocumentUrlAllowed: (clientIdUrl: string) =>
+                assertPublicHttpUrl(clientIdUrl).ok && clientAdmission.isAllowed(clientIdUrl),
             /**
              * Record every client created from a metadata document, so an
              * operator can see which apps have registered themselves.
@@ -502,6 +551,33 @@ function buildOAuthPlugins(log: ISystemLogService, oauth: IOAuthServerConfig): A
             onClientCreated: (event) => {
                 const { clientId, name, uri, redirectUris } = event.client;
                 log.info({ clientId, name, uri, redirectUris }, 'OAuth client registered from a client metadata document');
+            },
+            /**
+             * Hand an app's details, before and after its metadata document
+             * was re-read, to the MCP module's admission rule.
+             *
+             * The app's owner can edit that document at any time, so the name
+             * and redirect addresses users approved can change later. The
+             * rule compares the two states and logs a difference. Only the
+             * compared fields are copied out, for the same reason as above:
+             * the event also carries Better Auth's endpoint context.
+             *
+             * @param event - The plugin's description of the refresh; only the
+             *   `client` and `previousClient` fields are read.
+             */
+            onClientRefreshed: (event) => {
+                clientAdmission.noteRefreshed(
+                    {
+                        clientId: event.previousClient.clientId,
+                        name: event.previousClient.name ?? null,
+                        redirectUris: event.previousClient.redirectUris ?? []
+                    },
+                    {
+                        clientId: event.client.clientId,
+                        name: event.client.name ?? null,
+                        redirectUris: event.client.redirectUris ?? []
+                    }
+                );
             }
         })
     ];

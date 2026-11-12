@@ -23,11 +23,13 @@ import { fromNodeHeaders, toNodeHandler } from 'better-auth/node';
 import { oauthProviderAuthServerMetadata } from '@better-auth/oauth-provider';
 import type {
     IAccountDirectoryService,
+    ServiceWatchDisposer,
     ICacheService,
     IConnectedAppsService,
     IDatabaseService,
     IHookRegistry,
     IMcpAccessTokenVerifier,
+    IMcpClientAdmissionPolicy,
     IMenuService,
     IModule,
     IModuleMetadata,
@@ -63,6 +65,8 @@ import { resolveOAuthServerConfig, type IOAuthServerConfig } from './services/oa
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
 import type { IAuthRateLimitRedis } from './services/IAuthRateLimitRedis.js';
 import type { IIdentitySocketDisconnector } from './services/IIdentitySocketDisconnector.js';
+import { SignInEventStore } from './services/SignInEventStore.js';
+import { registerIdentityAiTools, type IAccountSessionView } from './ai-tools.js';
 
 /**
  * Dependencies the identity module needs at bootstrap.
@@ -105,6 +109,13 @@ export interface IIdentityModuleDependencies {
      * rejoins only the identity rooms that user still has.
      */
     socketDisconnector: IIdentitySocketDisconnector;
+
+    /**
+     * The MCP module's rule for which apps may register with the OAuth
+     * server, handed to the Better Auth factory. The MCP module owns the rule
+     * but starts after this one, so startup builds it and passes it in here.
+     */
+    oauthClientAdmission: IMcpClientAdmissionPolicy;
 }
 
 /**
@@ -134,6 +145,31 @@ const PROFILE_SUBMENU_TABS: ReadonlyArray<{ label: string; tab: string; icon: st
 ];
 
 /**
+ * Menu namespace for the tab row on `/system/users`. Kept out of `main` so the
+ * tabs never appear in the global navigation; only that page's own
+ * `MenuNavClient` reads this namespace (menu module's Submenu Pattern).
+ */
+const USERS_ADMIN_SUBMENU_NAMESPACE = 'identity';
+
+/**
+ * The `/system/users` tab row, declared as menu nodes so the row inherits
+ * per-user gating, ordering, and live `menu:update` refresh, and so a plugin
+ * can add a tab.
+ *
+ * Database and Logs are the tabs every module with storage and an admin page
+ * must offer. An operator checking who requested a sign-in code, or who signed
+ * in, reads the module's own log entries and collections on this page instead
+ * of picking them out of `/system/logs` and `/system/database`. The module
+ * registers no scheduler jobs, so there is no Schedules tab.
+ */
+const USERS_ADMIN_SUBMENU_TABS: ReadonlyArray<{ label: string; tab: string; icon: string; order: number }> = [
+    { label: 'Users', tab: 'users', icon: 'Users', order: 0 },
+    { label: 'Groups', tab: 'groups', icon: 'UsersRound', order: 1 },
+    { label: 'Database', tab: 'database', icon: 'Database', order: 2 },
+    { label: 'Logs', tab: 'logs', icon: 'ScrollText', order: 3 }
+];
+
+/**
  * Better Auth identity module.
  */
 export class IdentityModule implements IModule<IIdentityModuleDependencies> {
@@ -159,6 +195,10 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
     private accessTokenVerifier!: OAuthAccessTokenVerifier;
     private oauthConfig!: IOAuthServerConfig;
     private auth!: Auth;
+    private signInEventStore!: SignInEventStore;
+
+    /** Disposer for the `'ai-tools'` watch that registers the identity AI tools. */
+    private unwatchAiTools: ServiceWatchDisposer | null = null;
 
     private walletController!: WalletController;
     private groupController!: UserGroupController;
@@ -256,13 +296,22 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
         const isProduction = env.NODE_ENV === 'production' || env.ENV === 'production';
         const authBaseUrl = env.BETTER_AUTH_URL || env.SITE_URL || (isProduction ? undefined : 'http://localhost:3000');
         this.oauthConfig = resolveOAuthServerConfig(authBaseUrl);
+
+        // Searchable record of sign-in code requests and sign-in attempts. The
+        // audit hook inside Better Auth writes to it and the identity AI tools
+        // read from it. Built before the auth instance, which needs it.
+        this.signInEventStore = new SignInEventStore(this.database, this.logger);
+        await this.signInEventStore.createIndexes();
+
         this.auth = createAuth({
             db: authDb,
             groupService: this.groupService,
             logger: this.logger,
             rateLimitRedis: dependencies.redis,
             socketDisconnector: dependencies.socketDisconnector,
-            oauth: this.oauthConfig
+            signInEvents: this.signInEventStore,
+            oauth: this.oauthConfig,
+            clientAdmission: dependencies.oauthClientAdmission
         });
         setAuthInstance(this.auth);
         this.logger.info('Better Auth instance configured and facade wired');
@@ -348,6 +397,40 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
     }
 
     /**
+     * List one account's live sessions for the identity AI tools.
+     *
+     * Reads through Better Auth's own adapter, which knows how the session
+     * collection stores the user id. Each session is copied field by field,
+     * because the stored row also holds the session token, and anyone who can
+     * read a token can use the session.
+     *
+     * @param userId - Better Auth user id of the account.
+     * @returns The account's unexpired sessions, newest first, without tokens.
+     */
+    private async listAccountSessions(userId: string): Promise<IAccountSessionView[]> {
+        const context = await this.auth.$context;
+        const sessions = await context.internalAdapter.listSessions(userId, { onlyActiveSessions: true });
+        /**
+         * Render a stored time as ISO 8601 text, or null when the row has none.
+         *
+         * @param value - The stored time.
+         * @returns The time as text, or null.
+         */
+        const toIso = (value: Date | string | null | undefined): string | null =>
+            value ? new Date(value).toISOString() : null;
+        return sessions
+            .map((session) => ({
+                id: session.id,
+                createdAt: toIso(session.createdAt),
+                updatedAt: toIso(session.updatedAt),
+                expiresAt: toIso(session.expiresAt),
+                ipAddress: session.ipAddress ?? null,
+                userAgent: session.userAgent ?? null
+            }))
+            .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
+    }
+
+    /**
      * The verifier the MCP module uses to check bearer tokens. Exposed for
      * bootstrap wiring; the identity module keeps the signing keys.
      *
@@ -421,6 +504,24 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
             });
 
             this.logger.info('Users menu item registered under the System container');
+
+            // Register the /system/users tab row as a namespaced menu (Submenu
+            // Pattern). The nodes are memory-only and sit outside the System
+            // container, so the container's forced `requiresAdmin` does not
+            // reach them and each node sets it for itself.
+            for (const tab of USERS_ADMIN_SUBMENU_TABS) {
+                await this.menuService.create({
+                    namespace: USERS_ADMIN_SUBMENU_NAMESPACE,
+                    label: tab.label,
+                    url: `/system/users?tab=${tab.tab}`,
+                    icon: tab.icon,
+                    order: tab.order,
+                    parent: null,
+                    enabled: true,
+                    requiresAdmin: true
+                });
+            }
+            this.logger.info('Users admin submenu tab nodes registered');
 
             // Register the /profile hub's in-page tab row as a namespaced menu
             // (menu module's Submenu Pattern). Memory-only nodes outside the
@@ -510,6 +611,22 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
         this.serviceRegistry.register('accounts', this.accountDirectoryService);
         this.serviceRegistry.register('user-settings', this.userSettingsService);
         this.logger.info('Registered user-groups, wallets, accounts, user-settings on the service registry');
+
+        // Read-only AI tools for reviewing accounts and sign-in activity. Each
+        // dependency is a narrow function, so the tools never hold the auth
+        // instance or a collection handle.
+        this.unwatchAiTools = registerIdentityAiTools(
+            this.serviceRegistry,
+            {
+                accounts: this.accountDirectoryService,
+                listSignInEvents: (query, page) => this.signInEventStore.list(query, page),
+                listSessions: (userId) => this.listAccountSessions(userId),
+                listWallets: (userId) => this.walletService.listWallets(userId),
+                listConnectedApps: (userId) => this.connectedAppsService.listForUser(userId),
+                isAdmin: (userId) => this.userGroupService.isAdmin(userId)
+            },
+            this.logger
+        );
 
         this.logger.info('Identity module running');
     }
