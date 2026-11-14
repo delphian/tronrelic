@@ -531,6 +531,13 @@ interface IGscFetchResult {
     truncated: boolean;
     /** Google's first non-final day for the window, from the first response. */
     firstIncompleteDate: string | null;
+    /**
+     * Oldest day (YYYY-MM-DD) any returned row names, or null when no row came
+     * back. The prune starts here instead of at the window's first day,
+     * because Google omits a day it no longer holds and the archive is the
+     * only place such a day survives.
+     */
+    earliestDay: string | null;
 }
 
 /**
@@ -546,6 +553,27 @@ function parseDay(dateStr: string | null | undefined): Date | null {
         }
     }
     return date;
+}
+
+/**
+ * Track the oldest day a response has named so far, so a prune stops short of
+ * days Google no longer holds. Google omits any day outside its 16-month
+ * history, and those days survive only in the archive, so a day no returned
+ * row names must keep its stored rows. Comparing `YYYY-MM-DD` text is the same
+ * as comparing the days themselves, so no date is constructed for the
+ * comparison.
+ *
+ * @param rows - One page of returned rows.
+ * @param dateIndex - Position of the `date` dimension in each row's keys.
+ * @param current - Oldest day found in earlier pages, or null for the first.
+ * @returns The oldest day seen across both, or null when no row carries one.
+ */
+function earliestReturnedDay(rows: GscApiRow[], dateIndex: number, current: string | null): string | null {
+    return rows.reduce<string | null>((oldest, row) => {
+        const day = row.keys?.[dateIndex];
+        const usable = typeof day === 'string' && parseDay(day) !== null && (oldest === null || day < oldest);
+        return usable ? day : oldest;
+    }, current);
 }
 
 /**
@@ -887,7 +915,11 @@ export class GscService {
      * prune that old row would stay and overstate the day. The prune is
      * skipped after an empty response, so an empty answer cannot wipe a window
      * that held data, and after pagination stopped at the safety limit,
-     * because the rows past the limit were not refetched.
+     * because the rows past the limit were not refetched. It also begins at
+     * the oldest day the response actually named rather than at the window's
+     * first day, because Google omits a day it no longer holds: a backfill
+     * window straddling Google's 16-month limit would otherwise delete the
+     * expired days' archived rows, which exist nowhere else.
      *
      * @param searchConsole - Authenticated Search Console client.
      * @param siteUrl - GSC property URL.
@@ -930,8 +962,8 @@ export class GscService {
         let firstIncompleteDate: string | null = null;
         for (const dataset of datasets) {
             const result = await this.fetchRowPages(searchConsole, siteUrl, start, end, dataset.dimensions, dataset.write);
-            if (result.rowsReturned > 0 && !result.truncated) {
-                await this.archive.prune(dataset.table, start, end, fetchedAt);
+            if (result.rowsReturned > 0 && !result.truncated && result.earliestDay) {
+                await this.archive.prune(dataset.table, result.earliestDay, end, fetchedAt);
             }
             if (dataset.table === 'gsc_daily_totals') {
                 dailyRowsReturned = result.rowsReturned;
@@ -983,8 +1015,8 @@ export class GscService {
      * @param end - Last day of the window (YYYY-MM-DD), inclusive.
      * @param dimensions - The request's dimensions, which fix each row's key order.
      * @param onPage - Stores one non-empty page of rows.
-     * @returns The row count, whether pagination was cut short, and Google's
-     *   first non-final day.
+     * @returns The row count, whether pagination was cut short, Google's
+     *   first non-final day, and the oldest day any returned row names.
      */
     private async fetchRowPages(
         searchConsole: SearchConsoleClient,
@@ -1000,6 +1032,8 @@ export class GscService {
         let truncated = false;
         let hasMore = true;
         let firstIncompleteDate: string | null = null;
+        let earliestDay: string | null = null;
+        const dateIndex = dimensions.indexOf('date');
 
         while (hasMore) {
             if (pageCount >= GSC_MAX_PAGES) {
@@ -1025,6 +1059,7 @@ export class GscService {
                 const rows = response.data.rows ?? [];
                 if (rows.length > 0) {
                     await onPage(rows);
+                    earliestDay = earliestReturnedDay(rows, dateIndex, earliestDay);
                     rowsReturned += rows.length;
                     startRow += rows.length;
                 }
@@ -1032,7 +1067,7 @@ export class GscService {
             }
         }
 
-        return { rowsReturned, truncated, firstIncompleteDate };
+        return { rowsReturned, truncated, firstIncompleteDate, earliestDay };
     }
 
     /**
