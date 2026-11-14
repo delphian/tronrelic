@@ -265,8 +265,9 @@ const nextConfig = {
                 source: '/uploads/:path*',
                 destination: `${resolveInternalApiOrigin()}/uploads/:path*`,
             },
-            // The MCP endpoint and the OAuth discovery documents live on the
-            // backend but must be reachable at the site root, because MCP
+            // The MCP endpoints, the Server Card, the AI Catalog, and the OAuth
+            // discovery documents live on the backend but must be reachable
+            // at the site root, because MCP
             // clients derive their URLs from the public origin. Production
             // Nginx routes these straight to the backend; these rewrites cover
             // local development and any proxy that sends `/` to Next.js.
@@ -277,6 +278,14 @@ const nextConfig = {
             {
                 source: '/mcp/public',
                 destination: `${resolveInternalApiOrigin()}/mcp/public`,
+            },
+            {
+                source: '/mcp/public/server-card',
+                destination: `${resolveInternalApiOrigin()}/mcp/public/server-card`,
+            },
+            {
+                source: '/.well-known/ai-catalog.json',
+                destination: `${resolveInternalApiOrigin()}/.well-known/ai-catalog.json`,
             },
             {
                 source: '/.well-known/oauth-protected-resource/:path*',

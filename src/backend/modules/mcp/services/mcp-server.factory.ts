@@ -30,14 +30,16 @@ import type {
 } from '@/types';
 import { UNTRUSTED_CONTENT_SYSTEM_CLAUSE } from '@/types';
 import type { IMcpCaller } from './IMcpCaller.js';
+import type { IMcpServerIdentity } from './IMcpServerIdentity.js';
 import type { IMcpServedTool } from './mcp-tool-exposure.service.js';
 import type { SecretScrubber } from './SecretScrubber.js';
 
-/** Server name reported to clients in `serverInfo`. */
+/**
+ * Server name reported to clients in `serverInfo`. Kept as the short name
+ * clients already store for this server; the reverse-DNS name lives in the
+ * Server Card, which is where registries read it.
+ */
 const SERVER_NAME = 'tronrelic';
-
-/** Server version reported to clients; bump when the served surface changes shape. */
-const SERVER_VERSION = '1.0.0';
 
 /**
  * Value recorded as the audit record's `aiProviderId` for MCP calls. The model
@@ -62,16 +64,32 @@ const TOOLS_LIST_TTL_MS = 60_000;
 const TOOL_FAILED_MESSAGE = 'The tool call failed. Try again later.';
 
 /**
- * Guidance returned from `server/discover`. Clients may place it in the
- * model's system prompt, which is the only place the platform's standing rule
- * about untrusted tool results can reach a model it does not control. The
- * per-result `{ untrustedContentNotice, data }` wrapper remains the protection
- * that is always present.
+ * Build the guidance returned from `server/discover` for one endpoint.
+ *
+ * Clients may place it in the model's system prompt, which is the only place
+ * the platform's standing rule about untrusted tool results can reach a model
+ * it does not control, so every variant ends with that rule. The per-result
+ * `{ untrustedContentNotice, data }` wrapper remains the protection that is
+ * always present. The public variant also tells the model how to treat
+ * freshness and limit refusals, because an anonymous caller has no account
+ * page to learn either from, and names the terms that apply to the service.
+ *
+ * @param identity - The server identity, for the site, terms, and privacy URLs.
+ * @param endpoint - Which endpoint the server is answering on.
+ * @returns The instructions text.
  */
-const SERVER_INSTRUCTIONS = [
-    'TronRelic exposes tools over TRON blockchain data and TronRelic content. Each tool\'s annotations say whether it only reads.',
-    UNTRUSTED_CONTENT_SYSTEM_CLAUSE
-].join('\n\n');
+function buildInstructions(identity: IMcpServerIdentity, endpoint: IMcpCaller['endpoint']): string {
+    const lines = endpoint === 'public'
+        ? [
+            `TronRelic (${identity.websiteUrl}) offers read-only TRON data here without sign-in. The tools listed are the ones currently offered, and none of them change anything.`,
+            'Results say when their data was captured. Rental prices change during the day, so give that time whenever you quote a price.',
+            'Calls are limited per network. A refused call says which limit it hit; wait before calling again instead of retrying at once.',
+            `Use of this service is subject to the terms at ${identity.termsUrl} and the privacy policy at ${identity.privacyUrl}.`
+        ]
+        : ['TronRelic exposes tools over TRON blockchain data and TronRelic content. Each tool\'s annotations say whether it only reads.'];
+
+    return [...lines, UNTRUSTED_CONTENT_SYSTEM_CLAUSE].join('\n\n');
+}
 
 /**
  * Per-minute ceiling on one tool for one caller, matching the governor's own
@@ -106,17 +124,28 @@ export class McpServerFactory {
      */
     private readonly schemaCache = new WeakMap<object, StandardSchemaWithJSON>();
 
+    /** The instructions for each endpoint, built once because they never change at runtime. */
+    private readonly instructions: Record<IMcpCaller['endpoint'], string>;
+
     /**
      * @param governor - The AI tool governor every call runs through.
      * @param scrubber - Removes secrets from results of tools served through a
      *   group that asks for scrubbing.
      * @param logger - Module logger, used when a governed call throws.
+     * @param identity - How the server describes itself to clients: title,
+     *   description, site, icon, and the terms and privacy URLs.
      */
     constructor(
         private readonly governor: IAiToolGovernor,
         private readonly scrubber: SecretScrubber,
-        private readonly logger: ISystemLogService
-    ) {}
+        private readonly logger: ISystemLogService,
+        private readonly identity: IMcpServerIdentity
+    ) {
+        this.instructions = {
+            oauth: buildInstructions(identity, 'oauth'),
+            public: buildInstructions(identity, 'public')
+        };
+    }
 
     /**
      * Build a server that offers exactly the given tools to the given caller.
@@ -129,10 +158,17 @@ export class McpServerFactory {
      */
     create(caller: IMcpCaller, served: IMcpServedTool[]): McpServer {
         const server = new McpServer(
-            { name: SERVER_NAME, version: SERVER_VERSION, title: 'TronRelic' },
+            {
+                name: SERVER_NAME,
+                version: this.identity.version,
+                title: this.identity.title,
+                description: this.identity.description,
+                websiteUrl: this.identity.websiteUrl,
+                icons: this.identity.icons
+            },
             {
                 capabilities: { tools: { listChanged: false } },
-                instructions: SERVER_INSTRUCTIONS,
+                instructions: this.instructions[caller.endpoint],
                 cacheHints: { 'tools/list': { ttlMs: TOOLS_LIST_TTL_MS, cacheScope: 'private' } }
             }
         );

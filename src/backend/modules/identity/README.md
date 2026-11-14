@@ -61,7 +61,7 @@ Better Auth is the sole identity layer — the legacy UUID identity system was r
 | `api/accounts.{controller,routes}.ts` | `/api/admin/users` admin account directory (list, per-account group assignment, and soft delete) over the `'accounts'` service and `AccountDeletionService` |
 | `database/IWalletDocument.ts` | `module_user_wallets` document + `ILinkedWallet` public shape |
 | `database/IUserGroupDocument.ts` | `module_user_groups` document |
-| `services/oauth-server-config.ts` | `resolveOAuthServerConfig` — issuer, MCP resource URL, metadata URL, and consent page path from one base URL |
+| `services/oauth-server-config.ts` | `resolveOAuthServerConfig` — issuer, MCP resource URL, metadata URL, public endpoint, Server Card and AI Catalog URLs, and consent page path from one base URL |
 | `services/connected-apps.service.ts` | `IConnectedAppsService` singleton over Better Auth's adapter: list, full revoke (one app or all of a user's), cached `hasGrant`, throttled `recordUse` |
 | `services/revokeGrantsOnGroupExit.ts` | Run by the membership listener: revokes all of a user's connected apps when they are no longer in `mcp-users` |
 | `database/IConnectedAppUsageDocument.ts` | `module_user_connected_app_usage` document (`(userId, clientId)` → `lastUsedAt`) |

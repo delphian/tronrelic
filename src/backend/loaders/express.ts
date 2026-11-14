@@ -9,7 +9,7 @@ import { requestContext } from '../api/middleware/request-context.js';
 import { attachAuthSession } from '../api/middleware/auth-session.js';
 import { env } from '../config/env.js';
 import { corsOriginCallback } from '../config/cors.js';
-import { MCP_ENDPOINT_PATH, MCP_PUBLIC_ENDPOINT_PATH } from '../modules/identity/services/oauth-server-config.js';
+import { AI_CATALOG_PATH, MCP_ENDPOINT_PATH, MCP_PUBLIC_ENDPOINT_PATH, MCP_SERVER_CARD_PATH } from '../modules/identity/services/oauth-server-config.js';
 
 export function createExpressApp(): Express {
   const app = express();
@@ -23,10 +23,13 @@ export function createExpressApp(): Express {
   app.use(requestContext);
   app.use(helmet());
 
-  app.use(cors({
+  // The MCP Server Card and the AI Catalog must be readable from any origin,
+  // so they send their own wildcard CORS headers and skip this check, which
+  // refuses every browser origin but the site's own.
+  app.use(skipForPublicDiscovery(cors({
     origin: corsOriginCallback,
     credentials: true
-  }));
+  })));
 
   app.use(compression());
   // Pass SESSION_SECRET so cookie-parser populates `req.signedCookies` for any
@@ -113,6 +116,39 @@ function routePathPattern(path: string): RegExp {
 
 /** The signed-in MCP endpoint and the public one; both parse their own body. */
 const MCP_PATH_PATTERNS = [routePathPattern(MCP_ENDPOINT_PATH), routePathPattern(MCP_PUBLIC_ENDPOINT_PATH)];
+
+/** Public discovery documents that answer every origin with their own CORS headers. */
+const PUBLIC_DISCOVERY_PATTERNS = [routePathPattern(MCP_SERVER_CARD_PATH), routePathPattern(AI_CATALOG_PATH)];
+
+/**
+ * Wrap the global CORS middleware so it skips the public discovery documents.
+ *
+ * Those routes carry only public, read-only metadata and set
+ * `Access-Control-Allow-Origin: *` themselves, as the MCP Server Card extension
+ * requires. The global policy would refuse a foreign origin before the route
+ * ran, so a browser-based client could never read the card.
+ *
+ * @param middleware - The CORS middleware to bypass on those paths.
+ * @returns A middleware that calls straight through on those paths and
+ *          delegates to the original elsewhere.
+ */
+function skipForPublicDiscovery(middleware: express.RequestHandler): express.RequestHandler {
+  /**
+   * Let the discovery routes answer CORS themselves, and apply the site-wide
+   * policy to everything else.
+   *
+   * @param req - Incoming request; its path decides whether to skip.
+   * @param res - Response, passed through to the wrapped middleware.
+   * @param next - Continues the middleware chain.
+   */
+  return function publicDiscoveryBypass(req, res, next): void {
+    if (PUBLIC_DISCOVERY_PATTERNS.some(pattern => pattern.test(req.path))) {
+      next();
+    } else {
+      middleware(req, res, next);
+    }
+  };
+}
 
 /**
  * Wrap an Express middleware so it skips itself on paths that read their own
