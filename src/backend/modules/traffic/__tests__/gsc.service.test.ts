@@ -482,9 +482,34 @@ describe('GscService', () => {
             expect(archive.writeDailyTotals).toHaveBeenCalledWith([expect.objectContaining({ clicks: 1, impressions: 5 })]);
             expect(archive.writePageTotals).toHaveBeenCalledWith([expect.objectContaining({ page: 'https://tronrelic.com/' })]);
 
+            // The stub's only row is dated 2026-10-07, so the prune starts there.
             const runStamp = archive.writeQueries.mock.calls[0][0][0].fetchedAt;
             for (const table of ['gsc_queries', 'gsc_daily_totals', 'gsc_page_totals']) {
-                expect(archive.prune).toHaveBeenCalledWith(table, '2026-09-08', '2026-10-08', runStamp);
+                expect(archive.prune).toHaveBeenCalledWith(table, '2026-10-07', '2026-10-08', runStamp);
+            }
+        });
+
+        it('keeps archived days older than anything Google returned', async () => {
+            // Google omits days past its 16-month limit, so a window reaching
+            // that far returns rows only for its later days. The earlier days'
+            // archived rows exist nowhere else and must not be pruned.
+            const { service, archive } = setupConfigured();
+            queryMock.mockImplementation(async (request: { requestBody: { dimensions: string[] } }) => {
+                const days = ['2025-07-12', '2025-07-10'];
+                const rows = days.map(day => ({
+                    keys: request.requestBody.dimensions.map(d => (d === 'date' ? day : `${d}-key`)),
+                    clicks: 1,
+                    impressions: 2,
+                    ctr: 0.5,
+                    position: 3
+                }));
+                return { data: { rows } };
+            });
+
+            await service.archiveWindow('2025-07-06', '2025-07-12');
+
+            for (const table of ['gsc_queries', 'gsc_daily_totals', 'gsc_page_totals']) {
+                expect(archive.prune).toHaveBeenCalledWith(table, '2025-07-10', '2025-07-12', expect.any(Date));
             }
         });
 
