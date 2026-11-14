@@ -671,9 +671,12 @@ export async function middleware(request: NextRequest, event: NextFetchEvent) {
  * Middleware matcher configuration.
  *
  * Excludes API routes, static files, and Next.js internals. Also excludes the
- * MCP endpoint and the OAuth discovery documents under `/.well-known/oauth-`,
- * which are rewritten to the backend and are machine-to-machine traffic rather
- * than page views. `/.well-known/security.txt` is excluded too: it is a static
+ * MCP endpoints and the Server Card under `/mcp/`, and the OAuth discovery
+ * documents under `/.well-known/oauth-`, which are rewritten to the backend and
+ * are machine-to-machine traffic rather than page views. No page lives under
+ * `/mcp/`, so the prefix exclusion cannot hide one; without it the `[lang]`
+ * rewrite turns `/mcp/server-card` into `/en/mcp/server-card`, which the
+ * backend rewrite in `next.config.mjs` no longer matches. `/.well-known/security.txt` is excluded too: it is a static
  * file in `public/`, so the `[lang]` rewrite would turn it into a 404, and the
  * scanners that fetch it would otherwise be recorded as visits. Other
  * `/.well-known/` paths still pass through middleware.
@@ -685,5 +688,5 @@ export async function middleware(request: NextRequest, event: NextFetchEvent) {
  * The trailing slash keeps a page slug that merely starts with "images" routed.
  */
 export const config = {
-    matcher: ['/((?!api|mcp$|\\.well-known/oauth-|\\.well-known/security\\.txt$|_next/static|_next/image|uploads|images/|favicon.ico|robots.txt|sitemap.xml|llms.txt).*)']
+    matcher: ['/((?!api|mcp$|mcp/|\\.well-known/oauth-|\\.well-known/security\\.txt$|_next/static|_next/image|uploads|images/|favicon.ico|robots.txt|sitemap.xml|llms.txt).*)']
 };
