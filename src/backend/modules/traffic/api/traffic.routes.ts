@@ -68,6 +68,8 @@ export function createAdminAnalyticsRouter(controller: TrafficController): Route
     router.post('/gsc/credentials', controller.saveGscCredentials.bind(controller));
     router.delete('/gsc/credentials', controller.removeGscCredentials.bind(controller));
     router.post('/gsc/refresh', controller.refreshGscData.bind(controller));
+    router.get('/gsc/archive', controller.getGscArchive.bind(controller));
+    router.post('/gsc/archive/backfill', controller.startGscArchiveBackfill.bind(controller));
     router.get('/gsc/keywords', controller.getGscKeywords.bind(controller));
     router.get('/gsc/pages', controller.getGscPages.bind(controller));
     router.get('/gsc/keyword-pages', controller.getGscKeywordPages.bind(controller));

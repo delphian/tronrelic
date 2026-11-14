@@ -1,15 +1,17 @@
 'use client';
 
 /**
- * Admin panel surfacing the Google Search Console keyword cache.
+ * Admin panel surfacing the site's Google Search Console history.
  *
- * The daily `gsc:fetch` job has stored keyword/clicks/impressions/CTR/
- * position rows in Mongo since the GSC integration shipped, but until this
- * panel the only admin surface was the credentials form. This panel renders:
+ * The daily `gsc:fetch` job stores keyword/clicks/impressions/CTR/position
+ * rows in a permanent ClickHouse archive, so the window picker reaches back
+ * to the first archived day ("All"). This panel renders:
  *
- * - **Clicks / impressions trend** — two line charts side by side from the
- *   daily buckets (separate charts because impressions dwarf clicks by orders
- *   of magnitude and would flatten a shared axis).
+ * - **Clicks / impressions trend** — two line charts side by side, following
+ *   the picker but never shorter than 30 days, bucketed by day, week, or
+ *   month as the backend chooses for the window's length (separate charts
+ *   because impressions dwarf clicks by orders of magnitude and would flatten
+ *   a shared axis).
  * - **Top pages table** — the landing pages search surfaced over a selectable
  *   window, backed by the [page, date] totals. Because that request omits the
  *   `query` dimension it escapes GSC's query anonymization, so it accounts for
@@ -46,29 +48,68 @@ import { Badge } from '../../../../../components/ui/Badge';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { SegmentedControl } from '../../../../../components/ui/SegmentedControl';
-import { adminGetGscPages, adminGetGscKeywordPages, adminGetGscKeywordsByDay, adminGetGscStatus } from '../../../api';
-import type { IGscPage, IGscKeywordPage, IGscDailyKeywords, IGscStatus } from '../../../api';
+import { adminGetGscPages, adminGetGscKeywordPages, adminGetGscKeywordTrend, adminGetGscStatus } from '../../../api';
+import type { IGscPage, IGscKeywordPage, IGscTrendResult, IGscStatus, IGscWindowParams, GscGranularity } from '../../../api';
 import { TabToolbar } from '../TabToolbar';
 import { PanelBody } from '../PanelBody';
 import styles from './GscKeywords.module.scss';
 
 /** Selectable lookback window ids, which double as the button labels. */
-type GscWindowId = '24h' | '7d' | '30d';
+type GscWindowId = '24h' | '7d' | '30d' | '90d' | '1y' | 'all';
 
 /**
- * Keyword-table lookback windows. 30d is the backend's hard ceiling. The id is
- * what the picker selects and `hours` is what the API takes, so the id stays a
- * stable string `<SegmentedControl>` can key on while the request shape is
- * derived from it.
+ * The trend window used for the picker's short options. A one-day or one-week
+ * chart is too short to read as a trend, so those options keep 30 days.
  */
-const PERIOD_OPTIONS: ReadonlyArray<{ id: GscWindowId; label: string; hours: number }> = [
-    { id: '24h', label: '24h', hours: 24 },
-    { id: '7d', label: '7d', hours: 168 },
-    { id: '30d', label: '30d', hours: 720 }
+const MIN_TREND_WINDOW: IGscWindowParams = { periodHours: 720 };
+
+/**
+ * Lookback windows. The archive keeps every fetched day, so "All" reaches
+ * back to the first one. The id is what the picker selects; `window` is what
+ * the tables request and `trendWindow` what the charts request, so the id
+ * stays a stable string `<SegmentedControl>` can key on while the request
+ * shapes are derived from it. `trendLabel` describes the charts' span.
+ */
+const PERIOD_OPTIONS: ReadonlyArray<{
+    id: GscWindowId;
+    label: string;
+    window: IGscWindowParams;
+    trendWindow: IGscWindowParams;
+    trendLabel: string;
+}> = [
+    { id: '24h', label: '24h', window: { periodHours: 24 }, trendWindow: MIN_TREND_WINDOW, trendLabel: 'Last 30 days' },
+    { id: '7d', label: '7d', window: { periodHours: 168 }, trendWindow: MIN_TREND_WINDOW, trendLabel: 'Last 30 days' },
+    { id: '30d', label: '30d', window: { periodHours: 720 }, trendWindow: MIN_TREND_WINDOW, trendLabel: 'Last 30 days' },
+    { id: '90d', label: '90d', window: { periodHours: 2160 }, trendWindow: { periodHours: 2160 }, trendLabel: 'Last 90 days' },
+    { id: '1y', label: '1y', window: { periodHours: 8760 }, trendWindow: { periodHours: 8760 }, trendLabel: 'Last year' },
+    { id: 'all', label: 'All', window: { period: 'all' }, trendWindow: { period: 'all' }, trendLabel: 'All history' }
 ];
 
-/** Days of daily buckets for the trend charts. */
-const TREND_DAYS = 30;
+/** How each bucket size is described next to the trend's span. */
+const GRANULARITY_LABELS: Readonly<Record<GscGranularity, string>> = {
+    day: 'by day',
+    week: 'by week',
+    month: 'by month'
+};
+
+/**
+ * Label a trend bucket by its first day. A month reads as "Mar 2025" rather
+ * than as its first day, and a week as "Week of …", so a reader does not take
+ * a bucket's figures for a single day's.
+ *
+ * @param value - The bucket's first day.
+ * @param granularity - The trend's bucket size.
+ * @returns The label for an axis tick or tooltip.
+ */
+function formatBucket(value: Date | string, granularity: GscGranularity): string {
+    let label = formatGscDay(value);
+    if (granularity === 'month') {
+        label = new Date(value).toLocaleDateString(undefined, { timeZone: 'UTC', month: 'short', year: 'numeric' });
+    } else if (granularity === 'week') {
+        label = `Week of ${label}`;
+    }
+    return label;
+}
 
 /**
  * Format a GSC calendar day for display.
@@ -122,9 +163,13 @@ function resolveCSSColor(varName: string, fallback: string): string {
 export function GscKeywords() {
     const [windowId, setWindowId] = useState<GscWindowId>('24h');
 
-    // The picker owns the window id; every fetch below wants hours, so resolve
-    // once per render rather than threading two pieces of state that can drift.
-    const periodHours = (PERIOD_OPTIONS.find(option => option.id === windowId) ?? PERIOD_OPTIONS[0]).hours;
+    // The picker owns the window id; every fetch below wants a request shape,
+    // so resolve once per render rather than threading two pieces of state
+    // that can drift. The option objects are module constants, so their
+    // identity is stable and safe as effect dependencies.
+    const selected = PERIOD_OPTIONS.find(option => option.id === windowId) ?? PERIOD_OPTIONS[0];
+    const tableWindow = selected.window;
+    const trendWindow = selected.trendWindow;
 
     const [pages, setPages] = useState<IGscPage[] | null>(null);
     const [pagesError, setPagesError] = useState<string | null>(null);
@@ -135,7 +180,7 @@ export function GscKeywords() {
     const [pairsError, setPairsError] = useState<string | null>(null);
     const [pairsLoading, setPairsLoading] = useState(true);
 
-    const [daily, setDaily] = useState<IGscDailyKeywords[] | null>(null);
+    const [trend, setTrend] = useState<IGscTrendResult | null>(null);
     const [dailyError, setDailyError] = useState<string | null>(null);
     const [dailyLoading, setDailyLoading] = useState(true);
 
@@ -149,13 +194,13 @@ export function GscKeywords() {
         setPagesLoading(true);
         setPagesError(null);
 
-        adminGetGscPages({ periodHours, limit: 25 })
+        adminGetGscPages({ ...tableWindow, limit: 25 })
             .then(data => { if (active) setPages(data.pages); })
             .catch(err => { if (active) setPagesError(err instanceof Error ? err.message : 'Failed to load'); })
             .finally(() => { if (active) setPagesLoading(false); });
 
         return () => { active = false; };
-    }, [periodHours]);
+    }, [tableWindow]);
 
     // Keyword→page pairs fetch — re-runs when the window changes, keyed to the
     // same picker as the pages table. Reads the raw query cache, so it carries
@@ -167,7 +212,7 @@ export function GscKeywords() {
         setPairsLoading(true);
         setPairsError(null);
 
-        adminGetGscKeywordPages({ periodHours })
+        adminGetGscKeywordPages(tableWindow)
             .then(data => {
                 if (active) {
                     setPairs(data.pairs);
@@ -180,19 +225,24 @@ export function GscKeywords() {
             .finally(() => { if (active) setPairsLoading(false); });
 
         return () => { active = false; };
-    }, [periodHours]);
+    }, [tableWindow]);
 
-    // Trend fetch — fixed window, fetched once on mount.
+    // Trend fetch — re-runs when the trend window changes. The short picker
+    // options share one 30-day trend window, so switching among them does
+    // not refetch the charts. The backend picks day, week, or month buckets
+    // for the window's length and reports which it used.
     useEffect(() => {
         let active = true;
+        setDailyLoading(true);
+        setDailyError(null);
 
-        adminGetGscKeywordsByDay(TREND_DAYS)
-            .then(data => { if (active) setDaily(data); })
+        adminGetGscKeywordTrend(trendWindow)
+            .then(data => { if (active) setTrend(data); })
             .catch(err => { if (active) setDailyError(err instanceof Error ? err.message : 'Failed to load'); })
             .finally(() => { if (active) setDailyLoading(false); });
 
         return () => { active = false; };
-    }, []);
+    }, [trendWindow]);
 
     // Status fetch — surfaces configured/last-fetch so a stalled gsc:fetch
     // job is distinguishable from genuinely-zero clicks. Best-effort: a
@@ -209,14 +259,17 @@ export function GscKeywords() {
 
     // Memoize only the data mapping; colors resolve on every render so a
     // theme switch re-resolves instead of serving stale memoized values.
+    const buckets = trend?.buckets;
+    const granularity: GscGranularity = trend?.granularity ?? 'day';
+
     const clicksSeriesData = useMemo(
-        () => (daily ?? []).map(b => ({ date: b.date, value: b.totalClicks })),
-        [daily]
+        () => (buckets ?? []).map(b => ({ date: b.date, value: b.totalClicks })),
+        [buckets]
     );
 
     const impressionsSeriesData = useMemo(
-        () => (daily ?? []).map(b => ({ date: b.date, value: b.totalImpressions })),
-        [daily]
+        () => (buckets ?? []).map(b => ({ date: b.date, value: b.totalImpressions })),
+        [buckets]
     );
 
     const clicksSeries: ChartSeries[] = clicksSeriesData.length > 0 ? [{
@@ -233,28 +286,36 @@ export function GscKeywords() {
         data: impressionsSeriesData
     }] : [];
 
-    // Days Google had not finalized at the last fetch, keyed the way the chart
-    // hands dates to its tooltip formatter (midnight UTC, as YYYY-MM-DD).
+    // Buckets holding a day Google had not finalized at the last fetch, keyed
+    // the way the chart hands dates to its tooltip formatter (midnight UTC, as
+    // YYYY-MM-DD).
     const preliminaryDays = useMemo(
-        () => new Set((daily ?? []).filter(b => b.preliminary).map(b => b.date)),
-        [daily]
+        () => new Set((buckets ?? []).filter(b => b.preliminary).map(b => b.date)),
+        [buckets]
     );
-    const trendFirstIncompleteDate = (daily ?? []).find(b => b.preliminary)?.date ?? null;
+    const trendFirstIncompleteDate = (buckets ?? []).find(b => b.preliminary)?.date ?? null;
 
     /**
-     * Label a day in the chart tooltip, flagging days whose figures are not
-     * final so a hover on a low recent point does not read as a real drop.
+     * Label a bucket on the chart's axis, by its first day or its month.
      *
-     * @param date - The hovered day, as midnight UTC.
+     * @param date - The bucket's first day, as midnight UTC.
      */
-    const formatTooltipDay = (date: Date): string => {
-        const label = formatGscDay(date);
+    const formatAxisBucket = (date: Date): string => formatBucket(date, granularity);
+
+    /**
+     * Label a bucket in the chart tooltip, flagging buckets whose figures are
+     * not final so a hover on a low recent point does not read as a real drop.
+     *
+     * @param date - The hovered bucket's first day, as midnight UTC.
+     */
+    const formatTooltipBucket = (date: Date): string => {
+        const label = formatBucket(date, granularity);
         return preliminaryDays.has(date.toISOString().split('T')[0]) ? `${label} (not final)` : label;
     };
 
     const trendMeta = (
         <>
-            {`Last ${TREND_DAYS} days`}
+            {`${selected.trendLabel}, ${GRANULARITY_LABELS[granularity]}`}
             {trendFirstIncompleteDate ? ' ' : null}
             {trendFirstIncompleteDate ? <NotFinalBadge firstIncompleteDate={trendFirstIncompleteDate} /> : null}
         </>
@@ -281,7 +342,12 @@ export function GscKeywords() {
             </span>
         );
     } else if (status?.configured && status.lastFetch) {
-        statusLine = <>Fetched <ClientTime date={status.lastFetch} format="relative" /></>;
+        statusLine = (
+            <>
+                Fetched <ClientTime date={status.lastFetch} format="relative" />
+                {status.history?.firstDate ? `, history from ${formatGscDay(status.history.firstDate)}` : null}
+            </>
+        );
     }
     const coverage = pairsWindow
         ? `covers ${formatGscDay(pairsWindow.start)} – ${formatGscDay(pairsWindow.end)}`
@@ -315,8 +381,13 @@ export function GscKeywords() {
                     <>
                         <p>
                             Google Search Console queries that surfaced this site, refreshed daily by
-                            the <code>gsc:fetch</code> job. Google delivers each day several days late,
+                            the <code>gsc:fetch</code> job and kept permanently, so &ldquo;All&rdquo; reaches
+                            back to the first archived day. Google delivers each day several days late,
                             so every window ends on the newest day Google has delivered.
+                        </p>
+                        <p>
+                            The charts never cover less than 30 days. Longer windows are grouped by week
+                            (up to two years) or by month, and a week is labelled by its Monday.
                         </p>
                         <p>
                             The newest days are fresh figures Google has not finalized, and they usually
@@ -339,8 +410,8 @@ export function GscKeywords() {
                         <LineChart
                             series={clicksSeries}
                             height={180}
-                            xAxisFormatter={formatGscDay}
-                            tooltipDateFormatter={formatTooltipDay}
+                            xAxisFormatter={formatAxisBucket}
+                            tooltipDateFormatter={formatTooltipBucket}
                             yAxisFormatter={(v) => numberFormatter.format(v)}
                             emptyLabel="No GSC data yet — configure credentials in Settings."
                         />
@@ -352,8 +423,8 @@ export function GscKeywords() {
                         <LineChart
                             series={impressionsSeries}
                             height={180}
-                            xAxisFormatter={formatGscDay}
-                            tooltipDateFormatter={formatTooltipDay}
+                            xAxisFormatter={formatAxisBucket}
+                            tooltipDateFormatter={formatTooltipBucket}
                             yAxisFormatter={(v) => numberFormatter.format(v)}
                             emptyLabel="No GSC data yet — configure credentials in Settings."
                         />

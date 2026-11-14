@@ -1,9 +1,10 @@
 /**
  * Google Search Console integration service.
  *
- * Fetches keyword performance data from the Google Search Console API
- * and stores it in MongoDB for enriching the analytics dashboard's
- * traffic source drill-down. Credentials are stored in the database
+ * Fetches keyword performance data from the Google Search Console API,
+ * stores it, and serves every Search Console read the SEO tab and the AI
+ * tools make. Reads come from the permanent ClickHouse archive, so they can
+ * reach every day ever fetched. Credentials are stored in the database
  * key-value store, not environment variables.
  *
  * ## Why This Service Exists
@@ -19,20 +20,27 @@
  * - **Singleton pattern** matching UserService for consistent DI
  * - **Database credential storage** via IDatabaseService key-value API
  * - **Service account auth** for simplicity (no OAuth2 flow)
- * - **TTL-based cleanup** prevents unbounded data growth (120 days)
+ * - **Permanent archive** in ClickHouse (`IGscArchive`): Google keeps only
+ *   16 months, so every fetched day is kept, with no TTL, and every read is
+ *   served from it. Without ClickHouse there is nowhere to store a fetch
  * - **3-day offset** keeps the window on days Google has mostly collected
  * - **Fresh data requested** (`dataState: 'all'`) so a day appears as soon
  *   as Google has it, rather than only once Google marks it final
  * - **Stale rows pruned** after each refetch, because fresh numbers change
  *   until the day is final and a row can disappear between fetches
+ * - **Long windows are bucketed** by week or month, so a chart or an AI tool
+ *   response over a year of history stays a readable size
  */
 
 import { google } from 'googleapis';
-import type { Collection, Filter } from 'mongodb';
+import type { searchconsole_v1 } from 'googleapis';
 import type { IDatabaseService, ICacheService, ISystemLogService } from '@/types';
+import type { GscArchiveTable, GscGranularity, GscKeywordMatch, IGscArchive, IGscArchiveCoverage, IGscArchiveSums } from './IGscArchive.js';
+import type { GscWindowRequest } from './GscWindowRequest.js';
+import { parseGscDay, parseGscDayRange, toGscDayKey } from './parseGscDay.js';
 
 /**
- * Google Search Console query row stored in MongoDB.
+ * One keyword-request row from Search Console, as the archive stores it.
  */
 export interface IGscQueryDocument {
     /** Search query string */
@@ -68,6 +76,11 @@ export interface IGscStatus {
     siteUrl?: string;
     /** Timestamp of last successful data fetch */
     lastFetch?: string;
+    /**
+     * Which days the permanent archive holds — how far back every read can
+     * reach. Null when the deployment has no ClickHouse.
+     */
+    history: IGscArchiveCoverage | null;
 }
 
 /**
@@ -150,12 +163,12 @@ export interface IGscPageTotalDocument {
     ctr: number;
     /** Average position of the page in search results this day. */
     position: number;
-    /** When this row was fetched from GSC (drives the TTL index). */
+    /** When this row was fetched from GSC (drives the stale-row prune). */
     fetchedAt: Date;
 }
 
 /**
- * One aggregated landing page from the page-totals collection: how much search
+ * One aggregated landing page from the page totals: how much search
  * traffic the page drew over the window, immune to query anonymization.
  */
 export interface IGscPage {
@@ -192,10 +205,10 @@ export interface IGscPagesPeriodResult {
  *
  * The "Top keywords" and "Top pages" panels each collapse one of the two
  * dimensions away, so neither can answer "which page did this keyword
- * surface?". This pairing keeps both dimensions, aggregating the raw
- * `module_user_gsc_queries` rows (which carry `query` and `page` together)
- * by the `{query, page}` couple. Because it reads the query-dimensioned
- * collection it inherits GSC's low-volume-query anonymization — the same
+ * surface?". This pairing keeps both dimensions, aggregating the keyword
+ * rows (which carry `query` and `page` together) by the `{query, page}`
+ * couple. Because it reads the query-dimensioned rows it inherits GSC's
+ * low-volume-query anonymization — the same
  * coverage gap the keyword panel already has — so its clicks will not fully
  * reconcile with the anonymization-immune page totals.
  */
@@ -231,37 +244,31 @@ export interface IGscKeywordPagesPeriodResult {
 }
 
 /**
- * How {@link GscService.getKeywordHistory} matches stored queries against the
- * requested keyword: `exact` is one query, `contains` is every query holding
- * the keyword as a substring (all the variants of a topic, summed).
- */
-export type GscKeywordMatch = 'exact' | 'contains';
-
-/**
- * One day of a single keyword's search performance.
+ * One bucket of a single keyword's search performance. A bucket is one day,
+ * week, or month, depending on the result's `granularity`.
  */
 export interface IGscKeywordHistoryPoint {
-    /** Calendar day (YYYY-MM-DD, UTC). */
+    /** First day of the bucket (YYYY-MM-DD, UTC). */
     date: string;
-    /** Clicks the keyword earned this day. */
+    /** Clicks the keyword earned in the bucket. */
     clicks: number;
-    /** Impressions the keyword earned this day. */
+    /** Impressions the keyword earned in the bucket. */
     impressions: number;
-    /** Click-through rate for the day (0-1); 0 when there were no impressions. */
+    /** Click-through rate for the bucket (0-1); 0 when there were no impressions. */
     ctr: number;
     /**
-     * Impression-weighted average position, or null on a day with no
+     * Impression-weighted average position, or null in a bucket with no
      * impressions. Null rather than 0, because 0 would plot as a position
      * better than first place.
      */
     position: number | null;
-    /** True when Google had not finalized this day at the last fetch. */
+    /** True when any day in the bucket had not been finalized by Google at the last fetch. */
     preliminary: boolean;
 }
 
 /**
- * A single keyword's daily search performance over a window, with window
- * totals — the series behind a per-keyword chart.
+ * A single keyword's search performance over a window, with window totals —
+ * the series behind a per-keyword chart.
  */
 export interface IGscKeywordHistoryResult {
     /** The keyword as matched (trimmed and lower-cased). */
@@ -270,8 +277,10 @@ export interface IGscKeywordHistoryResult {
     match: GscKeywordMatch;
     /** Inclusive window start (ISO-8601 UTC). */
     windowStart: string;
-    /** Inclusive window end (ISO-8601 UTC) — the end of the newest day Google has delivered. */
+    /** Inclusive window end (ISO-8601 UTC) — the end of the window's last day. */
     windowEnd: string;
+    /** Bucket size of `days`. */
+    granularity: GscGranularity;
     /** First non-final day in the window (YYYY-MM-DD), or null when all are final. */
     firstIncompleteDate: string | null;
     /** Window totals across every matched query. */
@@ -283,28 +292,146 @@ export interface IGscKeywordHistoryResult {
      * were summed.
      */
     matchedQueries: string[];
-    /** One point per day in the window, oldest first, zero-filled. */
+    /**
+     * One point per bucket in the window, oldest first, zero-filled. Named
+     * `days` because callers read it by that name; a point covers a week or a
+     * month when `granularity` says so.
+     */
     days: IGscKeywordHistoryPoint[];
+}
+
+/**
+ * The site's click and impression trend over a window, each bucket listing
+ * its top keywords.
+ */
+export interface IGscKeywordTrendResult {
+    /** Inclusive window start (ISO-8601 UTC). */
+    windowStart: string;
+    /** Inclusive window end (ISO-8601 UTC) — the end of the window's last day. */
+    windowEnd: string;
+    /** Bucket size of `buckets`. */
+    granularity: GscGranularity;
+    /** First non-final day in the window (YYYY-MM-DD), or null when all are final. */
+    firstIncompleteDate: string | null;
+    /** One entry per bucket, oldest first, zero-filled. */
+    buckets: Array<{
+        /** First day of the bucket (YYYY-MM-DD, UTC). */
+        date: string;
+        /** Site clicks in the bucket, anonymized queries included. */
+        totalClicks: number;
+        /** Site impressions in the bucket, anonymized queries included. */
+        totalImpressions: number;
+        /** True when any day in the bucket was not final at the last fetch. */
+        preliminary: boolean;
+        /** The bucket's top keywords by clicks. */
+        keywords: IGscKeyword[];
+    }>;
+}
+
+/**
+ * A window request turned into concrete days, which every read needs in both
+ * Date and `YYYY-MM-DD` form.
+ */
+interface IResolvedGscWindow {
+    /** First day, midnight UTC. */
+    since: Date;
+    /** Last day, midnight UTC. */
+    lastDay: Date;
+    /** Last millisecond of the last day, reported as `windowEnd`. */
+    end: Date;
+    /** First day as `YYYY-MM-DD`. */
+    sinceKey: string;
+    /** Last day as `YYYY-MM-DD`. */
+    endKey: string;
+    /** Days in the window, inclusive. */
+    dayCount: number;
+    /** First non-final day inside the window, or null when all are final. */
+    firstIncompleteDate: string | null;
 }
 
 /** Most matched-query strings {@link GscService.getKeywordHistory} returns alongside the series. */
 const KEYWORD_HISTORY_MATCHED_QUERY_LIMIT = 10;
 
 /**
- * Escape a string for literal use inside a MongoDB `$regex`.
- *
- * A `contains` match must treat the caller's keyword as plain text. Without
- * escaping, a keyword such as `trx (tron)` would be read as a regular
- * expression, and a crafted one could make the pattern slow to evaluate.
+ * Longest window charted one point per day. Past it, a daily series is too
+ * long for a chart to read and too large for an AI tool's response.
  */
-function escapeRegex(value: string): string {
-    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const MAX_DAILY_BUCKET_DAYS = 92;
+
+/** Longest window charted one point per week; past it, months are used. */
+const MAX_WEEKLY_BUCKET_DAYS = 730;
+
+/**
+ * Pick a bucket size that keeps a series near a hundred points or fewer:
+ * days up to three months, weeks up to two years, months beyond.
+ *
+ * @param dayCount - Days in the window.
+ * @returns The bucket size to use when the caller did not choose one.
+ */
+export function pickGscGranularity(dayCount: number): GscGranularity {
+    let granularity: GscGranularity = 'month';
+    if (dayCount <= MAX_DAILY_BUCKET_DAYS) {
+        granularity = 'day';
+    } else if (dayCount <= MAX_WEEKLY_BUCKET_DAYS) {
+        granularity = 'week';
+    }
+    return granularity;
+}
+
+/**
+ * The first day of the bucket holding a day, matching the archive's SQL:
+ * the day itself, its Monday (ClickHouse `toMonday`), or the first of its
+ * month (`toStartOfMonth`).
+ */
+function bucketStartOf(day: Date, granularity: GscGranularity): Date {
+    let start = day;
+    if (granularity === 'week') {
+        start = new Date(day.getTime() - ((day.getUTCDay() + 6) % 7) * DAY_MS);
+    } else if (granularity === 'month') {
+        start = new Date(Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), 1));
+    }
+    return start;
+}
+
+/** The first day of the bucket after the one starting on `start`. */
+function nextBucketStart(start: Date, granularity: GscGranularity): Date {
+    let next = new Date(start.getTime() + DAY_MS);
+    if (granularity === 'week') {
+        next = new Date(start.getTime() + 7 * DAY_MS);
+    } else if (granularity === 'month') {
+        next = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 1));
+    }
+    return next;
+}
+
+/**
+ * List every bucket a window touches, so reads can zero-fill the buckets the
+ * archive returned nothing for.
+ *
+ * The first week or month can start before the window, and its figures then
+ * cover only the window's days; it is still labelled by its own first day so
+ * the labels line up with the archive's bucket keys.
+ *
+ * @param since - First day of the window, midnight UTC.
+ * @param lastDay - Last day of the window, midnight UTC.
+ * @param granularity - Bucket size.
+ * @returns Each bucket's first day and the last window day it covers, both
+ *   `YYYY-MM-DD`, oldest first. `lastDay` decides whether a bucket holds a
+ *   day Google has not finalized.
+ */
+function listGscBuckets(since: Date, lastDay: Date, granularity: GscGranularity): Array<{ start: string; lastDay: string }> {
+    const buckets: Array<{ start: string; lastDay: string }> = [];
+    for (let start = bucketStartOf(since, granularity); start.getTime() <= lastDay.getTime(); start = nextBucketStart(start, granularity)) {
+        const bucketLast = Math.min(nextBucketStart(start, granularity).getTime() - DAY_MS, lastDay.getTime());
+        buckets.push({ start: toGscDayKey(start), lastDay: toGscDayKey(new Date(bucketLast)) });
+    }
+    return buckets;
 }
 
 /**
  * Round a click-through rate (0-1) to four decimal places, or 0 with no
- * impressions. Shared by the keyword-history series and its totals so a day and
- * the window report CTR identically.
+ * impressions. Shared by every read so a bucket and a window report CTR
+ * identically.
  */
 function roundedCtr(clicks: number, impressions: number): number {
     return impressions > 0 ? Math.round((clicks / impressions) * 10000) / 10000 : 0;
@@ -320,6 +447,23 @@ function roundedPosition(weightedPosition: number, impressions: number): number 
     return impressions > 0 ? Math.round((weightedPosition / impressions) * 10) / 10 : null;
 }
 
+/**
+ * Turn archive sums into the figures the ranked reads return. Position is 0,
+ * not null, with no impressions, because those reads have always returned a
+ * number there and their rows always carry impressions in practice.
+ *
+ * @param sums - Summed clicks, impressions, and weighted position.
+ * @returns Clicks, impressions, CTR, and average position.
+ */
+function toRates(sums: IGscArchiveSums): { clicks: number; impressions: number; ctr: number; position: number } {
+    return {
+        clicks: sums.clicks,
+        impressions: sums.impressions,
+        ctr: roundedCtr(sums.clicks, sums.impressions),
+        position: roundedPosition(sums.weightedPosition, sums.impressions) ?? 0
+    };
+}
+
 /** Key-value store keys for GSC configuration. */
 const KV_CREDENTIALS = 'gsc:credentials';
 const KV_SITE_URL = 'gsc:siteUrl';
@@ -332,28 +476,14 @@ const KV_LAST_FETCH = 'gsc:lastFetch';
  */
 const KV_FIRST_INCOMPLETE_DATE = 'gsc:firstIncompleteDate';
 
-/** Collection name following module_{module-id}_{collection} convention. */
-const COLLECTION_NAME = 'module_user_gsc_queries';
-
-/**
- * Per-day site totals from the date-only GSC request. Physical name keeps
- * the `module_user_` prefix for consistency with the keyword collection.
- */
-const TOTALS_COLLECTION_NAME = 'module_user_gsc_daily_totals';
-
-/**
- * Per-day per-page totals from the [page, date] GSC request. Physical name
- * keeps the `module_user_` prefix for consistency with the sibling GSC
- * collections. Immune to query anonymization (no `query` dimension), so it
- * captures clicks that no keyword row can account for.
- */
-const PAGE_TOTALS_COLLECTION_NAME = 'module_user_gsc_page_totals';
-
 /** Maximum rows per GSC API request. */
 const GSC_ROW_LIMIT = 5000;
 
-/** Days to offset from today to avoid incomplete GSC data. */
-const GSC_DATA_DELAY_DAYS = 3;
+/**
+ * Days to offset from today to avoid incomplete GSC data. Exported so the
+ * archive backfill ends its default range on the same day the daily fetch does.
+ */
+export const GSC_DATA_DELAY_DAYS = 3;
 
 /**
  * Which GSC data the API returns. The API default, `final`, omits every day
@@ -375,37 +505,166 @@ const GSC_MAX_PAGES = 100;
 /** Milliseconds in one day, used to step period windows in whole UTC days. */
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/** The authenticated Search Console client every fetch shares. */
+type SearchConsoleClient = ReturnType<typeof google.searchconsole>;
+
+/** One result row as the Search Console API returns it. */
+type GscApiRow = searchconsole_v1.Schema$ApiDataRow;
+
+/** Dimensions of the keyword request, in the order `toQueryDocument` reads the row keys. */
+const QUERY_DIMENSIONS = ['query', 'page', 'country', 'device', 'date'];
+
+/** Dimensions of the date-only request, the one shape exempt from query anonymization. */
+const DAILY_TOTAL_DIMENSIONS = ['date'];
+
+/** Dimensions of the page request, in the order `toPageTotalDocument` reads the row keys. */
+const PAGE_TOTAL_DIMENSIONS = ['page', 'date'];
+
+/**
+ * What one paginated Search Console request returned, which callers need to
+ * decide whether pruning the window is safe.
+ */
+interface IGscFetchResult {
+    /** Rows Google returned across every page; zero means prune nothing. */
+    rowsReturned: number;
+    /** True when pagination stopped at the safety limit, leaving rows unread. */
+    truncated: boolean;
+    /** Google's first non-final day for the window, from the first response. */
+    firstIncompleteDate: string | null;
+}
+
+/**
+ * Parse a Search Console `YYYY-MM-DD` key into a UTC-midnight Date, or null
+ * when the key is missing or unparseable, so callers can skip the row.
+ */
+function parseDay(dateStr: string | null | undefined): Date | null {
+    let date: Date | null = null;
+    if (dateStr) {
+        const parsed = new Date(dateStr);
+        if (!isNaN(parsed.getTime())) {
+            date = parsed;
+        }
+    }
+    return date;
+}
+
+/**
+ * Convert a keyword-request row into a stored document, or null when any key
+ * is missing, so a malformed row is skipped rather than stored.
+ *
+ * @param row - A row from a request with `QUERY_DIMENSIONS`.
+ * @param fetchedAt - The run's stamp, which decides which rows the prune removes.
+ * @returns The document, or null for a row to skip.
+ */
+function toQueryDocument(row: GscApiRow, fetchedAt: Date): IGscQueryDocument | null {
+    const [query, page, country, device, dateStr] = row.keys ?? [];
+    const date = parseDay(dateStr);
+    let doc: IGscQueryDocument | null = null;
+    if (query && page && country && device && date) {
+        doc = {
+            query,
+            page,
+            country,
+            device,
+            date,
+            clicks: row.clicks ?? 0,
+            impressions: row.impressions ?? 0,
+            ctr: row.ctr ?? 0,
+            position: row.position ?? 0,
+            fetchedAt
+        };
+    }
+    return doc;
+}
+
+/**
+ * Convert a date-only row into a daily total, or null when the date is
+ * missing.
+ *
+ * @param row - A row from a request with `DAILY_TOTAL_DIMENSIONS`.
+ * @param fetchedAt - The run's stamp, which decides which rows the prune removes.
+ * @returns The document, or null for a row to skip.
+ */
+function toDailyTotalDocument(row: GscApiRow, fetchedAt: Date): IGscDailyTotalDocument | null {
+    const date = parseDay(row.keys?.[0]);
+    let doc: IGscDailyTotalDocument | null = null;
+    if (date) {
+        doc = { date, clicks: row.clicks ?? 0, impressions: row.impressions ?? 0, fetchedAt };
+    }
+    return doc;
+}
+
+/**
+ * Convert a page-request row into a page total, or null when a key is
+ * missing.
+ *
+ * @param row - A row from a request with `PAGE_TOTAL_DIMENSIONS`.
+ * @param fetchedAt - The run's stamp, which decides which rows the prune removes.
+ * @returns The document, or null for a row to skip.
+ */
+function toPageTotalDocument(row: GscApiRow, fetchedAt: Date): IGscPageTotalDocument | null {
+    const [page, dateStr] = row.keys ?? [];
+    const date = parseDay(dateStr);
+    let doc: IGscPageTotalDocument | null = null;
+    if (page && date) {
+        doc = {
+            page,
+            date,
+            clicks: row.clicks ?? 0,
+            impressions: row.impressions ?? 0,
+            ctr: row.ctr ?? 0,
+            position: row.position ?? 0,
+            fetchedAt
+        };
+    }
+    return doc;
+}
+
+/**
+ * Convert a page of API rows with one of the converters above, dropping the
+ * rows it rejects.
+ *
+ * @param rows - One page of Search Console rows.
+ * @param convert - The converter matching the request's dimensions.
+ * @param fetchedAt - The run's stamp, written on every document.
+ * @returns The documents to store.
+ */
+function toDocuments<T>(rows: GscApiRow[], convert: (row: GscApiRow, fetchedAt: Date) => T | null, fetchedAt: Date): T[] {
+    return rows.reduce<T[]>((docs, row) => {
+        const doc = convert(row, fetchedAt);
+        if (doc) {
+            docs.push(doc);
+        }
+        return docs;
+    }, []);
+}
+
 /**
  * Google Search Console integration service.
  *
  * Singleton service that manages GSC credential storage, data fetching,
- * and keyword aggregation. Credentials are stored in the database _kv
- * collection, and fetched data is stored in the module_user_gsc_queries collection
- * with TTL-based auto-cleanup.
+ * and keyword aggregation. Credentials and fetch markers are stored in the
+ * database _kv collection, and fetched data in the permanent ClickHouse
+ * archive.
  */
 export class GscService {
     private static instance: GscService;
-    private readonly collection: Collection<IGscQueryDocument>;
-    private readonly totalsCollection: Collection<IGscDailyTotalDocument>;
-    private readonly pageTotalsCollection: Collection<IGscPageTotalDocument>;
 
     /**
      * Private constructor enforces singleton pattern. Use setDependencies()
      * and getInstance() for access.
      *
-     * @param database - Database service for MongoDB operations
+     * @param database - Key-value store for credentials and fetch markers
      * @param cacheService - Redis cache for data caching
      * @param logger - System log service for operations tracking
+     * @param archive - Permanent store every fetch writes to and every read uses
      */
     private constructor(
         private readonly database: IDatabaseService,
         private readonly cacheService: ICacheService,
-        private readonly logger: ISystemLogService
-    ) {
-        this.collection = database.getCollection<IGscQueryDocument>(COLLECTION_NAME);
-        this.totalsCollection = database.getCollection<IGscDailyTotalDocument>(TOTALS_COLLECTION_NAME);
-        this.pageTotalsCollection = database.getCollection<IGscPageTotalDocument>(PAGE_TOTALS_COLLECTION_NAME);
-    }
+        private readonly logger: ISystemLogService,
+        private readonly archive: IGscArchive
+    ) {}
 
     /**
      * Initialize the singleton instance with dependencies.
@@ -416,14 +675,17 @@ export class GscService {
      * @param database - Database service
      * @param cacheService - Cache service
      * @param logger - System log service
+     * @param archive - Permanent ClickHouse store for fetched rows; reports
+     *   itself disabled when the deployment has no ClickHouse
      */
     public static setDependencies(
         database: IDatabaseService,
         cacheService: ICacheService,
-        logger: ISystemLogService
+        logger: ISystemLogService,
+        archive: IGscArchive
     ): void {
         if (!GscService.instance) {
-            GscService.instance = new GscService(database, cacheService, logger);
+            GscService.instance = new GscService(database, cacheService, logger, archive);
         }
     }
 
@@ -448,41 +710,13 @@ export class GscService {
     }
 
     /**
-     * Create database indexes for the module_user_gsc_queries collection.
+     * Whether fetched data has anywhere to go. Without ClickHouse there is no
+     * archive, so the daily job skips the run instead of failing it every day.
      *
-     * Called once during module init() phase. Creates a compound unique
-     * index for deduplication and a TTL index for automatic cleanup.
+     * @returns True when the archive is enabled.
      */
-    async createIndexes(): Promise<void> {
-        await this.collection.createIndex(
-            { date: 1, query: 1, page: 1, country: 1, device: 1 },
-            { unique: true, name: 'gsc_dedup' }
-        );
-        await this.collection.createIndex(
-            { query: 1, date: 1 },
-            { name: 'gsc_keyword_lookup' }
-        );
-        await this.collection.createIndex(
-            { fetchedAt: 1 },
-            { expireAfterSeconds: 120 * 24 * 60 * 60, name: 'gsc_ttl' }
-        );
-        await this.totalsCollection.createIndex(
-            { date: 1 },
-            { unique: true, name: 'gsc_totals_dedup' }
-        );
-        await this.totalsCollection.createIndex(
-            { fetchedAt: 1 },
-            { expireAfterSeconds: 120 * 24 * 60 * 60, name: 'gsc_totals_ttl' }
-        );
-        await this.pageTotalsCollection.createIndex(
-            { date: 1, page: 1 },
-            { unique: true, name: 'gsc_page_totals_dedup' }
-        );
-        await this.pageTotalsCollection.createIndex(
-            { fetchedAt: 1 },
-            { expireAfterSeconds: 120 * 24 * 60 * 60, name: 'gsc_page_totals_ttl' }
-        );
-        this.logger.info('GSC query indexes created');
+    canStore(): boolean {
+        return this.archive.isEnabled();
     }
 
     /**
@@ -499,7 +733,9 @@ export class GscService {
      * Get GSC configuration status for the admin UI.
      *
      * Never returns the raw service account JSON — only whether
-     * credentials are configured, the site URL, and last fetch time.
+     * credentials are configured, the site URL, the last fetch time, and how
+     * far back the archive reaches, so a reader knows which windows can hold
+     * data at all.
      *
      * @returns Configuration status object
      */
@@ -507,11 +743,13 @@ export class GscService {
         const creds = await this.database.get<string>(KV_CREDENTIALS);
         const siteUrl = await this.database.get<string>(KV_SITE_URL);
         const lastFetch = await this.database.get<string>(KV_LAST_FETCH);
+        const history = this.archive.isEnabled() ? await this.archive.getCoverage() : null;
 
         return {
             configured: !!creds,
             siteUrl: siteUrl ?? undefined,
-            lastFetch: lastFetch ?? undefined
+            lastFetch: lastFetch ?? undefined,
+            history
         };
     }
 
@@ -560,8 +798,8 @@ export class GscService {
     /**
      * Remove stored GSC credentials and site URL.
      *
-     * Does not delete previously fetched query data — that expires
-     * naturally via the TTL index.
+     * Does not delete previously fetched query data; the archive keeps it
+     * permanently.
      */
     async removeCredentials(): Promise<void> {
         await this.database.set(KV_CREDENTIALS, null);
@@ -572,27 +810,30 @@ export class GscService {
     }
 
     /**
-     * Fetch search analytics data from GSC and store in MongoDB.
+     * Fetch the recent window from Search Console into the archive and save
+     * the fetch markers the reads depend on. This is the daily job's run.
      *
-     * Requests data with dimensions [query, page, country, device, date]
-     * for the specified date range. Defaults to fetching the last 30 days
-     * (offset by 3 days to avoid incomplete data). Upserts rows using
-     * the compound unique index for deduplication, then removes rows in the
-     * window that this fetch did not return, so revised fresh data does not
-     * leave old rows behind.
+     * Defaults to the last 30 days, ending 3 days ago. Every run refetches the
+     * whole window, because Google's fresh figures change until a day is
+     * final, so a run also repairs any day an earlier failed run missed.
+     *
+     * After the window is stored it saves `gsc:lastFetch` and, when Google
+     * returned days, `gsc:firstIncompleteDate` — the first day still being
+     * collected, which only the date-only request reports and which every
+     * read uses to mark figures that can still change. An empty response
+     * leaves the saved day alone, for the same reason it skips the prune.
      *
      * @param startDate - ISO date string (YYYY-MM-DD), defaults to 33 days ago
      * @param endDate - ISO date string (YYYY-MM-DD), defaults to 3 days ago
-     * @returns Number of rows fetched and upserted
-     * @throws Error if not configured or API request fails
+     * @returns Rows Google returned across the keyword, daily, and page requests
+     * @throws Error if ClickHouse or credentials are missing, or an API request
+     *   or archive write fails
      */
     async fetchAndStore(startDate?: string, endDate?: string): Promise<{ rowsFetched: number }> {
-        const credentialsJson = await this.database.get<string>(KV_CREDENTIALS);
-        const siteUrl = await this.database.get<string>(KV_SITE_URL);
-
-        if (!credentialsJson || !siteUrl) {
-            throw new Error('GSC not configured: missing credentials or site URL');
+        if (!this.archive.isEnabled()) {
+            throw new Error('GSC data needs ClickHouse to be stored, and ClickHouse is not configured');
         }
+        const { searchConsole, siteUrl } = await this.openSearchConsole();
 
         const now = new Date();
         const defaultEnd = new Date(now);
@@ -603,441 +844,256 @@ export class GscService {
         const start = startDate ?? defaultStart.toISOString().split('T')[0];
         const end = endDate ?? defaultEnd.toISOString().split('T')[0];
 
+        this.logger.info({ siteUrl, start, end }, 'Fetching GSC search analytics');
+        const result = await this.archiveWindowWith(searchConsole, siteUrl, start, end);
+
+        if (result.dailyRowsReturned > 0) {
+            await this.database.set(KV_FIRST_INCOMPLETE_DATE, result.firstIncompleteDate);
+        }
+        await this.database.set(KV_LAST_FETCH, now.toISOString());
+        this.logger.info({ rowsFetched: result.rowsFetched, firstIncompleteDate: result.firstIncompleteDate, siteUrl }, 'GSC data fetch complete');
+
+        return { rowsFetched: result.rowsFetched };
+    }
+
+    /**
+     * Fetch a window from Search Console into the archive without touching
+     * the saved fetch markers. This is the backfill's entry point.
+     *
+     * Writing old windows through `fetchAndStore` would overwrite
+     * `gsc:lastFetch` and `gsc:firstIncompleteDate` with values describing an
+     * old window, and the SEO tab would mark the wrong days as not final.
+     *
+     * @param start - First day of the window (YYYY-MM-DD), inclusive.
+     * @param end - Last day of the window (YYYY-MM-DD), inclusive.
+     * @returns Rows Google returned across the keyword, daily, and page requests.
+     * @throws Error when the archive is disabled, credentials are missing, or
+     *   a request or write fails.
+     */
+    async archiveWindow(start: string, end: string): Promise<{ rowsFetched: number }> {
+        if (!this.archive.isEnabled()) {
+            throw new Error('GSC archive is disabled: ClickHouse is not configured');
+        }
+        const { searchConsole, siteUrl } = await this.openSearchConsole();
+        const result = await this.archiveWindowWith(searchConsole, siteUrl, start, end);
+        return { rowsFetched: result.rowsFetched };
+    }
+
+    /**
+     * Run the keyword, daily, and page requests for a window and write each
+     * to its archive table, then delete rows in the window the fetch did not
+     * return. Fresh figures change until Google finalizes a day, and a row
+     * present in an earlier fetch can be missing from a later one; without the
+     * prune that old row would stay and overstate the day. The prune is
+     * skipped after an empty response, so an empty answer cannot wipe a window
+     * that held data, and after pagination stopped at the safety limit,
+     * because the rows past the limit were not refetched.
+     *
+     * @param searchConsole - Authenticated Search Console client.
+     * @param siteUrl - GSC property URL.
+     * @param start - First day of the window (YYYY-MM-DD), inclusive.
+     * @param end - Last day of the window (YYYY-MM-DD), inclusive.
+     * @returns Rows Google returned across the three requests, and the
+     *   date-only request's row count and first non-final day, which the
+     *   daily run saves.
+     */
+    private async archiveWindowWith(
+        searchConsole: SearchConsoleClient,
+        siteUrl: string,
+        start: string,
+        end: string
+    ): Promise<{ rowsFetched: number; dailyRowsReturned: number; firstIncompleteDate: string | null }> {
+        const fetchedAt = new Date();
+        const datasets: Array<{ table: GscArchiveTable; dimensions: string[]; write: (rows: GscApiRow[]) => Promise<void> }> = [
+            {
+                table: 'gsc_queries',
+                dimensions: QUERY_DIMENSIONS,
+                /** Archive one page of keyword rows under this run's stamp. */
+                write: rows => this.archive.writeQueries(toDocuments(rows, toQueryDocument, fetchedAt))
+            },
+            {
+                table: 'gsc_daily_totals',
+                dimensions: DAILY_TOTAL_DIMENSIONS,
+                /** Archive the window's per-day site totals under this run's stamp. */
+                write: rows => this.archive.writeDailyTotals(toDocuments(rows, toDailyTotalDocument, fetchedAt))
+            },
+            {
+                table: 'gsc_page_totals',
+                dimensions: PAGE_TOTAL_DIMENSIONS,
+                /** Archive one page of per-page totals under this run's stamp. */
+                write: rows => this.archive.writePageTotals(toDocuments(rows, toPageTotalDocument, fetchedAt))
+            }
+        ];
+
+        let rowsFetched = 0;
+        let dailyRowsReturned = 0;
+        let firstIncompleteDate: string | null = null;
+        for (const dataset of datasets) {
+            const result = await this.fetchRowPages(searchConsole, siteUrl, start, end, dataset.dimensions, dataset.write);
+            if (result.rowsReturned > 0 && !result.truncated) {
+                await this.archive.prune(dataset.table, start, end, fetchedAt);
+            }
+            if (dataset.table === 'gsc_daily_totals') {
+                dailyRowsReturned = result.rowsReturned;
+                firstIncompleteDate = result.firstIncompleteDate;
+            }
+            rowsFetched += result.rowsReturned;
+        }
+
+        this.logger.info({ rowsFetched, start, end, siteUrl }, 'GSC archive window stored');
+        return { rowsFetched, dailyRowsReturned, firstIncompleteDate };
+    }
+
+    /**
+     * Build an authenticated Search Console client from the stored
+     * credentials.
+     *
+     * @returns The client and the property URL every request names.
+     * @throws Error when credentials or the site URL are not configured.
+     */
+    private async openSearchConsole(): Promise<{ searchConsole: SearchConsoleClient; siteUrl: string }> {
+        const credentialsJson = await this.database.get<string>(KV_CREDENTIALS);
+        const siteUrl = await this.database.get<string>(KV_SITE_URL);
+
+        if (!credentialsJson || !siteUrl) {
+            throw new Error('GSC not configured: missing credentials or site URL');
+        }
+
         const auth = new google.auth.GoogleAuth({
             credentials: JSON.parse(credentialsJson),
             scopes: ['https://www.googleapis.com/auth/webmasters.readonly']
         });
 
-        const searchConsole = google.searchconsole({ version: 'v1', auth });
+        return { searchConsole: google.searchconsole({ version: 'v1', auth }), siteUrl };
+    }
 
-        this.logger.info({ siteUrl, start, end }, 'Fetching GSC search analytics');
-
-        let totalRows = 0;
+    /**
+     * Run one Search Console request across every page of results, handing
+     * each page to `onPage` as it arrives so a large window is never held in
+     * memory at once.
+     *
+     * Stops at `GSC_MAX_PAGES` and reports `truncated`, because the rows past
+     * the limit were not read and a prune would then delete rows Google still
+     * reports. Google sends `metadata.firstIncompleteDate` only for a request
+     * grouped by date alone, so it is null for every other shape.
+     *
+     * @param searchConsole - Authenticated Search Console client.
+     * @param siteUrl - GSC property URL.
+     * @param start - First day of the window (YYYY-MM-DD), inclusive.
+     * @param end - Last day of the window (YYYY-MM-DD), inclusive.
+     * @param dimensions - The request's dimensions, which fix each row's key order.
+     * @param onPage - Stores one non-empty page of rows.
+     * @returns The row count, whether pagination was cut short, and Google's
+     *   first non-final day.
+     */
+    private async fetchRowPages(
+        searchConsole: SearchConsoleClient,
+        siteUrl: string,
+        start: string,
+        end: string,
+        dimensions: string[],
+        onPage: (rows: GscApiRow[]) => Promise<void>
+    ): Promise<IGscFetchResult> {
+        let rowsReturned = 0;
         let startRow = 0;
-        let hasMore = true;
         let pageCount = 0;
         let truncated = false;
+        let hasMore = true;
+        let firstIncompleteDate: string | null = null;
 
         while (hasMore) {
             if (pageCount >= GSC_MAX_PAGES) {
-                this.logger.warn({ totalRows, maxPages: GSC_MAX_PAGES }, 'GSC fetch hit pagination safety limit');
+                this.logger.warn({ rowsReturned, dimensions, maxPages: GSC_MAX_PAGES }, 'GSC fetch hit pagination safety limit');
                 truncated = true;
-                break;
-            }
-            pageCount++;
-            const response = await searchConsole.searchanalytics.query({
-                siteUrl,
-                requestBody: {
-                    startDate: start,
-                    endDate: end,
-                    dimensions: ['query', 'page', 'country', 'device', 'date'],
-                    dataState: GSC_DATA_STATE,
-                    rowLimit: GSC_ROW_LIMIT,
-                    startRow
-                }
-            });
-
-            const rows = response.data.rows ?? [];
-            if (rows.length === 0) {
                 hasMore = false;
-                break;
-            }
-
-            const bulkOps = rows.reduce<Array<{ updateOne: { filter: Record<string, unknown>; update: { $set: IGscQueryDocument }; upsert: true } }>>((ops, row) => {
-                const keys = row.keys ?? [];
-                const [query, page, country, device, dateStr] = keys;
-
-                // Skip rows with missing keys or unparseable dates
-                if (!query || !page || !country || !device || !dateStr) {
-                    return ops;
-                }
-                const date = new Date(dateStr);
-                if (isNaN(date.getTime())) {
-                    return ops;
-                }
-
-                const doc: IGscQueryDocument = {
-                    query,
-                    page,
-                    country,
-                    device,
-                    date,
-                    clicks: row.clicks ?? 0,
-                    impressions: row.impressions ?? 0,
-                    ctr: row.ctr ?? 0,
-                    position: row.position ?? 0,
-                    fetchedAt: now
-                };
-
-                ops.push({
-                    updateOne: {
-                        filter: {
-                            date: doc.date,
-                            query: doc.query,
-                            page: doc.page,
-                            country: doc.country,
-                            device: doc.device
-                        },
-                        update: { $set: doc },
-                        upsert: true
+            } else {
+                pageCount++;
+                const response = await searchConsole.searchanalytics.query({
+                    siteUrl,
+                    requestBody: {
+                        startDate: start,
+                        endDate: end,
+                        dimensions,
+                        dataState: GSC_DATA_STATE,
+                        rowLimit: GSC_ROW_LIMIT,
+                        startRow
                     }
                 });
-                return ops;
-            }, []);
-
-            if (bulkOps.length > 0) {
-                await this.collection.bulkWrite(bulkOps);
-            }
-            totalRows += rows.length;
-            startRow += rows.length;
-
-            if (rows.length < GSC_ROW_LIMIT) {
-                hasMore = false;
-            }
-        }
-
-        if (!truncated) {
-            await this.pruneStaleRows(this.collection, totalRows, start, end, now);
-        }
-
-        await this.fetchAndStoreDailyTotals(searchConsole, siteUrl, start, end, now);
-        await this.fetchAndStorePageTotals(searchConsole, siteUrl, start, end, now);
-
-        await this.database.set(KV_LAST_FETCH, now.toISOString());
-        this.logger.info({ rowsFetched: totalRows, siteUrl }, 'GSC data fetch complete');
-
-        return { rowsFetched: totalRows };
-    }
-
-    /**
-     * Fetch true per-day site totals with a date-only request and upsert
-     * them into the totals collection.
-     *
-     * The keyword fetch above requests the `query` dimension, which makes
-     * GSC silently drop anonymized (low-volume) queries — summing those
-     * rows undercounts clicks, sometimes to zero on quiet days. A request
-     * with only the `date` dimension is exempt from query anonymization,
-     * so these totals match what GSC's own dashboard reports. One row per
-     * day means a single un-paginated request covers any sane window.
-     *
-     * This is the one request grouped by date alone, which is the only shape
-     * for which Google reports `metadata.firstIncompleteDate` — the first day
-     * still being collected. The value is saved so the reads can mark those
-     * days as not final. An empty response leaves the saved value alone, for
-     * the same reason it skips the prune.
-     *
-     * @param searchConsole - Authenticated Search Console client.
-     * @param siteUrl - GSC property URL.
-     * @param start - ISO date string (YYYY-MM-DD), inclusive.
-     * @param end - ISO date string (YYYY-MM-DD), inclusive.
-     * @param fetchedAt - Timestamp stamped onto each upserted row (drives TTL).
-     */
-    private async fetchAndStoreDailyTotals(
-        searchConsole: ReturnType<typeof google.searchconsole>,
-        siteUrl: string,
-        start: string,
-        end: string,
-        fetchedAt: Date
-    ): Promise<void> {
-        const response = await searchConsole.searchanalytics.query({
-            siteUrl,
-            requestBody: {
-                startDate: start,
-                endDate: end,
-                dimensions: ['date'],
-                dataState: GSC_DATA_STATE,
-                rowLimit: GSC_ROW_LIMIT
-            }
-        });
-
-        const rows = response.data.rows ?? [];
-        const bulkOps = rows.reduce<Array<{ updateOne: { filter: Record<string, unknown>; update: { $set: IGscDailyTotalDocument }; upsert: true } }>>((ops, row) => {
-            const dateStr = row.keys?.[0];
-            if (!dateStr) {
-                return ops;
-            }
-            const date = new Date(dateStr);
-            if (isNaN(date.getTime())) {
-                return ops;
-            }
-            const doc: IGscDailyTotalDocument = {
-                date,
-                clicks: row.clicks ?? 0,
-                impressions: row.impressions ?? 0,
-                fetchedAt
-            };
-            ops.push({ updateOne: { filter: { date: doc.date }, update: { $set: doc }, upsert: true } });
-            return ops;
-        }, []);
-
-        if (bulkOps.length > 0) {
-            await this.totalsCollection.bulkWrite(bulkOps);
-        }
-        await this.pruneStaleRows(this.totalsCollection, rows.length, start, end, fetchedAt);
-        const firstIncompleteDate = response.data.metadata?.firstIncompleteDate ?? null;
-        if (rows.length > 0) {
-            await this.database.set(KV_FIRST_INCOMPLETE_DATE, firstIncompleteDate);
-        }
-        this.logger.info({ days: bulkOps.length, firstIncompleteDate, siteUrl }, 'GSC daily totals stored');
-    }
-
-    /**
-     * Fetch true per-day per-page totals with a [page, date] request and upsert
-     * them into the page-totals collection.
-     *
-     * This is the source of truth behind the "top pages" panel. Because the
-     * request omits the `query` dimension it escapes GSC's query anonymization,
-     * so each page's clicks and impressions reflect *all* the queries that
-     * surfaced it — including the anonymized low-volume ones that never produce
-     * a keyword row. Summing keyword rows per page would undercount exactly the
-     * clicks the operator is trying to find.
-     *
-     * Unlike the date-only daily totals (one row per day, never paginated), a
-     * page-dimensioned response can exceed the row limit on a site with many
-     * indexed pages, so this paginates like the keyword fetch.
-     *
-     * @param searchConsole - Authenticated Search Console client.
-     * @param siteUrl - GSC property URL.
-     * @param start - ISO date string (YYYY-MM-DD), inclusive.
-     * @param end - ISO date string (YYYY-MM-DD), inclusive.
-     * @param fetchedAt - Timestamp stamped onto each upserted row (drives TTL).
-     */
-    private async fetchAndStorePageTotals(
-        searchConsole: ReturnType<typeof google.searchconsole>,
-        siteUrl: string,
-        start: string,
-        end: string,
-        fetchedAt: Date
-    ): Promise<void> {
-        let totalRows = 0;
-        let startRow = 0;
-        let hasMore = true;
-        let pageCount = 0;
-        let truncated = false;
-
-        while (hasMore) {
-            if (pageCount >= GSC_MAX_PAGES) {
-                this.logger.warn({ totalRows, maxPages: GSC_MAX_PAGES }, 'GSC page-totals fetch hit pagination safety limit');
-                truncated = true;
-                break;
-            }
-            pageCount++;
-            const response = await searchConsole.searchanalytics.query({
-                siteUrl,
-                requestBody: {
-                    startDate: start,
-                    endDate: end,
-                    dimensions: ['page', 'date'],
-                    dataState: GSC_DATA_STATE,
-                    rowLimit: GSC_ROW_LIMIT,
-                    startRow
+                if (pageCount === 1) {
+                    firstIncompleteDate = response.data.metadata?.firstIncompleteDate ?? null;
                 }
-            });
-
-            const rows = response.data.rows ?? [];
-            if (rows.length === 0) {
-                hasMore = false;
-                break;
-            }
-
-            const bulkOps = rows.reduce<Array<{ updateOne: { filter: Record<string, unknown>; update: { $set: IGscPageTotalDocument }; upsert: true } }>>((ops, row) => {
-                const [page, dateStr] = row.keys ?? [];
-                if (!page || !dateStr) {
-                    return ops;
+                const rows = response.data.rows ?? [];
+                if (rows.length > 0) {
+                    await onPage(rows);
+                    rowsReturned += rows.length;
+                    startRow += rows.length;
                 }
-                const date = new Date(dateStr);
-                if (isNaN(date.getTime())) {
-                    return ops;
-                }
-                const doc: IGscPageTotalDocument = {
-                    page,
-                    date,
-                    clicks: row.clicks ?? 0,
-                    impressions: row.impressions ?? 0,
-                    ctr: row.ctr ?? 0,
-                    position: row.position ?? 0,
-                    fetchedAt
-                };
-                ops.push({ updateOne: { filter: { date: doc.date, page: doc.page }, update: { $set: doc }, upsert: true } });
-                return ops;
-            }, []);
-
-            if (bulkOps.length > 0) {
-                await this.pageTotalsCollection.bulkWrite(bulkOps);
-            }
-            totalRows += rows.length;
-            startRow += rows.length;
-
-            if (rows.length < GSC_ROW_LIMIT) {
-                hasMore = false;
+                hasMore = rows.length === GSC_ROW_LIMIT;
             }
         }
 
-        if (!truncated) {
-            await this.pruneStaleRows(this.pageTotalsCollection, totalRows, start, end, fetchedAt);
-        }
-        this.logger.info({ rowsFetched: totalRows, siteUrl }, 'GSC page totals stored');
+        return { rowsReturned, truncated, firstIncompleteDate };
     }
 
     /**
-     * Delete rows in a refetched window that the latest fetch did not return.
+     * Get the site's click and impression trend, with the top keywords of each
+     * bucket, over any window the archive holds.
      *
-     * Fresh GSC data changes until Google marks the day final, and a keyword
-     * or page row present in an early fetch can be missing from a later one.
-     * Upserts alone would leave that early row in place and overstate the
-     * day. Every row the latest fetch returned was stamped with its
-     * `fetchedAt`, so any row in the window with an older stamp is one Google
-     * no longer reports and is removed.
+     * Totals come from the daily totals, which escape GSC's query
+     * anonymization, so a bucket's clicks match what Google's own dashboard
+     * reports even when no keyword row accounts for them. Every bucket in the
+     * window is emitted, with zero totals where nothing was stored, so a
+     * stalled `gsc:fetch` job or a quiet stretch renders as a flat line
+     * instead of a gap the chart silently skips.
      *
-     * Callers skip this when pagination stopped at the safety limit, because
-     * rows past the limit were not refetched. It also does nothing when the
-     * fetch returned no rows, so an empty response cannot wipe a window that
-     * held data.
+     * Each bucket carries `preliminary: true` when any of its days had not
+     * been finalized by Google at the last fetch, so the chart can say its
+     * figures may still change.
      *
-     * @param collection - The GSC collection the fetch just wrote to.
-     * @param rowsReturned - How many rows Google returned for the window; zero skips the prune.
-     * @param start - First day of the refetched window (YYYY-MM-DD), inclusive.
-     * @param end - Last day of the refetched window (YYYY-MM-DD), inclusive.
-     * @param fetchedAt - The timestamp this run stamped on every row it wrote.
+     * @param window - The span to chart.
+     * @param topN - Most keywords listed per bucket.
+     * @param granularity - Bucket size; omitted, it is picked from the
+     *   window's length by {@link pickGscGranularity}.
+     * @returns Buckets oldest first, with the window and bucket size covered.
      */
-    private async pruneStaleRows<T extends { date: Date; fetchedAt: Date }>(
-        collection: Collection<T>,
-        rowsReturned: number,
-        start: string,
-        end: string,
-        fetchedAt: Date
-    ): Promise<void> {
-        if (rowsReturned > 0) {
-            const filter = {
-                date: { $gte: new Date(start), $lte: new Date(end) },
-                fetchedAt: { $lt: fetchedAt }
-            } as Filter<T>;
-            const result = await collection.deleteMany(filter);
-            if (result.deletedCount > 0) {
-                this.logger.info({ deleted: result.deletedCount, collection: collection.collectionName, start, end }, 'GSC stale rows pruned');
-            }
-        }
-    }
+    async getKeywordTrend(window: GscWindowRequest, topN: number = 15, granularity?: GscGranularity): Promise<IGscKeywordTrendResult> {
+        const resolved = await this.resolveWindow(window);
+        const bucketSize = granularity ?? pickGscGranularity(resolved.dayCount);
 
-    /**
-     * Get keyword data grouped by day for a configurable number of days.
-     *
-     * Aggregates stored GSC query rows into daily buckets, each containing
-     * the top keywords ranked by clicks. Accounts for the 3-day GSC data
-     * delay — the most recent bucket will be offset accordingly.
-     *
-     * Per-day totals come from the date-only totals collection (immune to
-     * GSC's query anonymization) when a totals row exists for the day,
-     * falling back to keyword-row sums for data fetched before the totals
-     * collection existed. Every day in the window is emitted — days with
-     * no data carry zero totals — so a stalled `gsc:fetch` job or a quiet
-     * day renders as an explicit flat line instead of silently vanishing
-     * from the chart.
-     *
-     * Each bucket carries `preliminary: true` when Google had not finalized
-     * that day at the last fetch, so the chart can say its figures may
-     * still change.
-     *
-     * @param days - Number of daily buckets to return (default: 14)
-     * @param topN - Maximum keywords per bucket (default: 15)
-     * @returns Daily keyword buckets ordered chronologically (oldest first),
-     *   plus the first non-final day in the window (null when all are final)
-     */
-    async getKeywordsByDay(days: number = 14, topN: number = 15): Promise<{
-        days: number;
-        firstIncompleteDate: string | null;
-        buckets: Array<{
-            date: string;
-            totalClicks: number;
-            totalImpressions: number;
-            preliminary: boolean;
-            keywords: Array<{ keyword: string; clicks: number; impressions: number; ctr: number; position: number }>;
-        }>;
-    }> {
-        const now = new Date();
-        const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - GSC_DATA_DELAY_DAYS, 23, 59, 59, 999));
-        const since = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - GSC_DATA_DELAY_DAYS - days + 1, 0, 0, 0, 0));
-
-        const [results, totals, firstIncompleteDate] = await Promise.all([
-            this.collection.aggregate<{
-                _id: { date: string; query: string };
-                clicks: number;
-                impressions: number;
-                weightedPosition: number;
-            }>([
-                { $match: { date: { $gte: since, $lte: end } } },
-                {
-                    $group: {
-                        _id: {
-                            date: { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
-                            query: '$query'
-                        },
-                        clicks: { $sum: '$clicks' },
-                        impressions: { $sum: '$impressions' },
-                        weightedPosition: { $sum: { $multiply: ['$position', '$impressions'] } }
-                    }
-                },
-                { $sort: { '_id.date': 1, clicks: -1 } }
-            ]).toArray(),
-            this.totalsCollection.find({ date: { $gte: since, $lte: end } }).toArray(),
-            this.readFirstIncompleteDate(since, end)
+        const [totals, keywords] = await Promise.all([
+            this.archive.sumTotalsByBucket(resolved.sinceKey, resolved.endKey, bucketSize),
+            this.archive.topKeywordsByBucket(resolved.sinceKey, resolved.endKey, bucketSize, topN)
         ]);
 
-        const dayMap = new Map<string, {
-            totalClicks: number;
-            totalImpressions: number;
-            keywords: Array<{ keyword: string; clicks: number; impressions: number; ctr: number; position: number }>;
-        }>();
-
-        // Zero-fill every UTC day in the window so absent days are an
-        // explicit zero, not a hole the chart silently skips.
-        for (let i = 0; i < days; i++) {
-            const day = new Date(since.getTime() + i * 24 * 60 * 60 * 1000);
-            dayMap.set(day.toISOString().split('T')[0], { totalClicks: 0, totalImpressions: 0, keywords: [] });
+        const totalsByBucket = new Map(totals.map(row => [row.bucket, row]));
+        const keywordsByBucket = new Map<string, IGscKeyword[]>();
+        for (const row of keywords) {
+            const list = keywordsByBucket.get(row.bucket) ?? [];
+            list.push({
+                keyword: row.keyword,
+                clicks: row.clicks,
+                impressions: row.impressions,
+                ctr: roundedCtr(row.clicks, row.impressions),
+                position: roundedPosition(row.weightedPosition, row.impressions) ?? 0
+            });
+            keywordsByBucket.set(row.bucket, list);
         }
 
-        for (const row of results) {
-            const bucket = dayMap.get(row._id.date);
-            if (!bucket) {
-                continue;
-            }
-            bucket.totalClicks += row.clicks;
-            bucket.totalImpressions += row.impressions;
-            if (bucket.keywords.length < topN) {
-                bucket.keywords.push({
-                    keyword: row._id.query,
-                    clicks: row.clicks,
-                    impressions: row.impressions,
-                    ctr: row.impressions > 0
-                        ? Math.round((row.clicks / row.impressions) * 10000) / 10000
-                        : 0,
-                    position: row.impressions > 0
-                        ? Math.round((row.weightedPosition / row.impressions) * 10) / 10
-                        : 0
-                });
-            }
-        }
+        const buckets = listGscBuckets(resolved.since, resolved.lastDay, bucketSize).map(bucket => ({
+            date: bucket.start,
+            totalClicks: totalsByBucket.get(bucket.start)?.clicks ?? 0,
+            totalImpressions: totalsByBucket.get(bucket.start)?.impressions ?? 0,
+            preliminary: resolved.firstIncompleteDate !== null && bucket.lastDay >= resolved.firstIncompleteDate,
+            keywords: keywordsByBucket.get(bucket.start) ?? []
+        }));
 
-        // True daily totals win over keyword-row sums where available.
-        for (const total of totals) {
-            const bucket = dayMap.get(total.date.toISOString().split('T')[0]);
-            if (bucket) {
-                bucket.totalClicks = total.clicks;
-                bucket.totalImpressions = total.impressions;
-            }
-        }
-
-        const buckets = Array.from(dayMap.entries())
-            .sort(([a], [b]) => a.localeCompare(b))
-            .map(([date, bucket]) => ({
-                date,
-                totalClicks: bucket.totalClicks,
-                totalImpressions: bucket.totalImpressions,
-                preliminary: firstIncompleteDate !== null && date >= firstIncompleteDate,
-                keywords: bucket.keywords
-            }));
-
-        return { days: buckets.length, firstIncompleteDate, buckets };
+        return {
+            windowStart: resolved.since.toISOString(),
+            windowEnd: resolved.end.toISOString(),
+            granularity: bucketSize,
+            firstIncompleteDate: resolved.firstIncompleteDate,
+            buckets
+        };
     }
 
     /**
@@ -1074,316 +1130,197 @@ export class GscService {
     }
 
     /**
-     * Resolve the whole UTC days a period read covers, ending on the newest
-     * day Google has actually delivered.
+     * Turn a window request into the whole UTC days a read covers.
      *
-     * Google finalizes a day on its own schedule, often more than
-     * GSC_DATA_DELAY_DAYS after the fact. A window that ends at a fixed
-     * "now minus 3 days" therefore often lands on days Google has not
-     * returned yet, and the "24h" view shows nothing even though data
-     * exists one day earlier. Anchoring on the newest row in the date-only
-     * totals collection makes "24h" mean "the latest day available",
-     * "7d" the latest 7 available days, and so on. The totals collection
-     * is the anchor because the same `gsc:fetch` run writes it alongside
-     * the keyword and page rows, and it holds exactly one row per
-     * delivered day. When it is empty (nothing fetched yet) the window
-     * falls back to the fixed delay so callers still get sensible bounds.
+     * A `period` ends on the newest day Google has actually delivered, not on
+     * a fixed "now minus 3 days". Google finalizes a day on its own schedule,
+     * often later than GSC_DATA_DELAY_DAYS, so a fixed offset often lands on
+     * days Google has not returned yet and the "24h" view shows nothing even
+     * though data exists one day earlier. The newest archived daily total is
+     * the anchor, because every fetch writes one per delivered day. An `all`
+     * window starts on the oldest archived day. With nothing archived, both
+     * fall back to the fixed delay so callers still get sensible bounds.
      *
-     * @param periodHours - Lookback period the caller asked for; rounded up
-     *   to whole days because GSC data is daily.
-     * @returns Inclusive window bounds — `since` is midnight UTC on the first
-     *   day, `end` is the last millisecond of the newest delivered day — plus
-     *   the first non-final day in the window, or null when all are final.
+     * @param window - What the caller asked for.
+     * @returns The first and last day at midnight UTC, the last millisecond
+     *   of the last day, both days as `YYYY-MM-DD`, the day count, and the
+     *   first non-final day inside the window (null when all are final).
+     * @throws Error when a `range` is malformed or reversed.
      */
-    private async resolvePeriodWindow(periodHours: number): Promise<{ since: Date; end: Date; firstIncompleteDate: string | null }> {
-        const latest = await this.totalsCollection.findOne({}, { sort: { date: -1 }, projection: { date: 1 } });
-        const now = new Date();
-        const lastDay = latest?.date
-            ?? new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - GSC_DATA_DELAY_DAYS));
-        const days = Math.max(1, Math.ceil(periodHours / 24));
-        const since = new Date(lastDay.getTime() - (days - 1) * DAY_MS);
+    private async resolveWindow(window: GscWindowRequest): Promise<IResolvedGscWindow> {
+        let since: Date;
+        let lastDay: Date;
+        if (window.kind === 'range') {
+            const range = parseGscDayRange(window.startDate, window.endDate);
+            since = parseGscDay(range.startDate) as Date;
+            lastDay = parseGscDay(range.endDate) as Date;
+        } else {
+            const coverage = await this.archive.getCoverage();
+            const now = new Date();
+            const fallbackDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - GSC_DATA_DELAY_DAYS));
+            lastDay = coverage.lastDate ? parseGscDay(coverage.lastDate) ?? fallbackDay : fallbackDay;
+            if (window.kind === 'all') {
+                since = coverage.firstDate ? parseGscDay(coverage.firstDate) ?? lastDay : lastDay;
+            } else {
+                const days = Math.max(1, Math.ceil(window.hours / 24));
+                since = new Date(lastDay.getTime() - (days - 1) * DAY_MS);
+            }
+        }
         const end = new Date(lastDay.getTime() + DAY_MS - 1);
         const firstIncompleteDate = await this.readFirstIncompleteDate(since, end);
-        return { since, end, firstIncompleteDate };
-    }
-
-    /**
-     * Get aggregated keyword data for a given time period.
-     *
-     * Aggregates stored GSC query rows by keyword, summing clicks and
-     * impressions, and averaging CTR and position. Results are sorted
-     * by clicks descending.
-     *
-     * The window ends on the newest day Google has delivered (see
-     * {@link resolvePeriodWindow}), so "last 7 days" covers the 7 latest
-     * available days — the returned `windowStart`/`windowEnd` carry the
-     * actual dates so the UI can show true coverage.
-     *
-     * @param periodHours - Lookback period in hours
-     * @param limit - Maximum keywords to return (default: 10)
-     * @returns The covered window and its aggregated keywords
-     */
-    async getKeywordsForPeriod(periodHours: number, limit: number = 10): Promise<IGscKeywordsPeriodResult> {
-        const { since, end, firstIncompleteDate } = await this.resolvePeriodWindow(periodHours);
-
-        const results = await this.collection.aggregate<{
-            _id: string;
-            totalClicks: number;
-            totalImpressions: number;
-            weightedPosition: number;
-        }>([
-            { $match: { date: { $gte: since, $lte: end } } },
-            {
-                $group: {
-                    _id: '$query',
-                    totalClicks: { $sum: '$clicks' },
-                    totalImpressions: { $sum: '$impressions' },
-                    weightedPosition: { $sum: { $multiply: ['$position', '$impressions'] } }
-                }
-            },
-            { $sort: { totalClicks: -1 } },
-            { $limit: limit }
-        ]).toArray();
-
-        const keywords = results.map(r => ({
-            keyword: r._id,
-            clicks: r.totalClicks,
-            impressions: r.totalImpressions,
-            ctr: r.totalImpressions > 0
-                ? Math.round((r.totalClicks / r.totalImpressions) * 10000) / 10000
-                : 0,
-            position: r.totalImpressions > 0
-                ? Math.round((r.weightedPosition / r.totalImpressions) * 10) / 10
-                : 0
-        }));
-
         return {
-            windowStart: since.toISOString(),
-            windowEnd: end.toISOString(),
-            firstIncompleteDate,
-            keywords
+            since,
+            lastDay,
+            end,
+            sinceKey: toGscDayKey(since),
+            endKey: toGscDayKey(lastDay),
+            dayCount: Math.round((lastDay.getTime() - since.getTime()) / DAY_MS) + 1,
+            firstIncompleteDate
         };
     }
 
     /**
-     * Get aggregated landing pages for a given time period.
+     * Get the top search queries over a window, with clicks, impressions,
+     * click-through rate, and impression-weighted position, most clicks first.
      *
-     * The page-dimension counterpart to {@link getKeywordsForPeriod}: aggregates
-     * the anonymization-immune page-totals rows by page, summing clicks and
-     * impressions and impression-weighting position, sorted by clicks
-     * descending. Because impressions are included, pages Google surfaced but
-     * that drew no click still appear (with zero clicks) — the page-level view
-     * of "surfaced in search, clicked or not".
+     * The returned `windowStart`/`windowEnd` carry the days actually covered
+     * (see {@link resolveWindow}), so the UI can show true coverage.
      *
-     * The window ends on the newest day Google has delivered, identically to
-     * the keyword read, and `windowStart`/`windowEnd` carry the true dates so
-     * the UI can label coverage honestly.
+     * @param window - The span to aggregate.
+     * @param limit - Most keywords to return (default: 10).
+     * @returns The covered window and its aggregated keywords.
+     */
+    async getKeywords(window: GscWindowRequest, limit: number = 10): Promise<IGscKeywordsPeriodResult> {
+        const resolved = await this.resolveWindow(window);
+        const rows = await this.archive.sumByKeyword(resolved.sinceKey, resolved.endKey, limit);
+        return {
+            windowStart: resolved.since.toISOString(),
+            windowEnd: resolved.end.toISOString(),
+            firstIncompleteDate: resolved.firstIncompleteDate,
+            keywords: rows.map(row => ({ keyword: row.keyword, ...toRates(row) }))
+        };
+    }
+
+    /**
+     * Get the landing pages search surfaced over a window, most clicks then
+     * impressions first.
      *
-     * @param periodHours - Lookback period in hours.
-     * @param limit - Maximum pages to return (default: 10).
+     * The page-dimension counterpart to {@link getKeywords}, read from the
+     * page totals, which escape query anonymization. Because impressions are
+     * included, pages Google surfaced that drew no click still appear with
+     * zero clicks.
+     *
+     * @param window - The span to aggregate.
+     * @param limit - Most pages to return (default: 10).
      * @returns The covered window and its aggregated pages.
      */
-    async getPagesForPeriod(periodHours: number, limit: number = 10): Promise<IGscPagesPeriodResult> {
-        const { since, end, firstIncompleteDate } = await this.resolvePeriodWindow(periodHours);
-
-        const results = await this.pageTotalsCollection.aggregate<{
-            _id: string;
-            totalClicks: number;
-            totalImpressions: number;
-            weightedPosition: number;
-        }>([
-            { $match: { date: { $gte: since, $lte: end } } },
-            {
-                $group: {
-                    _id: '$page',
-                    totalClicks: { $sum: '$clicks' },
-                    totalImpressions: { $sum: '$impressions' },
-                    weightedPosition: { $sum: { $multiply: ['$position', '$impressions'] } }
-                }
-            },
-            { $sort: { totalClicks: -1, totalImpressions: -1 } },
-            { $limit: limit }
-        ]).toArray();
-
-        const pages = results.map(r => ({
-            page: r._id,
-            clicks: r.totalClicks,
-            impressions: r.totalImpressions,
-            ctr: r.totalImpressions > 0
-                ? Math.round((r.totalClicks / r.totalImpressions) * 10000) / 10000
-                : 0,
-            position: r.totalImpressions > 0
-                ? Math.round((r.weightedPosition / r.totalImpressions) * 10) / 10
-                : 0
-        }));
-
+    async getPages(window: GscWindowRequest, limit: number = 10): Promise<IGscPagesPeriodResult> {
+        const resolved = await this.resolveWindow(window);
+        const rows = await this.archive.sumByPage(resolved.sinceKey, resolved.endKey, limit);
         return {
-            windowStart: since.toISOString(),
-            windowEnd: end.toISOString(),
-            firstIncompleteDate,
-            pages
+            windowStart: resolved.since.toISOString(),
+            windowEnd: resolved.end.toISOString(),
+            firstIncompleteDate: resolved.firstIncompleteDate,
+            pages: rows.map(row => ({ page: row.page, ...toRates(row) }))
         };
     }
 
     /**
-     * Get aggregated keyword→page pairs for a given time period.
+     * Get which pages each keyword surfaced over a window, most clicks then
+     * impressions first, so impression-only pairs still appear.
      *
-     * Answers "which pages did each keyword surface?" — the join the separate
+     * Answers "which pages did each keyword surface?", the join the separate
      * keyword and page panels cannot express because each drops one dimension.
-     * Aggregates the raw `module_user_gsc_queries` rows (the only collection
-     * carrying `query` and `page` on the same document) by the `{query, page}`
-     * couple, summing clicks and impressions and impression-weighting position,
-     * sorted by clicks then impressions descending so impression-only pairs
-     * still surface.
+     * Read from the keyword rows, so it inherits GSC's low-volume query
+     * anonymization exactly as the keyword panel does: anonymized queries
+     * never produced a row, so their clicks are absent and will not reconcile
+     * with the anonymization-immune page totals.
      *
-     * Reads the query-dimensioned collection, so it inherits GSC's low-volume
-     * query anonymization exactly as the keyword panel does: anonymized queries
-     * never produced a row here, so their clicks are absent and will not
-     * reconcile with the anonymization-immune page totals. The window ends on
-     * the newest delivered day, identically to the sibling reads, and the true
-     * dates are returned for honest labelling.
-     *
-     * @param periodHours - Lookback period in hours.
-     * @param limit - Maximum pairs to return; omit (or pass 0) for all pairs.
-     *   This view is meant to be exhaustive — it accounts for every
-     *   keyword→page combination in the window — so callers default to
-     *   uncapped rather than a top-N slice.
+     * @param window - The span to aggregate.
+     * @param limit - Most pairs to return; omit (or pass 0) for all pairs.
+     *   The admin view is meant to be exhaustive, so it passes none.
      * @returns The covered window and its aggregated keyword→page pairs.
      */
-    async getKeywordPagePairsForPeriod(periodHours: number, limit?: number): Promise<IGscKeywordPagesPeriodResult> {
-        const { since, end, firstIncompleteDate } = await this.resolvePeriodWindow(periodHours);
-
-        const results = await this.collection.aggregate<{
-            _id: { query: string; page: string };
-            totalClicks: number;
-            totalImpressions: number;
-            weightedPosition: number;
-        }>([
-            { $match: { date: { $gte: since, $lte: end } } },
-            {
-                $group: {
-                    _id: { query: '$query', page: '$page' },
-                    totalClicks: { $sum: '$clicks' },
-                    totalImpressions: { $sum: '$impressions' },
-                    weightedPosition: { $sum: { $multiply: ['$position', '$impressions'] } }
-                }
-            },
-            { $sort: { totalClicks: -1, totalImpressions: -1 } },
-            // Uncapped by design: apply $limit only when a caller explicitly
-            // requests one, so the default view returns every pair.
-            ...(limit && limit > 0 ? [{ $limit: limit }] : [])
-        ]).toArray();
-
-        const pairs = results.map(r => ({
-            keyword: r._id.query,
-            page: r._id.page,
-            clicks: r.totalClicks,
-            impressions: r.totalImpressions,
-            ctr: r.totalImpressions > 0
-                ? Math.round((r.totalClicks / r.totalImpressions) * 10000) / 10000
-                : 0,
-            position: r.totalImpressions > 0
-                ? Math.round((r.weightedPosition / r.totalImpressions) * 10) / 10
-                : 0
-        }));
-
+    async getKeywordPagePairs(window: GscWindowRequest, limit?: number): Promise<IGscKeywordPagesPeriodResult> {
+        const resolved = await this.resolveWindow(window);
+        const rows = await this.archive.sumByKeywordPage(resolved.sinceKey, resolved.endKey, limit);
         return {
-            windowStart: since.toISOString(),
-            windowEnd: end.toISOString(),
-            firstIncompleteDate,
-            pairs
+            windowStart: resolved.since.toISOString(),
+            windowEnd: resolved.end.toISOString(),
+            firstIncompleteDate: resolved.firstIncompleteDate,
+            pairs: rows.map(row => ({ keyword: row.keyword, page: row.page, ...toRates(row) }))
         };
     }
 
     /**
-     * Get one keyword's daily search performance for a given time period.
+     * Get one keyword's search performance over a window, one point per bucket.
      *
      * The other reads rank many keywords, so none of them can chart a single
-     * keyword over time: `keywords-by-day` keeps only each day's top rows, and
-     * a keyword missing from a day's top rows is indistinguishable from a
-     * keyword with no impressions that day. This read filters the stored query
-     * rows to the requested keyword first and then groups by day, so every day
-     * in the window reports that keyword's own figures, and days with nothing
-     * read as zero.
+     * keyword over time: the trend keeps only each bucket's top rows, and a
+     * keyword missing from those rows is indistinguishable from a keyword with
+     * no impressions. This read filters to the requested keyword first and
+     * then groups by bucket, so every bucket reports that keyword's own
+     * figures, and buckets with nothing read as zero.
      *
-     * `exact` matches one query through the `{ query, date }` index. Google
-     * stores queries in lower case, so the keyword is lower-cased to match.
-     * `contains` sums every query holding the keyword, which suits a low-volume
-     * site where any one phrasing earns an impression or two. It is a
-     * case-insensitive regex over the window's rows, with the keyword escaped
-     * so it is matched literally.
+     * Google stores queries in lower case, so the keyword is lower-cased to
+     * match. `contains` sums every query holding the keyword as literal text,
+     * which suits a low-volume site where any one phrasing earns an impression
+     * or two.
      *
-     * Reads the query-dimensioned collection, so it inherits GSC's low-volume
-     * query anonymization: a keyword too rare for Google to report never
-     * appears here even on days it was searched. The window ends on the newest
-     * delivered day, identically to the sibling reads.
+     * Read from the keyword rows, so it inherits GSC's low-volume query
+     * anonymization: a keyword too rare for Google to report never appears
+     * here even in buckets it was searched.
      *
      * @param keyword - The search query to chart. Trimmed and lower-cased
      *   before matching; the caller validates it is non-empty.
-     * @param periodHours - Lookback period in hours; rounded up to whole days.
+     * @param window - The span to chart.
      * @param match - `exact` for one query, `contains` for every query holding
      *   the keyword.
-     * @returns The keyword's zero-filled daily series, window totals, and the
+     * @param granularity - Bucket size; omitted, it is picked from the
+     *   window's length by {@link pickGscGranularity}.
+     * @returns The keyword's zero-filled series, window totals, and the
      *   stored queries that matched.
      */
-    async getKeywordHistory(keyword: string, periodHours: number, match: GscKeywordMatch = 'exact'): Promise<IGscKeywordHistoryResult> {
+    async getKeywordHistory(
+        keyword: string,
+        window: GscWindowRequest,
+        match: GscKeywordMatch = 'exact',
+        granularity?: GscGranularity
+    ): Promise<IGscKeywordHistoryResult> {
         const normalized = keyword.trim().toLowerCase();
-        const { since, end, firstIncompleteDate } = await this.resolvePeriodWindow(periodHours);
-        const queryFilter = match === 'contains'
-            ? { $regex: escapeRegex(normalized), $options: 'i' }
-            : normalized;
+        const resolved = await this.resolveWindow(window);
+        const bucketSize = granularity ?? pickGscGranularity(resolved.dayCount);
 
-        // Grouped by day and query together, so one pass yields both the daily
+        // Grouped by bucket and query together, so one read yields both the
         // series and the per-query totals that rank `matchedQueries`.
-        const rows = await this.collection.aggregate<{
-            _id: { date: string; query: string };
-            clicks: number;
-            impressions: number;
-            weightedPosition: number;
-        }>([
-            { $match: { date: { $gte: since, $lte: end }, query: queryFilter } },
-            {
-                $group: {
-                    _id: {
-                        date: { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
-                        query: '$query'
-                    },
-                    clicks: { $sum: '$clicks' },
-                    impressions: { $sum: '$impressions' },
-                    weightedPosition: { $sum: { $multiply: ['$position', '$impressions'] } }
-                }
-            }
-        ]).toArray();
+        const rows = await this.archive.keywordSumsByBucket(normalized, match, resolved.sinceKey, resolved.endKey, bucketSize);
 
-        const dayMap = new Map<string, { clicks: number; impressions: number; weightedPosition: number }>();
-        const dayCount = Math.round((end.getTime() + 1 - since.getTime()) / DAY_MS);
-        for (let i = 0; i < dayCount; i++) {
-            dayMap.set(new Date(since.getTime() + i * DAY_MS).toISOString().split('T')[0], { clicks: 0, impressions: 0, weightedPosition: 0 });
-        }
-
+        const bucketSums = new Map<string, { clicks: number; impressions: number; weightedPosition: number }>();
         const queryImpressions = new Map<string, number>();
         const totals = { clicks: 0, impressions: 0, weightedPosition: 0 };
         for (const row of rows) {
-            const day = dayMap.get(row._id.date);
-            if (day) {
-                day.clicks += row.clicks;
-                day.impressions += row.impressions;
-                day.weightedPosition += row.weightedPosition;
-            }
+            const sums = bucketSums.get(row.bucket) ?? { clicks: 0, impressions: 0, weightedPosition: 0 };
+            sums.clicks += row.clicks;
+            sums.impressions += row.impressions;
+            sums.weightedPosition += row.weightedPosition;
+            bucketSums.set(row.bucket, sums);
             totals.clicks += row.clicks;
             totals.impressions += row.impressions;
             totals.weightedPosition += row.weightedPosition;
-            queryImpressions.set(row._id.query, (queryImpressions.get(row._id.query) ?? 0) + row.impressions);
+            queryImpressions.set(row.keyword, (queryImpressions.get(row.keyword) ?? 0) + row.impressions);
         }
 
-        const days = Array.from(dayMap.entries()).map(([date, day]) => ({
-            date,
-            clicks: day.clicks,
-            impressions: day.impressions,
-            ctr: roundedCtr(day.clicks, day.impressions),
-            position: roundedPosition(day.weightedPosition, day.impressions),
-            preliminary: firstIncompleteDate !== null && date >= firstIncompleteDate
-        }));
+        const days = listGscBuckets(resolved.since, resolved.lastDay, bucketSize).map(bucket => {
+            const sums = bucketSums.get(bucket.start) ?? { clicks: 0, impressions: 0, weightedPosition: 0 };
+            return {
+                date: bucket.start,
+                clicks: sums.clicks,
+                impressions: sums.impressions,
+                ctr: roundedCtr(sums.clicks, sums.impressions),
+                position: roundedPosition(sums.weightedPosition, sums.impressions),
+                preliminary: resolved.firstIncompleteDate !== null && bucket.lastDay >= resolved.firstIncompleteDate
+            };
+        });
 
         const matchedQueries = Array.from(queryImpressions.entries())
             .sort(([qa, a], [qb, b]) => b - a || qa.localeCompare(qb))
@@ -1393,9 +1330,10 @@ export class GscService {
         return {
             keyword: normalized,
             match,
-            windowStart: since.toISOString(),
-            windowEnd: end.toISOString(),
-            firstIncompleteDate,
+            windowStart: resolved.since.toISOString(),
+            windowEnd: resolved.end.toISOString(),
+            granularity: bucketSize,
+            firstIncompleteDate: resolved.firstIncompleteDate,
             totals: {
                 clicks: totals.clicks,
                 impressions: totals.impressions,
