@@ -479,11 +479,8 @@ const KV_FIRST_INCOMPLETE_DATE = 'gsc:firstIncompleteDate';
 /** Maximum rows per GSC API request. */
 const GSC_ROW_LIMIT = 5000;
 
-/**
- * Days to offset from today to avoid incomplete GSC data. Exported so the
- * archive backfill ends its default range on the same day the daily fetch does.
- */
-export const GSC_DATA_DELAY_DAYS = 3;
+/** Days to offset from today to avoid incomplete GSC data. */
+const GSC_DATA_DELAY_DAYS = 3;
 
 /**
  * Which GSC data the API returns. The API default, `final`, omits every day
@@ -885,29 +882,6 @@ export class GscService {
     }
 
     /**
-     * Fetch a window from Search Console into the archive without touching
-     * the saved fetch markers. This is the backfill's entry point.
-     *
-     * Writing old windows through `fetchAndStore` would overwrite
-     * `gsc:lastFetch` and `gsc:firstIncompleteDate` with values describing an
-     * old window, and the SEO tab would mark the wrong days as not final.
-     *
-     * @param start - First day of the window (YYYY-MM-DD), inclusive.
-     * @param end - Last day of the window (YYYY-MM-DD), inclusive.
-     * @returns Rows Google returned across the keyword, daily, and page requests.
-     * @throws Error when the archive is disabled, credentials are missing, or
-     *   a request or write fails.
-     */
-    async archiveWindow(start: string, end: string): Promise<{ rowsFetched: number }> {
-        if (!this.archive.isEnabled()) {
-            throw new Error('GSC archive is disabled: ClickHouse is not configured');
-        }
-        const { searchConsole, siteUrl } = await this.openSearchConsole();
-        const result = await this.archiveWindowWith(searchConsole, siteUrl, start, end);
-        return { rowsFetched: result.rowsFetched };
-    }
-
-    /**
      * Run the keyword, daily, and page requests for a window and write each
      * to its archive table, then delete rows in the window the fetch did not
      * return. Fresh figures change until Google finalizes a day, and a row
@@ -917,8 +891,8 @@ export class GscService {
      * that held data, and after pagination stopped at the safety limit,
      * because the rows past the limit were not refetched. It also begins at
      * the oldest day the response actually named rather than at the window's
-     * first day, because Google omits a day it no longer holds: a backfill
-     * window straddling Google's 16-month limit would otherwise delete the
+     * first day, because Google omits a day it no longer holds: a window
+     * reaching past Google's 16-month limit would otherwise delete the
      * expired days' archived rows, which exist nowhere else.
      *
      * @param searchConsole - Authenticated Search Console client.

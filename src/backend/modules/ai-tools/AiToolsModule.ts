@@ -61,8 +61,6 @@ import { executeSavedPrompt, type ISavedPromptExecutionDeps } from './services/e
 import { createAccountEndUserResolver, type EndUserResolver } from './services/end-user-resolver.js';
 import { AiToolsController } from './api/ai-tools.controller.js';
 import { createAiToolsAdminRouter } from './api/ai-tools.router.js';
-import { SocialPostStore } from './services/social-post-store.js';
-import { createSocialPostCurationType, createSocialPostTool } from './social-post.js';
 import { createWebFetchTool } from './web-fetch.js';
 import { buildPromptVariableAiTools } from './buildPromptVariableAiTools.js';
 import { buildSavedPromptAiTools } from './buildSavedPromptAiTools.js';
@@ -321,7 +319,6 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
     private readonly queryStreams = new QueryStreamRegistry();
     private queryHistory!: AiQueryHistoryService;
     private savedPrompts!: SavedPromptsService;
-    private socialPosts!: SocialPostStore;
     private promptVariables!: PromptVariableRegistry;
     private systemPrompts!: SystemPromptsService;
     private resolveEndUser!: EndUserResolver;
@@ -385,15 +382,6 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
         this.approvals = new ToolApprovalQueue(this.logger, this.database);
         await this.approvals.ensureIndexes();
 
-        // Drafts behind the provider-neutral `core:social-post` content type. The
-        // built-in `propose-social-post` tool writes here and the curation type
-        // resolves the opaque ref back to the draft. Constructed before the
-        // curation watch below (whose onAvailable registers the type and reads
-        // this store) and before registerBuiltinTools() (whose tool closes over
-        // it), so neither can observe it undefined.
-        this.socialPosts = new SocialPostStore(this.database, this.logger);
-        await this.socialPosts.ensureIndexes();
-
         // The governor verifies a tool's `curationTypeId` binding against the
         // central curation service, which lives in its own module and publishes
         // 'curation' during its run(). Watch the registry so the resolver is
@@ -401,16 +389,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
         // ever unregisters — order-independent and churn-safe. A declared binding
         // thus relaxes a tool's gates only while its owning type is registered.
         this.serviceRegistry.watch<ICurationService>(CURATION_SERVICE, {
-            onAvailable: (curation) => {
-                this.policy.setCurationResolver((typeId) => curation.hasType(typeId));
-                // Register the provider-neutral `core:social-post` reviewable type
-                // the moment curation appears (and again on every re-registration,
-                // which registerType tolerates). This is what backs the
-                // propose-social-post tool's verifiable curationTypeId binding and
-                // makes the draft a curatable, destination-routable item. Fires
-                // after every module init, so `socialPosts` is constructed by now.
-                curation.registerType(createSocialPostCurationType(this.socialPosts, this.logger), this.metadata.id);
-            },
+            onAvailable: (curation) => this.policy.setCurationResolver((typeId) => curation.hasType(typeId)),
             onUnavailable: () => this.policy.setCurationResolver(() => false)
         });
 
@@ -490,7 +469,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
      * is resolved lazily at call time and its emit is a no-op when WebSockets are
      * disabled, so registration never depends on socket availability.
      *
-     * The same method also registers `propose-social-post`, `tronrelic-fetch-url`, and
+     * The same method also registers `tronrelic-fetch-url` and
      * eight reads over the module's own data: `ai-list-prompt-variables`,
      * `ai-get-prompt-variables`, `ai-list-saved-prompts`,
      * `ai-get-saved-prompts`, `ai-list-prompt-runs`, `ai-get-prompt-run`,
@@ -564,21 +543,6 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
         };
 
         this.registry.registerTool(sendToast, 'core');
-
-        // The provider-neutral social-posting tool. It drafts a destination-
-        // agnostic post into the SocialPostStore and holds it in the central
-        // curation queue; the curator picks which publish sinks (X, Telegram)
-        // fan it out. Classified external / irreversible with
-        // forcesCuratorReview bound to `core:social-post`, so the registry ships
-        // it disabled and the governor treats unattended runs as safe (they can
-        // only draft into the queue). The curation service is resolved lazily so
-        // the tool tolerates curation registering after this module.
-        const socialPostTool = createSocialPostTool({
-            store: this.socialPosts,
-            getCuration: () => this.serviceRegistry.get<ICurationService>(CURATION_SERVICE),
-            logger: this.logger
-        });
-        this.registry.registerTool(socialPostTool, 'core');
 
         // The provider-neutral generic web-fetch tool. Fetches one public https
         // URL and returns its text under a full SSRF/redirect/size guard.
