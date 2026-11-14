@@ -5,7 +5,7 @@
 
 import { describe, it, expect } from 'vitest';
 import type { IAiToolCapability } from '@/types';
-import { getMcpToolIneligibility } from '@/types';
+import { getMcpAnonymousToolIneligibility, getMcpToolIneligibility } from '@/types';
 import { capabilityFingerprint } from '../services/capabilityFingerprint.js';
 
 /** A capability the floor accepts. */
@@ -40,5 +40,24 @@ describe('capabilityFingerprint', () => {
         expect(capabilityFingerprint({ ...OK, surfacesUntrustedContent: true })).not.toBe(base);
         expect(capabilityFingerprint({ ...OK, sensitivity: 'public' })).not.toBe(base);
         expect(capabilityFingerprint(undefined)).not.toBe(base);
+    });
+});
+
+describe('getMcpAnonymousToolIneligibility', () => {
+    it('accepts a tool that passes the MCP floor and returns only public data', () => {
+        expect(getMcpAnonymousToolIneligibility({ ...OK, sensitivity: 'public', surfacesUntrustedContent: true })).toBeNull();
+    });
+
+    it('refuses internal data, which members may see but strangers may not', () => {
+        expect(getMcpAnonymousToolIneligibility(OK)).toMatch(/public/);
+    });
+
+    it('refuses a tool that acts on a user\'s own objects', () => {
+        expect(getMcpAnonymousToolIneligibility({ ...OK, sensitivity: 'public', operatesOnUserOwnedObjects: true })).toMatch(/account/);
+    });
+
+    it('keeps every refusal of the MCP floor', () => {
+        expect(getMcpAnonymousToolIneligibility({ ...OK, sensitivity: 'public', sideEffect: 'write' })).toBe(getMcpToolIneligibility({ ...OK, sensitivity: 'public', sideEffect: 'write' }));
+        expect(getMcpAnonymousToolIneligibility(undefined)).not.toBeNull();
     });
 });

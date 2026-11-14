@@ -232,7 +232,7 @@ Every method takes the resolved Better Auth user id first — the service never 
 
 Group definitions and membership. See `@/types` `IUserGroupService` for the full method surface; `isAdmin(userId)` is the canonical per-user admin check.
 
-Group ids are reusable: after a group is deleted, a new one can be created under the same id. So after a successful `deleteGroup`, the service fires the `http.groupDeleted` observer hook (`{ groupId }`), and components that stored something against the id remove it. The MCP module uses it to delete the group's tool grants and group policy. See [system-hooks.md](../../../../docs/system/system-hooks.md).
+The id `anonymous` is reserved and `createGroup` refuses it: the MCP module uses it for a virtual group standing for callers of its public endpoint, and stores that group's grants and limits under the id, so a real group with it would inherit them. Group ids are otherwise reusable: after a group is deleted, a new one can be created under the same id. So after a successful `deleteGroup`, the service fires the `http.groupDeleted` observer hook (`{ groupId }`), and components that stored something against the id remove it. The MCP module uses it to delete the group's tool grants and group policy. See [system-hooks.md](../../../../docs/system/system-hooks.md).
 
 ### `'user-settings'` → `IUserSettingsService`
 

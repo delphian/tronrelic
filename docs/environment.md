@@ -44,6 +44,8 @@ When it is unset, the module falls back to `SESSION_SECRET`, which is why produc
 
 Rotating the salt does not break anything. It only means events recorded before and after the change can no longer be matched to the same source.
 
+The MCP module uses the same salt to hash the network range of each anonymous caller of `/mcp/public`, which is the id that caller's limits are counted under. Rotating it therefore also gives every anonymous caller a fresh daily budget and splits their accounting rows in two, but changes nothing else.
+
 ## CLICKHOUSE_PASSWORD Also Derives Account Passwords
 
 Besides authenticating the shared ClickHouse connection, `CLICKHOUSE_PASSWORD` is the key every managed ClickHouse account's password is derived from, such as the AI agent's read-only user. Nothing else stores those passwords. Changing `CLICKHOUSE_PASSWORD` therefore changes every account password too, and the backend applies the new ones to ClickHouse at its next startup. With the variable empty, as in local development, the derived passwords can be worked out from the account id alone, and the backend logs a warning. See the [ClickHouse Accounts README](../src/backend/modules/clickhouse-accounts/README.md#passwords).

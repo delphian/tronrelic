@@ -12,8 +12,10 @@
  * A restricted tool (one that fails the MCP safety rules: secret data, a side
  * effect, paid, or undeclared) can never be granted to mcp-users, and can be
  * granted to another group only after "Allow restricted tools" is switched on
- * for it. A tool whose capability changed after it was granted is flagged and
- * is not served until granted again.
+ * for it. The virtual Anonymous group, which stands for callers of the public
+ * endpoint, may be granted only tools whose data is marked public. A tool
+ * whose capability changed after it was granted is flagged and is not served
+ * until granted again.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -45,10 +47,14 @@ interface IToolsTabProps {
 
 /**
  * Decide whether a group may hold a grant for a tool right now: true when the
- * tool passes the safety rules, or the group allows restricted tools.
+ * tool passes the safety rules, or the group allows restricted tools. The
+ * Anonymous group may hold only tools that pass its stricter floor (public
+ * data only), whatever its policy says.
  */
 function groupMayHold(tool: IMcpToolExposure, group: IMcpGroup): boolean {
-    return mcpGroupMayHoldTool(tool.restrictedReason !== null, group.policy);
+    return group.isAnonymous
+        ? tool.anonymousIneligibleReason === null
+        : mcpGroupMayHoldTool(tool.restrictedReason !== null, group.policy);
 }
 
 /**
@@ -65,9 +71,11 @@ function statusBadge(tool: IMcpToolExposure, group: IMcpGroup, grant: IMcpToolGr
     // switch shows as on so the only action is to withdraw it, and "grant
     // again" would point the admin at a request the server refuses.
     if (!grant && !groupMayHold(tool, group)) {
-        badge = <Badge tone="neutral" size="sm">Restricted</Badge>;
+        badge = <Badge tone="neutral" size="sm">{group.isAnonymous ? 'Not public' : 'Restricted'}</Badge>;
     } else if (grant && !groupMayHold(tool, group)) {
-        badge = <Badge tone="warning" size="sm">Blocked — restricted</Badge>;
+        badge = <Badge tone="warning" size="sm">{group.isAnonymous ? 'Blocked — not public' : 'Blocked — restricted'}</Badge>;
+    } else if (grant && !group.policy.enabled) {
+        badge = <Badge tone="warning" size="sm">Granted, group switched off</Badge>;
     } else if (grant?.stale) {
         badge = <Badge tone="warning" size="sm">Changed — grant again</Badge>;
     } else if (grant && !tool.enabledInRegistry) {
@@ -87,7 +95,9 @@ function statusBadge(tool: IMcpToolExposure, group: IMcpGroup, grant: IMcpToolGr
  */
 function restrictionNote(tool: IMcpToolExposure, group: IMcpGroup): string | null {
     let note: string | null = null;
-    if (tool.restrictedReason !== null && group.isGateGroup) {
+    if (group.isAnonymous && tool.anonymousIneligibleReason !== null) {
+        note = `${tool.anonymousIneligibleReason} Only tools marked public can be granted to Anonymous.`;
+    } else if (tool.restrictedReason !== null && group.isGateGroup) {
         note = `${tool.restrictedReason} Restricted tools can only be granted to a narrower group.`;
     } else if (tool.restrictedReason !== null && !group.policy.allowRestrictedTools) {
         note = `${tool.restrictedReason} Turn on "Allow restricted tools" for ${group.name} to grant it.`;
@@ -188,6 +198,7 @@ export function ToolsTab({ initialTools, initialGroups, onToolsChanged }: ITools
                 Pick a user group, then switch on the tools its members may use. Only members of mcp-users can connect at
                 all, so a tool granted to another group reaches the people in both. Tools that fail the MCP safety rules are
                 restricted: they can never go to mcp-users, and go to another group only after you allow restricted tools for it.
+                Anonymous stands for callers of the public URL who do not sign in; only tools marked public can go to it.
                 If a tool&apos;s capability changes after you grant it, it is hidden again until you grant it again.
             </p>
 

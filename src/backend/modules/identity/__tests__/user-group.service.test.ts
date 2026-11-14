@@ -178,6 +178,12 @@ describe('UserGroupService', () => {
             ).rejects.toThrow(/Invalid group id/i);
         });
 
+        it('rejects the id reserved for anonymous MCP callers, in any case', async () => {
+            await expect(
+                service.createGroup({ id: 'Anonymous', name: 'Strangers' })
+            ).rejects.toThrow(/reserved/i);
+        });
+
         it('rejects duplicate id', async () => {
             await service.createGroup({ id: 'vip', name: 'VIP' });
             await expect(

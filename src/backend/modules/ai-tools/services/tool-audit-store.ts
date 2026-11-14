@@ -50,6 +50,17 @@ export interface IToolInvocationQuery {
     since?: string;
     /** Latest `createdAt` to include, in the same shape as `since`. */
     until?: string;
+    /**
+     * Scope to calls charged to one user group (`origin.chargedGroupId`). The
+     * MCP usage view passes this when an admin opens a group's individual calls.
+     */
+    chargedGroupId?: string;
+    /**
+     * Scope to one external caller (`origin.principalId`): a user id, or the
+     * salted network hash an anonymous MCP caller is counted under. The MCP
+     * usage view passes this when an admin opens one caller's calls.
+     */
+    principalId?: string;
     limit?: number;
     offset?: number;
 }
@@ -108,6 +119,11 @@ export class ToolAuditStore {
         // conversationId-scoped read newest-first. Sparse because only calls
         // driven from a multi-turn chat carry a conversationId.
         await this.database.createIndex(COLLECTION, { conversationId: 1, createdAt: -1 }, { sparse: true });
+        // Back the MCP usage view's drill-down from a caller or a group to
+        // its individual calls. Sparse because only external calls carry an
+        // origin, and those are a small share of every record.
+        await this.database.createIndex(COLLECTION, { 'origin.principalId': 1, createdAt: -1 }, { sparse: true });
+        await this.database.createIndex(COLLECTION, { 'origin.chargedGroupId': 1, createdAt: -1 }, { sparse: true });
     }
 
     /**
@@ -158,6 +174,12 @@ export class ToolAuditStore {
         }
         if (query.queryId) {
             filter.queryId = query.queryId;
+        }
+        if (query.chargedGroupId) {
+            filter['origin.chargedGroupId'] = query.chargedGroupId;
+        }
+        if (query.principalId) {
+            filter['origin.principalId'] = query.principalId;
         }
         if (query.since || query.until) {
             const range: Record<string, string> = {};

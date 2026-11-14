@@ -5,9 +5,15 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { MCP_USERS_GROUP_ID } from '@/types';
+import { MCP_ANONYMOUS_GROUP_ID, MCP_USERS_GROUP_ID } from '@/types';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
-import { McpGroupPolicyService, defaultGroupPolicy, isWideningPolicyChange } from '../services/McpGroupPolicyService.js';
+import {
+    DEFAULT_ANONYMOUS_LIMITS,
+    MCP_GROUP_POLICIES_COLLECTION,
+    McpGroupPolicyService,
+    defaultGroupPolicy,
+    isWideningPolicyChange
+} from '../services/McpGroupPolicyService.js';
 
 /** A silent logger. */
 const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), child: vi.fn() } as any;
@@ -27,11 +33,51 @@ function build(): McpGroupPolicyService {
 }
 
 describe('McpGroupPolicyService', () => {
-    it('lists every group with everything off, mcp-users first', async () => {
+    it('lists every group with everything off, mcp-users first, then the virtual anonymous group', async () => {
         const groups = await build().listGroups();
-        expect(groups.map(group => group.id)).toEqual([MCP_USERS_GROUP_ID, 'admin']);
+        expect(groups.map(group => group.id)).toEqual([MCP_USERS_GROUP_ID, MCP_ANONYMOUS_GROUP_ID, 'admin']);
         expect(groups[0].isGateGroup).toBe(true);
-        expect(groups[1].policy).toEqual(defaultGroupPolicy('admin'));
+        expect(groups[1]).toMatchObject({ isAnonymous: true, isGateGroup: false });
+        expect(groups[2].policy).toEqual(defaultGroupPolicy('admin'));
+    });
+
+    it('starts real groups switched on with no limits of their own, and anonymous with every limit set', async () => {
+        const service = build();
+        const policies = await service.getPolicies(0);
+        expect(service.policyFor(policies, 'admin')).toMatchObject({ enabled: true, limits: { callsPerMinutePerCaller: null, callsPerDayPerCaller: null, callsPerDayGroup: null } });
+        expect(service.policyFor(policies, MCP_ANONYMOUS_GROUP_ID).limits).toEqual(DEFAULT_ANONYMOUS_LIMITS);
+    });
+
+    it('stores a limit change, keeping the limits it did not name', async () => {
+        const service = build();
+        const { previous, next } = await service.preview(MCP_ANONYMOUS_GROUP_ID, { limits: { callsPerDayGroup: 1_000 } });
+        await service.save(next, 'admin-1', previous);
+        const stored = service.policyFor(await service.getPolicies(0), MCP_ANONYMOUS_GROUP_ID);
+        expect(stored.limits).toEqual({ ...DEFAULT_ANONYMOUS_LIMITS, callsPerDayGroup: 1_000 });
+    });
+
+    it('refuses to clear an anonymous limit, or a limit out of range on any group', async () => {
+        const service = build();
+        await expect(service.preview(MCP_ANONYMOUS_GROUP_ID, { limits: { callsPerDayPerCaller: null } })).rejects.toMatchObject({ status: 400 });
+        await expect(service.preview('admin', { limits: { callsPerMinutePerCaller: 61 } })).rejects.toMatchObject({ status: 400 });
+        await expect(service.preview('admin', { limits: { callsPerDayGroup: 0 } })).rejects.toMatchObject({ status: 400 });
+        await expect(service.preview('admin', { limits: { callsPerDayGroup: 2.5 } })).rejects.toMatchObject({ status: 400 });
+        await expect(service.preview('admin', { limits: { callsPerDayGroup: null } })).resolves.toBeTruthy();
+    });
+
+    it('never lets anonymous allow restricted tools', async () => {
+        await expect(build().preview(MCP_ANONYMOUS_GROUP_ID, { allowRestrictedTools: true })).rejects.toMatchObject({ status: 400 });
+    });
+
+    it('reads a document written before limits existed as the group defaults, and can still change it', async () => {
+        const database = createMockDatabaseService();
+        await database.getCollection(MCP_GROUP_POLICIES_COLLECTION).insertOne({
+            groupId: MCP_ANONYMOUS_GROUP_ID, allowRestrictedTools: false, scrubSecrets: true, ipAllowlistEnabled: false, ipAllowlist: []
+        } as any);
+        const service = new McpGroupPolicyService(database, userGroups, logger);
+        expect(service.policyFor(await service.getPolicies(0), MCP_ANONYMOUS_GROUP_ID)).toMatchObject({ enabled: true, limits: DEFAULT_ANONYMOUS_LIMITS });
+        const { previous, next } = await service.preview(MCP_ANONYMOUS_GROUP_ID, { limits: { callsPerMinutePerCaller: 5 } });
+        await expect(service.save(next, 'admin-1', previous)).resolves.toMatchObject({ limits: { callsPerMinutePerCaller: 5 } });
     });
 
     it('stores a change and returns it from the next read', async () => {
@@ -93,5 +139,19 @@ describe('isWideningPolicyChange', () => {
     it('treats removing an address or disallowing restricted tools as narrowing', () => {
         expect(isWideningPolicyChange(locked, { ...locked, ipAllowlist: [] })).toBe(false);
         expect(isWideningPolicyChange({ ...base, allowRestrictedTools: true }, base)).toBe(false);
+    });
+
+    it('treats switching a group back on, or raising or clearing a limit, as widening', () => {
+        const capped = { ...base, limits: { callsPerMinutePerCaller: 10, callsPerDayPerCaller: 100, callsPerDayGroup: 1_000 } };
+        expect(isWideningPolicyChange({ ...base, enabled: false }, base)).toBe(true);
+        expect(isWideningPolicyChange(capped, { ...capped, limits: { ...capped.limits, callsPerDayGroup: 2_000 } })).toBe(true);
+        expect(isWideningPolicyChange(capped, { ...capped, limits: { ...capped.limits, callsPerDayPerCaller: null } })).toBe(true);
+    });
+
+    it('treats switching a group off, or setting or lowering a limit, as narrowing', () => {
+        const capped = { ...base, limits: { callsPerMinutePerCaller: 10, callsPerDayPerCaller: 100, callsPerDayGroup: 1_000 } };
+        expect(isWideningPolicyChange(base, { ...base, enabled: false })).toBe(false);
+        expect(isWideningPolicyChange(base, capped)).toBe(false);
+        expect(isWideningPolicyChange(capped, { ...capped, limits: { ...capped.limits, callsPerMinutePerCaller: 5 } })).toBe(false);
     });
 });

@@ -17,6 +17,12 @@ export interface IMcpStatus {
     /** The public URL clients connect to, and the audience every access token must carry. */
     resourceUrl: string;
 
+    /**
+     * The public endpoint's URL, which takes no sign-in and serves only the
+     * tools granted to the `anonymous` group.
+     */
+    publicUrl: string;
+
     /** The OAuth issuer that signs access tokens for this endpoint. */
     issuer: string;
 

@@ -10,16 +10,23 @@
  * - the tool is switched on in the AI tool registry,
  * - its capability still matches the fingerprint recorded at approval,
  * - it passes the MCP safety floor (`getMcpToolIneligibility`), or the group's
- *   policy allows restricted tools and the group is not `mcp-users`,
+ *   policy allows restricted tools and the group is not `mcp-users` or
+ *   `anonymous`,
+ * - for the `anonymous` group, it also passes the stricter anonymous floor
+ *   (`getMcpAnonymousToolIneligibility`),
+ * - the group is switched on,
  * - the request comes from an address the group's IP allowlist admits, when
  *   the group has one switched on.
  *
- * The governor re-applies the floor and the allowlist on every call, so this
+ * Each served tool is charged to exactly one of the groups that serve it, and
+ * that group's limits apply to the call. See {@link chargedRoute}.
+ *
+ * The governor re-applies the floors and the allowlist on every call, so this
  * service decides what is offered while the governor decides what may run.
  */
 
-import type { IAiTool, IAiToolRegistry, IDatabaseService, IMcpGroupPolicy, IMcpToolExposure, IMcpToolGrant, ISystemLogService, IUserGroupService } from '@/types';
-import { MCP_USERS_GROUP_ID, getMcpToolIneligibility, mcpGroupMayHoldTool } from '@/types';
+import type { IAiTool, IAiToolRegistry, IDatabaseService, IMcpGroupPolicy, IMcpToolExposure, IMcpToolGrant, ISystemLogService } from '@/types';
+import { MCP_ANONYMOUS_GROUP_ID, MCP_USERS_GROUP_ID, getMcpAnonymousToolIneligibility, getMcpToolIneligibility, mcpGroupMayHoldTool } from '@/types';
 import { capabilityFingerprint } from './capabilityFingerprint.js';
 import type { McpGroupPolicyService } from './McpGroupPolicyService.js';
 
@@ -79,6 +86,9 @@ export interface IMcpServedTool {
 
     /** True when a group that serves this tool to the caller asks for its results to be scrubbed. */
     scrubSecrets: boolean;
+
+    /** The policy of the group the call is charged to, whose limits apply. */
+    chargedGroup: IMcpGroupPolicy;
 }
 
 /**
@@ -91,6 +101,8 @@ export interface IMcpServedTool {
  * - `not-granted`: none of the caller's groups holds a grant for it.
  * - `stale-grant`: every grant was made before the tool's capability changed.
  * - `restricted-not-allowed`: the tool is restricted and no granting group allows restricted tools.
+ * - `not-public`: the only grant is to `anonymous`, and the tool fails the anonymous floor.
+ * - `group-disabled`: every remaining grant belongs to a group an admin switched off.
  * - `ip-not-allowed`: every remaining grant belongs to a group whose IP allowlist does not admit the request address.
  */
 export type McpToolWithheldReason =
@@ -99,6 +111,8 @@ export type McpToolWithheldReason =
     | 'not-granted'
     | 'stale-grant'
     | 'restricted-not-allowed'
+    | 'not-public'
+    | 'group-disabled'
     | 'ip-not-allowed';
 
 /**
@@ -117,6 +131,50 @@ export class McpToolExposureError extends Error {
         super(message);
         this.name = 'McpToolExposureError';
     }
+}
+
+/**
+ * Decide whether one group may hold a grant for a tool: the shared restricted
+ * rule for every group, plus the anonymous floor for the `anonymous` group.
+ *
+ * @param groupId - The group holding the grant.
+ * @param restricted - Whether the tool fails the MCP safety floor.
+ * @param notPublic - Whether the tool fails the anonymous floor.
+ * @param policy - The group's policy.
+ * @returns True when the group may hold, and be served through, the grant.
+ */
+function groupMayHoldTool(groupId: string, restricted: boolean, notPublic: boolean, policy: IMcpGroupPolicy): boolean {
+    return mcpGroupMayHoldTool(restricted, policy) && (groupId !== MCP_ANONYMOUS_GROUP_ID || !notPublic);
+}
+
+/**
+ * Rank a limit so that "no limit" sorts as the most generous.
+ */
+function generosity(limit: number | null): number {
+    return limit === null ? Number.POSITIVE_INFINITY : limit;
+}
+
+/**
+ * Choose which of the groups serving a tool to a caller the call is charged
+ * to, and so whose limits apply.
+ *
+ * A caller reaches a tool through every group of theirs that grants it, and a
+ * group an admin gives more generous limits is a higher tier of access. The
+ * call is therefore charged to the most generous route: the highest
+ * per-caller day limit (no limit counting highest), then the highest
+ * per-minute limit, then the group id in alphabetical order so the choice is
+ * the same on every request. Charging the strictest route instead would make
+ * a premium group pointless, because every member is also in `mcp-users`.
+ *
+ * @param routes - The policies of every group serving the tool, at least one.
+ * @returns The policy of the group the call is charged to.
+ */
+export function chargedRoute(routes: readonly IMcpGroupPolicy[]): IMcpGroupPolicy {
+    return [...routes].sort((a, b) =>
+        generosity(b.limits.callsPerDayPerCaller) - generosity(a.limits.callsPerDayPerCaller)
+        || generosity(b.limits.callsPerMinutePerCaller) - generosity(a.limits.callsPerMinutePerCaller)
+        || a.groupId.localeCompare(b.groupId)
+    )[0];
 }
 
 /**
@@ -161,16 +219,16 @@ export class McpToolExposureService {
      * @param database - Core database service, used for the approvals collection.
      * @param toolRegistry - The AI tool registry, the source of truth for which
      *   tools exist, whether they are enabled, and what they declare.
-     * @param policies - Per-group settings: restricted tools, scrubbing, IP allowlist.
-     * @param userGroups - Group service, used to refuse a grant to a group that
-     *   does not exist and to tell which grants belong to deleted groups.
+     * @param policies - Per-group settings: restricted tools, scrubbing, IP
+     *   allowlist, the group switch, and limits. Also says which groups exist,
+     *   including the virtual `anonymous` group, to refuse a grant to a group
+     *   that does not exist and to tell which grants belong to deleted groups.
      * @param logger - Module logger, used to record approvals and withdrawals.
      */
     constructor(
         private readonly database: IDatabaseService,
         private readonly toolRegistry: IAiToolRegistry,
         private readonly policies: McpGroupPolicyService,
-        private readonly userGroups: Pick<IUserGroupService, 'getGroup' | 'listGroups'>,
         private readonly logger: ISystemLogService
     ) {}
 
@@ -198,19 +256,22 @@ export class McpToolExposureService {
         const [approvals, policies, groups] = await Promise.all([
             this.loadApprovals(0),
             this.policies.getPolicies(0),
-            this.userGroups.listGroups()
+            this.policies.listGroups()
         ]);
         // A grant left on a deleted group reaches no one, so it must not count
         // as served on this page or in the overview's "Tools served" figure.
         const groupIds = new Set(groups.map(group => group.id));
         const rows = this.toolRegistry.listToolInfo().map(info => {
             const restrictedReason = getMcpToolIneligibility(info.capability);
+            const anonymousIneligibleReason = getMcpAnonymousToolIneligibility(info.capability);
             const fingerprint = this.fingerprintOf(info.capability);
             const grants: IMcpToolGrant[] = (approvals.get(info.name) ?? [])
                 .map(doc => {
                     const stale = doc.fingerprint !== fingerprint;
+                    const policy = this.policies.policyFor(policies, doc.groupId);
                     const usable = groupIds.has(doc.groupId)
-                        && mcpGroupMayHoldTool(restrictedReason !== null, this.policies.policyFor(policies, doc.groupId));
+                        && policy.enabled
+                        && groupMayHoldTool(doc.groupId, restrictedReason !== null, anonymousIneligibleReason !== null, policy);
                     const grant: IMcpToolGrant = {
                         groupId: doc.groupId,
                         approvedAt: new Date(doc.approvedAt).toISOString(),
@@ -230,6 +291,7 @@ export class McpToolExposureService {
                 enabledInRegistry: info.enabled,
                 capability: info.capability,
                 restrictedReason,
+                anonymousIneligibleReason,
                 grants,
                 served: grants.some(grant => grant.served),
                 stale: grants.some(grant => grant.stale)
@@ -325,10 +387,14 @@ export class McpToolExposureService {
             if (!tool) {
                 throw new McpToolExposureError(`Tool "${toolName}" is not registered.`, 404);
             }
-            if (!(await this.userGroups.getGroup(groupId))) {
+            if (!(await this.policies.groupExists(groupId))) {
                 throw new McpToolExposureError(`User group "${groupId}" does not exist.`, 404);
             }
             const restrictedReason = getMcpToolIneligibility(tool.capability);
+            const anonymousIneligibleReason = getMcpAnonymousToolIneligibility(tool.capability);
+            if (groupId === MCP_ANONYMOUS_GROUP_ID && anonymousIneligibleReason !== null) {
+                throw new McpToolExposureError(`Tool "${toolName}" cannot be offered without sign-in. ${anonymousIneligibleReason}`, 400);
+            }
             if (restrictedReason !== null) {
                 if (groupId === MCP_USERS_GROUP_ID) {
                     throw new McpToolExposureError(`Tool "${toolName}" is restricted and can never be granted to every MCP user. ${restrictedReason}`, 400);
@@ -438,7 +504,10 @@ export class McpToolExposureService {
      * call can never disagree. The checks run in a fixed order and the first
      * one that removes every remaining grant names the reason: the caller's
      * groups hold no grant, every grant is stale, no granting group may hold a
-     * restricted tool, or no granting group's IP allowlist admits the address.
+     * restricted tool, the only grant is to `anonymous` and the tool is not
+     * public, every granting group is switched off, or no granting group's IP
+     * allowlist admits the address. A served tool is charged to one of the
+     * groups left standing (see {@link chargedRoute}).
      *
      * @param tool - An enabled, registered tool.
      * @param approvals - Grants keyed by tool name, from {@link loadApprovals}.
@@ -461,20 +530,27 @@ export class McpToolExposureService {
             decision = { withheld: 'not-granted' };
         } else {
             const restricted = getMcpToolIneligibility(tool.capability) !== null;
+            const notPublic = getMcpAnonymousToolIneligibility(tool.capability) !== null;
             const fingerprint = this.fingerprintOf(tool.capability);
             const current = docs
                 .filter(doc => doc.fingerprint === fingerprint)
                 .map(doc => this.policies.policyFor(policies, doc.groupId));
             const holdable = current.filter(policy => mcpGroupMayHoldTool(restricted, policy));
-            const routes = holdable.filter(policy => this.policies.allowsAddress(policy, audience.ip));
+            const publicOk = holdable.filter(policy => policy.groupId !== MCP_ANONYMOUS_GROUP_ID || !notPublic);
+            const switchedOn = publicOk.filter(policy => policy.enabled);
+            const routes = switchedOn.filter(policy => this.policies.allowsAddress(policy, audience.ip));
             if (current.length === 0) {
                 decision = { withheld: 'stale-grant' };
             } else if (holdable.length === 0) {
                 decision = { withheld: 'restricted-not-allowed' };
+            } else if (publicOk.length === 0) {
+                decision = { withheld: 'not-public' };
+            } else if (switchedOn.length === 0) {
+                decision = { withheld: 'group-disabled' };
             } else if (routes.length === 0) {
                 decision = { withheld: 'ip-not-allowed' };
             } else {
-                decision = { served: { tool, restricted, scrubSecrets: routes.some(policy => policy.scrubSecrets) } };
+                decision = { served: { tool, restricted, scrubSecrets: routes.some(policy => policy.scrubSecrets), chargedGroup: chargedRoute(routes) } };
             }
         }
         return decision;

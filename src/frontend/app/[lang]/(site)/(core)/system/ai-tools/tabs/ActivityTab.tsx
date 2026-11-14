@@ -36,6 +36,18 @@ export interface IActivityTabProps {
      * reusing this feed instead of building a second one.
      */
     fixedTriggerPath?: ToolTriggerPath;
+
+    /**
+     * Lock the feed to calls charged to one user group. The MCP usage view
+     * passes it when an admin opens a group's individual calls.
+     */
+    fixedChargedGroupId?: string;
+
+    /**
+     * Lock the feed to one external caller. The MCP usage view passes it when
+     * an admin opens one caller's individual calls.
+     */
+    fixedPrincipalId?: string;
 }
 
 /**
@@ -44,7 +56,7 @@ export interface IActivityTabProps {
  * @param props - {@link IActivityTabProps}.
  * @returns The tab.
  */
-export function ActivityTab({ fixedTriggerPath }: IActivityTabProps = {}) {
+export function ActivityTab({ fixedTriggerPath, fixedChargedGroupId, fixedPrincipalId }: IActivityTabProps = {}) {
     const [items, setItems] = useState<IToolInvocationRecord[]>([]);
     const [total, setTotal] = useState(0);
     const [loading, setLoading] = useState(true);
@@ -69,6 +81,8 @@ export function ActivityTab({ fixedTriggerPath }: IActivityTabProps = {}) {
         if (status) query.status = status;
         if (triggerPath) query.triggerPath = triggerPath;
         if (toolName) query.toolName = toolName;
+        if (fixedChargedGroupId) query.chargedGroupId = fixedChargedGroupId;
+        if (fixedPrincipalId) query.principalId = fixedPrincipalId;
         try {
             const page = await listActivity(query);
             // Drop a response a newer load already superseded so out-of-order
@@ -87,7 +101,7 @@ export function ActivityTab({ fixedTriggerPath }: IActivityTabProps = {}) {
         } finally {
             setLoading(false);
         }
-    }, [status, triggerPath, toolName, offset]);
+    }, [status, triggerPath, toolName, offset, fixedChargedGroupId, fixedPrincipalId]);
 
     useEffect(() => { void load(); }, [load]);
 

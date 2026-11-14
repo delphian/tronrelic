@@ -1246,6 +1246,12 @@ export class AiToolsController {
         if (typeof req.query.queryId === 'string') {
             query.queryId = req.query.queryId;
         }
+        if (typeof req.query.chargedGroupId === 'string') {
+            query.chargedGroupId = req.query.chargedGroupId;
+        }
+        if (typeof req.query.principalId === 'string') {
+            query.principalId = req.query.principalId;
+        }
         if (typeof req.query.limit === 'string') {
             const parsed = Number.parseInt(req.query.limit, 10);
             if (!Number.isNaN(parsed)) {

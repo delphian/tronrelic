@@ -34,6 +34,13 @@ export interface IOAuthServerConfig {
     mcpResourceMetadataUrl: string;
 
     /**
+     * The public MCP endpoint URL. It takes no sign-in and accepts no token
+     * from this server, so it is listed here only so every component derives
+     * it from the same origin as the signed-in endpoint.
+     */
+    mcpPublicUrl: string;
+
+    /**
      * Path of the page that signs users in and asks for consent during an
      * OAuth authorization. Relative, so Better Auth resolves it against the
      * request's own origin.
@@ -46,6 +53,13 @@ export interface IOAuthServerConfig {
 
 /** Path the MCP endpoint is mounted at. */
 export const MCP_ENDPOINT_PATH = '/mcp';
+
+/**
+ * Path the public MCP endpoint is mounted at, for callers who do not sign in.
+ * A separate URL from {@link MCP_ENDPOINT_PATH} because clients start their
+ * sign-in on a 401, which a URL that serves anonymous callers can never send.
+ */
+export const MCP_PUBLIC_ENDPOINT_PATH = '/mcp/public';
 
 /** Path of the combined sign-in and consent page in the frontend. */
 const AUTHORIZE_PAGE_PATH = '/oauth/authorize';
@@ -70,6 +84,7 @@ export function resolveOAuthServerConfig(baseUrl: string | undefined): IOAuthSer
         issuer,
         mcpResourceUrl: `${issuer}${MCP_ENDPOINT_PATH}`,
         mcpResourceMetadataUrl: `${issuer}/.well-known/oauth-protected-resource${MCP_ENDPOINT_PATH}`,
+        mcpPublicUrl: `${issuer}${MCP_PUBLIC_ENDPOINT_PATH}`,
         authorizePage: AUTHORIZE_PAGE_PATH,
         siteHost: origin.hostname
     };

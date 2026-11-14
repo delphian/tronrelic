@@ -10,6 +10,7 @@ import type { IAiToolCapability } from './IAiToolCapability.js';
 import type { IToolInvocationActor, ToolTriggerPath } from './IToolInvocationContext.js';
 import type { IToolInvocationOrigin } from './IToolInvocationOrigin.js';
 import type { ToolInvocationStatus } from './IToolInvocationResult.js';
+import type { ToolLimitKind } from './ToolLimitKind.js';
 
 /** A single governed tool invocation, persisted to the audit store. */
 export interface IToolInvocationRecord {
@@ -77,6 +78,12 @@ export interface IToolInvocationRecord {
 
     /** Sanitized failure reason, when the call failed or was denied. */
     error?: string;
+
+    /**
+     * The rate or cost limit that refused the call, when one did. Absent on
+     * every other outcome, including refusals by a gate that is not a limit.
+     */
+    limitHit?: ToolLimitKind;
 
     /** Raw upstream error body, retained for admin-only forensics. */
     errorRaw?: string;

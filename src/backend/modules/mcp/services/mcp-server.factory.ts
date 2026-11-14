@@ -2,17 +2,18 @@
  * @fileoverview Builds the MCP server instance that answers one request.
  *
  * The MCP SDK runs stateless: it asks for a fresh server for every HTTP
- * request. That suits this endpoint, because the tool list differs per caller.
- * Each server registers only the tools the caller may use, and every tool
- * callback runs through the AI tool governor under the `mcp` trigger path,
- * with the verified user as the end user. No tool handler is ever called
- * directly from here.
+ * request. That suits both endpoints, because the tool list differs per
+ * caller. Each server registers only the tools the caller may use, and every
+ * tool callback runs through the AI tool governor under the `mcp` trigger
+ * path, with the verified user as the end user, or with no end user for an
+ * anonymous caller. No tool handler is ever called directly from here.
  *
- * Two per-group settings take effect here. A restricted tool the caller was
+ * Three per-group settings take effect here. A restricted tool the caller was
  * served through a group that allows restricted tools is named to the governor
- * as such, which is the only way past its MCP safety floor. And a tool served
+ * as such, which is the only way past its MCP safety floor. A tool served
  * through a group that asks for scrubbing has its result passed through the
- * secret scrubber before it is written to the client.
+ * secret scrubber before it is written to the client. And each call carries
+ * the limits of the group it is charged to, which the governor enforces.
  */
 
 import { McpServer, fromJsonSchema } from '@modelcontextprotocol/server';
@@ -20,14 +21,15 @@ import type { CallToolResult, StandardSchemaWithJSON, ToolAnnotations } from '@m
 import type {
     IAiTool,
     IAiToolGovernor,
-    IMcpAccessTokenClaims,
+    IMcpGroupPolicy,
     ISystemLogService,
-    IToolEndUserPrincipal,
+    IToolCallerBudget,
     IToolInvocationContext,
     IToolInvocationOrigin,
     IToolInvocationResult
 } from '@/types';
 import { UNTRUSTED_CONTENT_SYSTEM_CLAUSE } from '@/types';
+import type { IMcpCaller } from './IMcpCaller.js';
 import type { IMcpServedTool } from './mcp-tool-exposure.service.js';
 import type { SecretScrubber } from './SecretScrubber.js';
 
@@ -72,18 +74,14 @@ const SERVER_INSTRUCTIONS = [
 ].join('\n\n');
 
 /**
- * Everything the factory needs to know about the verified caller.
+ * Per-minute ceiling on one tool for one caller, matching the governor's own
+ * per-tool ceiling. Groups set limits across tools, not per tool, so this is
+ * the same for every group.
  */
-export interface IMcpCaller {
-    /** Claims from the verified access token. */
-    claims: IMcpAccessTokenClaims;
+const CALLS_PER_MINUTE_PER_TOOL = 30;
 
-    /** The live end-user principal the governor scopes tool calls to. */
-    endUser: IToolEndUserPrincipal;
-
-    /** Client IP address as resolved by the trusted proxy chain. */
-    ip?: string;
-}
+/** Per-minute ceiling across tools for a group that sets no limit of its own, matching the governor's. */
+const DEFAULT_CALLS_PER_MINUTE = 60;
 
 /**
  * The tool names one request may call, as the governor needs them.
@@ -142,7 +140,7 @@ export class McpServerFactory {
             allowlist: served.map(entry => entry.tool.name),
             restricted: served.filter(entry => entry.restricted).map(entry => entry.tool.name)
         };
-        for (const { tool, scrubSecrets } of served) {
+        for (const { tool, scrubSecrets, chargedGroup } of served) {
             server.registerTool(
                 tool.name,
                 {
@@ -159,7 +157,7 @@ export class McpServerFactory {
                  *   against the tool's schema by the SDK.
                  * @returns The governed result shaped for MCP.
                  */
-                async (args: unknown) => this.callTool(tool.name, args, caller, access, scrubSecrets)
+                async (args: unknown) => this.callTool(tool.name, args, caller, access, scrubSecrets, chargedGroup)
             );
         }
         return server;
@@ -179,18 +177,27 @@ export class McpServerFactory {
      *   restricted ones among them, which the governor enforces again on its side.
      * @param scrubSecrets - Whether a successful result is scrubbed before it
      *   is returned, because a group serving this tool asks for it.
+     * @param chargedGroup - The policy of the group this tool's calls are
+     *   charged to, whose limits the governor enforces.
      * @returns The MCP tool result.
      */
-    private async callTool(name: string, args: unknown, caller: IMcpCaller, access: IMcpCallAccess, scrubSecrets: boolean): Promise<CallToolResult> {
+    private async callTool(
+        name: string,
+        args: unknown,
+        caller: IMcpCaller,
+        access: IMcpCallAccess,
+        scrubSecrets: boolean,
+        chargedGroup: IMcpGroupPolicy
+    ): Promise<CallToolResult> {
         const input = typeof args === 'object' && args !== null && !Array.isArray(args) ? args as Record<string, unknown> : {};
         let result: CallToolResult;
         try {
-            const governed = await this.governor.invoke(name, input, buildContext(caller, access));
+            const governed = await this.governor.invoke(name, input, buildContext(caller, access, chargedGroup));
             result = toCallToolResult(scrubSecrets && governed.status === 'ok'
                 ? { ...governed, content: this.scrubber.scrub(governed.content) }
                 : governed);
         } catch (error: unknown) {
-            this.logger.error({ err: error, tool: name, userId: caller.claims.userId }, 'MCP tool call failed outside governance');
+            this.logger.error({ err: error, tool: name, principalKind: caller.principalKind, principalId: caller.principalId }, 'MCP tool call failed outside governance');
             result = { content: [{ type: 'text', text: TOOL_FAILED_MESSAGE }], isError: true };
         }
         return result;
@@ -216,36 +223,95 @@ export class McpServerFactory {
  * Build the governor's invocation context for an MCP call.
  *
  * An MCP call belongs to no run, so the context carries no `queryId`. It sets
- * `quotaKey` to the user's id with a fixed prefix instead. The chain query
- * tools send that key to ClickHouse, which gives every MCP user their own
- * ClickHouse quota bucket rather than one shared by all MCP traffic, without
- * making every call a user ever made look like one run in the audit trail.
+ * `quotaKey` to the caller's id with a fixed prefix instead. The chain query
+ * tools send that key to ClickHouse, which gives every MCP user, and every
+ * anonymous network, its own ClickHouse quota bucket rather than one shared by
+ * all MCP traffic, without making every call a caller ever made look like one
+ * run in the audit trail.
+ *
+ * An anonymous caller is the actor kind `anonymous` with no end user, which
+ * is what makes the governor apply the anonymous floor to the call.
  *
  * @param caller - The verified caller.
  * @param access - The tools served to this caller, and the restricted ones among them.
+ * @param chargedGroup - The policy of the group the call is charged to.
  * @returns The context the governor applies policy and audit from.
  */
-function buildContext(caller: IMcpCaller, access: IMcpCallAccess): IToolInvocationContext {
-    const origin: IToolInvocationOrigin = {};
-    if (caller.claims.clientId) {
+function buildContext(caller: IMcpCaller, access: IMcpCallAccess, chargedGroup: IMcpGroupPolicy): IToolInvocationContext {
+    const anonymous = caller.principalKind === 'anonymous';
+    return {
+        actor: { kind: anonymous ? 'anonymous' : 'user', id: caller.principalId },
+        triggerPath: 'mcp',
+        aiProviderId: MCP_AI_PROVIDER_ID,
+        quotaKey: `${anonymous ? 'mcp-anon' : 'mcp-user'}:${caller.principalId}`,
+        ...(caller.endUser && !anonymous ? { endUser: caller.endUser } : {}),
+        toolAllowlist: access.allowlist,
+        ...(access.restricted.length > 0 ? { mcpRestrictedTools: access.restricted } : {}),
+        callerBudget: buildCallerBudget(caller, chargedGroup),
+        origin: buildOrigin(caller, chargedGroup.groupId)
+    };
+}
+
+/**
+ * Turn the charged group's limits into the budget the governor counts.
+ *
+ * The minute windows are keyed by the caller alone, so a caller's calls
+ * through every group count together against the platform's per-minute
+ * ceiling. The day window is keyed by caller and group, because a group's day
+ * limit means "calls this caller may make through this group". The pool is
+ * keyed by group alone, because it is shared by every caller charged to it.
+ *
+ * @param caller - The verified caller.
+ * @param chargedGroup - The policy of the group the call is charged to.
+ * @returns The budget for the governor's policy engine.
+ */
+export function buildCallerBudget(caller: IMcpCaller, chargedGroup: IMcpGroupPolicy): IToolCallerBudget {
+    const { limits, groupId } = chargedGroup;
+    const callerKey = `mcp:${caller.principalKind}:${caller.principalId}`;
+    const budget: IToolCallerBudget = {
+        callerKey,
+        callsPerMinute: limits.callsPerMinutePerCaller ?? DEFAULT_CALLS_PER_MINUTE,
+        callsPerMinutePerTool: CALLS_PER_MINUTE_PER_TOOL
+    };
+    if (limits.callsPerDayPerCaller !== null) {
+        budget.dayKey = `${callerKey}:group:${groupId}`;
+        budget.callsPerDay = limits.callsPerDayPerCaller;
+    }
+    if (limits.callsPerDayGroup !== null) {
+        budget.poolKey = `mcp-pool:${groupId}`;
+        budget.poolCallsPerDay = limits.callsPerDayGroup;
+    }
+    return budget;
+}
+
+/**
+ * Describe where the call came from, for the audit record and the accounting
+ * rows that are built from it.
+ *
+ * @param caller - The verified caller.
+ * @param chargedGroupId - The group the call is charged to.
+ * @returns The origin the governor copies onto the audit record.
+ */
+function buildOrigin(caller: IMcpCaller, chargedGroupId: string): IToolInvocationOrigin {
+    const origin: IToolInvocationOrigin = {
+        endpoint: caller.endpoint,
+        principalKind: caller.principalKind,
+        principalId: caller.principalId,
+        chargedGroupId
+    };
+    if (caller.claims?.clientId) {
         origin.clientId = caller.claims.clientId;
     }
-    if (caller.claims.tokenId) {
+    if (caller.claims?.tokenId) {
         origin.credentialId = caller.claims.tokenId;
     }
     if (caller.ip) {
         origin.ip = caller.ip;
     }
-    return {
-        actor: { kind: 'user', id: caller.claims.userId },
-        triggerPath: 'mcp',
-        aiProviderId: MCP_AI_PROVIDER_ID,
-        quotaKey: `mcp-user:${caller.claims.userId}`,
-        endUser: caller.endUser,
-        toolAllowlist: access.allowlist,
-        ...(access.restricted.length > 0 ? { mcpRestrictedTools: access.restricted } : {}),
-        origin
-    };
+    if (caller.clientName) {
+        origin.clientName = caller.clientName;
+    }
+    return origin;
 }
 
 /**

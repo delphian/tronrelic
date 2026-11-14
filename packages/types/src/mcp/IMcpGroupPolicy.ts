@@ -1,9 +1,11 @@
 /**
  * @file IMcpGroupPolicy.ts
  *
- * The extra protections and permissions an admin sets on one user group for
- * MCP tool access, edited from the Tools tab of `/system/mcp`.
+ * The extra protections, permissions, and call limits an admin sets on one
+ * user group for MCP tool access, edited from the Tools tab of `/system/mcp`.
  */
+
+import type { IMcpGroupLimits } from './IMcpGroupLimits.js';
 
 /**
  * Per-group MCP settings.
@@ -50,6 +52,21 @@ export interface IMcpGroupPolicy {
      * back on restores the same list.
      */
     ipAllowlist: string[];
+
+    /**
+     * Whether the tools this group grants are served at all. Switching it off
+     * is a kill switch for one group: its grants and settings are kept, but no
+     * caller is served a tool through it until it is switched back on. Starts
+     * on for every group, so existing grants keep working.
+     */
+    enabled: boolean;
+
+    /**
+     * Call limits for calls charged to this group. Every limit starts `null`
+     * (no group limit) except on the `anonymous` group, which starts with
+     * conservative defaults and may not clear any of them.
+     */
+    limits: IMcpGroupLimits;
 
     /** ISO 8601 time of the last change, absent while the group has never been configured. */
     updatedAt?: string;

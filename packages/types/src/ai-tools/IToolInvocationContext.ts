@@ -7,6 +7,7 @@
  * what path, and through which AI provider.
  */
 
+import type { IToolCallerBudget } from './IToolCallerBudget.js';
 import type { IToolInvocationOrigin } from './IToolInvocationOrigin.js';
 
 /**
@@ -14,8 +15,9 @@ import type { IToolInvocationOrigin } from './IToolInvocationOrigin.js';
  * - `interactive` — an admin is present, driving a live query.
  * - `scheduled` — a cron-fired saved prompt, no human present.
  * - `programmatic` — another plugin or module called the AI service in code.
- * - `mcp` — a signed-in, non-admin user's own AI client called the tool over
- *   the MCP endpoint. The model driving the call is outside the platform's
+ * - `mcp` — an external AI client called the tool over one of the MCP
+ *   endpoints: a signed-in, non-admin user on `/mcp`, or an anonymous caller
+ *   on `/mcp/public`. The model driving the call is outside the platform's
  *   control, so this path is never treated as "an admin is present": the
  *   interactive-only relaxations (curation auto-approve) do not apply, and the
  *   autonomous external-tool default-deny does.
@@ -27,11 +29,17 @@ export interface IToolInvocationActor {
     /**
      * `admin` for a human operator, `system` for an autonomous process, `user`
      * for a signed-in end user acting through their own AI client (the `mcp`
-     * trigger path). A `user` actor carries no admin authority of any kind.
+     * trigger path), and `anonymous` for a caller of the public MCP endpoint
+     * who did not sign in. Neither `user` nor `anonymous` carries admin
+     * authority of any kind, and an `anonymous` call never carries an end-user
+     * principal.
      */
-    kind: 'admin' | 'system' | 'user';
+    kind: 'admin' | 'system' | 'user' | 'anonymous';
 
-    /** Identifier of the actor when known (e.g. a Better Auth user id). */
+    /**
+     * Identifier of the actor when known: a Better Auth user id, or for an
+     * `anonymous` actor the salted hash of its network range.
+     */
     id?: string;
 }
 
@@ -166,6 +174,18 @@ export interface IToolInvocationContext {
      * model input.
      */
     mcpRestrictedTools?: string[];
+
+    /**
+     * The per-caller and pooled limits this call is charged against, set by
+     * the MCP endpoint from the group the call is charged to. On the `mcp`
+     * path the policy engine charges these windows before the shared ones, so
+     * a caller over its own budget never uses up what everyone else draws on.
+     * When absent on the `mcp` path, the engine falls back to a fixed
+     * per-user ceiling keyed by the end user. See {@link IToolCallerBudget}.
+     *
+     * Set by the entry point from verified credentials, never from model input.
+     */
+    callerBudget?: IToolCallerBudget;
 
     /**
      * The external client, credential, and address the call arrived through,

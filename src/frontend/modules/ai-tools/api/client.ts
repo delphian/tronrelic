@@ -75,6 +75,10 @@ export interface IActivityQuery {
     conversationId?: string;
     /** Scope to one run's tool calls. */
     queryId?: string;
+    /** Scope to calls charged to one user group; backs the MCP usage view's drill-down. */
+    chargedGroupId?: string;
+    /** Scope to one external caller (a user id, or an anonymous caller's network hash). */
+    principalId?: string;
     limit?: number;
     offset?: number;
 }

@@ -14,9 +14,9 @@
  */
 
 import type { IConnectedAppsService, IMcpAccessTokenVerifier, ISystemLogService, IToolEndUserPrincipal } from '@/types';
-import { MCP_TOOLS_SCOPE, MCP_USERS_GROUP_ID } from '@/types';
+import { MCP_ANONYMOUS_GROUP_ID, MCP_TOOLS_SCOPE, MCP_USERS_GROUP_ID } from '@/types';
 import type { EndUserResolver } from '../../ai-tools/index.js';
-import type { IMcpCaller } from './mcp-server.factory.js';
+import type { IMcpCaller } from './IMcpCaller.js';
 
 /**
  * How long a resolved principal is reused before the account and its groups
@@ -89,7 +89,21 @@ export class McpCallerResolver {
                 this.logger.info({ userId: claims.userId, clientId: claims.clientId }, 'MCP request refused: user is not in the MCP group');
                 outcome = { kind: 'not-member' };
             } else {
-                outcome = { kind: 'ok', caller: { claims, endUser: principal, ...(ip ? { ip } : {}) } };
+                // `anonymous` is reserved, but a real group created under that
+                // id before the reservation would otherwise hand its members
+                // the grants meant for strangers, under the stricter limits of
+                // a group they never joined.
+                const groups = (principal.groups ?? []).filter(group => group !== MCP_ANONYMOUS_GROUP_ID);
+                const caller: IMcpCaller = {
+                    endpoint: 'oauth',
+                    principalKind: 'user',
+                    principalId: claims.userId,
+                    groups,
+                    endUser: principal,
+                    claims,
+                    ...(ip ? { ip } : {})
+                };
+                outcome = { kind: 'ok', caller };
                 if (claims.clientId) {
                     // Not awaited: the write is throttled, never rejects, and
                     // must not add latency to the request.

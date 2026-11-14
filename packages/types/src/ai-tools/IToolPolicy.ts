@@ -6,6 +6,8 @@
  * returns a decision the governor enforces before a handler runs.
  */
 
+import type { ToolLimitKind } from './ToolLimitKind.js';
+
 /**
  * Limits and gates the governor applies to a tool invocation. Every field is
  * optional; an omitted field means "no limit of this kind". Defaults are
@@ -67,4 +69,11 @@ export interface IToolPolicyDecision {
 
     /** Human-readable reason, recorded in the audit trail and returned on denial. */
     reason?: string;
+
+    /**
+     * The rate or cost limit that refused the call, set only on a denial by
+     * one of them. Copied onto the audit record so usage reports can count
+     * refusals by cause.
+     */
+    limit?: ToolLimitKind;
 }

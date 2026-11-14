@@ -28,6 +28,9 @@ export function createMcpAdminRouter(controller: McpAdminController): Router {
     router.get('/status', asyncHandler(controller.getStatus));
     router.put('/settings', asyncHandler(controller.setSettings));
 
+    router.get('/usage', asyncHandler(controller.getUsage));
+    router.get('/usage/groups/:groupId', asyncHandler(controller.getUsageGroupDetail));
+
     router.get('/tools', asyncHandler(controller.listTools));
     router.put('/tools/:name', asyncHandler(controller.setToolExposure));
 
