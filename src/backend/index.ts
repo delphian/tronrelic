@@ -253,6 +253,12 @@ async function bootstrap(): Promise<void> {
         const shutdown = async (signal: string) => {
             logger.info({ signal }, 'Received shutdown signal');
             ctx.modules.scheduler.stop();
+            // The MCP accounting meter batches its ClickHouse rows on a
+            // five-second interval, so whatever it holds now is lost once the
+            // process exits. Drained before the blockchain wait below, because
+            // that wait can use the container's whole stop grace period on its
+            // own; the drain itself is bounded inside the module.
+            await ctx.modules.mcp.stop();
             // Stops the block buffer so no new block can be committed, then
             // waits a bounded time for blocks already committed to MongoDB to
             // finish their ClickHouse chain data write. The order of those steps

@@ -73,6 +73,19 @@ describe('McpModule', () => {
         await expect(module.run()).rejects.toThrow();
     });
 
+    it('stop() drains the accounting meter on shutdown, and is safe before init() and when called twice', async () => {
+        await expect(new McpModule().stop()).resolves.toBeUndefined();
+        const insert = vi.fn(async () => undefined);
+        const module = new McpModule();
+        const deps = { ...createDeps(true), clickhouse: { insert } as any };
+        await module.init(deps);
+        await module.run();
+        (module as any).meter.recordWithheld({ endpoint: 'public', principalKind: 'anonymous', principalId: 'net-a', groups: ['anonymous'] }, 'tool', 'not-granted');
+        await module.stop();
+        await module.stop();
+        expect(insert).toHaveBeenCalledTimes(1);
+    });
+
     it('run() mounts both endpoints, both discovery paths, and the admin API', async () => {
         const module = new McpModule();
         const deps = createDeps();

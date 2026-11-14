@@ -54,6 +54,20 @@ const FIGURE_COLUMNS = `
 /** Filter on the report window, shared by every query. */
 const WINDOW_FILTER = 'timestamp >= now64(3) - INTERVAL {hours:UInt32} HOUR';
 
+/**
+ * Matches only the calls that actually spent a group's shared 24-hour pool,
+ * which is what the pool badge on `/system/mcp` measures against the group's
+ * `callsPerDayGroup` ceiling. The governor charges the pool last, so a call
+ * refused by the caller's own minute or day window, a call the MCP floor or
+ * the tool allowlist refused before any budget ran, and a tool that was never
+ * served all leave the pool untouched; counting them would let one noisy
+ * caller show an exhausted pool while nearly all of it is still available. A
+ * call the tool-minute, global-minute, or cost window refused had already
+ * been charged to the pool, and so had a `pool-day` refusal itself, because
+ * each counter is incremented before it is compared.
+ */
+const POOL_CHARGED_FILTER = `(status IN ('ok', 'error') OR limit_hit IN ('tool-minute', 'global-minute', 'cost', 'pool-day'))`;
+
 /** The aggregate columns as ClickHouse returns them; 64-bit counts arrive as strings. */
 interface IFigureColumns {
     calls: string | number;
@@ -122,7 +136,8 @@ export class McpUsageService {
             const [totals, perGroup] = await Promise.all([
                 this.clickhouse!.query<IFigureColumns>(`SELECT ${FIGURE_COLUMNS} FROM ${MCP_CALLS_TABLE} WHERE ${WINDOW_FILTER}`, params),
                 this.clickhouse!.query<IFigureColumns & { charged_group: string; last24: string | number }>(
-                    `SELECT charged_group, ${FIGURE_COLUMNS}, countIf(timestamp >= now64(3) - INTERVAL 24 HOUR) AS last24
+                    `SELECT charged_group, ${FIGURE_COLUMNS},
+                            countIf(timestamp >= now64(3) - INTERVAL 24 HOUR AND ${POOL_CHARGED_FILTER}) AS last24
                      FROM ${MCP_CALLS_TABLE} WHERE ${WINDOW_FILTER}
                      GROUP BY charged_group ORDER BY calls DESC`,
                     params

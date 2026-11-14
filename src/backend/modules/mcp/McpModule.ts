@@ -153,6 +153,13 @@ export interface IMcpModuleDependencies {
 const SUBMENU_NAMESPACE = 'mcp';
 
 /**
+ * Longest the shutdown handler waits for the last accounting write. A
+ * healthy write of one small batch takes milliseconds; this leaves most of
+ * the container's stop grace period for the blockchain drain that follows.
+ */
+const SHUTDOWN_DRAIN_MS = 5_000;
+
+/**
  * The admin page's tabs. The module owns collections and a ClickHouse table
  * and writes logs, so it carries Database and Logs tabs; it registers no
  * scheduler jobs, so it has no Schedules tab. The Overview tab carries the
@@ -325,6 +332,37 @@ export class McpModule implements IModule<IMcpModuleDependencies> {
         this.app.use('/api/admin/mcp', createMcpAdminRouter(this.adminController));
 
         this.logger.info({ resourceUrl: this.endpoint.resourceUrl, publicUrl: this.endpoint.publicUrl }, 'MCP endpoints, discovery document, and admin API mounted');
+    }
+
+    /**
+     * Write the accounting rows still buffered, so a restart does not lose the
+     * usage totals for the calls served just before it.
+     *
+     * The meter writes to ClickHouse on a five-second interval, so a process
+     * that exits without this drops every row buffered since the last write,
+     * which would turn every deployment into a silent undercount on the usage
+     * view. The graceful shutdown handler in `index.ts` awaits this before
+     * exiting. The wait is capped at {@link SHUTDOWN_DRAIN_MS}, because the
+     * ClickHouse client allows a request 30 seconds and the container's stop
+     * grace period is 30 seconds in total; a hung write gives up its rows
+     * rather than the process being killed mid-shutdown. Calling it before
+     * `init()`, or twice, is safe.
+     *
+     * @returns Resolves once the last accounting write has finished, failed,
+     *   or run past the cap.
+     */
+    async stop(): Promise<void> {
+        if (this.initialized) {
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            const capped = new Promise<'timeout'>(resolve => {
+                timer = setTimeout(() => resolve('timeout'), SHUTDOWN_DRAIN_MS);
+            });
+            const outcome = await Promise.race([this.meter.stop().then(() => 'drained' as const), capped]);
+            clearTimeout(timer);
+            if (outcome === 'timeout') {
+                this.logger.warn({ waitedMs: SHUTDOWN_DRAIN_MS }, 'MCP accounting rows were not written before shutdown; they are lost');
+            }
+        }
     }
 
     /**
