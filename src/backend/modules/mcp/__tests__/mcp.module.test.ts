@@ -38,9 +38,12 @@ function createDeps(groupExists = false): IMcpModuleDependencies & {
         hookRegistry: { register: vi.fn(() => () => undefined), invoke: vi.fn() } as any,
         knownSecrets: [],
         resolveEndUser: vi.fn(async () => null),
+        accountDirectory: { getAccountsByIds: vi.fn(async () => []) },
+        anonymousKeySalt: 'test-salt',
         endpoint: {
             resourceUrl: 'https://tronrelic.test/mcp',
             resourceMetadataUrl: 'https://tronrelic.test/.well-known/oauth-protected-resource/mcp',
+            publicUrl: 'https://tronrelic.test/mcp/public',
             issuer: 'https://tronrelic.test',
             siteHost: 'tronrelic.test'
         }
@@ -52,7 +55,7 @@ describe('McpModule', () => {
         const module = new McpModule();
         expect(module.metadata.id).toBe('mcp');
         expect(module.metadata.name).toBe('MCP');
-        expect(module.metadata.version).toBe('1.1.0');
+        expect(module.metadata.version).toBe('1.2.0');
     });
 
     it('init() builds services without mounting routes or touching groups', async () => {
@@ -70,12 +73,13 @@ describe('McpModule', () => {
         await expect(module.run()).rejects.toThrow();
     });
 
-    it('run() mounts the endpoint, both discovery paths, and the admin API', async () => {
+    it('run() mounts both endpoints, both discovery paths, and the admin API', async () => {
         const module = new McpModule();
         const deps = createDeps();
         await module.init(deps);
         await module.run();
         expect(deps.app.all).toHaveBeenCalledWith('/mcp', expect.any(Function));
+        expect(deps.app.all).toHaveBeenCalledWith('/mcp/public', expect.any(Function));
         expect(deps.app.get).toHaveBeenCalledWith('/.well-known/oauth-protected-resource/mcp', expect.any(Function));
         expect(deps.app.get).toHaveBeenCalledWith('/.well-known/oauth-protected-resource', expect.any(Function));
         expect(deps.app.use).toHaveBeenCalledWith('/api/admin/mcp', expect.any(Function));
@@ -111,6 +115,20 @@ describe('McpModule', () => {
         );
     });
 
+    it('feeds the accounting meter from ai.toolInvoked, registered in run()', async () => {
+        const module = new McpModule();
+        const deps = createDeps(true);
+        await module.init(deps);
+        expect(deps.hookRegistry.register).not.toHaveBeenCalled();
+        await module.run();
+        expect(deps.hookRegistry.register).toHaveBeenCalledWith(
+            'core',
+            expect.objectContaining({ id: 'ai.toolInvoked' }),
+            expect.any(Function),
+            expect.anything()
+        );
+    });
+
     it('removes a deleted group\'s grants and settings when http.groupDeleted fires', async () => {
         const module = new McpModule();
         const deps = createDeps(true);
@@ -123,8 +141,9 @@ describe('McpModule', () => {
         deps.database.getCollectionData(MCP_GROUP_POLICIES_COLLECTION).push(
             { groupId: 'ops', allowRestrictedTools: true, scrubSecrets: false, ipAllowlistEnabled: false, ipAllowlist: [] }
         );
-        const handler = (deps.hookRegistry.register as ReturnType<typeof vi.fn>).mock.calls[0][2];
-        await handler({ groupId: 'ops' });
+        const registration = (deps.hookRegistry.register as ReturnType<typeof vi.fn>).mock.calls
+            .find(call => (call[1] as { id: string }).id === 'http.groupDeleted');
+        await registration![2]({ groupId: 'ops' });
         expect(deps.database.getCollectionData(MCP_TOOL_APPROVALS_COLLECTION).map((doc: { groupId: string }) => doc.groupId)).toEqual([MCP_USERS_GROUP_ID]);
         expect(deps.database.getCollectionData(MCP_GROUP_POLICIES_COLLECTION)).toEqual([]);
     });

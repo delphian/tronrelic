@@ -2,24 +2,31 @@
  * @fileoverview The MCP module: TronRelic's Model Context Protocol endpoint.
  *
  * Lets members of the `mcp-users` group connect their own AI client (Claude,
- * Cursor, Claude Code) to TronRelic and call the AI tools an admin approved
- * for one of their user groups, as themselves. Each group can carry its own
- * protections (secret scrubbing, an IP allowlist) and, outside `mcp-users`,
- * can be cleared for restricted tools. The identity module is the OAuth
- * authorization server; this module is the protected resource. Every tool call
- * runs through the AI tool governor under the `mcp` trigger path, so MCP gets
- * the same validation, policy, rate limits, and audit as every other path.
+ * Cursor, Claude Code) to `/mcp` and call the AI tools an admin approved for
+ * one of their user groups, as themselves, and lets anyone call the tools
+ * granted to the virtual `anonymous` group through `/mcp/public` without
+ * signing in. Each group can carry its own protections (secret scrubbing, an
+ * IP allowlist), its own call limits, and a switch that turns it off; outside
+ * `mcp-users` and `anonymous` it can be cleared for restricted tools. The
+ * identity module is the OAuth authorization server; this module is the
+ * protected resource. Every tool call runs through the AI tool governor under
+ * the `mcp` trigger path, so MCP gets the same validation, policy, rate
+ * limits, and audit as every other path, and every call is counted in the
+ * ClickHouse `mcp_calls` table for the usage view.
  *
  * Follows the two-phase lifecycle: `init()` builds the services and indexes,
  * `run()` creates the MCP group if needed, registers the admin page's menu
- * entries, and mounts the endpoint, the discovery document, and the admin API.
+ * entries, starts the accounting meter, and mounts both endpoints, the
+ * discovery document, and the admin API.
  */
 
 import type { Express } from 'express';
 import type {
     HookRegisterDisposer,
+    IAccountDirectoryService,
     IAiToolGovernor,
     IAiToolRegistry,
+    IClickHouseService,
     IConnectedAppsService,
     IDatabaseService,
     IHookRegistry,
@@ -29,7 +36,7 @@ import type {
     IModuleMetadata,
     IUserGroupService
 } from '@/types';
-import { MCP_USERS_GROUP_ID } from '@/types';
+import { MCP_ANONYMOUS_GROUP_ID, MCP_USERS_GROUP_ID } from '@/types';
 import { logger } from '../../lib/logger.js';
 import { HOOKS } from '../../hooks/registry.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
@@ -40,6 +47,11 @@ import { SecretScrubber } from './services/SecretScrubber.js';
 import type { EndUserResolver } from '../ai-tools/index.js';
 import { McpCallerResolver } from './services/mcp-caller.resolver.js';
 import { McpServerFactory } from './services/mcp-server.factory.js';
+import { OAuthCallerAuthenticator } from './services/OAuthCallerAuthenticator.js';
+import { AnonymousCallerAuthenticator } from './services/AnonymousCallerAuthenticator.js';
+import { AnonymousCallerKeyer } from './services/AnonymousCallerKeyer.js';
+import { McpCallMeter } from './services/McpCallMeter.js';
+import { McpUsageService } from './services/McpUsageService.js';
 import { McpEndpointController } from './api/mcp-endpoint.controller.js';
 import { McpAdminController } from './api/mcp-admin.controller.js';
 import { createMcpAdminRouter } from './api/mcp-admin.routes.js';
@@ -55,6 +67,9 @@ export interface IMcpEndpointConfig {
 
     /** Where the protected resource metadata is served. */
     resourceMetadataUrl: string;
+
+    /** The public endpoint URL, which takes no sign-in. */
+    publicUrl: string;
 
     /** The OAuth issuer. */
     issuer: string;
@@ -114,7 +129,23 @@ export interface IMcpModuleDependencies {
     /** Resolves a user id to the live principal the governor scopes calls to. */
     resolveEndUser: EndUserResolver;
 
-    /** The endpoint's public URLs. */
+    /** Account directory, to label signed-in callers by email in the usage view. */
+    accountDirectory: Pick<IAccountDirectoryService, 'getAccountsByIds'>;
+
+    /**
+     * ClickHouse, where every call is counted for the usage view. Optional:
+     * without it nothing is counted and the usage view says so, while both
+     * endpoints and every limit work as normal.
+     */
+    clickhouse?: IClickHouseService;
+
+    /**
+     * Server-side secret mixed into the hash anonymous callers are counted
+     * under, so the stored id cannot be turned back into a network address.
+     */
+    anonymousKeySalt: string;
+
+    /** The endpoints' public URLs. */
     endpoint: IMcpEndpointConfig;
 }
 
@@ -122,9 +153,10 @@ export interface IMcpModuleDependencies {
 const SUBMENU_NAMESPACE = 'mcp';
 
 /**
- * The admin page's tabs. The module owns collections and writes logs, so it
- * carries Database and Logs tabs; it registers no scheduler jobs, so it has no
- * Schedules tab.
+ * The admin page's tabs. The module owns collections and a ClickHouse table
+ * and writes logs, so it carries Database and Logs tabs; it registers no
+ * scheduler jobs, so it has no Schedules tab. The Overview tab carries the
+ * usage view.
  */
 const SUBMENU_TABS: ReadonlyArray<{ label: string; tab: string; icon: string; order: number }> = [
     { label: 'Overview', tab: 'overview', icon: 'Power', order: 0 },
@@ -143,8 +175,8 @@ export class McpModule implements IModule<IMcpModuleDependencies> {
     readonly metadata: IModuleMetadata = {
         id: 'mcp',
         name: 'MCP',
-        version: '1.1.0',
-        description: 'Model Context Protocol endpoint serving AI tools an admin approved per user group to members of mcp-users'
+        version: '1.2.0',
+        description: 'Model Context Protocol endpoints serving AI tools an admin approved per user group: to members of mcp-users at /mcp, and to anonymous callers at /mcp/public'
     };
 
     private app!: Express;
@@ -161,8 +193,13 @@ export class McpModule implements IModule<IMcpModuleDependencies> {
      * with the plugin pattern and to make the registration easy to find.
      */
     private groupDeletedDisposer: HookRegisterDisposer | null = null;
+
+    /** Disposer for the `ai.toolInvoked` handler that feeds the accounting meter; kept for the same reason. */
+    private toolInvokedDisposer: HookRegisterDisposer | null = null;
     private endpointController!: McpEndpointController;
+    private publicEndpointController!: McpEndpointController;
     private adminController!: McpAdminController;
+    private meter!: McpCallMeter;
     private initialized = false;
 
     private readonly logger = logger.child({ module: 'mcp' });
@@ -185,23 +222,34 @@ export class McpModule implements IModule<IMcpModuleDependencies> {
         const settings = new McpSettingsStore(deps.database, this.logger);
         const policies = new McpGroupPolicyService(deps.database, deps.userGroups, this.logger);
         await policies.createIndexes();
-        const exposure = new McpToolExposureService(deps.database, deps.toolRegistry, policies, deps.userGroups, this.logger);
+        const exposure = new McpToolExposureService(deps.database, deps.toolRegistry, policies, this.logger);
         await exposure.createIndexes();
         this.policies = policies;
         this.exposure = exposure;
+        this.meter = new McpCallMeter(deps.clickhouse, this.logger);
         const callers = new McpCallerResolver(deps.tokenVerifier, deps.resolveEndUser, deps.connectedApps, this.logger);
         const serverFactory = new McpServerFactory(deps.governor, new SecretScrubber(deps.knownSecrets), this.logger);
+        const allowedOriginHosts = [deps.endpoint.siteHost];
 
         this.endpointController = new McpEndpointController(
             settings,
             exposure,
-            callers,
+            new OAuthCallerAuthenticator(callers, this.logger),
             serverFactory,
-            {
-                resourceUrl: deps.endpoint.resourceUrl,
-                resourceMetadataUrl: deps.endpoint.resourceMetadataUrl,
-                allowedOriginHosts: [deps.endpoint.siteHost]
-            },
+            { resourceUrl: deps.endpoint.resourceUrl, resourceMetadataUrl: deps.endpoint.resourceMetadataUrl, allowedOriginHosts },
+            this.meter,
+            this.logger
+        );
+        // The public endpoint runs the same pipeline with a different
+        // authenticator. API keys, when built, will be a second authenticator
+        // tried before the anonymous one here.
+        this.publicEndpointController = new McpEndpointController(
+            settings,
+            exposure,
+            new AnonymousCallerAuthenticator(new AnonymousCallerKeyer(deps.anonymousKeySalt), deps.endpoint.resourceUrl),
+            serverFactory,
+            { resourceUrl: deps.endpoint.publicUrl, allowedOriginHosts },
+            this.meter,
             this.logger
         );
         this.adminController = new McpAdminController(
@@ -210,7 +258,8 @@ export class McpModule implements IModule<IMcpModuleDependencies> {
             policies,
             deps.connectedApps,
             deps.userGroups,
-            { resourceUrl: deps.endpoint.resourceUrl, issuer: deps.endpoint.issuer },
+            new McpUsageService(deps.clickhouse, policies, deps.accountDirectory, this.logger),
+            { resourceUrl: deps.endpoint.resourceUrl, publicUrl: deps.endpoint.publicUrl, issuer: deps.endpoint.issuer },
             this.logger
         );
 
@@ -231,7 +280,19 @@ export class McpModule implements IModule<IMcpModuleDependencies> {
         this.logger.info('Running MCP module...');
 
         await this.ensureGroup();
+        await this.warnOnReservedGroup();
         await this.registerMenu();
+
+        // Every call the governor handles on the `mcp` path is counted from
+        // its audit record, so the accounting rows and the audit trail can
+        // never disagree about what happened. The meter ignores other paths.
+        this.toolInvokedDisposer = this.hookRegistry.register(
+            'core',
+            HOOKS.ai.toolInvoked,
+            async (record) => { this.meter.observe(record); },
+            { priority: 100 }
+        );
+        this.meter.start();
 
         // A deleted group's id can be reused, so its grants and settings are
         // removed here rather than left for a later group of the same name to
@@ -253,6 +314,7 @@ export class McpModule implements IModule<IMcpModuleDependencies> {
         // The endpoint answers every method so non-POST requests get a 405
         // with an Allow header rather than Express's 404.
         this.app.all(new URL(this.endpoint.resourceUrl).pathname, this.endpointController.handle);
+        this.app.all(new URL(this.endpoint.publicUrl).pathname, this.publicEndpointController.handle);
 
         // Protected resource metadata, at the RFC 9728 path for the resource
         // and at the bare path for clients that look there.
@@ -262,7 +324,30 @@ export class McpModule implements IModule<IMcpModuleDependencies> {
 
         this.app.use('/api/admin/mcp', createMcpAdminRouter(this.adminController));
 
-        this.logger.info({ resourceUrl: this.endpoint.resourceUrl }, 'MCP endpoint, discovery document, and admin API mounted');
+        this.logger.info({ resourceUrl: this.endpoint.resourceUrl, publicUrl: this.endpoint.publicUrl }, 'MCP endpoints, discovery document, and admin API mounted');
+    }
+
+    /**
+     * Warn when a real user group already holds the id reserved for anonymous
+     * callers.
+     *
+     * The identity module now refuses to create one, but a group created
+     * before the reservation would still exist. Its members are never given
+     * the anonymous grants (the caller resolver drops the id from their
+     * groups), and the admin page lists only the virtual group under it, so
+     * the real group has no MCP effect. It should still be renamed, because
+     * its grants and settings are stored under the same id as the virtual
+     * group's.
+     *
+     * @returns Resolves once the check has run.
+     */
+    private async warnOnReservedGroup(): Promise<void> {
+        if (await this.userGroups.getGroup(MCP_ANONYMOUS_GROUP_ID)) {
+            this.logger.warn(
+                { groupId: MCP_ANONYMOUS_GROUP_ID },
+                'A user group uses the id reserved for anonymous MCP callers; it has no MCP effect and should be deleted or recreated under another id'
+            );
+        }
     }
 
     /**

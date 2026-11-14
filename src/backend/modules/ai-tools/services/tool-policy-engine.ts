@@ -19,11 +19,16 @@
  * process-local in-memory counter: fail-safe per-instance limiting, never
  * fail-open and never a self-inflicted denial.
  *
- * Calls on the `mcp` trigger path come from a non-admin user's own AI client,
- * so they get extra gates: the call must carry an end-user principal, the tool
- * must pass the MCP eligibility floor, a tool needing approval is refused
- * rather than parked, and each user has their own rate budget so one user
- * cannot use up everyone else's.
+ * Calls on the `mcp` trigger path come from an external AI client, so they get
+ * extra gates: a signed-in call must carry an end-user principal, the tool
+ * must pass the MCP eligibility floor (the stricter anonymous floor for an
+ * anonymous caller), a tool needing approval is refused rather than parked,
+ * and each caller has their own rate budget so one caller cannot use up
+ * everyone else's. That budget comes from the entry point as an
+ * `IToolCallerBudget`, so the engine counts calls without knowing about
+ * groups or endpoints. MCP calls also draw on their own shared windows,
+ * separate from the ones admin, scheduled, and programmatic runs use, so
+ * outside traffic can never use up the budget the platform's own AI runs need.
  *
  * The engine is provider-neutral and owns no I/O beyond loading and persisting
  * admin overrides through the injected database and incrementing the rate
@@ -35,12 +40,14 @@ import type {
     IAiToolCapability,
     IDatabaseService,
     ISystemLogService,
+    IToolCallerBudget,
     IToolInvocationContext,
     IToolPolicy,
     IToolPolicyDecision,
-    IUntrustedScreenConfig
+    IUntrustedScreenConfig,
+    ToolLimitKind
 } from '@/types';
-import { getMcpToolIneligibility } from '@/types';
+import { getMcpAnonymousToolIneligibility, getMcpToolIneligibility } from '@/types';
 
 /** Core `_kv` key (manually namespaced) for per-tool policy overrides. */
 const POLICY_OVERRIDES_KEY = 'ai-tools:policy-overrides';
@@ -68,6 +75,16 @@ const MCP_USER_TOOL_RATE = { max: 30, windowMs: 60_000 };
 
 /** Per-user ceiling across every tool over MCP, for the same reason. */
 const MCP_USER_RATE = { max: 60, windowMs: 60_000 };
+
+/** Window for the per-caller and pooled day limits an `IToolCallerBudget` sets. */
+const DAY_WINDOW_MS = 86_400_000;
+
+/**
+ * Prefix on the shared per-tool and global counters for `mcp` calls. Calls
+ * from outside the platform count in their own windows, so a flood of them
+ * can never lock admins, scheduled prompts, or plugin code out of a tool.
+ */
+const MCP_SHARED_PREFIX = 'mcp:';
 
 /** Fixed window over which a tool's spend accumulates against its cost ceiling. */
 const COST_WINDOW_MS = 86_400_000;
@@ -372,6 +389,7 @@ export class ToolPolicyEngine {
         const mcpDenial = ctx.triggerPath === 'mcp' ? this.mcpDenialReason(tool, ctx, policy) : null;
 
         let decision: IToolPolicyDecision;
+        let rateLimitHit: ToolLimitKind | null = null;
         if (mcpDenial !== null) {
             // Evaluated first on the MCP path. The MCP module already lists only
             // the tools served to this caller, but a confused or injected model
@@ -414,10 +432,11 @@ export class ToolPolicyEngine {
         } else if (policy.requireApproval) {
             counters.needsApproval++;
             decision = { verdict: 'needs-approval', reason: 'This tool requires human approval before it runs.' };
-        } else if ((policy.rateLimit || ctx.triggerPath === 'mcp') && !(await this.consumeRate(tool.name, policy.rateLimit || undefined, ctx))) {
+        } else if ((policy.rateLimit || ctx.triggerPath === 'mcp')
+            && (rateLimitHit = await this.consumeRate(tool.name, policy.rateLimit || undefined, ctx)) !== null) {
             counters.rateLimited++;
             counters.denied++;
-            decision = { verdict: 'deny', reason: `Rate limit exceeded for "${tool.name}". Try again shortly.` };
+            decision = { verdict: 'deny', reason: rateLimitReason(tool.name, rateLimitHit), limit: rateLimitHit };
         } else if (costCap !== undefined && !(await this.admitCostCall(tool.name, costCap))) {
             // Charged last and atomically (INCR-then-compare), after the rate
             // gate, so a rate-rejected call never charges the dollar budget and
@@ -426,7 +445,7 @@ export class ToolPolicyEngine {
             // the window more conservative (never over-admits) and self-heals at
             // expiry — the same benign increment-before-reject consumeRate accepts.
             counters.denied++;
-            decision = { verdict: 'deny', reason: `Cost ceiling of $${policy.costCeilingUsd} reached for "${tool.name}". Try again later.` };
+            decision = { verdict: 'deny', reason: `Cost ceiling of $${policy.costCeilingUsd} reached for "${tool.name}". Try again later.`, limit: 'cost' };
         } else {
             counters.allowed++;
             decision = { verdict: 'allow' };
@@ -438,16 +457,23 @@ export class ToolPolicyEngine {
      * Decide whether an `mcp` call must be refused before any other gate runs.
      *
      * The MCP path has no admin present and a model the platform does not
-     * control, so three rules apply on top of the usual ones. The call must name
-     * the end user it runs for, because per-user rate limits and the audit trail
-     * key on it. The tool must pass the eligibility floor that
-     * {@link getMcpToolIneligibility} defines, unless the MCP endpoint served it
-     * to this caller as a restricted tool, which it does only through a user
-     * group an admin cleared for restricted tools; that waiver needs the name in
-     * both `mcpRestrictedTools` and `toolAllowlist`. And a tool whose effective
-     * policy requires approval is refused outright, waiver or not: parking a
-     * public user's call in the admin approval queue does not scale, and a
-     * user's client cannot wait on it.
+     * control, so three rules apply on top of the usual ones.
+     *
+     * Who is calling decides the first two. An anonymous caller (actor kind
+     * `anonymous`) must carry no end-user principal, an id to count it under,
+     * and a caller budget, and the tool must pass the stricter floor in
+     * {@link getMcpAnonymousToolIneligibility}, which nothing can waive. Any
+     * other caller must name the end user it runs for, because per-user rate
+     * limits and the audit trail key on it, and the tool must pass the floor in
+     * {@link getMcpToolIneligibility} unless the MCP endpoint served it to this
+     * caller as a restricted tool, which it does only through a user group an
+     * admin cleared for restricted tools; that waiver needs the name in both
+     * `mcpRestrictedTools` and `toolAllowlist`.
+     *
+     * The third applies to everyone: a tool whose effective policy requires
+     * approval is refused outright, waiver or not, because parking an outside
+     * caller's call in the admin approval queue does not scale, and the
+     * caller's client cannot wait on it.
      *
      * @param tool - The resolved tool.
      * @param ctx - The invocation context, already known to be on the `mcp` path.
@@ -456,7 +482,18 @@ export class ToolPolicyEngine {
      */
     private mcpDenialReason(tool: IAiTool, ctx: IToolInvocationContext, policy: IToolPolicy): string | null {
         let reason: string | null = null;
-        if (!ctx.endUser?.userId?.trim()) {
+        if (ctx.actor.kind === 'anonymous') {
+            const ineligible = getMcpAnonymousToolIneligibility(tool.capability);
+            if (ctx.endUser) {
+                reason = 'An anonymous MCP call cannot carry a signed-in user.';
+            } else if (!ctx.actor.id?.trim() || !ctx.callerBudget) {
+                reason = 'An anonymous MCP call must carry the caller id and budget it is charged to.';
+            } else if (ineligible !== null) {
+                reason = `Tool "${tool.name}" is not available without sign-in. ${ineligible}`;
+            } else if (policy.requireApproval) {
+                reason = `Tool "${tool.name}" requires admin approval, which is not available over MCP.`;
+            }
+        } else if (!ctx.endUser?.userId?.trim()) {
             reason = 'MCP calls must carry the signed-in user they run for.';
         } else {
             const waived = ctx.mcpRestrictedTools?.includes(tool.name) === true
@@ -606,52 +643,93 @@ export class ToolPolicyEngine {
     }
 
     /**
-     * Roll both the global and per-tool rate windows and consume one unit from
-     * each. The two counters are independent — a call the global backstop
-     * rejects may have already ticked the per-tool counter, the same benign
+     * Charge one call against every rate window that applies, and name the
+     * first one it does not fit.
+     *
+     * Every path has two shared windows: one for this tool and a global
+     * backstop across tools. `mcp` calls count in their own pair (prefixed
+     * `mcp:`), so outside traffic never spends the budget admin, scheduled, and
+     * programmatic runs draw on.
+     *
+     * On the `mcp` path the caller's own windows are charged first (see
+     * {@link consumeCallerBudget}), and the shared windows are charged only
+     * when the call fits them, so a caller already over its own budget cannot
+     * keep ticking the shared counters and lock everyone else out. The caller
+     * windows do not depend on the tool's own limit: an admin override that
+     * removes a tool's rate limit relaxes the shared windows only, and must
+     * not leave outside callers unbounded.
+     *
+     * Each counter is incremented before it is compared, the same benign
      * increment-before-reject the platform's API rate limiter accepts. It only
-     * over-rejects, never over-admits, so the ceiling holds.
-     *
-     * On the `mcp` path two more windows are charged, keyed by the end user:
-     * one for this tool and one across all tools. They keep one user's client
-     * from spending the shared budget everyone else draws on. They are charged
-     * first, and the shared windows are charged only when the call fits them,
-     * so a user who is already over their own budget cannot keep ticking the
-     * shared counters and lock out admins and every other MCP user.
-     *
-     * The per-user windows do not depend on the tool's own limit. An admin
-     * override that removes a tool's rate limit relaxes the shared windows
-     * only, and must not leave MCP users unbounded.
-     *
-     * The two counters in each pair are independent, so each pair is charged
-     * in parallel to save a round trip to Redis.
+     * over-rejects, never over-admits, so every ceiling holds. Counters that
+     * do not depend on each other are charged in parallel to save Redis round
+     * trips.
      *
      * @param name - Tool name.
      * @param limit - The tool's effective rate limit, or undefined when an
-     *   override removed it; the per-tool and global windows are then skipped.
-     * @param ctx - The invocation context; its trigger path and end user decide
-     *   whether the per-user windows apply.
-     * @returns `true` when the invocation fits every window that applies.
+     *   override removed it; the shared windows are then skipped.
+     * @param ctx - The invocation context; its trigger path, caller budget,
+     *   and end user decide which caller windows apply.
+     * @returns The limit the call does not fit, or null when it fits all of them.
      */
-    private async consumeRate(name: string, limit: { max: number; windowMs: number } | undefined, ctx: IToolInvocationContext): Promise<boolean> {
-        let withinUserLimits = true;
-        const userId = ctx.endUser?.userId?.trim();
-        if (ctx.triggerPath === 'mcp' && userId) {
-            const [userToolCount, userCount] = await Promise.all([
-                this.hit(`mcp-user:${userId}:tool:${name}`, MCP_USER_TOOL_RATE.windowMs),
-                this.hit(`mcp-user:${userId}`, MCP_USER_RATE.windowMs)
-            ]);
-            withinUserLimits = userToolCount <= MCP_USER_TOOL_RATE.max && userCount <= MCP_USER_RATE.max;
+    private async consumeRate(name: string, limit: { max: number; windowMs: number } | undefined, ctx: IToolInvocationContext): Promise<ToolLimitKind | null> {
+        const mcp = ctx.triggerPath === 'mcp';
+        let hit: ToolLimitKind | null = null;
+        if (mcp) {
+            hit = await this.consumeCallerBudget(name, callerBudgetFor(ctx));
         }
-        let withinSharedLimits = true;
-        if (withinUserLimits && limit) {
+        if (hit === null && limit) {
+            const prefix = mcp ? MCP_SHARED_PREFIX : '';
             const [toolCount, globalCount] = await Promise.all([
-                this.hit(`tool:${name}`, limit.windowMs),
-                this.hit(GLOBAL_KEY, GLOBAL_RATE.windowMs)
+                this.hit(`${prefix}tool:${name}`, limit.windowMs),
+                this.hit(`${prefix}${GLOBAL_KEY}`, GLOBAL_RATE.windowMs)
             ]);
-            withinSharedLimits = toolCount <= limit.max && globalCount <= GLOBAL_RATE.max;
+            if (toolCount > limit.max) {
+                hit = 'tool-minute';
+            } else if (globalCount > GLOBAL_RATE.max) {
+                hit = 'global-minute';
+            }
         }
-        return withinUserLimits && withinSharedLimits;
+        return hit;
+    }
+
+    /**
+     * Charge one call against a caller's own windows, in three steps, and name
+     * the first limit it does not fit.
+     *
+     * The minute windows go first, then the caller's day window, then the
+     * shared pool, and each step runs only when the call fit the one before.
+     * The order is what keeps the day and pool counters honest: a caller
+     * hammering past its per-minute limit is refused without spending its day
+     * budget, and a caller over its own day budget is refused without spending
+     * the pool every other caller in its group shares.
+     *
+     * @param name - Tool name, for the per-tool minute window.
+     * @param budget - The caller's limits and counter keys, or null when the
+     *   call names no caller (refused by the MCP floor before reaching here).
+     * @returns The limit the call does not fit, or null when it fits all of them.
+     */
+    private async consumeCallerBudget(name: string, budget: IToolCallerBudget | null): Promise<ToolLimitKind | null> {
+        let hit: ToolLimitKind | null = null;
+        if (budget) {
+            const [toolCount, callerCount] = await Promise.all([
+                this.hit(`${budget.callerKey}:tool:${name}`, MCP_USER_TOOL_RATE.windowMs),
+                this.hit(budget.callerKey, MCP_USER_RATE.windowMs)
+            ]);
+            // The platform ceilings cap whatever the entry point asked for, so
+            // a misconfigured group can tighten the minute limits but never
+            // lift them above what every MCP caller is held to.
+            if (toolCount > Math.min(budget.callsPerMinutePerTool, MCP_USER_TOOL_RATE.max)) {
+                hit = 'caller-tool-minute';
+            } else if (callerCount > Math.min(budget.callsPerMinute, MCP_USER_RATE.max)) {
+                hit = 'caller-minute';
+            } else if (budget.callsPerDay !== undefined && await this.hit(`${budget.dayKey ?? budget.callerKey}:day`, DAY_WINDOW_MS) > budget.callsPerDay) {
+                hit = 'caller-day';
+            } else if (budget.poolKey && budget.poolCallsPerDay !== undefined && await this.hit(`${budget.poolKey}:day`, DAY_WINDOW_MS) > budget.poolCallsPerDay) {
+                hit = 'pool-day';
+            }
+        }
+        return hit;
     }
 
     /**
@@ -755,4 +833,47 @@ export class ToolPolicyEngine {
         }
         return counters;
     }
+}
+
+/**
+ * Work out which caller budget an `mcp` call is charged against.
+ *
+ * The entry point normally supplies one. A signed-in call that arrives without
+ * one still gets the fixed per-user ceiling, keyed by the end user exactly as
+ * before budgets existed, so an entry point that forgets the field can never
+ * leave a caller unbounded.
+ *
+ * @param ctx - The invocation context of an `mcp` call.
+ * @returns The budget to charge, or null when the call names no caller at all.
+ */
+function callerBudgetFor(ctx: IToolInvocationContext): IToolCallerBudget | null {
+    let budget: IToolCallerBudget | null = ctx.callerBudget ?? null;
+    const userId = ctx.endUser?.userId?.trim();
+    if (!budget && userId) {
+        budget = { callerKey: `mcp-user:${userId}`, callsPerMinute: MCP_USER_RATE.max, callsPerMinutePerTool: MCP_USER_TOOL_RATE.max };
+    }
+    return budget;
+}
+
+/**
+ * Write the refusal a model and an admin read when a rate limit stops a call.
+ *
+ * The day and pool limits say "later" rather than "shortly", because waiting
+ * a few seconds does not help, and a model that retries in a loop on
+ * "shortly" only spends more of the caller's minute budget.
+ *
+ * @param name - The refused tool.
+ * @param limit - The limit the call did not fit.
+ * @returns The sentence recorded on the audit record and returned to the caller.
+ */
+function rateLimitReason(name: string, limit: ToolLimitKind): string {
+    let reason: string;
+    if (limit === 'caller-day') {
+        reason = `Your daily call limit has been reached, so "${name}" was not run. Try again tomorrow.`;
+    } else if (limit === 'pool-day') {
+        reason = `The daily call limit shared by everyone in your access group has been reached, so "${name}" was not run. Try again later.`;
+    } else {
+        reason = `Rate limit exceeded for "${name}". Try again shortly.`;
+    }
+    return reason;
 }

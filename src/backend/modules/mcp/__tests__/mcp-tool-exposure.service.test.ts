@@ -6,13 +6,16 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { IAiTool, IAiToolCapability, IAiToolInfo, IDatabaseService } from '@/types';
-import { MCP_USERS_GROUP_ID } from '@/types';
+import { MCP_ANONYMOUS_GROUP_ID, MCP_USERS_GROUP_ID } from '@/types';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
-import { MCP_TOOL_APPROVALS_COLLECTION, McpToolExposureError, McpToolExposureService } from '../services/mcp-tool-exposure.service.js';
-import { McpGroupPolicyService } from '../services/McpGroupPolicyService.js';
+import { MCP_TOOL_APPROVALS_COLLECTION, McpToolExposureError, McpToolExposureService, chargedRoute } from '../services/mcp-tool-exposure.service.js';
+import { McpGroupPolicyService, defaultGroupPolicy } from '../services/McpGroupPolicyService.js';
 
 /** A read-only, internal tool the floor accepts. */
 const READ_CAP: IAiToolCapability = { sideEffect: 'read', reversible: true, sensitivity: 'internal' };
+
+/** A read-only tool whose data is public, which the anonymous floor accepts. */
+const PUBLIC_CAP: IAiToolCapability = { sideEffect: 'read', reversible: true, sensitivity: 'public' };
 
 /** A read-only tool returning secret data, which the floor restricts. */
 const SECRET_CAP: IAiToolCapability = { sideEffect: 'read', reversible: true, sensitivity: 'secret' };
@@ -83,7 +86,7 @@ const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), c
  */
 function build(database: IDatabaseService, tools: IAiTool[], disabled: string[] = [], providers: Record<string, string> = {}) {
     const policies = new McpGroupPolicyService(database, userGroups, logger);
-    const exposure = new McpToolExposureService(database, registry(tools, disabled, providers), policies, userGroups, logger);
+    const exposure = new McpToolExposureService(database, registry(tools, disabled, providers), policies, logger);
     return { exposure, policies };
 }
 
@@ -330,5 +333,84 @@ describe('McpToolExposureService', () => {
         await exposure.setExposure('chain-lookup', MCP_USERS_GROUP_ID, false, 'admin-1');
         expect(await exposure.getServedTools(MEMBER)).toEqual([]);
         expect(await exposure.getServedTools(ADMIN_MEMBER)).toHaveLength(1);
+    });
+
+    describe('anonymous group', () => {
+        /** The audience every public endpoint request has. */
+        const ANONYMOUS = { groups: [MCP_ANONYMOUS_GROUP_ID], ip: '203.0.113.7' };
+
+        it('accepts a grant of a public read tool and serves it to anonymous callers, charged to anonymous', async () => {
+            tools.push(tool('network-stats', PUBLIC_CAP));
+            const { exposure } = build(database, tools);
+            await exposure.setExposure('network-stats', MCP_ANONYMOUS_GROUP_ID, true, 'admin-1');
+            const served = await exposure.getServedTools(ANONYMOUS);
+            expect(served.map(entry => entry.tool.name)).toEqual(['network-stats']);
+            expect(served[0].chargedGroup.groupId).toBe(MCP_ANONYMOUS_GROUP_ID);
+            expect(served[0].chargedGroup.limits.callsPerDayGroup).not.toBeNull();
+        });
+
+        it('refuses to grant an internal tool to anonymous, although mcp-users may hold it', async () => {
+            const { exposure } = build(database, tools);
+            await expect(exposure.setExposure('chain-lookup', MCP_ANONYMOUS_GROUP_ID, true, 'admin-1')).rejects.toMatchObject({ status: 400 });
+            await expect(exposure.setExposure('chain-lookup', MCP_USERS_GROUP_ID, true, 'admin-1')).resolves.toBeTruthy();
+        });
+
+        it('stops serving an anonymous grant once its tool is no longer public', async () => {
+            tools.push(tool('network-stats', PUBLIC_CAP));
+            const { exposure } = build(database, tools);
+            await exposure.setExposure('network-stats', MCP_ANONYMOUS_GROUP_ID, true, 'admin-1');
+            // Reclassifying the tool changes its capability fingerprint, so the
+            // grant goes stale; the anonymous floor would withhold it even if
+            // the fingerprint ignored sensitivity.
+            const reclassified = build(database, tools.map(t => (t.name === 'network-stats' ? { ...t, capability: READ_CAP } : t))).exposure;
+            expect(await reclassified.getServedTools(ANONYMOUS)).toEqual([]);
+            expect(await reclassified.explainWithheld('network-stats', ANONYMOUS)).toMatch(/stale-grant|not-public/);
+        });
+
+        it('lists anonymous among the groups a grant can reach on the admin page', async () => {
+            tools.push(tool('network-stats', PUBLIC_CAP));
+            const { exposure } = build(database, tools);
+            await exposure.setExposure('network-stats', MCP_ANONYMOUS_GROUP_ID, true, 'admin-1');
+            const row = (await exposure.listExposures()).find(entry => entry.name === 'network-stats');
+            expect(row?.anonymousIneligibleReason).toBeNull();
+            expect(row?.grants).toEqual([expect.objectContaining({ groupId: MCP_ANONYMOUS_GROUP_ID, served: true })]);
+            expect((await exposure.listExposures()).find(entry => entry.name === 'chain-lookup')?.anonymousIneligibleReason).toMatch(/public/);
+        });
+    });
+
+    describe('group switch', () => {
+        it('stops serving a switched-off group\'s grants and names group-disabled', async () => {
+            const { exposure, policies } = build(database, tools);
+            await exposure.setExposure('chain-lookup', 'admin', true, 'admin-1');
+            await setPolicy(policies, 'admin', { enabled: false });
+            expect(await exposure.getServedTools(ADMIN_MEMBER)).toEqual([]);
+            expect(await exposure.explainWithheld('chain-lookup', ADMIN_MEMBER)).toBe('group-disabled');
+        });
+
+        it('keeps serving through another group that is still on', async () => {
+            const { exposure, policies } = build(database, tools);
+            await exposure.setExposure('chain-lookup', 'admin', true, 'admin-1');
+            await exposure.setExposure('chain-lookup', MCP_USERS_GROUP_ID, true, 'admin-1');
+            await setPolicy(policies, 'admin', { enabled: false });
+            const served = await exposure.getServedTools(ADMIN_MEMBER);
+            expect(served).toHaveLength(1);
+            expect(served[0].chargedGroup.groupId).toBe(MCP_USERS_GROUP_ID);
+        });
+    });
+
+    describe('chargedRoute', () => {
+        /** A policy for a group with the given per-caller limits. */
+        function policy(groupId: string, perDay: number | null, perMinute: number | null) {
+            return { ...defaultGroupPolicy(groupId), limits: { callsPerMinutePerCaller: perMinute, callsPerDayPerCaller: perDay, callsPerDayGroup: null } };
+        }
+
+        it('charges the most generous group: no day limit beats any day limit', () => {
+            expect(chargedRoute([policy('mcp-users', 100, null), policy('pro', null, null)]).groupId).toBe('pro');
+        });
+
+        it('breaks a day-limit tie on the minute limit, then on the group id', () => {
+            expect(chargedRoute([policy('b', 100, 10), policy('a', 100, 20)]).groupId).toBe('a');
+            expect(chargedRoute([policy('b', 100, 20), policy('a', 100, 20)]).groupId).toBe('a');
+        });
     });
 });

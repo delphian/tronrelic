@@ -3,22 +3,24 @@
 /**
  * @fileoverview The per-group MCP settings card on the Tools tab of /system/mcp.
  *
- * Shows the three opt-in settings for the group the admin is managing: scrub
- * secrets from results, serve only to listed IP addresses, and allow
- * restricted tools. Each applies to the tools this group grants. Switching on
- * "allow restricted tools" opens a warning that must be confirmed, because it
- * lets the group be granted tools that return secrets or act outside the
- * platform. Switching it off is confirmed too, because it withdraws every
- * restricted tool the group holds.
+ * Shows the settings for the group the admin is managing: whether the group's
+ * tools are served at all, its call limits, scrub secrets from results, serve
+ * only to listed IP addresses, and allow restricted tools. Each applies to the
+ * tools this group grants. Switching on "allow restricted tools" opens a
+ * warning that must be confirmed, because it lets the group be granted tools
+ * that return secrets or act outside the platform. Switching it off is
+ * confirmed too, because it withdraws every restricted tool the group holds,
+ * and so is switching the group off, because every member loses its tools.
  */
 
 import { useCallback, useState } from 'react';
-import type { IMcpGroup, IMcpGroupPolicy, IMcpGroupPolicyPatch } from '@/types';
+import type { IMcpGroup, IMcpGroupLimits, IMcpGroupPolicy, IMcpGroupPolicyPatch } from '@/types';
 import { normaliseIpAllowlistEntries } from '@/types';
 import { Card } from '../../../../../../components/ui/Card';
-import { Stack } from '../../../../../../components/layout';
+import { Grid, Stack } from '../../../../../../components/layout';
 import { Button } from '../../../../../../components/ui/Button';
 import { Field } from '../../../../../../components/ui/Field';
+import { Input } from '../../../../../../components/ui/Input';
 import { Switch } from '../../../../../../components/ui/Switch';
 import { Textarea } from '../../../../../../components/ui/Textarea';
 import { ClientTime } from '../../../../../../components/ui/ClientTime';
@@ -79,6 +81,47 @@ function PolicyToggle({ label, description, on, disabled, onChange }: IPolicyTog
     );
 }
 
+/** The limit fields, with the label and hint each is edited under. */
+const LIMIT_FIELDS: ReadonlyArray<{ key: keyof IMcpGroupLimits; label: string; hint: string }> = [
+    { key: 'callsPerMinutePerCaller', label: 'Calls per minute, per caller', hint: 'At most 60, the platform ceiling.' },
+    { key: 'callsPerDayPerCaller', label: 'Calls per 24 hours, per caller', hint: 'Counted over 24 hours from a caller\'s first call.' },
+    { key: 'callsPerDayGroup', label: 'Calls per 24 hours, whole group', hint: 'Shared by every caller; bounds what the group can cost.' }
+];
+
+/** The limit inputs' text, one string per limit, empty for "no limit". */
+type LimitDraft = Record<keyof IMcpGroupLimits, string>;
+
+/**
+ * Turn stored limits into the text the inputs show.
+ *
+ * @param limits - The stored limits.
+ * @returns One string per limit, empty where no limit is set.
+ */
+function toDraft(limits: IMcpGroupLimits): LimitDraft {
+    return {
+        callsPerMinutePerCaller: limits.callsPerMinutePerCaller?.toString() ?? '',
+        callsPerDayPerCaller: limits.callsPerDayPerCaller?.toString() ?? '',
+        callsPerDayGroup: limits.callsPerDayGroup?.toString() ?? ''
+    };
+}
+
+/**
+ * Turn the inputs' text into limits to send. An empty input clears the limit;
+ * anything else is sent as a number for the server to validate, which reports
+ * every bad value at once.
+ *
+ * @param draft - The inputs' text.
+ * @returns The limits to send.
+ */
+function fromDraft(draft: LimitDraft): IMcpGroupLimits {
+    const parse = (text: string): number | null => (text.trim() === '' ? null : Number(text.trim()));
+    return {
+        callsPerMinutePerCaller: parse(draft.callsPerMinutePerCaller),
+        callsPerDayPerCaller: parse(draft.callsPerDayPerCaller),
+        callsPerDayGroup: parse(draft.callsPerDayGroup)
+    };
+}
+
 /**
  * Turn the allowlist textarea into entries, one per line, cleaned with the
  * same shared function the server stores the list with. After a save the
@@ -100,11 +143,14 @@ export function GroupPolicyCard({ group, restrictedGrantCount, onPolicyChange }:
     const [working, setWorking] = useState(false);
     const [draft, setDraft] = useState(policy.ipAllowlist.join('\n'));
     const [listError, setListError] = useState('');
+    const [limitDraft, setLimitDraft] = useState<LimitDraft>(toDraft(policy.limits));
+    const [limitError, setLimitError] = useState('');
     const { open, close } = useModal();
     const { push } = useToast();
 
     const savedList = policy.ipAllowlist.join('\n');
     const draftDirty = parseEntries(draft).join('\n') !== savedList;
+    const limitsDirty = JSON.stringify(fromDraft(limitDraft)) !== JSON.stringify(policy.limits);
 
     /**
      * Send one change to the server and report the outcome. An allowlist
@@ -122,12 +168,15 @@ export function GroupPolicyCard({ group, restrictedGrantCount, onPolicyChange }:
             const result = await updateMcpGroupPolicy(group.id, change);
             onPolicyChange(result.policy, result.withdrawnRestrictedGrants);
             setListError('');
+            setLimitError('');
             push({ tone: 'success', title: success });
             stored = true;
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             if (change.ipAllowlist) {
                 setListError(message);
+            } else if (change.limits) {
+                setLimitError(message);
             } else {
                 push({ tone: 'danger', title: `Could not change ${group.name}`, description: message });
             }
@@ -177,6 +226,54 @@ export function GroupPolicyCard({ group, restrictedGrantCount, onPolicyChange }:
     }, [open, close, apply, group.name, restrictedGrantCount]);
 
     /**
+     * Switch the group on at once, or ask for confirmation before switching it
+     * off, because every member then loses the tools it grants.
+     *
+     * @param next - The requested state.
+     */
+    const confirmEnabled = useCallback((next: boolean): void => {
+        if (next) {
+            void apply({ enabled: true }, `${group.name} switched on`);
+        } else {
+            const modalId = open({
+                title: `Switch off ${group.name}`,
+                content: (
+                    <ConfirmDialog
+                        label={group.name}
+                        confirmLabel="Switch off"
+                        message={(
+                            <>
+                                No caller is served a tool through <strong>{group.name}</strong> until you switch it back on.
+                                Its grants, protections, and limits are kept. Continue?
+                            </>
+                        )}
+                        onConfirm={
+                            async () => {
+                                await apply({ enabled: false }, `${group.name} switched off`);
+                                close(modalId);
+                            }
+                        }
+                        onCancel={
+                            () => close(modalId)
+                        }
+                    />
+                )
+            });
+        }
+    }, [open, close, apply, group.name]);
+
+    /**
+     * Store the edited limits. Validation happens on the server, which reports
+     * every bad value at once, under the inputs.
+     */
+    const saveLimits = useCallback(async (): Promise<void> => {
+        const limits = fromDraft(limitDraft);
+        if (await apply({ limits }, 'Limits saved')) {
+            setLimitDraft(toDraft(limits));
+        }
+    }, [limitDraft, apply]);
+
+    /**
      * Store the edited allowlist. Validation happens on the server, which
      * reports every bad entry at once.
      */
@@ -198,6 +295,56 @@ export function GroupPolicyCard({ group, restrictedGrantCount, onPolicyChange }:
                         {policy.updatedAt && <> Last changed <ClientTime date={policy.updatedAt} format="datetime" />.</>}
                     </p>
                 </div>
+
+                <PolicyToggle
+                    label="Serve this group's tools"
+                    description="Switch off to stop serving every tool this group grants, at once, without losing its grants or settings."
+                    on={policy.enabled}
+                    disabled={working}
+                    onChange={confirmEnabled}
+                />
+
+                <Stack gap="sm">
+                    <div className={styles.policy_text}>
+                        <div className={styles.policy_label}>Call limits</div>
+                        <div className={styles.tool_meta}>
+                            {group.isAnonymous
+                                ? 'Calls charged to Anonymous. A caller is one network range (a /24 for IPv4, a /64 for IPv6). Every limit must be set.'
+                                : 'Calls charged to this group. A member reaching a tool through several groups is charged to the one with the most generous limits. Leave a box empty for no limit of that kind.'}
+                        </div>
+                    </div>
+                    <Grid columns={3} gap="sm">
+                        {LIMIT_FIELDS.map(field => (
+                            <Field key={field.key} label={field.label} hint={field.hint}>
+                                <Input
+                                    type="number"
+                                    inputMode="numeric"
+                                    min={1}
+                                    value={limitDraft[field.key]}
+                                    placeholder={group.isAnonymous ? undefined : 'No limit'}
+                                    invalid={limitError.length > 0}
+                                    onChange={
+                                        event => setLimitDraft(current => ({ ...current, [field.key]: event.target.value }))
+                                    }
+                                />
+                            </Field>
+                        ))}
+                    </Grid>
+                    {limitError && <div className="alert" role="alert">{limitError}</div>}
+                    <div>
+                        <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={
+                                () => { void saveLimits(); }
+                            }
+                            disabled={!limitsDirty}
+                            loading={working && limitsDirty}
+                        >
+                            Save limits
+                        </Button>
+                    </div>
+                </Stack>
 
                 <PolicyToggle
                     label="Scrub secrets from results"
@@ -257,9 +404,11 @@ export function GroupPolicyCard({ group, restrictedGrantCount, onPolicyChange }:
                     label="Allow restricted tools"
                     description={group.isGateGroup
                         ? 'Not available for mcp-users, because that group is every MCP user. Allow restricted tools on a narrower group such as admin.'
-                        : 'Let this group be granted tools that fail the MCP safety rules: tools that return secrets, change data, reach outside TronRelic, or spend money.'}
+                        : group.isAnonymous
+                            ? 'Not available for Anonymous, because its callers are anyone on the internet.'
+                            : 'Let this group be granted tools that fail the MCP safety rules: tools that return secrets, change data, reach outside TronRelic, or spend money.'}
                     on={policy.allowRestrictedTools}
-                    disabled={working || group.isGateGroup}
+                    disabled={working || group.isGateGroup || group.isAnonymous}
                     onChange={confirmRestricted}
                 />
             </Stack>

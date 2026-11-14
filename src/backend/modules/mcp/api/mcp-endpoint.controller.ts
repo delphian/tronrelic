@@ -1,29 +1,30 @@
 /**
- * @fileoverview HTTP handling for the MCP endpoint itself (`/mcp`).
+ * @fileoverview HTTP handling for both MCP endpoints: `/mcp` for signed-in
+ * members and `/mcp/public` for anonymous callers.
  *
- * Every request passes through the same checks in the same order before the
- * MCP SDK sees it:
+ * One controller class serves both, built twice with a different
+ * authenticator. Every request passes through the same checks in the same
+ * order before the MCP SDK sees it:
  *
- * 1. Kill switch. While the endpoint is switched off, or the switch cannot be
- *    read, answer 503 and stop.
+ * 1. Kill switch. While MCP is switched off, or the switch cannot be read,
+ *    answer 503 and stop. It covers both endpoints.
  * 2. Origin. A browser-sent `Origin` that is not this site is refused, which
  *    blocks DNS-rebinding attacks. Server-to-server clients send no `Origin`.
  * 3. Method. Only POST is served; the stateless transport has no GET stream.
- * 4. Credentials. A token in the query string is refused outright. A missing
- *    or invalid bearer token gets 401 with a `WWW-Authenticate` header that
- *    points at the protected resource metadata, which is what starts the
- *    client's sign-in flow. A valid token without the MCP scope gets 403
- *    `insufficient_scope`, and a user outside the MCP group gets 403. When
- *    the grant or account store cannot be read, the answer is a 503, never
- *    a 401, so a client does not discard a token that may be fine.
+ * 4. Credentials. A token in the query string is refused outright. Then the
+ *    endpoint's authenticator decides who the caller is: on `/mcp` a missing
+ *    or invalid token is a 401 bearer challenge, which starts the client's
+ *    sign-in; on `/mcp/public` every request without credentials is an
+ *    anonymous caller. A store the check needs being down is a 503, never a
+ *    401, so a client does not discard a token that may be fine.
  * 5. Body. Only now is the JSON body parsed, with a small size cap, so an
- *    anonymous caller cannot make the server read a large body.
+ *    unadmitted caller cannot make the server read a large body.
  *
- * Then the verified caller and the tools served to them ride into the SDK on
+ * Then the caller and the tools served to them ride into the SDK on
  * `req.auth`, and the per-request server factory takes over. A `tools/call`
- * naming a tool the caller was not served is logged as an error first, with
- * the reason it was withheld, because the SDK answers it with a bare
- * "Tool not found" that tells an admin nothing.
+ * naming a tool the caller was not served is logged as an error and counted
+ * in the accounting table first, with the reason it was withheld, because the
+ * SDK answers it with a bare "Tool not found" that tells an admin nothing.
  */
 
 import express from 'express';
@@ -32,11 +33,13 @@ import { createMcpHandler, isJSONRPCRequest } from '@modelcontextprotocol/server
 import type { AuthInfo, McpRequestContext, McpServer } from '@modelcontextprotocol/server';
 import { originValidation, toNodeHandler } from '@modelcontextprotocol/node';
 import type { ISystemLogService } from '@/types';
-import { MCP_OAUTH_SCOPES, MCP_TOOLS_SCOPE } from '@/types';
+import { MCP_OAUTH_SCOPES } from '@/types';
 import type { McpSettingsStore } from '../services/mcp-settings.store.js';
 import type { IMcpServedTool, IMcpToolAudience, McpToolExposureService } from '../services/mcp-tool-exposure.service.js';
-import type { McpCallerOutcome, McpCallerResolver } from '../services/mcp-caller.resolver.js';
-import type { IMcpCaller, McpServerFactory } from '../services/mcp-server.factory.js';
+import type { IMcpCaller } from '../services/IMcpCaller.js';
+import type { IMcpCallerAuthenticator, McpAuthOutcome } from '../services/IMcpCallerAuthenticator.js';
+import type { IMcpCallMeter } from '../services/IMcpCallMeter.js';
+import type { McpServerFactory } from '../services/mcp-server.factory.js';
 
 /** Largest JSON body the endpoint accepts. Tool arguments are small; this is generous. */
 const MAX_BODY_BYTES = '256kb';
@@ -49,14 +52,18 @@ const MAX_BODY_BYTES = '256kb';
 const MAX_WITHHELD_CALLS_LOGGED = 10;
 
 /**
- * Public URLs that describe this endpoint to clients.
+ * Public URLs that describe one endpoint to clients.
  */
 export interface IMcpEndpointUrls {
-    /** The endpoint URL, and the audience every access token must carry. */
+    /** The endpoint URL; on `/mcp`, also the audience every access token must carry. */
     resourceUrl: string;
 
-    /** Where the protected resource metadata document is served. */
-    resourceMetadataUrl: string;
+    /**
+     * Where the protected resource metadata document is served, named in
+     * bearer challenges. Only the signed-in endpoint challenges, so the
+     * public endpoint leaves it unset.
+     */
+    resourceMetadataUrl?: string;
 
     /** Host names a browser `Origin` header may name. */
     allowedOriginHosts: string[];
@@ -70,7 +77,7 @@ interface IMcpRequestExtra {
 }
 
 /**
- * Serves `POST /mcp`.
+ * Serves `POST /mcp` or `POST /mcp/public`, depending on its authenticator.
  */
 export class McpEndpointController {
     private readonly nodeHandler: ReturnType<typeof toNodeHandler>;
@@ -80,17 +87,20 @@ export class McpEndpointController {
     /**
      * @param settings - The kill switch, read on every request.
      * @param exposure - Computes the tools served to each caller from their groups and address.
-     * @param callers - Verifies tokens and group membership.
+     * @param authenticator - Decides who the caller is for this endpoint.
      * @param serverFactory - Builds the per-request MCP server.
      * @param urls - Public URLs used in challenges and the Origin check.
+     * @param meter - Counts refused calls in the accounting table; calls that
+     *   reach the governor are counted from its audit hook instead.
      * @param logger - Module logger.
      */
     constructor(
         private readonly settings: McpSettingsStore,
         private readonly exposure: McpToolExposureService,
-        private readonly callers: McpCallerResolver,
+        private readonly authenticator: IMcpCallerAuthenticator,
         serverFactory: McpServerFactory,
         private readonly urls: IMcpEndpointUrls,
+        private readonly meter: IMcpCallMeter,
         private readonly logger: ISystemLogService
     ) {
         const handler = createMcpHandler(
@@ -121,7 +131,7 @@ export class McpEndpointController {
                  *
                  * @param error - Whatever the SDK caught.
                  */
-                onerror: (error: unknown) => this.logger.warn({ err: error }, 'MCP handler error')
+                onerror: (error: unknown) => this.logger.warn({ err: error, endpoint: this.authenticator.endpoint }, 'MCP handler error')
             }
         );
         this.nodeHandler = toNodeHandler(handler, {
@@ -131,7 +141,7 @@ export class McpEndpointController {
              *
              * @param error - Whatever the adapter caught.
              */
-            onerror: (error: unknown) => this.logger.error({ err: error }, 'MCP Node adapter error')
+            onerror: (error: unknown) => this.logger.error({ err: error, endpoint: this.authenticator.endpoint }, 'MCP Node adapter error')
         });
         this.checkOrigin = originValidation(urls.allowedOriginHosts);
     }
@@ -148,12 +158,12 @@ export class McpEndpointController {
      */
     handle = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
         try {
-            const caller = await this.admit(req, res);
-            if (caller) {
+            const admitted = await this.admit(req, res);
+            if (admitted) {
                 await this.runParser(req, res);
                 // A rejected body (too large or malformed) has already been answered.
                 if (!res.headersSent) {
-                    await this.dispatch(req, res, caller);
+                    await this.dispatch(req, res, admitted);
                 }
             }
         } catch (error: unknown) {
@@ -167,15 +177,14 @@ export class McpEndpointController {
      *
      * @param req - The incoming request, body not yet parsed.
      * @param res - The response, written when the request is refused.
-     * @returns The verified caller and their raw token, or null when the
-     *   request was refused and a response has been written.
+     * @returns The admitted caller and their raw token when they sent one, or
+     *   null when the request was refused and a response has been written.
      */
-    private async admit(req: Request, res: Response): Promise<{ caller: IMcpCaller; token: string } | null> {
-        let admitted: { caller: IMcpCaller; token: string } | null = null;
+    private async admit(req: Request, res: Response): Promise<{ caller: IMcpCaller; token?: string } | null> {
+        let admitted: { caller: IMcpCaller; token?: string } | null = null;
         const switchState = await this.readSwitchState();
-        const token = readBearerToken(req);
         if (switchState === 'unknown') {
-            res.status(503).set('Retry-After', '30').json({ error: 'unavailable', error_description: 'The MCP endpoint is temporarily unavailable.' });
+            this.unavailable(res);
         } else if (switchState === 'off') {
             res.status(503).set('Retry-After', '3600').json({ error: 'unavailable', error_description: 'The MCP endpoint is switched off.' });
         } else if (!this.checkOrigin(req, res)) {
@@ -185,26 +194,31 @@ export class McpEndpointController {
         } else if (typeof req.query.access_token !== 'undefined') {
             // Tokens in URLs end up in logs and browser history; the MCP
             // authorization spec forbids accepting them.
-            res.status(400).json({ error: 'invalid_request', error_description: 'Send the access token in the Authorization header, never in the URL.' });
-        } else if (!token) {
-            this.challenge(res, 401);
+            res.status(400).json({ error: 'invalid_request', error_description: 'Send credentials in the Authorization header, never in the URL.' });
         } else {
-            const outcome = await this.resolveCaller(token, req.ip);
-            if (outcome === null) {
-                // The grant or account store could not be read. That says
-                // nothing about the token, so answer a temporary 503 rather
-                // than a 401 that would make the client discard its token and
-                // send the user through sign-in again.
-                res.status(503).set('Retry-After', '30').json({ error: 'unavailable', error_description: 'The MCP endpoint is temporarily unavailable.' });
-            } else if (outcome.kind === 'invalid-token') {
-                this.challenge(res, 401, 'invalid_token', 'The access token is invalid, expired, or was not issued for this endpoint.');
-            } else if (outcome.kind === 'insufficient-scope') {
-                this.challenge(res, 403, 'insufficient_scope', `The access token lacks the "${MCP_TOOLS_SCOPE}" scope.`);
-            } else if (outcome.kind === 'not-member') {
-                res.status(403).json({ error: 'forbidden', error_description: 'Your account is not permitted to use the TronRelic MCP endpoint.' });
-            } else {
-                admitted = { caller: outcome.caller, token };
-            }
+            admitted = this.applyOutcome(await this.authenticator.authenticate(req), res);
+        }
+        return admitted;
+    }
+
+    /**
+     * Turn the authenticator's verdict into an admitted caller or a written
+     * refusal.
+     *
+     * @param outcome - What the authenticator decided.
+     * @param res - The response, written when the request is refused.
+     * @returns The admitted caller, or null when a refusal was written.
+     */
+    private applyOutcome(outcome: McpAuthOutcome, res: Response): { caller: IMcpCaller; token?: string } | null {
+        let admitted: { caller: IMcpCaller; token?: string } | null = null;
+        if (outcome.kind === 'unavailable') {
+            this.unavailable(res);
+        } else if (outcome.kind === 'challenge') {
+            this.challenge(res, outcome.status, outcome.error, outcome.description);
+        } else if (outcome.kind === 'refuse') {
+            res.status(outcome.status).json({ error: outcome.error, error_description: outcome.description });
+        } else {
+            admitted = { caller: outcome.caller, ...(outcome.token ? { token: outcome.token } : {}) };
         }
         return admitted;
     }
@@ -234,29 +248,6 @@ export class McpEndpointController {
     }
 
     /**
-     * Resolve the caller without letting a storage failure escape.
-     *
-     * The resolver reads the grant store and the account directory. When
-     * either is down, the token's validity is unknown, and the client must see
-     * a temporary 503 rather than the global handler's 500 or a 401 that
-     * would end its session. A failed read is logged and reported as null.
-     *
-     * @param token - The raw bearer token.
-     * @param ip - Client IP address, passed through for the audit record.
-     * @returns The resolver's outcome, or null when a store could not be read.
-     */
-    private async resolveCaller(token: string, ip: string | undefined): Promise<McpCallerOutcome | null> {
-        let outcome: McpCallerOutcome | null;
-        try {
-            outcome = await this.callers.resolve(token, ip);
-        } catch (error: unknown) {
-            this.logger.error({ err: error }, 'Could not check an MCP caller; refusing the request');
-            outcome = null;
-        }
-        return outcome;
-    }
-
-    /**
      * Hand an admitted request to the MCP SDK.
      *
      * The tools served to this caller are computed now, per request, from
@@ -267,56 +258,64 @@ export class McpEndpointController {
      *
      * @param req - The request, body parsed.
      * @param res - The response the SDK writes.
-     * @param admitted - The verified caller and their raw token.
+     * @param admitted - The admitted caller and their raw token, when they sent one.
      * @returns Resolves when the SDK has written the response.
      */
-    private async dispatch(req: Request, res: Response, admitted: { caller: IMcpCaller; token: string }): Promise<void> {
+    private async dispatch(req: Request, res: Response, admitted: { caller: IMcpCaller; token?: string }): Promise<void> {
         const { caller, token } = admitted;
         const tools = await this.readServedTools(caller);
         if (tools === null) {
             // The approvals store is down. Answer the same temporary 503 as a
             // failed kill-switch or grant read, not the global handler's 500.
-            res.status(503).set('Retry-After', '30').json({ error: 'unavailable', error_description: 'The MCP endpoint is temporarily unavailable.' });
+            this.unavailable(res);
         } else {
-            await this.logWithheldCalls(req.body, caller, tools);
+            await this.recordWithheldCalls(req.body, caller, tools);
             await this.handOff(req, res, caller, token, tools);
         }
     }
 
     /**
-     * Write an error log entry for each tool the request asks to run that was
-     * not served to this caller.
+     * Log and count each tool the request asks to run that was not served to
+     * this caller.
      *
      * The SDK refuses such a call with "Tool not found" and nothing else, so
      * without this entry an admin cannot tell an IP allowlist refusal from a
-     * missing grant or a stale one. The reason comes from the exposure
-     * service, which applies the same checks that built the served list. A
-     * failure to work out the reason is logged too, and never stops the
-     * request, which the SDK still answers.
+     * missing grant, a switched-off group, or a stale one. The reason comes
+     * from the exposure service, which applies the same checks that built the
+     * served list. A failure to work out the reason is logged too, and never
+     * stops the request, which the SDK still answers. On the public endpoint
+     * a refusal is a stranger probing for tools, which is expected traffic, so
+     * it is logged at `warn` rather than `error`.
      *
      * @param body - The parsed JSON-RPC body: one message, or a batch.
-     * @param caller - The verified caller, named in each entry.
+     * @param caller - The admitted caller, named in each entry.
      * @param tools - The tools served to this caller for this request.
      * @returns Resolves once every entry has been written.
      */
-    private async logWithheldCalls(body: unknown, caller: IMcpCaller, tools: IMcpServedTool[]): Promise<void> {
+    private async recordWithheldCalls(body: unknown, caller: IMcpCaller, tools: IMcpServedTool[]): Promise<void> {
         const served = new Set(tools.map(entry => entry.tool.name));
         const withheld = calledToolNames(body).filter(name => !served.has(name)).slice(0, MAX_WITHHELD_CALLS_LOGGED);
         const context = {
-            userId: caller.claims.userId,
-            clientId: caller.claims.clientId,
+            endpoint: caller.endpoint,
+            principalKind: caller.principalKind,
+            principalId: caller.principalId,
+            clientId: caller.claims?.clientId,
             ip: caller.ip,
-            groups: caller.endUser.groups ?? []
+            groups: caller.groups
         };
+        const level = caller.endpoint === 'public' ? 'warn' : 'error';
         for (const name of withheld) {
+            let reason: string;
             try {
                 // Null means a grant or setting changed after the served list
                 // was built, so the tool would be served on the next call.
-                const reason = (await this.exposure.explainWithheld(name, audienceOf(caller))) ?? 'changed-during-request';
-                this.logger.error({ ...context, tool: name, reason }, `MCP tool call refused: ${name} is not served to this caller (${reason})`);
+                reason = (await this.exposure.explainWithheld(name, audienceOf(caller))) ?? 'changed-during-request';
+                this.logger[level]({ ...context, tool: name, reason }, `MCP tool call refused: ${name} is not served to this caller (${reason})`);
             } catch (error: unknown) {
-                this.logger.error({ ...context, tool: name, err: error }, `MCP tool call refused: ${name} is not served to this caller (reason unavailable)`);
+                reason = 'reason-unavailable';
+                this.logger[level]({ ...context, tool: name, err: error }, `MCP tool call refused: ${name} is not served to this caller (reason unavailable)`);
             }
+            this.meter.recordWithheld(caller, name, reason);
         }
     }
 
@@ -324,7 +323,7 @@ export class McpEndpointController {
      * Read the served tool list without letting a storage failure escape, so
      * the client sees a temporary 503 rather than a 500 it cannot act on.
      *
-     * @param caller - The verified caller, whose groups and address decide what is served.
+     * @param caller - The admitted caller, whose groups and address decide what is served.
      * @returns The served tools, or null when the approvals or group settings
      *   could not be read.
      */
@@ -340,23 +339,24 @@ export class McpEndpointController {
     }
 
     /**
-     * Attach the verified caller and their tools to the request and pass it
-     * to the MCP SDK, which builds the per-request server and writes the reply.
+     * Attach the caller and their tools to the request and pass it to the MCP
+     * SDK, which builds the per-request server and writes the reply.
      *
      * @param req - The request, body parsed.
      * @param res - The response the SDK writes.
-     * @param caller - The verified caller.
-     * @param token - The caller's raw bearer token, which the SDK's auth info carries.
+     * @param caller - The admitted caller.
+     * @param token - The caller's raw bearer token, which the SDK's auth info
+     *   carries; empty for an anonymous caller.
      * @param tools - The tools served to this caller.
      * @returns Resolves when the SDK has written the response.
      */
-    private async handOff(req: Request, res: Response, caller: IMcpCaller, token: string, tools: IMcpServedTool[]): Promise<void> {
+    private async handOff(req: Request, res: Response, caller: IMcpCaller, token: string | undefined, tools: IMcpServedTool[]): Promise<void> {
         const extra: IMcpRequestExtra = { caller, tools };
         const authInfo: AuthInfo = {
-            token,
-            clientId: caller.claims.clientId ?? 'unknown',
-            scopes: caller.claims.scopes,
-            ...(caller.claims.expiresAt ? { expiresAt: caller.claims.expiresAt } : {}),
+            token: token ?? '',
+            clientId: caller.claims?.clientId ?? caller.principalKind,
+            scopes: caller.claims?.scopes ?? [],
+            ...(caller.claims?.expiresAt ? { expiresAt: caller.claims.expiresAt } : {}),
             resource: new URL(this.urls.resourceUrl),
             extra
         };
@@ -388,6 +388,15 @@ export class McpEndpointController {
     }
 
     /**
+     * Answer a temporary 503: a store the request needed could not be read.
+     *
+     * @param res - The response to write.
+     */
+    private unavailable(res: Response): void {
+        res.status(503).set('Retry-After', '30').json({ error: 'unavailable', error_description: 'The MCP endpoint is temporarily unavailable.' });
+    }
+
+    /**
      * Write a bearer challenge.
      *
      * The `resource_metadata` parameter is what tells an MCP client where to
@@ -402,10 +411,10 @@ export class McpEndpointController {
      * @param description - Human-readable explanation for the client's logs.
      */
     private challenge(res: Response, status: 401 | 403, error?: string, description?: string): void {
-        const params = [
-            `resource_metadata="${this.urls.resourceMetadataUrl}"`,
-            `scope="${MCP_OAUTH_SCOPES.join(' ')}"`
-        ];
+        const params = [`scope="${MCP_OAUTH_SCOPES.join(' ')}"`];
+        if (this.urls.resourceMetadataUrl) {
+            params.unshift(`resource_metadata="${this.urls.resourceMetadataUrl}"`);
+        }
         if (error) {
             params.unshift(`error="${error}"`);
         }
@@ -419,14 +428,14 @@ export class McpEndpointController {
 }
 
 /**
- * Describe a verified caller the way the exposure service needs it.
+ * Describe a caller the way the exposure service needs it.
  *
  * Building the served list and explaining a refused call must look at the
  * same groups and address, or the logged reason could disagree with what was
  * actually served, so both go through this one function.
  */
 function audienceOf(caller: IMcpCaller): IMcpToolAudience {
-    return { groups: caller.endUser.groups ?? [], ip: caller.ip };
+    return { groups: caller.groups, ip: caller.ip };
 }
 
 /**
@@ -456,11 +465,4 @@ function calledToolNames(body: unknown): string[] {
         }
     }
     return [...names];
-}
-
-/** Read the bearer token from the `Authorization` header, or null when missing or not a bearer header. */
-function readBearerToken(req: Request): string | null {
-    const header = req.get('authorization');
-    const match = header ? /^Bearer\s+(\S+)\s*$/i.exec(header) : null;
-    return match ? match[1] : null;
 }

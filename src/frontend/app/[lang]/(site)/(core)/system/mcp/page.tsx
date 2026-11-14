@@ -2,7 +2,7 @@
  * @fileoverview /system/mcp server entry.
  *
  * Fetches everything the page's primary panels show — the tab row, the
- * endpoint status behind the kill switch, the tool list with its per-group
+ * endpoint status behind the kill switch, the 24-hour usage report, the tool list with its per-group
  * grants, the user groups with their MCP settings, and the first page of
  * connected apps — during server rendering, forwarding the
  * admin's session cookie, so the page paints with real data and the kill
@@ -12,7 +12,7 @@
 
 import { cookies } from 'next/headers';
 import type { MenuNodeSerialized } from '@/shared';
-import type { IConnectedAppAdminRow, IMcpGroup, IMcpStatus, IMcpToolExposure } from '@/types';
+import type { IConnectedAppAdminRow, IMcpGroup, IMcpStatus, IMcpToolExposure, IMcpUsageReport } from '@/types';
 import { getServerSideApiUrl } from '../../../../../../lib/api-url';
 import { MCP_APPS_PAGE_SIZE } from '../../../../../../modules/mcp';
 import { McpAdminClient } from './McpAdminClient';
@@ -54,9 +54,10 @@ export default async function McpAdminPage({
 }: {
     searchParams: Promise<{ tab?: string }>;
 }) {
-    const [menu, status, tools, groups, apps, { tab }] = await Promise.all([
+    const [menu, status, usage, tools, groups, apps, { tab }] = await Promise.all([
         fetchAdminJson<{ tree?: { roots?: MenuNodeSerialized[]; generatedAt?: string } }>(`/api/menu?namespace=${SUBMENU_NAMESPACE}`),
         fetchAdminJson<{ status: IMcpStatus }>('/api/admin/mcp/status'),
+        fetchAdminJson<{ usage: IMcpUsageReport }>('/api/admin/mcp/usage?window=24h'),
         fetchAdminJson<{ tools: IMcpToolExposure[] }>('/api/admin/mcp/tools'),
         fetchAdminJson<{ groups: IMcpGroup[] }>('/api/admin/mcp/groups'),
         fetchAdminJson<{ apps: IConnectedAppAdminRow[]; total: number }>(`/api/admin/mcp/apps?limit=${MCP_APPS_PAGE_SIZE}&offset=0`),
@@ -69,6 +70,7 @@ export default async function McpAdminPage({
             submenuGeneratedAt={menu?.tree?.generatedAt ?? new Date().toISOString()}
             initialTab={tab}
             initialStatus={status?.status ?? null}
+            initialUsage={usage?.usage ?? null}
             initialTools={tools?.tools ?? []}
             initialGroups={groups?.groups ?? []}
             initialApps={apps?.apps ?? []}

@@ -7,6 +7,7 @@
  */
 
 import type { IMcpGroupPolicy } from './IMcpGroupPolicy.js';
+import { MCP_ANONYMOUS_GROUP_ID } from './MCP_ANONYMOUS_GROUP_ID.js';
 import { MCP_USERS_GROUP_ID } from './MCP_USERS_GROUP_ID.js';
 
 /**
@@ -15,9 +16,14 @@ import { MCP_USERS_GROUP_ID } from './MCP_USERS_GROUP_ID.js';
  *
  * A tool that passes the MCP safety floor may be granted to any group. A
  * restricted tool may be granted only to a group whose policy allows
- * restricted tools, and never to `mcp-users`, because that group is every MCP
- * user. The group id is checked here as well as in policy validation, so a
- * policy document edited by hand cannot open restricted tools to everyone.
+ * restricted tools, and never to `mcp-users` or `anonymous`, because those
+ * groups are every MCP user and every stranger. The group id is checked here
+ * as well as in policy validation, so a policy document edited by hand cannot
+ * open restricted tools to everyone.
+ *
+ * The `anonymous` group has a stricter floor on top of this one, applied
+ * separately with `getMcpAnonymousToolIneligibility`, because this function
+ * only knows whether a tool is restricted, not how sensitive its data is.
  *
  * @param restricted - Whether the tool fails the MCP safety floor
  *   (`getMcpToolIneligibility` returned a reason).
@@ -25,5 +31,6 @@ import { MCP_USERS_GROUP_ID } from './MCP_USERS_GROUP_ID.js';
  * @returns True when the group may hold, and be served through, the grant.
  */
 export function mcpGroupMayHoldTool(restricted: boolean, policy: IMcpGroupPolicy): boolean {
-    return !restricted || (policy.allowRestrictedTools && policy.groupId !== MCP_USERS_GROUP_ID);
+    return !restricted
+        || (policy.allowRestrictedTools && policy.groupId !== MCP_USERS_GROUP_ID && policy.groupId !== MCP_ANONYMOUS_GROUP_ID);
 }

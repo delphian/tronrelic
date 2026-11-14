@@ -40,6 +40,14 @@ export interface IMcpToolExposure {
      */
     restrictedReason: string | null;
 
+    /**
+     * Why the tool may not be granted to the `anonymous` group, or null when it
+     * may. Comes from `getMcpAnonymousToolIneligibility`, which adds to the MCP
+     * floor that the tool's data must be `public` and that it must not act on
+     * a user's own objects.
+     */
+    anonymousIneligibleReason: string | null;
+
     /** The tool's approvals, one per group, sorted by group id. */
     grants: IMcpToolGrant[];
 

@@ -8,20 +8,22 @@
  * right tab first. Below it, the tab row is the menu module's Submenu Pattern
  * (a namespaced menu rendered with `MenuNavClient`), and the panels are:
  *
- * - Overview: the connection URL and headline counts.
- * - Tools: pick a user group, set its protections, and grant or withdraw each tool for it.
+ * - Overview: both connection URLs, headline counts, and the usage view
+ *   (totals by group, then by tool and caller, then individual calls).
+ * - Tools: pick a user group (including the virtual Anonymous group), set its
+ *   protections, switch, and limits, and grant or withdraw each tool for it.
  * - Connected apps: every user's grants, revocable.
  * - Activity: the governor's audit feed, locked to the `mcp` trigger path.
- * - Database: the module's own collections.
+ * - Database: the module's own collections and its ClickHouse accounting table.
  * - Logs: the module's log entries.
  */
 
 import { useCallback, useState } from 'react';
 import type { MenuNodeSerialized } from '@/shared';
-import type { IConnectedAppAdminRow, IMcpGroup, IMcpSettings, IMcpStatus, IMcpToolExposure } from '@/types';
+import type { IConnectedAppAdminRow, IMcpGroup, IMcpSettings, IMcpStatus, IMcpToolExposure, IMcpUsageReport } from '@/types';
 import { Page, PageHeader, Stack } from '../../../../../../components/layout';
 import { MenuNavClient } from '../../../../../../components/layout/MenuNav/MenuNavClient';
-import { CollectionBrowser } from '../../../../../../modules/database';
+import { ClickHouseTableBrowser, CollectionBrowser } from '../../../../../../modules/database';
 import { SystemLogsMonitor } from '../../../../../../modules/logs';
 import { ActivityTab } from '../ai-tools/tabs/ActivityTab';
 import { KillSwitchCard } from './KillSwitchCard';
@@ -46,6 +48,12 @@ const COLLECTION_PREFIX = 'module_mcp_';
 /** Log service name the module's `logger.child({ module: 'mcp' })` records under. */
 const LOG_SERVICE = 'tronrelic:mcp';
 
+/**
+ * The module's ClickHouse tables. Module tables share no naming prefix, so the
+ * browser is scoped by exact name.
+ */
+const CLICKHOUSE_TABLES = ['mcp_calls'];
+
 /** Narrow a `?tab=` value to a known tab. */
 function isTabId(tab: string | undefined): tab is TabId {
     return tab === 'overview' || tab === 'tools' || tab === 'apps' || tab === 'activity' || tab === 'database' || tab === 'logs';
@@ -69,6 +77,8 @@ interface IMcpAdminClientProps {
     initialTab?: string;
     /** SSR-fetched status; null when the fetch failed. */
     initialStatus: IMcpStatus | null;
+    /** SSR-fetched 24-hour usage report; null when the fetch failed. */
+    initialUsage: IMcpUsageReport | null;
     /** SSR-fetched tool rows. */
     initialTools: IMcpToolExposure[];
     /** SSR-fetched user groups with their MCP settings; empty when the fetch failed. */
@@ -90,6 +100,7 @@ export function McpAdminClient({
     submenuGeneratedAt,
     initialTab,
     initialStatus,
+    initialUsage,
     initialTools,
     initialGroups,
     initialApps,
@@ -132,7 +143,7 @@ export function McpAdminClient({
             <Stack gap="md">
                 <PageHeader
                     title="MCP"
-                    subtitle="Let members of the mcp-users group connect their own AI client to TronRelic and call the tools you grant to their user groups."
+                    subtitle="Let members of the mcp-users group connect their own AI client to TronRelic and call the tools you grant to their user groups, and let anyone call the tools you grant to Anonymous without signing in."
                 />
 
                 <KillSwitchCard status={status} onSettingsChange={handleSettingsChanged} />
@@ -149,7 +160,7 @@ export function McpAdminClient({
                 {/* The panels share one wrapper so the hidden Tools and Apps
                     panels never count as Stack children. */}
                 <div>
-                    {activeTab === 'overview' && <OverviewTab status={status} />}
+                    {activeTab === 'overview' && <OverviewTab status={status} initialUsage={initialUsage} groups={initialGroups} />}
                     {/* Tools and Apps stay mounted and are only hidden, because they
                         seed their state from the SSR props once. Unmounting them on a
                         tab switch would bring back the SSR snapshot, so an approval or
@@ -161,7 +172,12 @@ export function McpAdminClient({
                         <AppsTab initialApps={initialApps} initialTotal={initialAppsTotal} />
                     </div>
                     {activeTab === 'activity' && <ActivityTab fixedTriggerPath="mcp" />}
-                    {activeTab === 'database' && <CollectionBrowser prefix={COLLECTION_PREFIX} title="MCP Collections" />}
+                    {activeTab === 'database' && (
+                        <Stack gap="md">
+                            <CollectionBrowser prefix={COLLECTION_PREFIX} title="MCP Collections" />
+                            <ClickHouseTableBrowser tables={CLICKHOUSE_TABLES} title="MCP Accounting" hideWhenEmpty />
+                        </Stack>
+                    )}
                     {activeTab === 'logs' && <SystemLogsMonitor service={LOG_SERVICE} />}
                 </div>
             </Stack>

@@ -275,6 +275,10 @@ const nextConfig = {
                 destination: `${resolveInternalApiOrigin()}/mcp`,
             },
             {
+                source: '/mcp/public',
+                destination: `${resolveInternalApiOrigin()}/mcp/public`,
+            },
+            {
                 source: '/.well-known/oauth-protected-resource/:path*',
                 destination: `${resolveInternalApiOrigin()}/.well-known/oauth-protected-resource/:path*`,
             },

@@ -6,7 +6,17 @@
  * backend's message on a non-2xx response so the page can toast the reason.
  */
 
-import type { IConnectedAppAdminRow, IMcpGroupPolicy, IMcpGroupPolicyPatch, IMcpSettings, IMcpStatus, IMcpToolExposure } from '@/types';
+import type {
+    IConnectedAppAdminRow,
+    IMcpGroupPolicy,
+    IMcpGroupPolicyPatch,
+    IMcpSettings,
+    IMcpStatus,
+    IMcpToolExposure,
+    IMcpUsageGroupDetail,
+    IMcpUsageReport,
+    McpUsageWindow
+} from '@/types';
 
 const BASE = '/api/admin/mcp';
 
@@ -100,6 +110,36 @@ export async function updateMcpGroupPolicy(groupId: string, change: IMcpGroupPol
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(change)
     }), 'update the group settings');
+}
+
+/**
+ * Read endpoint totals and one line per group over a window, the top level of
+ * the usage view.
+ *
+ * @param window - How far back to look.
+ * @returns The usage report.
+ */
+export async function getMcpUsage(window: McpUsageWindow): Promise<IMcpUsageReport> {
+    const body = await parse<{ usage: IMcpUsageReport }>(await fetch(`${BASE}/usage?window=${window}`, { cache: 'no-store' }), 'load MCP usage');
+    return body.usage;
+}
+
+/**
+ * Read one group's tools and busiest callers over a window, the second level
+ * of the usage view.
+ *
+ * @param groupId - The group to open.
+ * @param window - How far back to look.
+ * @param toolName - When set, the callers list counts only this tool's calls.
+ * @returns The group's usage detail.
+ */
+export async function getMcpUsageGroupDetail(groupId: string, window: McpUsageWindow, toolName: string | null): Promise<IMcpUsageGroupDetail> {
+    const tool = toolName ? `&tool=${encodeURIComponent(toolName)}` : '';
+    const body = await parse<{ detail: IMcpUsageGroupDetail }>(
+        await fetch(`${BASE}/usage/groups/${encodeURIComponent(groupId)}?window=${window}${tool}`, { cache: 'no-store' }),
+        'load the group usage'
+    );
+    return body.detail;
 }
 
 /**

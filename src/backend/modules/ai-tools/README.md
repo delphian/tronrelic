@@ -64,15 +64,18 @@ The AI *provider* is a swappable plugin (`trp-ai-assistant` for Anthropic today;
 
 ## The `mcp` Trigger Path
 
-The [MCP module](../mcp/README.md) calls the governor for tools that a non-admin member of `mcp-users` invokes from their own AI client. Those calls carry `triggerPath: 'mcp'`, `actor.kind: 'user'`, the user as `endUser`, and an `origin` (`clientId`, `credentialId`, `ip`) that the audit record copies. The path adds these rules:
+The [MCP module](../mcp/README.md) calls the governor for tools invoked from an external AI client: by a non-admin member of `mcp-users` on `/mcp`, or by an anonymous caller on `/mcp/public`. Those calls carry `triggerPath: 'mcp'`, an `origin` (endpoint, principal kind and id, charged group, client, credential, address) that the audit record copies, and a `callerBudget` (`IToolCallerBudget`) built from the charged group's limits. A signed-in call carries `actor.kind: 'user'` and the user as `endUser`; an anonymous call carries `actor.kind: 'anonymous'`, the hashed network id as `actor.id`, and no end user. The path adds these rules:
 
 | Rule | Where |
 |---|---|
 | A missing `toolAllowlist` is denied (it would otherwise mean "every enabled tool") | Governor, after the allowlist check |
-| A missing end user is denied | Policy engine, first gate |
-| The tool must pass `getMcpToolIneligibility` (declared, read-only, reversible, not `secret`, not paid), unless its name is in both `ctx.mcpRestrictedTools` and `ctx.toolAllowlist` — which the MCP endpoint sets only for tools it served through a user group an admin cleared for restricted tools | Policy engine, first gate |
+| A signed-in call without an end user is denied; an anonymous call with an end user, or without an id or budget, is denied | Policy engine, first gate |
+| A signed-in call's tool must pass `getMcpToolIneligibility` (declared, read-only, reversible, not `secret`, not paid), unless its name is in both `ctx.mcpRestrictedTools` and `ctx.toolAllowlist` — which the MCP endpoint sets only for tools it served through a user group an admin cleared for restricted tools | Policy engine, first gate |
+| An anonymous call's tool must pass `getMcpAnonymousToolIneligibility` (that floor plus `sensitivity: 'public'` and not `operatesOnUserOwnedObjects`), with no waiver | Policy engine, first gate |
 | A tool whose effective policy requires approval is denied rather than parked | Policy engine, first gate |
-| Per-user windows of 30 calls per tool and 60 calls overall per minute, charged before the shared windows; a call over the user's own budget never ticks the shared counters | Policy engine `consumeRate` |
+| The caller's budget is charged before the shared windows, in three steps that each run only when the one before passed: the minute windows (per caller across tools, per caller per tool), then the caller's day window, then the group's pool. A call over the caller's own budget never ticks the day, pool, or shared counters. The minute limits are capped at the platform ceilings of 60 and 30 whatever the budget asks. A signed-in call without a budget falls back to those ceilings keyed by the end user | Policy engine `consumeRate` / `consumeCallerBudget` |
+| MCP calls count in their own shared per-tool and global windows (keys prefixed `mcp:`), separate from the windows admin, scheduled, and programmatic runs use, so outside traffic cannot lock the platform's own AI runs out of a tool | Policy engine `consumeRate` |
+| A refusal by a rate, day, pool, or cost limit records which limit as `limitHit` (`ToolLimitKind`) on the audit record, so usage reports count refusals by cause | Policy decision `limit` → governor `fail` |
 | The untrusted-content screen is skipped; the wrap is kept | Governor `screenUntrusted` |
 | Curation auto-approve never applies (it is `interactive`-only), and the external-tool default-deny does (it keys on `!== 'interactive'`) | Existing policy, unchanged |
 
@@ -222,7 +225,7 @@ Filtering `secret` variables out of prompt expansion is not an alternative fix: 
 | GET | `/query/prompts/hooks` | Declared hook seams a hook trigger may bind to (id + description), for the editor's picker |
 | POST | `/query/prompts` | **Session-only.** Create (no `id`) or update (with `id`) a saved prompt; returns the refreshed list. Persists the per-prompt `toolAllowlist`. 400 invalid · 404 missing · 409 duplicate name · 403 service token |
 | DELETE | `/query/prompts/:id` | Delete a saved prompt template |
-| GET | `/activity` | Invocation audit feed (filters: `toolName`, `status`, `triggerPath` — including `mcp` —, `providerId`, `aiProviderId`, `limit`, `offset`). `/system/mcp` embeds the Activity tab locked to `mcp` |
+| GET | `/activity` | Invocation audit feed (filters: `toolName`, `status`, `triggerPath` — including `mcp` —, `providerId`, `aiProviderId`, `chargedGroupId`, `principalId`, `limit`, `offset`). `/system/mcp` embeds the Activity tab locked to `mcp`, and its usage view locks it to one group and caller as well |
 | GET | `/activity/:id` | One invocation record |
 | GET | `/approvals` | Pending held invocations |
 | GET | `/approvals/count` | Pending-approval count (nav/tab badge) |

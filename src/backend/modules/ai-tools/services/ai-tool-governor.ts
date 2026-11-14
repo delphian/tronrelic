@@ -29,7 +29,8 @@ import type {
     IToolInvocationRecord,
     IToolInvocationResult,
     IUntrustedScreenConfig,
-    ToolInvocationStatus
+    ToolInvocationStatus,
+    ToolLimitKind
 } from '@/types';
 import { isHookAbortError, wrapUntrustedToolResult } from '@/types';
 import { HOOKS } from '../../../hooks/registry.js';
@@ -483,7 +484,7 @@ export class AiToolGovernor implements IAiToolGovernor {
 
         const decision = await this.policy.check(tool, ctx);
         if (decision.verdict === 'deny') {
-            return this.fail(name, providerId, input, ctx, cap, 'denied', decision.reason ?? 'Denied by policy.');
+            return this.fail(name, providerId, input, ctx, cap, 'denied', decision.reason ?? 'Denied by policy.', decision.limit);
         }
         if (decision.verdict === 'needs-approval') {
             return this.hold(tool, providerId, input, ctx, cap);
@@ -939,6 +940,9 @@ export class AiToolGovernor implements IAiToolGovernor {
      * Record a non-executing outcome (denied or pre-execution error) and
      * return its result.
      *
+     * @param limitHit - The rate or cost limit that refused the call, when a
+     *   limit did, so usage reports can count refusals by cause without
+     *   reading the reason text.
      * @returns The governed result.
      */
     private async fail(
@@ -948,9 +952,10 @@ export class AiToolGovernor implements IAiToolGovernor {
         ctx: IToolInvocationContext,
         cap: IAiToolCapability,
         status: Extract<ToolInvocationStatus, 'denied' | 'error'>,
-        reason: string
+        reason: string,
+        limitHit?: ToolLimitKind
     ): Promise<IToolInvocationResult> {
-        const record = this.buildRecord(toolName, providerId, cap, ctx, input, status, { error: reason });
+        const record = this.buildRecord(toolName, providerId, cap, ctx, input, status, { error: reason, ...(limitHit ? { limitHit } : {}) });
         await this.audit.record(record);
         await this.notifyInvoked(record);
 
@@ -990,7 +995,7 @@ export class AiToolGovernor implements IAiToolGovernor {
         ctx: IToolInvocationContext,
         input: Record<string, unknown>,
         status: ToolInvocationStatus,
-        extra: { resultDigest?: string; error?: string; durationMs?: number; screen?: { flagged: boolean; reason?: string } }
+        extra: { resultDigest?: string; error?: string; durationMs?: number; screen?: { flagged: boolean; reason?: string }; limitHit?: ToolLimitKind }
     ): IToolInvocationRecord {
         const record: IToolInvocationRecord = {
             id: crypto.randomUUID(),
@@ -1039,6 +1044,9 @@ export class AiToolGovernor implements IAiToolGovernor {
         }
         if (extra.screen !== undefined) {
             record.screen = extra.screen;
+        }
+        if (extra.limitHit !== undefined) {
+            record.limitHit = extra.limitHit;
         }
         return record;
     }

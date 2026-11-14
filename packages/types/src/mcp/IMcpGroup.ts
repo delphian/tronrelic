@@ -30,6 +30,13 @@ export interface IMcpGroup {
      */
     isGateGroup: boolean;
 
+    /**
+     * True for the virtual `anonymous` group, which stands for callers of the
+     * public endpoint and has no members. Only tools marked `public` may be
+     * granted to it, and every one of its limits must be set.
+     */
+    isAnonymous: boolean;
+
     /** The group's MCP settings, with every setting off when none are stored. */
     policy: IMcpGroupPolicy;
 }

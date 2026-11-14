@@ -9,7 +9,7 @@ import { requestContext } from '../api/middleware/request-context.js';
 import { attachAuthSession } from '../api/middleware/auth-session.js';
 import { env } from '../config/env.js';
 import { corsOriginCallback } from '../config/cors.js';
-import { MCP_ENDPOINT_PATH } from '../modules/identity/services/oauth-server-config.js';
+import { MCP_ENDPOINT_PATH, MCP_PUBLIC_ENDPOINT_PATH } from '../modules/identity/services/oauth-server-config.js';
 
 export function createExpressApp(): Express {
   const app = express();
@@ -39,9 +39,9 @@ export function createExpressApp(): Express {
   // Node integration needs the original body to validate email-OTP
   // codes, OAuth callbacks, and passkey assertions. Skip them on
   // `/api/auth/*` so `toNodeHandler` (mounted by IdentityModule.run()) can
-  // read the body itself. Skip them on `/mcp` too: the MCP endpoint checks
-  // the bearer token first and only then parses the body with its own small
-  // limit, so an anonymous caller cannot make the server read 5 MB. Cookie-parser
+  // read the body itself. Skip them on `/mcp` and `/mcp/public` too: the MCP
+  // endpoints admit the caller first and only then parse the body with their
+  // own small limit, so an unadmitted caller cannot make the server read 5 MB. Cookie-parser
   // above is safe to leave global because it only reads headers.
   app.use(skipForRawBodyRoutes(express.json({ limit: '5mb' })));
   app.use(skipForRawBodyRoutes(express.urlencoded({ extended: true })));
@@ -99,21 +99,28 @@ export function createExpressApp(): Express {
 }
 
 /**
- * Every spelling of the MCP endpoint path that Express's default routing
- * (case-insensitive, trailing slash optional) sends to the `/mcp` route.
- * Built from the same constant the MCP resource URL is derived from, so the
- * mounted route and this bypass cannot drift apart if the path changes.
+ * Build the pattern matching every spelling of a path that Express's default
+ * routing (case-insensitive, trailing slash optional) sends to its route.
+ * Built from the same constants the MCP URLs are derived from, so the mounted
+ * routes and this bypass cannot drift apart if a path changes.
+ *
+ * @param path - The mounted route path.
+ * @returns A pattern matching that path, any case, with or without a trailing slash.
  */
-const ESCAPED_MCP_PATH = MCP_ENDPOINT_PATH.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-const MCP_PATH_PATTERN = new RegExp(`^${ESCAPED_MCP_PATH}/?$`, 'i');
+function routePathPattern(path: string): RegExp {
+  return new RegExp(`^${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/?$`, 'i');
+}
+
+/** The signed-in MCP endpoint and the public one; both parse their own body. */
+const MCP_PATH_PATTERNS = [routePathPattern(MCP_ENDPOINT_PATH), routePathPattern(MCP_PUBLIC_ENDPOINT_PATH)];
 
 /**
  * Wrap an Express middleware so it skips itself on paths that read their own
  * request body.
  *
  * Used to keep the global body parsers from consuming the request stream on
- * `/api/auth/*`, which Better Auth's Node handler reads itself, and on `/mcp`,
- * which parses its body only after the caller is authenticated. The wrapper
+ * `/api/auth/*`, which Better Auth's Node handler reads itself, and on `/mcp`
+ * and `/mcp/public`, which parse their body only after the caller is admitted. The wrapper
  * preserves the original middleware's signature so it composes transparently
  * with `app.use(...)`.
  *
@@ -134,7 +141,7 @@ function skipForRawBodyRoutes(middleware: express.RequestHandler): express.Reque
     // Express routes case-insensitively and ignores a trailing slash, so
     // `app.all('/mcp')` also serves `/MCP` and `/mcp/`. Match the same set
     // here, or those spellings would be body-parsed before authentication.
-    const readsOwnBody = req.path.startsWith('/api/auth/') || req.path === '/api/auth' || MCP_PATH_PATTERN.test(req.path);
+    const readsOwnBody = req.path.startsWith('/api/auth/') || req.path === '/api/auth' || MCP_PATH_PATTERNS.some(pattern => pattern.test(req.path));
     if (readsOwnBody) {
       next();
     } else {

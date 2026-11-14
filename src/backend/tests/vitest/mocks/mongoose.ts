@@ -194,6 +194,15 @@ export function matchesFilter(doc: any, filter: Filter<any>): boolean {
                 const docValue = getNestedValue(doc, key);
                 return docValue < ltValue;
             }
+
+            // An embedded document or array with no operator keys is an exact
+            // match, as MongoDB compares them: the same keys in the same order
+            // with the same values. Compare-and-swap writes such as
+            // `{ limits: { ... } }` rely on it.
+            if (!Object.keys(value).some(operator => operator.startsWith('$'))) {
+                const docValue = key.includes('.') ? getNestedValue(doc, key) : doc[key];
+                return JSON.stringify(docValue) === JSON.stringify(value);
+            }
         }
 
         // Handle nested field paths (e.g., 'user.name' or 'wallets.address')

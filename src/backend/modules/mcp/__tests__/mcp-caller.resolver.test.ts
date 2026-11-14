@@ -58,9 +58,31 @@ describe('McpCallerResolver', () => {
         expect(await resolver.resolve('token', undefined)).toEqual({ kind: 'not-member' });
     });
 
-    it('admits a member and carries the claims, principal, and IP', async () => {
+    it('admits a member and carries the claims, principal, groups, and IP', async () => {
         const resolver = new McpCallerResolver({ verify: vi.fn(async () => CLAIMS) }, vi.fn(async () => MEMBER), usage, logger);
-        expect(await resolver.resolve('token', '203.0.113.9')).toEqual({ kind: 'ok', caller: { claims: CLAIMS, endUser: MEMBER, ip: '203.0.113.9' } });
+        expect(await resolver.resolve('token', '203.0.113.9')).toEqual({
+            kind: 'ok',
+            caller: {
+                endpoint: 'oauth',
+                principalKind: 'user',
+                principalId: 'user-1',
+                groups: [MCP_USERS_GROUP_ID],
+                claims: CLAIMS,
+                endUser: MEMBER,
+                ip: '203.0.113.9'
+            }
+        });
+    });
+
+    it('never lets a member reach the anonymous group, even when a legacy real group holds its id', async () => {
+        const resolver = new McpCallerResolver(
+            { verify: vi.fn(async () => CLAIMS) },
+            vi.fn(async () => ({ userId: 'user-1', groups: [MCP_USERS_GROUP_ID, 'anonymous'] })),
+            usage,
+            logger
+        );
+        const outcome = await resolver.resolve('token', undefined);
+        expect(outcome.kind === 'ok' && outcome.caller.groups).toEqual([MCP_USERS_GROUP_ID]);
     });
 
     it('re-reads group membership once the cache window passes', async () => {

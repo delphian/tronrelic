@@ -35,6 +35,7 @@ import type {
     ICreateUserGroupInput,
     IUpdateUserGroupInput
 } from '@/types';
+import { MCP_ANONYMOUS_GROUP_ID } from '@/types';
 import type { IUserGroupDocument } from '../database/IUserGroupDocument.js';
 import { HOOKS } from '../../../hooks/registry.js';
 import { GroupService, ADMIN_GROUP_ID } from './group.service.js';
@@ -172,6 +173,15 @@ export class UserGroupService implements IUserGroupService {
         if (!SLUG_PATTERN.test(id)) {
             throw new UserGroupValidationError(
                 `Invalid group id "${id}": must be lowercase letters, digits, and hyphens, starting with a letter`
+            );
+        }
+        // The MCP module treats `anonymous` as a virtual group standing for
+        // callers who did not sign in. Grants and limits are stored by group
+        // id, so a real group under this id would inherit every grant meant
+        // for strangers.
+        if (id === MCP_ANONYMOUS_GROUP_ID) {
+            throw new UserGroupValidationError(
+                `Group id "${id}" is reserved for callers of the public MCP endpoint who have not signed in`
             );
         }
 

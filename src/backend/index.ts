@@ -657,9 +657,16 @@ async function bootstrapInit(): Promise<BootstrapContext> {
         hookRegistry,
         knownSecrets: collectDeploymentSecrets(env, process.env),
         resolveEndUser: createAccountEndUserResolver(() => identityModule.getAccountDirectoryService()),
+        accountDirectory: identityModule.getAccountDirectoryService(),
+        // Optional: without ClickHouse, MCP calls are simply not counted.
+        clickhouse,
+        // The same salt the traffic module hashes visitor addresses with, so
+        // no new secret is needed. SESSION_SECRET is enforced in production.
+        anonymousKeySalt: env.TRAFFIC_IP_HASH_SALT || env.SESSION_SECRET || '',
         endpoint: {
             resourceUrl: oauthConfig.mcpResourceUrl,
             resourceMetadataUrl: oauthConfig.mcpResourceMetadataUrl,
+            publicUrl: oauthConfig.mcpPublicUrl,
             issuer: oauthConfig.issuer,
             siteHost: oauthConfig.siteHost
         }

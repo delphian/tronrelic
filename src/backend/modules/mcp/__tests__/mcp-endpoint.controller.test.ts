@@ -1,25 +1,40 @@
 /**
- * @fileoverview Tests for the checks the MCP endpoint applies before the SDK
+ * @fileoverview Tests for the checks both MCP endpoints apply before the SDK
  * sees a request: kill switch, method, token placement, bearer challenges,
- * scope, and group membership.
+ * scope, and group membership on `/mcp`, and anonymous admission on
+ * `/mcp/public`.
  */
 
 import { describe, it, expect, vi } from 'vitest';
 import { McpEndpointController } from '../api/mcp-endpoint.controller.js';
 import type { McpCallerOutcome } from '../services/mcp-caller.resolver.js';
+import { OAuthCallerAuthenticator } from '../services/OAuthCallerAuthenticator.js';
+import { AnonymousCallerAuthenticator } from '../services/AnonymousCallerAuthenticator.js';
+import { AnonymousCallerKeyer } from '../services/AnonymousCallerKeyer.js';
 
 /** A silent logger. */
 const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), child: vi.fn() } as any;
 
-/** The endpoint URLs used in challenges. */
+/** The signed-in endpoint's URLs, used in challenges. */
 const URLS = {
     resourceUrl: 'https://tronrelic.test/mcp',
     resourceMetadataUrl: 'https://tronrelic.test/.well-known/oauth-protected-resource/mcp',
     allowedOriginHosts: ['tronrelic.test']
 };
 
+/** The public endpoint's URLs; it never challenges, so it names no metadata document. */
+const PUBLIC_URLS = {
+    resourceUrl: 'https://tronrelic.test/mcp/public',
+    allowedOriginHosts: ['tronrelic.test']
+};
+
+/** A meter that records nothing, with spies to check what would have been counted. */
+function meter() {
+    return { observe: vi.fn(), recordWithheld: vi.fn() };
+}
+
 /**
- * Build a controller whose kill switch and caller outcome are fixed.
+ * Build a signed-in endpoint controller whose kill switch and caller outcome are fixed.
  *
  * @param enabled - The kill switch state.
  * @param outcome - What the caller resolver answers.
@@ -30,9 +45,10 @@ function build(enabled: boolean, outcome: McpCallerOutcome = { kind: 'invalid-to
     const controller = new McpEndpointController(
         { get: vi.fn(async () => ({ enabled })) } as any,
         { getServedTools: vi.fn(async () => []) } as any,
-        { resolve } as any,
+        new OAuthCallerAuthenticator({ resolve } as any, logger),
         { create: vi.fn() } as any,
         URLS,
+        meter(),
         logger
     );
     return { controller, resolve };
@@ -71,6 +87,14 @@ function response() {
     return { res, recorded };
 }
 
+/**
+ * Build a JSON-RPC request whose body is already parsed, which makes the JSON
+ * parser pass it through untouched.
+ */
+function rpc(body: unknown, headers: Record<string, string> = { Authorization: 'Bearer abc' }) {
+    return Object.assign(request({ headers }), { body, _body: true });
+}
+
 describe('McpEndpointController', () => {
     it('answers 503 while the kill switch is off, before checking credentials', async () => {
         const { controller, resolve } = build(false);
@@ -86,9 +110,10 @@ describe('McpEndpointController', () => {
         const controller = new McpEndpointController(
             { get: vi.fn(async () => { throw new Error('database down'); }) } as any,
             { getServedTools: vi.fn(async () => []) } as any,
-            { resolve } as any,
+            new OAuthCallerAuthenticator({ resolve } as any, logger),
             { create: vi.fn() } as any,
             URLS,
+            meter(),
             logger
         );
         const { res, recorded } = response();
@@ -144,9 +169,10 @@ describe('McpEndpointController', () => {
         const controller = new McpEndpointController(
             { get: vi.fn(async () => ({ enabled: true })) } as any,
             { getServedTools: vi.fn(async () => []) } as any,
-            { resolve: vi.fn(async () => { throw new Error('database down'); }) } as any,
+            new OAuthCallerAuthenticator({ resolve: vi.fn(async () => { throw new Error('database down'); }) } as any, logger),
             { create: vi.fn() } as any,
             URLS,
+            meter(),
             logger
         );
         const { res, recorded } = response();
@@ -178,6 +204,10 @@ describe('McpEndpointController', () => {
         const admitted: McpCallerOutcome = {
             kind: 'ok',
             caller: {
+                endpoint: 'oauth',
+                principalKind: 'user',
+                principalId: 'user-1',
+                groups: ['mcp-users', 'admin'],
                 claims: { userId: 'user-1', clientId: 'client-1', scopes: ['mcp:tools'] },
                 endUser: { userId: 'user-1', groups: ['mcp-users', 'admin'] },
                 ip: '203.0.113.9'
@@ -189,51 +219,102 @@ describe('McpEndpointController', () => {
          * fixed, with the hand-off to the SDK stubbed out.
          *
          * @param served - Names of the tools served to the caller.
-         * @returns The controller and the exposure service's explain spy.
+         * @returns The controller, the exposure service's explain spy, and the meter.
          */
         function buildAdmitted(served: string[]) {
             const explainWithheld = vi.fn(async () => 'ip-not-allowed');
+            const callMeter = meter();
             const controller = new McpEndpointController(
                 { get: vi.fn(async () => ({ enabled: true })) } as any,
                 { getServedTools: vi.fn(async () => served.map(name => ({ tool: { name }, restricted: false, scrubSecrets: false }))), explainWithheld } as any,
-                { resolve: vi.fn(async () => admitted) } as any,
+                new OAuthCallerAuthenticator({ resolve: vi.fn(async () => admitted) } as any, logger),
                 { create: vi.fn() } as any,
                 URLS,
+                callMeter,
                 logger
             );
             // The SDK hand-off needs a real Node request; these tests stop before it.
             vi.spyOn(controller as any, 'handOff').mockResolvedValue(undefined);
-            return { controller, explainWithheld };
+            return { controller, explainWithheld, callMeter };
         }
 
-        /**
-         * Build an authenticated JSON-RPC request whose body is already parsed,
-         * which makes the JSON parser pass it through untouched.
-         */
-        function rpc(body: unknown) {
-            return Object.assign(request({ headers: { Authorization: 'Bearer abc' } }), { body, _body: true });
-        }
-
-        it('logs an error naming the tool and the reason when a call names a tool that was not served', async () => {
+        it('logs an error and counts the refusal when a call names a tool that was not served', async () => {
             logger.error.mockClear();
-            const { controller, explainWithheld } = buildAdmitted(['tronrelic-get-log-statistics']);
+            const { controller, explainWithheld, callMeter } = buildAdmitted(['tronrelic-get-log-statistics']);
             await controller.handle(rpc({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'tronrelic-query-system-logs' } }), response().res, vi.fn());
             expect(explainWithheld).toHaveBeenCalledWith('tronrelic-query-system-logs', { groups: ['mcp-users', 'admin'], ip: '203.0.113.9' });
             expect(logger.error).toHaveBeenCalledWith(
-                expect.objectContaining({ tool: 'tronrelic-query-system-logs', reason: 'ip-not-allowed', userId: 'user-1', ip: '203.0.113.9' }),
+                expect.objectContaining({ tool: 'tronrelic-query-system-logs', reason: 'ip-not-allowed', principalId: 'user-1', ip: '203.0.113.9' }),
                 expect.stringContaining('tronrelic-query-system-logs')
             );
+            expect(callMeter.recordWithheld).toHaveBeenCalledWith(expect.objectContaining({ principalId: 'user-1' }), 'tronrelic-query-system-logs', 'ip-not-allowed');
         });
 
         it('logs nothing for a served tool or a request that is not a tool call', async () => {
             logger.error.mockClear();
-            const { controller, explainWithheld } = buildAdmitted(['tronrelic-get-log-statistics']);
+            const { controller, explainWithheld, callMeter } = buildAdmitted(['tronrelic-get-log-statistics']);
             await controller.handle(rpc({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'tronrelic-get-log-statistics' } }), response().res, vi.fn());
             await controller.handle(rpc({ jsonrpc: '2.0', id: 2, method: 'tools/list' }), response().res, vi.fn());
             // Missing jsonrpc and id: the SDK rejects it as an invalid request, so no tool was refused.
             await controller.handle(rpc({ method: 'tools/call', params: { name: 'tronrelic-query-system-logs' } }), response().res, vi.fn());
             expect(explainWithheld).not.toHaveBeenCalled();
             expect(logger.error).not.toHaveBeenCalled();
+            expect(callMeter.recordWithheld).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('public endpoint', () => {
+        /**
+         * Build a public endpoint controller with the hand-off to the SDK stubbed out.
+         *
+         * @param served - Names of the tools served to anonymous callers.
+         * @returns The controller, the exposure service's served-list spy, and the meter.
+         */
+        function buildPublic(served: string[] = []) {
+            const getServedTools = vi.fn(async () => served.map(name => ({ tool: { name }, restricted: false, scrubSecrets: false })));
+            const explainWithheld = vi.fn(async () => 'not-granted');
+            const callMeter = meter();
+            const controller = new McpEndpointController(
+                { get: vi.fn(async () => ({ enabled: true })) } as any,
+                { getServedTools, explainWithheld } as any,
+                new AnonymousCallerAuthenticator(new AnonymousCallerKeyer('test-salt'), URLS.resourceUrl),
+                { create: vi.fn() } as any,
+                PUBLIC_URLS,
+                callMeter,
+                logger
+            );
+            const handOff = vi.spyOn(controller as any, 'handOff').mockResolvedValue(undefined);
+            return { controller, getServedTools, callMeter, handOff };
+        }
+
+        it('admits a request with no credentials as an anonymous caller in the anonymous group only', async () => {
+            const { controller, getServedTools, handOff } = buildPublic();
+            await controller.handle(rpc({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, {}), response().res, vi.fn());
+            expect(getServedTools).toHaveBeenCalledWith({ groups: ['anonymous'], ip: '203.0.113.9' });
+            const caller = handOff.mock.calls[0][2] as any;
+            expect(caller.principalKind).toBe('anonymous');
+            expect(caller.endUser).toBeUndefined();
+            expect(caller.principalId).toMatch(/^[0-9a-f]{16}$/);
+        });
+
+        it('refuses a request carrying credentials with a 400 pointing at /mcp, and never challenges', async () => {
+            const { controller, handOff } = buildPublic();
+            const { res, recorded } = response();
+            await controller.handle(request({ headers: { Authorization: 'Bearer abc' } }), res, vi.fn());
+            expect(recorded.status).toBe(400);
+            expect(recorded.headers['WWW-Authenticate']).toBeUndefined();
+            expect(JSON.stringify(recorded.body)).toContain(URLS.resourceUrl);
+            expect(handOff).not.toHaveBeenCalled();
+        });
+
+        it('logs a withheld call at warn rather than error, and counts it', async () => {
+            logger.warn.mockClear();
+            logger.error.mockClear();
+            const { controller, callMeter } = buildPublic(['blockchain-network-stats']);
+            await controller.handle(rpc({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'tronrelic-query-system-logs' } }, {}), response().res, vi.fn());
+            expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({ tool: 'tronrelic-query-system-logs', reason: 'not-granted' }), expect.any(String));
+            expect(logger.error).not.toHaveBeenCalled();
+            expect(callMeter.recordWithheld).toHaveBeenCalledWith(expect.objectContaining({ principalKind: 'anonymous' }), 'tronrelic-query-system-logs', 'not-granted');
         });
     });
 });

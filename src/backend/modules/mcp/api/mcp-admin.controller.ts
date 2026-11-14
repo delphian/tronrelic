@@ -1,10 +1,11 @@
 /**
  * @fileoverview Admin API behind `/system/mcp`.
  *
- * Serves the overview (status and kill switch), the user groups with their
- * MCP settings, the tool list with each tool's per-group grants, and the list
- * of connected apps across all users. Changes that widen access — switching
- * the endpoint on, granting a tool, relaxing a group's protections — require a
+ * Serves the overview (status and kill switch), the usage totals by group,
+ * tool, and caller, the user groups with their MCP settings and limits, the
+ * tool list with each tool's per-group grants, and the list of connected apps
+ * across all users. Changes that widen access — switching the endpoint on,
+ * granting a tool, relaxing a group's protections or limits — require a
  * signed-in admin, so every such change has a named person behind it. Changes
  * that narrow access — switching the endpoint off, withdrawing a grant,
  * tightening a group's protections, revoking an app — also accept the
@@ -13,12 +14,13 @@
  */
 
 import type { Request, Response } from 'express';
-import type { IConnectedAppsService, IMcpGroupPolicyPatch, IMcpStatus, ISystemLogService, IUserGroupService } from '@/types';
+import type { IConnectedAppsService, IMcpGroupLimits, IMcpGroupPolicyPatch, IMcpStatus, ISystemLogService, IUserGroupService } from '@/types';
 import { MCP_USERS_GROUP_ID } from '@/types';
 import { isAdminUserRequest } from '../../../api/middleware/admin-auth.js';
 import type { McpSettingsStore } from '../services/mcp-settings.store.js';
 import { McpToolExposureError, type McpToolExposureService } from '../services/mcp-tool-exposure.service.js';
 import { McpGroupPolicyError, isWideningPolicyChange, type McpGroupPolicyService } from '../services/McpGroupPolicyService.js';
+import { McpUsageError, parseUsageWindow, type McpUsageService } from '../services/McpUsageService.js';
 
 /** Largest page of connected apps one request may ask for. */
 const MAX_APPS_PAGE = 200;
@@ -35,7 +37,9 @@ export class McpAdminController {
      * @param connectedApps - The identity module's grant store, for listing and
      *   revoking connected apps.
      * @param userGroups - Group service, used to count MCP group members.
-     * @param endpoint - The public resource URL and token issuer, shown on the overview.
+     * @param usage - Totals the accounting table for the usage view.
+     * @param endpoint - The signed-in and public endpoint URLs and the token
+     *   issuer, shown on the overview.
      * @param logger - Module logger.
      */
     constructor(
@@ -44,9 +48,57 @@ export class McpAdminController {
         private readonly policies: McpGroupPolicyService,
         private readonly connectedApps: IConnectedAppsService,
         private readonly userGroups: IUserGroupService,
-        private readonly endpoint: { resourceUrl: string; issuer: string },
+        private readonly usage: McpUsageService,
+        private readonly endpoint: { resourceUrl: string; publicUrl: string; issuer: string },
         private readonly logger: ISystemLogService
     ) {}
+
+    /**
+     * `GET /usage?window=24h|7d|30d` — endpoint totals and one line per
+     * group, the top of the usage view.
+     *
+     * @param req - Carries the window, defaulting to 24 hours.
+     * @param res - Answers with `{ usage: IMcpUsageReport }`, or 400 for an unknown window.
+     */
+    getUsage = async (req: Request, res: Response): Promise<void> => {
+        try {
+            res.json({ usage: await this.usage.report(parseUsageWindow(req.query.window)) });
+        } catch (error: unknown) {
+            this.answerUsageError(error, res);
+        }
+    };
+
+    /**
+     * `GET /usage/groups/:groupId?window=&tool=` — one group's tools and
+     * busiest callers, the second level of the usage view. `tool` narrows the
+     * callers to that tool's calls.
+     *
+     * @param req - Carries the group, the window, and the optional tool.
+     * @param res - Answers with `{ detail: IMcpUsageGroupDetail }`, or 400 / 404.
+     */
+    getUsageGroupDetail = async (req: Request, res: Response): Promise<void> => {
+        try {
+            const tool = typeof req.query.tool === 'string' && req.query.tool.length > 0 ? req.query.tool.slice(0, 64) : null;
+            res.json({ detail: await this.usage.groupDetail(req.params.groupId, parseUsageWindow(req.query.window), tool) });
+        } catch (error: unknown) {
+            this.answerUsageError(error, res);
+        }
+    };
+
+    /**
+     * Answer a usage request the service refused, or rethrow an unexpected
+     * error so the global handler answers 500 and logs it.
+     *
+     * @param error - What the usage service threw.
+     * @param res - The response to write.
+     */
+    private answerUsageError(error: unknown, res: Response): void {
+        if (error instanceof McpUsageError) {
+            res.status(error.status).json({ success: false, error: error.message });
+        } else {
+            throw error;
+        }
+    }
 
     /**
      * `GET /status` — the overview card: kill switch state, URLs, member and
@@ -156,7 +208,7 @@ export class McpAdminController {
             try {
                 const { previous, next } = await this.policies.preview(req.params.groupId, patch);
                 if (isWideningPolicyChange(previous, next) && !isAdminUserRequest(req)) {
-                    res.status(403).json({ success: false, error: 'Relaxing a group\'s MCP protections requires a signed-in admin account.' });
+                    res.status(403).json({ success: false, error: 'Relaxing a group\'s MCP protections or limits requires a signed-in admin account.' });
                 } else {
                     const policy = await this.policies.save(next, req.userId, previous);
                     // Withdraw whenever the stored policy forbids restricted tools, not
@@ -230,6 +282,7 @@ export class McpAdminController {
         return {
             settings,
             resourceUrl: this.endpoint.resourceUrl,
+            publicUrl: this.endpoint.publicUrl,
             issuer: this.endpoint.issuer,
             groupId: MCP_USERS_GROUP_ID,
             memberCount: members.total,
@@ -251,13 +304,16 @@ export class McpAdminController {
 function parsePolicyPatch(body: unknown): IMcpGroupPolicyPatch | string {
     let result: IMcpGroupPolicyPatch | string;
     const raw = (typeof body === 'object' && body !== null ? body : {}) as Record<string, unknown>;
-    const flags = ['allowRestrictedTools', 'scrubSecrets', 'ipAllowlistEnabled'] as const;
+    const flags = ['allowRestrictedTools', 'scrubSecrets', 'ipAllowlistEnabled', 'enabled'] as const;
     const badFlag = flags.find(flag => raw[flag] !== undefined && typeof raw[flag] !== 'boolean');
     const list = raw.ipAllowlist;
+    const limits = parseLimitsPatch(raw.limits);
     if (badFlag) {
         result = `"${badFlag}" must be true or false.`;
     } else if (list !== undefined && !(Array.isArray(list) && list.every(entry => typeof entry === 'string'))) {
         result = '"ipAllowlist" must be an array of strings.';
+    } else if (typeof limits === 'string') {
+        result = limits;
     } else {
         const patch: IMcpGroupPolicyPatch = {};
         for (const flag of flags) {
@@ -268,7 +324,44 @@ function parsePolicyPatch(body: unknown): IMcpGroupPolicyPatch | string {
         if (Array.isArray(list)) {
             patch.ipAllowlist = list as string[];
         }
+        if (limits) {
+            patch.limits = limits;
+        }
         result = patch;
+    }
+    return result;
+}
+
+/**
+ * Check the shape of the `limits` part of a policy change. Each named limit
+ * must be a number or `null`; whether the number is acceptable is the policy
+ * service's call, which reports every problem at once.
+ *
+ * @param raw - The request's `limits` value.
+ * @returns The limits to change, undefined when none were sent, or a sentence
+ *   naming the problem.
+ */
+function parseLimitsPatch(raw: unknown): Partial<IMcpGroupLimits> | undefined | string {
+    let result: Partial<IMcpGroupLimits> | undefined | string;
+    const keys = ['callsPerMinutePerCaller', 'callsPerDayPerCaller', 'callsPerDayGroup'] as const;
+    if (raw === undefined) {
+        result = undefined;
+    } else if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+        result = '"limits" must be an object.';
+    } else {
+        const values = raw as Record<string, unknown>;
+        const bad = keys.find(key => values[key] !== undefined && values[key] !== null && typeof values[key] !== 'number');
+        if (bad) {
+            result = `"limits.${bad}" must be a number or null.`;
+        } else {
+            const limits: Partial<IMcpGroupLimits> = {};
+            for (const key of keys) {
+                if (values[key] !== undefined) {
+                    limits[key] = values[key] as number | null;
+                }
+            }
+            result = limits;
+        }
     }
     return result;
 }
