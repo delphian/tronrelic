@@ -40,8 +40,15 @@ export interface IOAuthServerConfig {
      */
     mcpPublicUrl: string;
 
-    /** Where the public endpoint's MCP Server Card is served, for discovery before connecting. */
+    /** Where the MCP Server Card is served, for discovery before connecting. */
     mcpServerCardUrl: string;
+
+    /**
+     * The Server Card's earlier address, under the public endpoint. It was
+     * published in `llms.txt` and the AI Catalog before the card moved, so it
+     * keeps serving the same card for clients and crawlers that stored it.
+     */
+    mcpLegacyServerCardUrl: string;
 
     /** Where the site's AI Catalog is served, listing the Server Card for domain-level discovery. */
     aiCatalogUrl: string;
@@ -61,17 +68,21 @@ export interface IOAuthServerConfig {
 export const MCP_ENDPOINT_PATH = '/mcp';
 
 /**
- * Path the public MCP endpoint is mounted at, for callers who do not sign in.
- * A separate URL from {@link MCP_ENDPOINT_PATH} because clients start their
- * sign-in on a 401, which a URL that serves anonymous callers can never send.
+ * Path of the anonymous-only alias of the MCP endpoint. {@link MCP_ENDPOINT_PATH}
+ * serves anonymous callers too; this URL never asks for sign-in, for clients
+ * that were given it before the two were merged.
  */
 export const MCP_PUBLIC_ENDPOINT_PATH = '/mcp/public';
 
 /**
- * Path of the public endpoint's Server Card: `<endpoint>/server-card`, the
- * location the MCP Server Card extension (SEP-2127) reserves.
+ * Path of the MCP Server Card: `<endpoint>/server-card` for the endpoint the
+ * card describes, the location the MCP Server Card extension (SEP-2127)
+ * recommends.
  */
-export const MCP_SERVER_CARD_PATH = `${MCP_PUBLIC_ENDPOINT_PATH}/server-card`;
+export const MCP_SERVER_CARD_PATH = `${MCP_ENDPOINT_PATH}/server-card`;
+
+/** The Server Card's earlier path under the public endpoint, still served as an alias. */
+export const MCP_LEGACY_SERVER_CARD_PATH = `${MCP_PUBLIC_ENDPOINT_PATH}/server-card`;
 
 /** Path of the site's AI Catalog, the well-known location clients try for domain-level discovery. */
 export const AI_CATALOG_PATH = '/.well-known/ai-catalog.json';
@@ -101,6 +112,7 @@ export function resolveOAuthServerConfig(baseUrl: string | undefined): IOAuthSer
         mcpResourceMetadataUrl: `${issuer}/.well-known/oauth-protected-resource${MCP_ENDPOINT_PATH}`,
         mcpPublicUrl: `${issuer}${MCP_PUBLIC_ENDPOINT_PATH}`,
         mcpServerCardUrl: `${issuer}${MCP_SERVER_CARD_PATH}`,
+        mcpLegacyServerCardUrl: `${issuer}${MCP_LEGACY_SERVER_CARD_PATH}`,
         aiCatalogUrl: `${issuer}${AI_CATALOG_PATH}`,
         authorizePage: AUTHORIZE_PAGE_PATH,
         siteHost: origin.hostname

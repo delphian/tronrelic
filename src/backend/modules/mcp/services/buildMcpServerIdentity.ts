@@ -9,17 +9,25 @@
 import type { IMcpServerIdentity } from './IMcpServerIdentity.js';
 
 /** Version reported to clients and in the Server Card; bump when the served surface changes shape. */
-export const MCP_SERVER_VERSION = '1.1.0';
+export const MCP_SERVER_VERSION = '1.2.0';
 
 /** Longest description the Server Card schema accepts. */
 const MAX_DESCRIPTION_LENGTH = 100;
 
 /**
- * The public server's description, written to fit the card's 100-character
- * limit. It names what the anonymous group is granted today, so change it when
- * those grants change in kind.
+ * The server's description, written to fit the card's 100-character limit. It
+ * names what the anonymous group is granted today and that an account adds
+ * more, so change it when those grants change in kind. The official MCP
+ * Registry listing (`server.json`, kept in the ops repository) carries the same
+ * sentence, so change the two together.
  */
-const DESCRIPTION = 'TRON energy rental prices and market activity from TronRelic. Read-only, no sign-in.';
+const DESCRIPTION = 'TRON energy rental prices and market activity from TronRelic. Free account unlocks more tools.';
+
+/**
+ * The page explaining how to connect an AI client. Every installation creates
+ * it, so the path is safe to report on any domain.
+ */
+const DOCS_PATH = '/p/mcp';
 
 /**
  * The site icon. Next.js serves `app/icon.png` at this path on every domain;
@@ -48,7 +56,8 @@ export function buildMcpServerIdentity(siteOrigin: string): IMcpServerIdentity {
         title: 'TronRelic',
         version: MCP_SERVER_VERSION,
         description: DESCRIPTION,
-        websiteUrl: origin,
+        websiteUrl: `${origin}${DOCS_PATH}`,
+        siteUrl: origin,
         icons: [{ src: `${origin}${ICON_PATH}`, mimeType: 'image/png', sizes: ['192x192'] }],
         termsUrl: `${origin}/terms`,
         privacyUrl: `${origin}/privacy`

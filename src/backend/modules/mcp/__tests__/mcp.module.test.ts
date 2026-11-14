@@ -44,7 +44,8 @@ function createDeps(groupExists = false): IMcpModuleDependencies & {
             resourceUrl: 'https://tronrelic.test/mcp',
             resourceMetadataUrl: 'https://tronrelic.test/.well-known/oauth-protected-resource/mcp',
             publicUrl: 'https://tronrelic.test/mcp/public',
-            serverCardUrl: 'https://tronrelic.test/mcp/public/server-card',
+            serverCardUrl: 'https://tronrelic.test/mcp/server-card',
+            legacyServerCardUrl: 'https://tronrelic.test/mcp/public/server-card',
             aiCatalogUrl: 'https://tronrelic.test/.well-known/ai-catalog.json',
             issuer: 'https://tronrelic.test',
             siteHost: 'tronrelic.test'
@@ -57,7 +58,7 @@ describe('McpModule', () => {
         const module = new McpModule();
         expect(module.metadata.id).toBe('mcp');
         expect(module.metadata.name).toBe('MCP');
-        expect(module.metadata.version).toBe('1.4.0');
+        expect(module.metadata.version).toBe('1.5.0');
     });
 
     it('init() builds services without mounting routes or touching groups', async () => {
@@ -95,11 +96,22 @@ describe('McpModule', () => {
         await module.run();
         expect(deps.app.all).toHaveBeenCalledWith('/mcp', expect.any(Function));
         expect(deps.app.all).toHaveBeenCalledWith('/mcp/public', expect.any(Function));
+        expect(deps.app.all).toHaveBeenCalledWith('/mcp/server-card', expect.any(Function));
         expect(deps.app.all).toHaveBeenCalledWith('/mcp/public/server-card', expect.any(Function));
         expect(deps.app.all).toHaveBeenCalledWith('/.well-known/ai-catalog.json', expect.any(Function));
         expect(deps.app.get).toHaveBeenCalledWith('/.well-known/oauth-protected-resource/mcp', expect.any(Function));
         expect(deps.app.get).toHaveBeenCalledWith('/.well-known/oauth-protected-resource', expect.any(Function));
         expect(deps.app.use).toHaveBeenCalledWith('/api/admin/mcp', expect.any(Function));
+    });
+
+    it('run() serves the Server Card and its earlier alias with one handler, so the two cannot differ', async () => {
+        const module = new McpModule();
+        const deps = createDeps();
+        await module.init(deps);
+        await module.run();
+        const handlerFor = (path: string) => deps.app.all.mock.calls.find((call: unknown[]) => call[0] === path)?.[1];
+        expect(handlerFor('/mcp/server-card')).toBeDefined();
+        expect(handlerFor('/mcp/public/server-card')).toBe(handlerFor('/mcp/server-card'));
     });
 
     it('run() creates the MCP group when it is missing', async () => {

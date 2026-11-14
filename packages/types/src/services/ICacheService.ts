@@ -53,7 +53,7 @@ export interface ICacheService {
     /**
      * Invalidate all cache entries with a specific tag.
      *
-     * Removes matching entries from both Redis and MongoDB.
+     * Removes matching entries from both MongoDB and Redis.
      * Useful for clearing related data when source updates
      * (e.g., invalidate all market data when fetchers run).
      *
@@ -70,11 +70,15 @@ export interface ICacheService {
     /**
      * Delete a specific cache entry by key.
      *
-     * Removes the entry from Redis cache. Used for targeted invalidation
-     * when you know the exact key to remove.
+     * Removes the entry from both MongoDB and Redis, so a later `get()`
+     * cannot restore it from the MongoDB copy. Used for targeted
+     * invalidation when you know the exact key to remove.
+     *
+     * When two callers delete the same key at once, exactly one gets 1,
+     * so an entry can serve as a single-use token.
      *
      * @param key - Cache key to delete
-     * @returns Number of keys removed (0 or 1)
+     * @returns 1 when this call removed the entry, 0 when it was already gone
      *
      * @example
      * ```typescript

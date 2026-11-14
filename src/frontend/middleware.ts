@@ -19,6 +19,7 @@
 
 import { NextResponse } from 'next/server';
 import type { NextRequest, NextFetchEvent } from 'next/server';
+import { isbot } from 'isbot';
 import type { IConsentPublicConfig, IConsentState, ILocalizationPublicConfig } from '@/types';
 import { CONSENT_COOKIE_NAME, DEFAULT_LANGUAGE, readUtmParams, resolveConsentState, resolveLocalizedPath } from '@/types';
 import { getServerSideApiUrl } from './lib/api-url';
@@ -565,9 +566,20 @@ export async function middleware(request: NextRequest, event: NextFetchEvent) {
     // prefetch would otherwise look like a new visitor. Nothing in the
     // response depends on it, so it is queued on waitUntil rather than making
     // every page load for these visitors wait on it.
+    //
+    // A crawler that keeps cookies sends the tid back on every later page, so
+    // it would be recorded once, on its first visit ever, and never again: it
+    // runs no JavaScript, so no page beacon fills the gap. ClaudeBot does
+    // this, which made Anthropic's crawling invisible in the traffic records
+    // while Cloudflare and Nginx showed it fetching pages. So a full page load
+    // from a known bot User-Agent is recorded every time, under the tid it
+    // brought. Human visitors are unaffected: their later pages are counted
+    // by the beacon, and the Visitor rule never counts a bootstrap row.
     if (tidMinted && consent.analytics) {
         await emitBootstrapEvent(request, tid, referralCode);
     } else if (tidMinted && isDocumentRequest(request)) {
+        event.waitUntil(emitBootstrapEvent(request, tid, referralCode));
+    } else if (isDocumentRequest(request) && isbot(request.headers.get('user-agent'))) {
         event.waitUntil(emitBootstrapEvent(request, tid, referralCode));
     }
 

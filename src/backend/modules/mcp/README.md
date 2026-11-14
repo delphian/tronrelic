@@ -9,7 +9,7 @@ TronRelic's Model Context Protocol (MCP) endpoints. Anyone connects their AI cli
 | Module id | `mcp` |
 | Module class | `src/backend/modules/mcp/McpModule.ts` |
 | Endpoints | `POST /mcp` for members and anonymous callers on one URL, and `POST /mcp/public`, an anonymous-only alias that never asks for sign-in (stateless Streamable HTTP, MCP 2026-07-28; 2025-era clients served by the SDK's legacy path). Other methods answer `405`. See [One URL and Lazy Sign-In](#one-url-and-lazy-sign-in) |
-| Discovery | `GET /.well-known/oauth-protected-resource/mcp` and `GET /.well-known/oauth-protected-resource` (RFC 9728), for `/mcp` only. The authorization server metadata at `/.well-known/oauth-authorization-server` is served by the identity module. For `/mcp/public`: the Server Card at `GET /mcp/public/server-card` and the AI Catalog at `GET /.well-known/ai-catalog.json`. See [Self-Description and Discovery](#self-description-and-discovery) |
+| Discovery | `GET /.well-known/oauth-protected-resource/mcp` and `GET /.well-known/oauth-protected-resource` (RFC 9728), for `/mcp` only. The authorization server metadata at `/.well-known/oauth-authorization-server` is served by the identity module. Before connecting: the Server Card at `GET /mcp/server-card` (also answered at its earlier address, `GET /mcp/public/server-card`) and the AI Catalog at `GET /.well-known/ai-catalog.json`. See [Self-Description and Discovery](#self-description-and-discovery) |
 | Public docs page | `/p/mcp`, a CMS page (pages module), linked from `llms.txt` |
 | Admin page | `/system/mcp` (menu item `MCP`, order 46): kill switch above the tab row; tabs Overview (with the usage view) · Tools · Connected apps · Activity · Database · Logs |
 | Admin API base | `/api/admin/mcp` (rate-limited + `requireAdmin`) |
@@ -34,7 +34,7 @@ The endpoint needs raw Express requests (the MCP SDK reads Node request and resp
 
 | Path | Responsibility |
 |---|---|
-| `McpModule.ts` | Lifecycle; builds services in `init()`, including one endpoint controller per endpoint; in `run()` creates the group, registers the menu, registers both hook handlers, starts the meter, mounts `/mcp`, `/mcp/public`, the discovery documents, and the admin router |
+| `McpModule.ts` | Lifecycle; builds services in `init()`, including one endpoint controller per endpoint; in `run()` creates the group, registers the menu, registers both hook handlers, starts the meter, mounts `/mcp`, `/mcp/public`, the discovery documents (one Server Card handler at both card addresses), and the admin router |
 | `api/mcp-endpoint.controller.ts` | The request pipeline both endpoints share (kill switch → Origin → method → token placement → authenticator → body parse → served tools → SDK) |
 | `services/IMcpCaller.ts` | The admitted caller every later step reads: endpoint, principal kind and id, groups, and the end user for signed-in callers |
 | `services/IMcpCallerAuthenticator.ts` | The contract for identifying a caller, and `McpAuthOutcome` (ok, challenge, refuse, unavailable) |
@@ -47,7 +47,7 @@ The endpoint needs raw Express requests (the MCP SDK reads Node request and resp
 | `services/McpUsageService.ts` | Totals `mcp_calls` for the usage view |
 | `migrations/002_create_mcp_calls_table.ts` | Creates `mcp_calls` |
 | `api/protected-resource-metadata.ts` | The RFC 9728 document |
-| `api/server-card.ts` | The public endpoint's Server Card and the AI Catalog, with their CORS, caching, and ETag handling |
+| `api/server-card.ts` | The Server Card and the AI Catalog, with their CORS, caching, and ETag handling |
 | `services/IMcpServerIdentity.ts`, `services/buildMcpServerIdentity.ts` | How the server describes itself (reverse-DNS name, title, version, description, site, icon, terms and privacy URLs), built once from the site origin and shared by the handshake and the Server Card |
 | `api/mcp-admin.controller.ts`, `api/mcp-admin.routes.ts` | Admin API |
 | `services/mcp-settings.store.ts` | Kill switch persistence with a 5-second in-memory cache |
@@ -265,16 +265,17 @@ Clients show a server's handshake details in their connector lists, and registri
 |---|---|---|
 | `name` | Reverse-DNS of the site host plus `/mcp` (`com.tronrelic/mcp`) | Server Card. The handshake keeps the short `serverInfo.name` `tronrelic`, which clients already store |
 | `title`, `version` | `TronRelic`, `MCP_SERVER_VERSION` | Handshake and card. Bump the version when the served surface changes shape |
-| `description` | One sentence, at most 100 characters (the card's limit; startup throws past it). Names what `anonymous` is granted, so change it when those grants change in kind | Handshake and card |
-| `websiteUrl` | The site origin | Handshake and card |
+| `description` | One sentence, at most 100 characters (the card's limit; startup throws past it): "TRON energy rental prices and market activity from TronRelic. Free account unlocks more tools." Names what `anonymous` is granted and that an account adds more, so change it when those grants change in kind. The official MCP Registry listing (`tronrelic-ops/configs/mcp-registry/server.json`) carries the same sentence, version, and website; change them together and republish | Handshake and card |
+| `websiteUrl` | `<origin>/p/mcp`, the connection docs page every installation creates | Handshake and card |
+| `siteUrl` | The site origin | Anonymous instructions (naming the site) and the AI Catalog (the publisher) |
 | `icons` | `<origin>/icon.png`, the 192-pixel PNG Next.js serves from `app/icon.png` | Handshake and card |
 | `termsUrl`, `privacyUrl` | `<origin>/terms`, `<origin>/privacy` | Public instructions |
 
 **Instructions differ by caller.** A signed-in member gets one line about TronRelic's tools. An anonymous caller is told that the tools working without an account only read, to quote the capture time of any price because rental prices move during the day, to wait after a limit refusal rather than retry at once, and that use is subject to the terms and privacy policy; on `/mcp` they are also told that tools marked as needing an account ask the user to sign in, which also raises their limits. All end with `UNTRUSTED_CONTENT_SYSTEM_CLAUSE`.
 
-**Server Card.** `GET /mcp/public/server-card`. SEP-2127 (final October 2026) recommends `<endpoint>/server-card` but allows any unreserved URI; the card stays at the address already published in `llms.txt` and the catalog. It carries `$schema`, the identity fields above, and one `streamable-http` remote at **`/mcp`**, the one URL for anonymous callers and members, whose `supportedProtocolVersions` are `2026-07-28` followed by the SDK's `SUPPORTED_PROTOCOL_VERSIONS`. Tools are deliberately not listed; the extension leaves them to `tools/list`.
+**Server Card.** `GET /mcp/server-card`, the `<endpoint>/server-card` location SEP-2127 (final October 2026) recommends, for `/mcp`, the endpoint the card describes. The card was first published at `/mcp/public/server-card`, which stays mounted with the same handler so a stored link gets the identical card and ETag. It carries `$schema`, the identity fields above, and one `streamable-http` remote at **`/mcp`**, the one URL for anonymous callers and members, whose `supportedProtocolVersions` are `2026-07-28` followed by the SDK's `SUPPORTED_PROTOCOL_VERSIONS`. Tools are deliberately not listed; the extension leaves them to `tools/list`.
 
-**AI Catalog.** `GET /.well-known/ai-catalog.json` lists the card under `urn:air:<host>:mcp:public`, so a crawler that knows only the domain can find it.
+**AI Catalog.** `GET /.well-known/ai-catalog.json` lists the card at `/mcp/server-card` under `urn:air:<host>:mcp:server`, so a crawler that knows only the domain can find it.
 
 | Behaviour | Both documents |
 |---|---|
@@ -283,7 +284,7 @@ Clients show a server's handshake details in their connector lists, and registri
 | Caching | `Cache-Control: public, max-age=3600`, a strong `ETag` computed once, `304` for a matching `If-None-Match` |
 | Methods | `GET` and `HEAD`; `OPTIONS` answers the preflight with `204`; anything else `405` with `Allow` |
 
-The paths are `MCP_SERVER_CARD_PATH` and `AI_CATALOG_PATH` in the identity module's `oauth-server-config.ts`, beside the endpoint paths they derive from; the bootstrap passes their URLs in as `serverCardUrl` and `aiCatalogUrl`.
+The paths are `MCP_SERVER_CARD_PATH`, `MCP_LEGACY_SERVER_CARD_PATH`, and `AI_CATALOG_PATH` in the identity module's `oauth-server-config.ts`, beside the endpoint paths they derive from; the bootstrap passes their URLs in as `serverCardUrl`, `legacyServerCardUrl`, and `aiCatalogUrl`.
 
 ## Admin REST API
 
@@ -324,7 +325,7 @@ All under `/api/admin/mcp`. Changes that widen access need a signed-in admin (`r
 
 ## Deployment
 
-Nginx must route `= /mcp`, `= /mcp/public`, `= /mcp/public/server-card`, `= /.well-known/ai-catalog.json`, and `/.well-known/oauth-` to the backend (`tronrelic-ops/scripts/droplet-setup-nginx.sh` and `droplet-dev-up.sh` do, with a per-IP limit of 10 requests per second on the MCP paths and a 1 MB body cap on both endpoints). Next.js rewrites the same paths for local development. The resource URL, public URL, and issuer derive from `BETTER_AUTH_URL`, falling back to `SITE_URL`; the URL users paste into their client must equal the resource URL exactly.
+Nginx must route `= /mcp`, `= /mcp/public`, `= /mcp/server-card`, `= /mcp/public/server-card`, `= /.well-known/ai-catalog.json`, and `/.well-known/oauth-` to the backend (`tronrelic-ops/scripts/droplet-setup-nginx.sh` and `droplet-dev-up.sh` do, with a per-IP limit of 10 requests per second on the MCP paths and a 1 MB body cap on both endpoints). Next.js rewrites the same paths for local development. The resource URL, public URL, and issuer derive from `BETTER_AUTH_URL`, falling back to `SITE_URL`; the URL users paste into their client must equal the resource URL exactly.
 
 To open the public endpoint: run `module:mcp:002_create_mcp_calls_table` from `/system/database` so calls are counted, grant one or more `public` tools to Anonymous on the Tools tab, review its limits, and share the public URL from the Overview tab or the `/p/mcp` docs page. Nothing is served there until a tool is granted.
 

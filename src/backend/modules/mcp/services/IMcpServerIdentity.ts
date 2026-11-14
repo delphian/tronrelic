@@ -37,8 +37,19 @@ export interface IMcpServerIdentity {
     /** One sentence, at most 100 characters, saying what the public server offers. */
     description: string;
 
-    /** The site's own address, where a person can read about the server. */
+    /**
+     * Where a person reads about the server and how to connect to it: the
+     * `/p/mcp` docs page. Reported as `websiteUrl` in the handshake and the
+     * Server Card, which clients and registries show as the server's link.
+     */
     websiteUrl: string;
+
+    /**
+     * The site's origin, such as `https://tronrelic.com`. Used where the site
+     * itself is meant rather than the docs page: naming the site in the
+     * instructions and naming the publisher in the AI Catalog.
+     */
+    siteUrl: string;
 
     /** Icons for client connector lists. */
     icons: IMcpServerIcon[];

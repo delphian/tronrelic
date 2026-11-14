@@ -43,6 +43,13 @@ describe('classifyUserAgent', () => {
             ['CCBot/2.0 (https://commoncrawl.org/faq/)'],
             ['Mozilla/5.0 (compatible; Bytespider; spider-feedback@bytedance.com)'],
             ['anthropic-ai'],
+            // Claude's on-demand fetcher and search indexer, as seen in the
+            // production Nginx log (2026-11-14). Before they were listed they
+            // read bot_other, hiding Anthropic from the AI crawler view.
+            ['Claude-User'],
+            ['Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; Claude-User/1.0; +claude-user@anthropic.com)'],
+            ['Claude-SearchBot/1.0'],
+            ['Perplexity-User/1.0'],
             // Real Amazonbot UA observed in prod (2026-04-30 traffic_events sample).
             // Classified as ai_crawler because Amazon documents the bot as serving
             // both Alexa and LLM training; training-crawl is the operator-meaningful
