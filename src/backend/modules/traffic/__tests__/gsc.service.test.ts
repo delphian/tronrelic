@@ -9,8 +9,8 @@
  * week, or month, totals taken from the anonymization-immune daily totals,
  * and the first non-final day. The fetch path runs against a stubbed
  * googleapis client, covering the request options, the archive writes and
- * the prune of rows a refetch no longer returns, the saved fetch markers on
- * the daily path, and their absence on the backfill path.
+ * the prune of rows a refetch no longer returns (never reaching days older
+ * than Google returned), and the saved fetch markers.
  */
 
 import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
@@ -506,7 +506,7 @@ describe('GscService', () => {
                 return { data: { rows } };
             });
 
-            await service.archiveWindow('2025-07-06', '2025-07-12');
+            await service.fetchAndStore('2025-07-06', '2025-07-12');
 
             for (const table of ['gsc_queries', 'gsc_daily_totals', 'gsc_page_totals']) {
                 expect(archive.prune).toHaveBeenCalledWith(table, '2025-07-10', '2025-07-12', expect.any(Date));
@@ -576,42 +576,6 @@ describe('GscService', () => {
             await service.fetchAndStore('2026-09-08', '2026-10-08');
 
             expect(database.set).toHaveBeenCalledWith('gsc:lastFetch', expect.any(String));
-        });
-    });
-
-    describe('archiveWindow()', () => {
-        beforeEach(() => {
-            queryMock.mockReset();
-        });
-
-        it('writes the archive but leaves the saved fetch markers alone', async () => {
-            // A backfilled window is months old; saving its markers would make
-            // the SEO tab mark the wrong days as not final.
-            const { service, archive, database } = setup({
-                'gsc:credentials': JSON.stringify({ client_email: 'a@b.c', private_key: 'k' }),
-                'gsc:siteUrl': 'sc-domain:tronrelic.com'
-            }, true);
-            queryMock.mockImplementation(async (request: { requestBody: { dimensions: string[] } }) => ({
-                data: {
-                    rows: [{ keys: request.requestBody.dimensions.map(d => (d === 'date' ? '2025-08-01' : `${d}-key`)), clicks: 2, impressions: 9, ctr: 0.22, position: 4 }],
-                    metadata: { firstIncompleteDate: '2025-08-01' }
-                }
-            }));
-
-            const result = await service.archiveWindow('2025-08-01', '2025-08-07');
-
-            expect(result).toEqual({ rowsFetched: 3 });
-            expect(archive.writeQueries).toHaveBeenCalledTimes(1);
-            expect(archive.writeDailyTotals).toHaveBeenCalledTimes(1);
-            expect(archive.writePageTotals).toHaveBeenCalledTimes(1);
-            expect(database.set).not.toHaveBeenCalled();
-        });
-
-        it('refuses when the archive is disabled, before calling Google', async () => {
-            const { service } = setup({}, false);
-
-            await expect(service.archiveWindow('2025-08-01', '2025-08-07')).rejects.toThrow('ClickHouse is not configured');
-            expect(queryMock).not.toHaveBeenCalled();
         });
     });
 });

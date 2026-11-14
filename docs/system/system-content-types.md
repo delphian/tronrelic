@@ -27,7 +27,7 @@ The split is deliberate: generic operate-on-own-record operations (`describe`, `
 
 | Member | Role |
 |---|---|
-| `IContentType.typeId` | Namespaced `<provider>:<name>` (e.g. `core:social-post`); the stable key every pipeline references |
+| `IContentType.typeId` | Namespaced `<provider>:<name>` (e.g. `blog:post`); the stable key every pipeline references |
 | `IContentType.label` | Human-readable label for listing and headings |
 | `IContentType.describe(ref)` | Flatten the record into a generic `IContentDescriptor`; safe to call repeatedly, must not mutate |
 | `IContentType.applyEdit?(ref, patch)` | Optional content self-mutation — a curator `{ body }` edit or a pipeline-applied lifecycle `{ status }` transition; the type validates and owns the write |

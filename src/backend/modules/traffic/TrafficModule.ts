@@ -24,7 +24,6 @@ import { logger } from '../../lib/logger.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
 import { GscService } from './services/gsc.service.js';
 import { GscArchive } from './services/GscArchive.js';
-import { GscArchiveBackfill } from './services/GscArchiveBackfill.js';
 import { TrafficService } from './services/traffic.service.js';
 import { IgnoredUsersService } from './services/ignored-users.service.js';
 import { TrafficIgnoreList } from './services/TrafficIgnoreList.js';
@@ -192,12 +191,10 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
 
         // GscService — Google Search Console keyword integration. Fetches are
         // stored in, and every read served from, the permanent ClickHouse
-        // archive (disabled without ClickHouse); the backfill pulls older
-        // history into it on demand.
+        // archive (disabled without ClickHouse).
         const gscArchive = new GscArchive(dependencies.clickhouse, this.logger);
         GscService.setDependencies(dependencies.database, dependencies.cacheService, this.logger, gscArchive);
         this.gscService = GscService.getInstance();
-        const gscArchiveBackfill = new GscArchiveBackfill(this.gscService, gscArchive, dependencies.database, this.logger);
 
         // TrafficService — ClickHouse traffic_events. ClickHouse is optional;
         // when undefined the service no-ops. See PLAN-traffic-events.md.
@@ -239,7 +236,6 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
         this.trafficController = new TrafficController(
             this.trafficService,
             this.gscService,
-            gscArchiveBackfill,
             this.ignoredUsersService,
             dependencies.serviceRegistry,
             this.logger

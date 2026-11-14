@@ -1,5 +1,5 @@
 /**
- * @fileoverview Calendar-day helpers shared by the Search Console reads and the backfill.
+ * @fileoverview Calendar-day helpers shared by the Search Console reads and their callers.
  *
  * Search Console reports data per calendar day as `YYYY-MM-DD`, and the
  * service stores each day as midnight UTC. Every place that accepts a day

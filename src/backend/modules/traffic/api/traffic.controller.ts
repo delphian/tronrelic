@@ -20,8 +20,6 @@ import type { IAiToolRegistry, IServiceRegistry, IAccountDirectoryService, IWall
 import type { TrafficService } from '../services/traffic.service.js';
 import { composeConversionFunnel, resolveAnalyticsRange } from '../services/traffic.service.js';
 import type { GscService } from '../services/gsc.service.js';
-import type { GscArchiveBackfill } from '../services/GscArchiveBackfill.js';
-import { GscArchiveBackfillError, type GscArchiveBackfillErrorCode } from '../services/GscArchiveBackfillError.js';
 import type { GscGranularity } from '../services/IGscArchive.js';
 import type { GscWindowRequest } from '../services/GscWindowRequest.js';
 import { parseGscDayRange } from '../services/parseGscDay.js';
@@ -111,25 +109,12 @@ function parseExcludeBots(value: unknown): boolean {
 }
 
 /**
- * HTTP status for each reason a GSC archive backfill is refused: 503 when the
- * deployment cannot archive at all, 409 when the request conflicts with the
- * current state, 400 when the dates themselves are wrong.
- */
-const BACKFILL_REFUSAL_STATUS: Record<GscArchiveBackfillErrorCode, number> = {
-    'archive-disabled': 503,
-    'not-configured': 409,
-    'already-running': 409,
-    'invalid-range': 400
-};
-
-/**
  * Controller for the traffic-events and analytics admin surfaces.
  */
 export class TrafficController {
     constructor(
         private readonly trafficService: TrafficService,
         private readonly gscService: GscService,
-        private readonly gscArchiveBackfill: GscArchiveBackfill,
         private readonly ignoredUsersService: IgnoredUsersService,
         private readonly serviceRegistry: IServiceRegistry,
         private readonly logger: ISystemLogService
@@ -761,45 +746,6 @@ export class TrafficController {
         } catch (error) {
             this.logger.error({ err: error }, 'Failed to refresh GSC data');
             res.status(500).json({ error: 'InternalError', message: 'Failed to refresh GSC data' });
-        }
-    }
-
-    /**
-     * GET /api/admin/users/analytics/gsc/archive
-     * State of the permanent ClickHouse archive: whether it is enabled, the
-     * latest backfill run's progress, and the earliest and latest archived day.
-     */
-    async getGscArchive(_req: Request, res: Response): Promise<void> {
-        try {
-            res.json(await this.gscArchiveBackfill.getOverview());
-        } catch (error) {
-            this.logger.error({ err: error }, 'Failed to read GSC archive status');
-            res.status(500).json({ error: 'InternalError', message: 'Failed to read GSC archive status' });
-        }
-    }
-
-    /**
-     * POST /api/admin/users/analytics/gsc/archive/backfill
-     * Start the one-off archive backfill. Body: `{ startDate?, endDate? }` as
-     * `YYYY-MM-DD`, defaulting to the 16 months Google keeps. Answers 202 with
-     * the run's initial status as soon as it starts; progress is read back
-     * from `GET /gsc/archive`. Refusals answer 400, 409, or 503 with a `code`.
-     */
-    async startGscArchiveBackfill(req: Request, res: Response): Promise<void> {
-        const { startDate, endDate } = req.body ?? {};
-        if ((startDate !== undefined && typeof startDate !== 'string') || (endDate !== undefined && typeof endDate !== 'string')) {
-            res.status(400).json({ error: 'ValidationError', message: 'startDate and endDate must be YYYY-MM-DD strings when given' });
-        } else {
-            try {
-                res.status(202).json(await this.gscArchiveBackfill.start(startDate, endDate));
-            } catch (error) {
-                if (error instanceof GscArchiveBackfillError) {
-                    res.status(BACKFILL_REFUSAL_STATUS[error.code]).json({ error: 'BackfillRefused', code: error.code, message: error.message });
-                } else {
-                    this.logger.error({ err: error }, 'Failed to start GSC archive backfill');
-                    res.status(500).json({ error: 'InternalError', message: 'Failed to start GSC archive backfill' });
-                }
-            }
         }
     }
 

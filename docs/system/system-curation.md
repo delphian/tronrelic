@@ -32,7 +32,7 @@ An `ICurationType` is an [`IContentType`](./system-content-types.md) plus the de
 
 | Member | Role |
 |---|---|
-| `typeId` | Inherited. Namespaced `<provider>:<name>` (e.g. `core:social-post`); the binding key |
+| `typeId` | Inherited. Namespaced `<provider>:<name>` (e.g. `traffic:bot-rule`); the binding key |
 | `describe(ref)` | Inherited. Flatten the record into the generic descriptor; resolves cross-plugin URLs |
 | `applyEdit(ref, patch)` | Inherited, required. The sole decision-commit seam plus a curator's inline `{ body }` edit; the type validates and owns the write |
 | `decisionStatus` | Required. The originator's status word per decision: `{ approved?, rejected }`. `rejected` is required — rejection is intrinsic to review, and nothing else carries it. Declare `approved` when approval commits the type's own record synchronously (publish it, release it, mark it); omit it only for a type with no synchronous approval effect that relies entirely on routed sinks |
@@ -90,23 +90,21 @@ The admin edits the neutral `body` text in a core modal; the write routes core �
 A provider registers its type and routes held effects in:
 
 ```typescript
-// On init, via the registry (watch covers boot-order + churn). `core:social-post`
-// is the reference type: a sink-routable post the curator fans out.
+// On init, via the registry (watch covers boot-order + churn). `traffic:bot-rule`
+// is the reference type: a proposed analytics rule that takes effect only once approved.
 context.services.watch<ICurationService>('curation', {
     onAvailable: (curation) => curation.registerType({
-        typeId: 'core:social-post',
-        label: 'Social Post',
-        publishesToSinks: true,                                     // curator picks publish sinks on approval
-        classification: { egress: 'external', audience: 'public' }, // ceiling the picker stays under
-        describe: async (ref) => ({ body: (await store.getById(String(ref.postId)))?.body }),
-        // Declarative decision bookkeeping — core writes the mapped word via applyEdit, then hands the post to the selected sinks.
-        decisionStatus: { approved: 'published', rejected: 'rejected' },
-        applyEdit: (ref, patch) => store.apply(String(ref.postId), patch)  // maps a { body } edit or a { status } transition onto the draft
+        typeId: 'traffic:bot-rule',
+        label: 'Bot Rule',
+        describe: async (ref) => ({ title: (await rules.get(String(ref.ruleId)))?.name }),
+        // Declarative decision bookkeeping — core writes the mapped word via applyEdit.
+        decisionStatus: { approved: 'active', rejected: 'rejected' },
+        applyEdit: (ref, patch) => rules.apply(String(ref.ruleId), patch)  // maps a { status } transition onto the rule
     }, providerId)
 });
 
 // The tool's handler holds the effect rather than performing it:
-await curation.hold({ typeId: 'core:social-post', ref: { postId }, source: 'ai-tool:propose-social-post' });
+await curation.hold({ typeId: 'traffic:bot-rule', ref: { ruleId }, source: 'ai-tool:traffic-propose-bot-rule' });
 ```
 
 ## Further Reading
@@ -114,6 +112,6 @@ await curation.hold({ typeId: 'core:social-post', ref: { postId }, source: 'ai-t
 - [system-content-types.md](./system-content-types.md) — the central content registry; `ICurationType` is an `IContentType` plus curation's declarative `decisionStatus`
 - [system-ai-tools.md](./system-ai-tools.md) — the AI tool standard; `forcesCuratorReview` and the capability vocabulary the binding hardens
 - [Curation Module README](../../src/backend/modules/curation/README.md) — the module that owns the curation service, queue, and `/system/curation` admin surface
-- [AI Tools Module README](../../src/backend/modules/ai-tools/README.md) — the governor that verifies a tool's `curationTypeId` against the curation service, plus `core:social-post` (the reference `publishesToSinks` type) and the `propose-social-post` tool that holds into it
-- [trp-x-poster README](../../src/plugins/trp-x-poster/README.md) — the `x-poster:account` content-router publish sink an approved `core:social-post` fans out to
+- [AI Tools Module README](../../src/backend/modules/ai-tools/README.md) — the governor that verifies a tool's `curationTypeId` against the curation service
+- [trp-x-poster README](../../src/plugins/trp-x-poster/README.md) — the `x-poster:account` content-router publish sink approved content fans out to
 - [plugins-service-registry.md](../plugins/plugins-service-registry.md) — `watch()` vs `get()` for registering a type and discovering `'curation'`

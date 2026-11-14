@@ -56,7 +56,7 @@ Classify every tool before it ships; the class drives the guardrails the governo
 | Forces curator review | yes / no | Tool self-gates every effect → no governor approval added; safe unattended |
 | Curation binding (`curationTypeId`) | type id / none | Verifies `forcesCuratorReview` against a live curation type; re-tightens if the owner is disabled |
 
-A transaction lookup is read / internal. A log query is read / secret / surfaces-untrusted. A social post is external / irreversible and forces-curator-review (held in the central curation queue for human approval). An image generation is external / spends-money.
+A transaction lookup is read / internal. A log query is read / secret / surfaces-untrusted. A blog post proposal is external / irreversible and forces-curator-review (held in the central curation queue for human approval). An image generation is external / spends-money.
 
 `forcesCuratorReview` is the only governance field a tool may declare, and it is a *description* of behaviour, not a request: the governor derives the approval gate and the autonomous-path rule from it. There is no field that lets a tool exempt itself from review — an external, irreversible effect is always reviewed by someone (the tool's own curator, or the governor). Dropping review for a tool that does not self-curate is an operator-only decision (an admin policy override), never a tool self-grant.
 
@@ -78,7 +78,7 @@ Mandatory for every tool; scale to the class. A read-only lookup needs little, a
 
 **Bound side-effecting and paid tools.** Rate-limit, quota, and cap cost. A looping or injected model must not drain an API budget or flood a channel. `TransactionToolGuard` is the reference limiter.
 
-**Require human approval for irreversible or public effects.** Either let the governor park the action for admin approval, or declare `forcesCuratorReview: true` when the tool holds every effect in its own review queue. The core `propose-social-post` tool is the reference: it declares `forcesCuratorReview`, binds `curationTypeId: 'core:social-post'`, and holds every drafted post in the [central curation queue](./system-curation.md), where a curator picks which publish sinks (X, Telegram) it fans out to on approval. A tool that creates or changes content writes it through `IContentService` with a non-curator actor instead of calling `hold()`, because content must be [managed content](./system-content.md): core holds the change for review itself, and the tool binds `curationTypeId` to the managed type's id, which core registers on the curation service.
+**Require human approval for irreversible or public effects.** Either let the governor park the action for admin approval, or declare `forcesCuratorReview: true` when the tool holds every effect in its own review queue. A tool that creates or changes content writes it through `IContentService` with a non-curator actor instead of calling `hold()`, because content must be [managed content](./system-content.md): core holds the change for review itself, and the tool binds `curationTypeId` to the managed type's id, which core registers on the curation service. The `trp-blog` plugin's `propose-blog-post` tool is the reference: it declares `forcesCuratorReview`, binds `curationTypeId: 'blog:post'`, and every drafted post waits in the [central curation queue](./system-curation.md), where a curator picks which publish sinks (X, Telegram) it fans out to on approval. A tool that holds an effect that is not content calls `curation.hold()` against its own `ICurationType`; the traffic module's `traffic-propose-bot-rule` is the reference for that path.
 
 **Audit every invocation.** Record who triggered it (interactive admin / scheduled / programmatic), the arguments, the outcome, and the cost — enough to reconstruct what happened. `trp-image-gen`'s per-call history is the reference shape.
 
@@ -127,7 +127,7 @@ const tool: IAiTool = {
 | `blockchain-get-transaction` (blockchain) | read / internal | Input regex; global rate limiter (`TransactionToolGuard`) + usage stats |
 | `blockchain-*` chain query tools | read / internal / untrusted | Per-run quota key from the handler `context`; a response envelope with cost, coverage, truncation, and notes; errors written for the model. See [system-chain-query-tools.md](./system-chain-query-tools.md) |
 | logs `tronrelic-query-system-logs` | read / secret | Cursor paging; list view drops the bulky field and points to a detail tool for it |
-| `propose-social-post` (core) | external / irreversible / forces-curator-review | `curationTypeId` binding; `publishesToSinks` fan-out to curator-selected sinks |
+| `propose-blog-post` (`trp-blog`) | external / irreversible / forces-curator-review | Writes through `IContentService`; `curationTypeId` binding to a managed type; `publishesToSinks` fan-out to curator-selected sinks |
 | `trp-image-gen` | external / spends money | Per-call forensic history; sanitized vs raw error split |
 
 ## Pre-Ship Checklist

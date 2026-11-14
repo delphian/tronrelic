@@ -3,8 +3,8 @@
  *
  * Core AI tool `tronrelic-fetch-url`: fetch one public web resource and return
  * its text for the model to read and cite. Domain-neutral, so it lives in the
- * ai-tools module beside the other provider-neutral built-ins (send-toast,
- * propose-social-post) rather than a feature module, and is registered directly
+ * ai-tools module beside the other provider-neutral built-in, send-toast,
+ * rather than a feature module, and is registered directly
  * on the module's own registry in `registerBuiltinTools()`.
  *
  * This is the single most dangerous shape of tool on the platform. Because the
@@ -326,8 +326,7 @@ const WEB_FETCH_CAPABILITY: IAiToolCapability = {
  * because a plain server-side fetch cannot run JavaScript, so a single-page app
  * returns an empty shell while its raw/API/`.json` sibling returns clean data.
  * Registered on the core registry with provider id `'core'` in
- * `AiToolsModule.registerBuiltinTools()`, mirroring `send-toast` and
- * `propose-social-post`.
+ * `AiToolsModule.registerBuiltinTools()`, mirroring `send-toast`.
  *
  * @returns The tool to register on the core `'ai-tools'` registry.
  */
