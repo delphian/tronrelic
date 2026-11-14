@@ -13,6 +13,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { IAiTool, IAiToolRegistry, IServiceRegistry, ISystemLogService } from '@/types';
 import { registerTrafficAiTools, listOwnAiTools, AI_TOOL_NAMES, PROVIDER_ID } from '../ai-tools.js';
 import type { GscService } from '../services/gsc.service.js';
+import type { GscWindowRequest } from '../services/GscWindowRequest.js';
 import type { RedirectService } from '../services/redirect.service.js';
 import type { TrafficService } from '../services/traffic.service.js';
 
@@ -88,20 +89,26 @@ function createTrafficServiceStub() {
  */
 function createGscServiceStub() {
     return {
-        getKeywordsForPeriod: vi.fn(async () => ({ keywords: [{ query: 'tron energy', clicks: 4 }] })),
-        getPagesForPeriod: vi.fn(async () => ({ pages: [{ page: '/', clicks: 9 }] })),
+        getKeywords: vi.fn(async (_window: GscWindowRequest, _limit?: number) => ({ keywords: [{ query: 'tron energy', clicks: 4 }] })),
+        getPages: vi.fn(async () => ({ pages: [{ page: '/', clicks: 9 }] })),
         // Param declared so a test can assert the handler passes a row cap: the
         // service treats an omitted limit as "every pair", which the admin panel
         // wants and a context window cannot absorb.
-        getKeywordPagePairsForPeriod: vi.fn(async (_periodHours: number, _limit?: number) => ({
+        getKeywordPagePairs: vi.fn(async (_window: GscWindowRequest, _limit?: number) => ({
             pairs: [{ keyword: 'tron energy', page: '/tools/energy', clicks: 4 }]
         })),
-        // Params declared so a test can assert on the day/topN split the
-        // handler derives.
-        getKeywordsByDay: vi.fn(async (_days: number, _topN: number) => ({ days: [] })),
-        // Params declared so a test can assert the keyword, window, and match
-        // mode the handler passes through.
-        getKeywordHistory: vi.fn(async (_keyword: string, _periodHours: number, _match?: string) => ({ days: [] })),
+        // Thirty buckets of twenty keywords each, so a test can assert the
+        // handler trims them to the total budget.
+        getKeywordTrend: vi.fn(async (_window: GscWindowRequest, topN: number, _granularity?: string) => ({
+            granularity: 'day',
+            buckets: Array.from({ length: 30 }, (_unused, i) => ({
+                date: `2026-10-${String(i + 1).padStart(2, '0')}`,
+                keywords: Array.from({ length: topN }, (_kw, k) => ({ keyword: `kw${k}`, clicks: topN - k }))
+            }))
+        })),
+        // Params declared so a test can assert the keyword, window, match
+        // mode, and granularity the handler passes through.
+        getKeywordHistory: vi.fn(async (_keyword: string, _window: GscWindowRequest, _match?: string, _granularity?: string) => ({ days: [] })),
         getStatus: vi.fn(async () => ({ configured: true }))
     };
 }
@@ -274,14 +281,39 @@ describe('traffic AI tools', () => {
             expect(result.period).toBe('90d');
         });
 
-        it('holds the raw-hours reads to their 30d ceiling', async () => {
-            // Crawlers and SEO take a sinceHours the REST layer clamps to 720
-            // and their tab pickers stop at 30d, so 90d is a window no panel can
+        it('holds the crawler reads to their 30d ceiling', async () => {
+            // Crawlers take a sinceHours the REST layer clamps to 720 and their
+            // tab picker stops at 30d, so 90d is a window no panel can
             // reproduce and a far heavier scan than any of them issues.
             await expect(tools.get(AI_TOOL_NAMES.crawlers)!.handler({ view: 'summary', period: '90d' }))
                 .rejects.toThrow(/must be one of/);
-            await expect(tools.get(AI_TOOL_NAMES.seo)!.handler({ view: 'keywords', period: '90d' }))
-                .rejects.toThrow(/must be one of/);
+        });
+
+        it('lets the SEO tool read the whole archived history', async () => {
+            // Search Console data is kept permanently, so the tool must reach
+            // past the 30 days the raw-row reads stop at.
+            const gsc = createGscServiceStub();
+            const { tools: built } = registerAndCapture(gsc);
+            const seo = built.get(AI_TOOL_NAMES.seo)!;
+
+            await seo.handler({ view: 'keywords', period: '365d' });
+            await seo.handler({ view: 'keywords', period: 'all' });
+            const custom = await seo.handler({ view: 'keywords', startDate: '2025-03-01', endDate: '2025-03-31', period: '7d' }) as { period: string };
+
+            expect(gsc.getKeywords.mock.calls.map(([window]) => window)).toEqual([
+                { kind: 'period', hours: 8760 },
+                { kind: 'all' },
+                { kind: 'range', startDate: '2025-03-01', endDate: '2025-03-31' }
+            ]);
+            expect(custom.period).toBe('custom');
+        });
+
+        it('rejects a half-supplied or malformed SEO date range instead of falling back to a preset', async () => {
+            const seo = tools.get(AI_TOOL_NAMES.seo)!;
+            await expect(seo.handler({ view: 'keywords', startDate: '2025-03-01' })).rejects.toThrow(/startDate and endDate/);
+            await expect(seo.handler({ view: 'keywords', startDate: '2025-02-30', endDate: '2025-03-31' })).rejects.toThrow(/YYYY-MM-DD/);
+            await expect(seo.handler({ view: 'keywords', startDate: '2025-04-01', endDate: '2025-03-01' })).rejects.toThrow(/after/);
+            await expect(seo.handler({ view: 'keywords', period: '2y' })).rejects.toThrow(/must be one of/);
         });
 
         it('resolves an explicit custom range and echoes its true boundaries', async () => {
@@ -513,7 +545,7 @@ describe('traffic AI tools', () => {
             const { tools: built } = registerAndCapture(gsc);
             await built.get(AI_TOOL_NAMES.seo)!.handler({ view: 'keyword-pages', limit: 30 });
 
-            const call = gsc.getKeywordPagePairsForPeriod.mock.calls[0];
+            const call = gsc.getKeywordPagePairs.mock.calls[0];
             expect(call).toBeDefined();
             const [, limit] = call;
             // Omitting the limit returns every pair — right for the admin panel,
@@ -730,12 +762,19 @@ describe('traffic AI tools', () => {
             const seo = built.get(AI_TOOL_NAMES.seo)!;
 
             await seo.handler({ view: 'keyword-history', keyword: ' tronrelic ', period: '30d' });
-            await seo.handler({ view: 'keyword-history', keyword: 'tron energy', match: 'contains', period: '7d' });
+            await seo.handler({ view: 'keyword-history', keyword: 'tron energy', match: 'contains', period: 'all', granularity: 'month' });
 
             expect(gsc.getKeywordHistory.mock.calls).toEqual([
-                ['tronrelic', 720, 'exact'],
-                ['tron energy', 168, 'contains']
+                ['tronrelic', { kind: 'period', hours: 720 }, 'exact', undefined],
+                ['tron energy', { kind: 'all' }, 'contains', 'month']
             ]);
+        });
+
+        it('rejects granularity on ranked views and unknown bucket sizes', async () => {
+            // A bucket size on a ranked view would read as if it changed the answer.
+            const seo = tools.get(AI_TOOL_NAMES.seo)!;
+            await expect(seo.handler({ view: 'keywords', granularity: 'week' })).rejects.toThrow(/granularity/);
+            await expect(seo.handler({ view: 'keywords-by-day', granularity: 'year' })).rejects.toThrow(/granularity/);
         });
 
         it('rejects keyword-history without a usable keyword or with an unknown match', async () => {
@@ -753,19 +792,21 @@ describe('traffic AI tools', () => {
                 .rejects.toThrow(/keyword-history/);
         });
 
-        it('spreads the keyword-trend row budget across days instead of per-day', async () => {
-            // A 30d window at the default limit would return 30 buckets x 20
-            // keywords without the spread — 600 rows against a 50-row ceiling.
+        it('spreads the keyword-trend row budget across buckets instead of per bucket', async () => {
+            // A 30-bucket window at the default limit would return 30 buckets x
+            // 20 keywords without the spread — 600 rows against a 50-row ceiling.
             const gsc = createGscServiceStub();
             const { tools: built } = registerAndCapture(gsc);
-            await built.get(AI_TOOL_NAMES.seo)!.handler({ view: 'keywords-by-day', period: '30d' });
+            const result = await built.get(AI_TOOL_NAMES.seo)!.handler({ view: 'keywords-by-day', period: '30d' }) as {
+                data: { buckets: Array<{ keywords: unknown[] }> };
+            };
 
-            const call = gsc.getKeywordsByDay.mock.calls[0];
-            expect(call).toBeDefined();
-            const [days, topN] = call;
-            expect(days).toBe(30);
-            expect(days * topN).toBeLessThanOrEqual(50);
-            expect(topN).toBeGreaterThanOrEqual(1);
+            const keywordRows = result.data.buckets.reduce((sum, bucket) => sum + bucket.keywords.length, 0);
+            expect(result.data.buckets).toHaveLength(30);
+            expect(keywordRows).toBeLessThanOrEqual(50);
+            for (const bucket of result.data.buckets) {
+                expect(bucket.keywords.length).toBeGreaterThanOrEqual(1);
+            }
         });
     });
 

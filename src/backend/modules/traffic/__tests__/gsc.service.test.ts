@@ -3,16 +3,17 @@
 /**
  * GscService unit tests.
  *
- * Covers the read-side behaviors that keep the /system/traffic SEO tab
- * honest: period windows anchored on the newest delivered day (and their
- * returned bounds),
- * zero-filled daily buckets, the true-daily-totals override that corrects
- * for GSC's anonymized-query undercount, and the totals-collection indexes.
- * The fetch path runs against a stubbed googleapis client, covering the
- * request options and the pruning of rows a refetch no longer returns.
+ * Covers the read-side behaviors that keep the /system/traffic SEO tab and
+ * the SEO AI tool honest, against an archive double: period, range, and
+ * `all` windows (and their returned bounds), zero-filled buckets by day,
+ * week, or month, totals taken from the anonymization-immune daily totals,
+ * and the first non-final day. The fetch path runs against a stubbed
+ * googleapis client, covering the request options, the archive writes and
+ * the prune of rows a refetch no longer returns, the saved fetch markers on
+ * the daily path, and their absence on the backfill path.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
 import type { ICacheService, IDatabaseService, ISystemLogService } from '@/types';
 
 const { queryMock } = vi.hoisted(() => ({ queryMock: vi.fn() }));
@@ -37,6 +38,54 @@ vi.mock('googleapis', () => ({
 }));
 
 import { GscService } from '../services/gsc.service.js';
+import type { IGscArchive } from '../services/IGscArchive.js';
+
+/**
+ * Archive double whose every method except `isEnabled` is a spy typed to the
+ * interface's own signature, so tests can stage what the reads return and
+ * assert what the writes received while the double still satisfies
+ * `IGscArchive`.
+ */
+type FakeArchive = Pick<IGscArchive, 'isEnabled'> & {
+    [K in Exclude<keyof IGscArchive, 'isEnabled'>]: Mock<IGscArchive[K]>;
+};
+
+/**
+ * Build an archive double, enabled or disabled, so tests can check both that
+ * a deployment without ClickHouse makes no extra requests and what an enabled
+ * archive receives. Reads return nothing until a test stages rows.
+ *
+ * @param enabled - What `isEnabled()` reports.
+ * @returns The archive double.
+ */
+function createFakeArchive(enabled: boolean): FakeArchive {
+    return {
+        isEnabled: () => enabled,
+        writeQueries: vi.fn<IGscArchive['writeQueries']>(async () => undefined),
+        writeDailyTotals: vi.fn<IGscArchive['writeDailyTotals']>(async () => undefined),
+        writePageTotals: vi.fn<IGscArchive['writePageTotals']>(async () => undefined),
+        prune: vi.fn<IGscArchive['prune']>(async () => undefined),
+        getCoverage: vi.fn<IGscArchive['getCoverage']>(async () => ({ firstDate: null, lastDate: null, days: 0 })),
+        sumByKeyword: vi.fn<IGscArchive['sumByKeyword']>(async () => []),
+        sumByPage: vi.fn<IGscArchive['sumByPage']>(async () => []),
+        sumByKeywordPage: vi.fn<IGscArchive['sumByKeywordPage']>(async () => []),
+        sumTotalsByBucket: vi.fn<IGscArchive['sumTotalsByBucket']>(async () => []),
+        topKeywordsByBucket: vi.fn<IGscArchive['topKeywordsByBucket']>(async () => []),
+        keywordSumsByBucket: vi.fn<IGscArchive['keywordSumsByBucket']>(async () => [])
+    };
+}
+
+/**
+ * Stage the archive's day range, which period windows end on and `all`
+ * windows start from.
+ *
+ * @param archive - The archive double.
+ * @param firstDate - Oldest archived day.
+ * @param lastDate - Newest archived day.
+ */
+function stageCoverage(archive: FakeArchive, firstDate: string, lastDate: string): void {
+    archive.getCoverage.mockResolvedValue({ firstDate, lastDate, days: 1 });
+}
 
 /** Days GSC data lags behind now — mirrors GSC_DATA_DELAY_DAYS in the service. */
 const DELAY_DAYS = 3;
@@ -62,60 +111,8 @@ function createMockLogger(): ISystemLogService {
 }
 
 /**
- * In-memory Mongo collection double covering the surface GscService's
- * read paths touch: createIndex (spied), aggregate().toArray() served
- * from `aggregateRows`, find().toArray() served from `findRows`,
- * findOne() returning the `findRows` entry with the newest `date` (the
- * only findOne the service issues is the newest-day lookup), and
- * bulkWrite and deleteMany (spied).
- */
-interface IFakeCollection {
-    collectionName: string;
-    createIndex: ReturnType<typeof vi.fn>;
-    bulkWrite: ReturnType<typeof vi.fn>;
-    deleteMany: ReturnType<typeof vi.fn>;
-    aggregateRows: unknown[];
-    findRows: unknown[];
-    aggregate(pipeline: unknown): { toArray(): Promise<unknown[]> };
-    find(filter: unknown): { toArray(): Promise<unknown[]> };
-    findOne(filter: unknown, options?: unknown): Promise<unknown>;
-}
-
-/**
- * Build one fake collection double.
- *
- * @param collectionName - Physical name, echoed in the service's prune log.
- * @returns A collection double with staging arrays for reads.
- */
-function createFakeCollection(collectionName: string): IFakeCollection {
-    const fake: IFakeCollection = {
-        collectionName,
-        createIndex: vi.fn(async () => 'ok'),
-        bulkWrite: vi.fn(async () => ({})),
-        deleteMany: vi.fn(async () => ({ deletedCount: 0 })),
-        aggregateRows: [],
-        findRows: [],
-        aggregate() {
-            return { toArray: async () => fake.aggregateRows };
-        },
-        find() {
-            return { toArray: async () => fake.findRows };
-        },
-        async findOne() {
-            const rows = fake.findRows as Array<{ date: Date }>;
-            const newest = rows.reduce<{ date: Date } | null>(
-                (best, row) => (!best || row.date > best.date ? row : best),
-                null
-            );
-            return newest;
-        }
-    };
-    return fake;
-}
-
-/**
- * Compute the newest day the service falls back to when no daily totals are
- * stored: midnight UTC, DELAY_DAYS before today, as a timestamp in ms.
+ * Compute the newest day the service falls back to when nothing is archived:
+ * midnight UTC, DELAY_DAYS before today, as a timestamp in ms.
  */
 function fallbackAnchorDay(): number {
     const now = new Date();
@@ -123,48 +120,17 @@ function fallbackAnchorDay(): number {
 }
 
 /**
- * Build a fake IDatabaseService routing getCollection() to per-name
- * collection doubles, plus vi.fn key-value methods.
+ * Build a fake IDatabaseService exposing only the key-value methods, which
+ * is all GscService uses: credentials and the saved fetch markers.
  *
- * @returns The fake database and the two collections GscService uses.
+ * @param kv - Entries `get` should return.
+ * @returns The fake database.
  */
-function createFakeDatabase(): {
-    database: IDatabaseService;
-    queries: IFakeCollection;
-    totals: IFakeCollection;
-    pageTotals: IFakeCollection;
-} {
-    const queries = createFakeCollection('module_user_gsc_queries');
-    const totals = createFakeCollection('module_user_gsc_daily_totals');
-    const pageTotals = createFakeCollection('module_user_gsc_page_totals');
-    const collections: Record<string, IFakeCollection> = {
-        module_user_gsc_queries: queries,
-        module_user_gsc_daily_totals: totals,
-        module_user_gsc_page_totals: pageTotals
-    };
-    const database = {
-        getCollection: vi.fn((name: string) => collections[name]),
-        get: vi.fn(async () => null),
+function createFakeDatabase(kv: Record<string, string>): IDatabaseService {
+    return {
+        get: vi.fn(async (key: string) => kv[key] ?? null),
         set: vi.fn(async () => undefined)
     } as unknown as IDatabaseService;
-    return { database, queries, totals, pageTotals };
-}
-
-/**
- * Compute the contiguous UTC day keys the service's getKeywordsByDay
- * window covers, oldest first — mirrors the service's window math.
- *
- * @param days - Number of daily buckets.
- * @returns Day keys in `YYYY-MM-DD`.
- */
-function expectedDayKeys(days: number): string[] {
-    const now = new Date();
-    const since = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - DELAY_DAYS - days + 1);
-    const keys: string[] = [];
-    for (let i = 0; i < days; i++) {
-        keys.push(new Date(since + i * DAY_MS).toISOString().split('T')[0]);
-    }
-    return keys;
 }
 
 describe('GscService', () => {
@@ -173,165 +139,149 @@ describe('GscService', () => {
     });
 
     /**
-     * Wire a fresh singleton against fake collections.
+     * Wire a fresh singleton against a key-value double and an archive double.
      *
      * @param kv - Key-value entries the fake database's `get` should return,
      *   such as the saved first non-final day.
-     * @returns The service instance, the fake database, and its staged collections.
+     * @param archiveEnabled - Whether the archive double reports itself enabled.
+     * @returns The service instance, the fake database, and the archive double.
      */
-    function setup(kv: Record<string, string> = {}): {
+    function setup(kv: Record<string, string> = {}, archiveEnabled = false): {
         service: GscService;
         database: IDatabaseService;
-        queries: IFakeCollection;
-        totals: IFakeCollection;
-        pageTotals: IFakeCollection;
+        archive: FakeArchive;
     } {
-        const { database, queries, totals, pageTotals } = createFakeDatabase();
-        (database.get as ReturnType<typeof vi.fn>).mockImplementation(async (key: string) => kv[key] ?? null);
-        GscService.setDependencies(database, {} as ICacheService, createMockLogger());
-        return { service: GscService.getInstance(), database, queries, totals, pageTotals };
+        const database = createFakeDatabase(kv);
+        const archive = createFakeArchive(archiveEnabled);
+        GscService.setDependencies(database, {} as ICacheService, createMockLogger(), archive);
+        return { service: GscService.getInstance(), database, archive };
     }
 
-    describe('createIndexes()', () => {
-        it('creates the daily-totals dedup and TTL indexes', async () => {
-            const { service, totals } = setup();
-
-            await service.createIndexes();
-
-            expect(totals.createIndex).toHaveBeenCalledWith(
-                { date: 1 },
-                expect.objectContaining({ unique: true, name: 'gsc_totals_dedup' })
-            );
-            expect(totals.createIndex).toHaveBeenCalledWith(
-                { fetchedAt: 1 },
-                expect.objectContaining({ name: 'gsc_totals_ttl' })
-            );
-        });
-
-        it('creates the page-totals dedup and TTL indexes', async () => {
-            const { service, pageTotals } = setup();
-
-            await service.createIndexes();
-
-            expect(pageTotals.createIndex).toHaveBeenCalledWith(
-                { date: 1, page: 1 },
-                expect.objectContaining({ unique: true, name: 'gsc_page_totals_dedup' })
-            );
-            expect(pageTotals.createIndex).toHaveBeenCalledWith(
-                { fetchedAt: 1 },
-                expect.objectContaining({ name: 'gsc_page_totals_ttl' })
-            );
-        });
-    });
-
-    describe('getKeywordsForPeriod()', () => {
-        it('ends the window on the newest delivered day, not a fixed delay', async () => {
+    describe('window resolution', () => {
+        it('ends a period on the newest archived day, not a fixed delay', async () => {
             // Google often finalizes a day later than the fixed delay assumes.
             // "24h" must mean the latest day Google returned, or the view sits
             // on an undelivered day and shows nothing.
-            const { service, totals } = setup();
-            totals.findRows = [
-                { date: new Date('2026-09-28T00:00:00.000Z'), clicks: 1, impressions: 50, fetchedAt: new Date() },
-                { date: new Date('2026-09-29T00:00:00.000Z'), clicks: 2, impressions: 39, fetchedAt: new Date() }
-            ];
+            const { service, archive } = setup({}, true);
+            stageCoverage(archive, '2025-07-13', '2026-09-29');
 
-            const result = await service.getKeywordsForPeriod(24, 10);
+            const result = await service.getKeywords({ kind: 'period', hours: 24 }, 10);
 
             expect(result.windowStart).toBe('2026-09-29T00:00:00.000Z');
             expect(result.windowEnd).toBe('2026-09-29T23:59:59.999Z');
+            expect(archive.sumByKeyword).toHaveBeenCalledWith('2026-09-29', '2026-09-29', 10);
         });
 
-        it('covers whole days and falls back to the fixed delay with no totals', async () => {
+        it('covers whole days and falls back to the fixed delay with nothing archived', async () => {
             // Before the first fetch there is no newest day to anchor on, so
             // the window must still resolve to sensible whole-day bounds.
             const { service } = setup();
             const anchor = fallbackAnchorDay();
 
-            const result = await service.getKeywordsForPeriod(168, 10);
+            const result = await service.getKeywords({ kind: 'period', hours: 168 }, 10);
 
             expect(new Date(result.windowStart).getTime()).toBe(anchor - 6 * DAY_MS);
             expect(new Date(result.windowEnd).getTime()).toBe(anchor + DAY_MS - 1);
             expect(result.keywords).toEqual([]);
         });
 
+        it('starts an all window on the oldest archived day', async () => {
+            const { service, archive } = setup({}, true);
+            stageCoverage(archive, '2025-07-13', '2026-09-29');
+
+            const result = await service.getKeywords({ kind: 'all' }, 10);
+
+            expect(result.windowStart).toBe('2025-07-13T00:00:00.000Z');
+            expect(result.windowEnd).toBe('2026-09-29T23:59:59.999Z');
+        });
+
+        it('reads an explicit range exactly, without consulting the archived range', async () => {
+            const { service, archive } = setup({}, true);
+
+            const result = await service.getPages({ kind: 'range', startDate: '2025-03-01', endDate: '2025-03-31' }, 5);
+
+            expect(result.windowStart).toBe('2025-03-01T00:00:00.000Z');
+            expect(result.windowEnd).toBe('2025-03-31T23:59:59.999Z');
+            expect(archive.sumByPage).toHaveBeenCalledWith('2025-03-01', '2025-03-31', 5);
+            expect(archive.getCoverage).not.toHaveBeenCalled();
+        });
+
+        it('rejects a reversed or malformed range', async () => {
+            const { service } = setup();
+
+            await expect(service.getKeywords({ kind: 'range', startDate: '2025-04-01', endDate: '2025-03-01' })).rejects.toThrow(/after/);
+            await expect(service.getKeywords({ kind: 'range', startDate: '2025-02-30', endDate: '2025-03-01' })).rejects.toThrow(/YYYY-MM-DD/);
+        });
+
         it('reports the first non-final day only when the window reaches it', async () => {
             // The tab marks figures that can still change. A saved day past the
             // window's end means every day shown is final.
-            const totalsRows = [
-                { date: new Date('2026-09-29T00:00:00.000Z'), clicks: 2, impressions: 39, fetchedAt: new Date() }
-            ];
-
-            const inside = setup({ 'gsc:firstIncompleteDate': '2026-09-29' });
-            inside.totals.findRows = totalsRows;
-            expect((await inside.service.getKeywordsForPeriod(168, 10)).firstIncompleteDate).toBe('2026-09-29');
+            const inside = setup({ 'gsc:firstIncompleteDate': '2026-09-29' }, true);
+            stageCoverage(inside.archive, '2026-01-01', '2026-09-29');
+            expect((await inside.service.getKeywords({ kind: 'period', hours: 168 }, 10)).firstIncompleteDate).toBe('2026-09-29');
 
             GscService.resetInstance();
-            const beyond = setup({ 'gsc:firstIncompleteDate': '2026-09-30' });
-            beyond.totals.findRows = totalsRows;
-            expect((await beyond.service.getKeywordsForPeriod(168, 10)).firstIncompleteDate).toBeNull();
+            const beyond = setup({ 'gsc:firstIncompleteDate': '2026-09-30' }, true);
+            stageCoverage(beyond.archive, '2026-01-01', '2026-09-29');
+            expect((await beyond.service.getKeywords({ kind: 'period', hours: 168 }, 10)).firstIncompleteDate).toBeNull();
         });
 
         it('raises a saved day before the window start to the window start', async () => {
             // A 24-hour view of the newest day while earlier days are also
             // non-final must not name a date outside its own window.
-            const { service, totals } = setup({ 'gsc:firstIncompleteDate': '2026-09-27' });
-            totals.findRows = [
-                { date: new Date('2026-09-29T00:00:00.000Z'), clicks: 2, impressions: 39, fetchedAt: new Date() }
-            ];
+            const { service, archive } = setup({ 'gsc:firstIncompleteDate': '2026-09-27' }, true);
+            stageCoverage(archive, '2026-01-01', '2026-09-29');
 
-            expect((await service.getKeywordsForPeriod(24, 10)).firstIncompleteDate).toBe('2026-09-29');
+            expect((await service.getKeywords({ kind: 'period', hours: 24 }, 10)).firstIncompleteDate).toBe('2026-09-29');
         });
     });
 
-    describe('getPagesForPeriod()', () => {
-        it('shares the keyword window so the page table can share the picker', async () => {
-            const { service, totals } = setup();
-            totals.findRows = [
-                { date: new Date('2026-09-29T00:00:00.000Z'), clicks: 2, impressions: 39, fetchedAt: new Date() }
-            ];
-
-            const result = await service.getPagesForPeriod(168, 10);
-
-            expect(result.windowStart).toBe('2026-09-23T00:00:00.000Z');
-            expect(result.windowEnd).toBe('2026-09-29T23:59:59.999Z');
-            expect(result.pages).toEqual([]);
-        });
-
-        it('impression-weights position and derives CTR from aggregated rows', async () => {
+    describe('ranked reads', () => {
+        it('impression-weights position and derives CTR from summed page rows', async () => {
             // Position must weight by impressions, not average naively, and a
             // surfaced-but-unclicked page (zero clicks) must still appear.
-            const { service, pageTotals } = setup();
-            pageTotals.aggregateRows = [
-                { _id: '/energy', totalClicks: 5, totalImpressions: 100, weightedPosition: 250 },
-                { _id: '/quiet', totalClicks: 0, totalImpressions: 40, weightedPosition: 320 }
-            ];
+            const { service, archive } = setup({}, true);
+            archive.sumByPage.mockResolvedValue([
+                { page: '/energy', clicks: 5, impressions: 100, weightedPosition: 250 },
+                { page: '/quiet', clicks: 0, impressions: 40, weightedPosition: 320 }
+            ]);
 
-            const result = await service.getPagesForPeriod(168, 10);
+            const result = await service.getPages({ kind: 'period', hours: 168 }, 10);
 
             expect(result.pages[0]).toEqual({ page: '/energy', clicks: 5, impressions: 100, ctr: 0.05, position: 2.5 });
             expect(result.pages[1]).toEqual({ page: '/quiet', clicks: 0, impressions: 40, ctr: 0, position: 8 });
         });
+
+        it('passes no limit for keyword-page pairs unless the caller sets one', async () => {
+            // The admin panel shows every pair; only a capped caller narrows it.
+            const { service, archive } = setup({}, true);
+            archive.sumByKeywordPage.mockResolvedValue([
+                { keyword: 'tron energy', page: '/tools/energy', clicks: 2, impressions: 10, weightedPosition: 30 }
+            ]);
+
+            const result = await service.getKeywordPagePairs({ kind: 'all' });
+
+            expect(archive.sumByKeywordPage.mock.calls[0][2]).toBeUndefined();
+            expect(result.pairs).toEqual([{ keyword: 'tron energy', page: '/tools/energy', clicks: 2, impressions: 10, ctr: 0.2, position: 3 }]);
+        });
     });
 
     describe('getKeywordHistory()', () => {
-        /** Newest delivered day the history tests anchor their window on. */
-        const totalsRows = [
-            { date: new Date('2026-09-29T00:00:00.000Z'), clicks: 2, impressions: 39, fetchedAt: new Date() }
-        ];
-
         it('zero-fills every day and leaves position null where there were no impressions', async () => {
             // A chart of one keyword must show quiet days as zero, and a 0
             // position would plot as better than first place.
-            const { service, totals, queries } = setup();
-            totals.findRows = totalsRows;
-            queries.aggregateRows = [
-                { _id: { date: '2026-09-27', query: 'tronrelic' }, clicks: 1, impressions: 4, weightedPosition: 6 }
-            ];
+            const { service, archive } = setup({}, true);
+            stageCoverage(archive, '2026-01-01', '2026-09-29');
+            archive.keywordSumsByBucket.mockResolvedValue([
+                { bucket: '2026-09-27', keyword: 'tronrelic', clicks: 1, impressions: 4, weightedPosition: 6 }
+            ]);
 
-            const out = await service.getKeywordHistory('  TronRelic ', 72);
+            const out = await service.getKeywordHistory('  TronRelic ', { kind: 'period', hours: 72 });
 
             expect(out.keyword).toBe('tronrelic');
+            expect(out.granularity).toBe('day');
             expect(out.windowStart).toBe('2026-09-27T00:00:00.000Z');
+            expect(archive.keywordSumsByBucket).toHaveBeenCalledWith('tronrelic', 'exact', '2026-09-27', '2026-09-29', 'day');
             expect(out.days).toEqual([
                 { date: '2026-09-27', clicks: 1, impressions: 4, ctr: 0.25, position: 1.5, preliminary: false },
                 { date: '2026-09-28', clicks: 0, impressions: 0, ctr: 0, position: null, preliminary: false },
@@ -340,15 +290,15 @@ describe('GscService', () => {
             expect(out.totals).toEqual({ clicks: 1, impressions: 4, ctr: 0.25, position: 1.5 });
         });
 
-        it('sums contains matches per day and lists the variants by impressions', async () => {
-            const { service, totals, queries } = setup();
-            totals.findRows = totalsRows;
-            queries.aggregateRows = [
-                { _id: { date: '2026-09-29', query: 'tron energy rental' }, clicks: 1, impressions: 2, weightedPosition: 20 },
-                { _id: { date: '2026-09-29', query: 'cheap tron energy' }, clicks: 0, impressions: 5, weightedPosition: 150 }
-            ];
+        it('sums contains matches per bucket and lists the variants by impressions', async () => {
+            const { service, archive } = setup({}, true);
+            stageCoverage(archive, '2026-01-01', '2026-09-29');
+            archive.keywordSumsByBucket.mockResolvedValue([
+                { bucket: '2026-09-29', keyword: 'tron energy rental', clicks: 1, impressions: 2, weightedPosition: 20 },
+                { bucket: '2026-09-29', keyword: 'cheap tron energy', clicks: 0, impressions: 5, weightedPosition: 150 }
+            ]);
 
-            const out = await service.getKeywordHistory('tron energy', 24, 'contains');
+            const out = await service.getKeywordHistory('tron energy', { kind: 'period', hours: 24 }, 'contains');
 
             expect(out.days).toEqual([
                 { date: '2026-09-29', clicks: 1, impressions: 7, ctr: 0.1429, position: 24.3, preliminary: false }
@@ -356,29 +306,25 @@ describe('GscService', () => {
             expect(out.matchedQueries).toEqual(['cheap tron energy', 'tron energy rental']);
         });
 
-        it('matches exact keywords by value and contains keywords as escaped literal text', async () => {
-            // A keyword like "trx (tron)" must not be read as a regular expression.
-            const { service, totals, queries } = setup();
-            totals.findRows = totalsRows;
-            const pipelines: unknown[] = [];
-            queries.aggregate = (pipeline: unknown) => {
-                pipelines.push(pipeline);
-                return { toArray: async () => [] };
-            };
+        it('buckets a long window by week, labelling each by its Monday', async () => {
+            // A year of daily points is too long to chart or to hand a model.
+            // 2026-09-29 is a Tuesday, so the last bucket starts Monday the 28th.
+            const { service, archive } = setup({}, true);
+            stageCoverage(archive, '2025-07-13', '2026-09-29');
 
-            await service.getKeywordHistory('Tron Energy', 24);
-            await service.getKeywordHistory('trx (tron)', 24, 'contains');
+            const out = await service.getKeywordHistory('tronrelic', { kind: 'period', hours: 8760 });
 
-            const matchOf = (p: unknown) => (p as Array<{ $match?: { query: unknown } }>)[0]!.$match!.query;
-            expect(matchOf(pipelines[0])).toBe('tron energy');
-            expect(matchOf(pipelines[1])).toEqual({ $regex: 'trx \\(tron\\)', $options: 'i' });
+            expect(out.granularity).toBe('week');
+            expect(archive.keywordSumsByBucket.mock.calls[0][4]).toBe('week');
+            expect(out.days.at(-1)?.date).toBe('2026-09-28');
+            expect(out.days.length).toBeLessThanOrEqual(54);
         });
 
-        it('flags days from the first non-final day onward as preliminary', async () => {
-            const { service, totals } = setup({ 'gsc:firstIncompleteDate': '2026-09-29' });
-            totals.findRows = totalsRows;
+        it('flags buckets holding a non-final day as preliminary', async () => {
+            const { service, archive } = setup({ 'gsc:firstIncompleteDate': '2026-09-29' }, true);
+            stageCoverage(archive, '2026-01-01', '2026-09-29');
 
-            const out = await service.getKeywordHistory('tronrelic', 48);
+            const out = await service.getKeywordHistory('tronrelic', { kind: 'period', hours: 48 });
 
             expect(out.firstIncompleteDate).toBe('2026-09-29');
             expect(out.days.map(d => [d.date, d.preliminary])).toEqual([
@@ -388,17 +334,16 @@ describe('GscService', () => {
         });
     });
 
-    describe('getKeywordsByDay()', () => {
-        it('zero-fills every day in the window when no data exists', async () => {
+    describe('getKeywordTrend()', () => {
+        it('zero-fills every bucket in the window when no data exists', async () => {
             // A stalled gsc:fetch job must render as an explicit flat line,
             // not as days silently missing from the chart.
-            const { service } = setup();
-            const days = 5;
+            const { service, archive } = setup({}, true);
+            stageCoverage(archive, '2026-01-01', '2026-09-29');
 
-            const out = await service.getKeywordsByDay(days);
+            const out = await service.getKeywordTrend({ kind: 'period', hours: 5 * 24 });
 
-            expect(out.days).toBe(days);
-            expect(out.buckets.map(b => b.date)).toEqual(expectedDayKeys(days));
+            expect(out.buckets.map(b => b.date)).toEqual(['2026-09-25', '2026-09-26', '2026-09-27', '2026-09-28', '2026-09-29']);
             for (const bucket of out.buckets) {
                 expect(bucket.totalClicks).toBe(0);
                 expect(bucket.totalImpressions).toBe(0);
@@ -406,49 +351,67 @@ describe('GscService', () => {
             }
         });
 
-        it('prefers true daily totals over keyword-row sums, with fallback', async () => {
+        it('takes totals from the daily totals and keywords from the keyword rows', async () => {
             // GSC drops anonymized queries from keyword rows, so their sums
-            // undercount; the date-only totals are authoritative when present.
-            const { service, queries, totals } = setup();
-            const days = 3;
-            const [dayA, dayB] = expectedDayKeys(days);
+            // undercount; the date-only totals are authoritative.
+            const { service, archive } = setup({}, true);
+            stageCoverage(archive, '2026-01-01', '2026-09-29');
+            archive.sumTotalsByBucket.mockResolvedValue([{ bucket: '2026-09-28', clicks: 17, impressions: 900 }]);
+            archive.topKeywordsByBucket.mockResolvedValue([
+                { bucket: '2026-09-28', keyword: 'tron energy', clicks: 2, impressions: 40, weightedPosition: 120 }
+            ]);
 
-            queries.aggregateRows = [
-                { _id: { date: dayA, query: 'tron energy' }, clicks: 2, impressions: 40, weightedPosition: 120 },
-                { _id: { date: dayB, query: 'tron relic' }, clicks: 1, impressions: 10, weightedPosition: 30 }
-            ];
-            // Totals exist only for dayA — dayB falls back to keyword sums.
-            totals.findRows = [
-                { date: new Date(`${dayA}T00:00:00.000Z`), clicks: 17, impressions: 900, fetchedAt: new Date() }
-            ];
+            const out = await service.getKeywordTrend({ kind: 'period', hours: 48 }, 15);
 
-            const out = await service.getKeywordsByDay(days);
-
-            const bucketA = out.buckets.find(b => b.date === dayA);
-            const bucketB = out.buckets.find(b => b.date === dayB);
-            expect(bucketA?.totalClicks).toBe(17);
-            expect(bucketA?.totalImpressions).toBe(900);
-            // Keyword detail rows remain from the query-dimension data.
-            expect(bucketA?.keywords[0]?.keyword).toBe('tron energy');
-            expect(bucketB?.totalClicks).toBe(1);
-            expect(bucketB?.totalImpressions).toBe(10);
+            expect(archive.topKeywordsByBucket).toHaveBeenCalledWith('2026-09-28', '2026-09-29', 'day', 15);
+            expect(out.buckets[0]).toEqual({
+                date: '2026-09-28',
+                totalClicks: 17,
+                totalImpressions: 900,
+                preliminary: false,
+                keywords: [{ keyword: 'tron energy', clicks: 2, impressions: 40, ctr: 0.05, position: 3 }]
+            });
+            expect(out.buckets[1].totalClicks).toBe(0);
         });
 
-        it('flags days from the first non-final day onward as preliminary', async () => {
+        it('buckets the whole archive by month when the caller asks', async () => {
+            const { service, archive } = setup({}, true);
+            stageCoverage(archive, '2025-07-13', '2026-09-29');
+
+            const out = await service.getKeywordTrend({ kind: 'all' }, 5, 'month');
+
+            expect(out.granularity).toBe('month');
+            expect(out.buckets[0].date).toBe('2025-07-01');
+            expect(out.buckets.at(-1)?.date).toBe('2026-09-01');
+            expect(out.buckets).toHaveLength(15);
+        });
+
+        it('flags buckets from the first non-final day onward as preliminary', async () => {
             // Google's fresh figures for these days can still change, so the
-            // chart must be able to say so for each day it draws.
-            const days = 3;
-            const [dayA, dayB, dayC] = expectedDayKeys(days);
-            const { service } = setup({ 'gsc:firstIncompleteDate': dayB });
+            // chart must be able to say so for each bucket it draws.
+            const { service, archive } = setup({ 'gsc:firstIncompleteDate': '2026-09-28' }, true);
+            stageCoverage(archive, '2026-01-01', '2026-09-29');
 
-            const out = await service.getKeywordsByDay(days);
+            const out = await service.getKeywordTrend({ kind: 'period', hours: 72 });
 
-            expect(out.firstIncompleteDate).toBe(dayB);
+            expect(out.firstIncompleteDate).toBe('2026-09-28');
             expect(out.buckets.map(b => [b.date, b.preliminary])).toEqual([
-                [dayA, false],
-                [dayB, true],
-                [dayC, true]
+                ['2026-09-27', false],
+                ['2026-09-28', true],
+                ['2026-09-29', true]
             ]);
+        });
+    });
+
+    describe('getStatus()', () => {
+        it('reports how far back the archive reaches, or null without ClickHouse', async () => {
+            const enabled = setup({}, true);
+            stageCoverage(enabled.archive, '2025-07-13', '2026-09-29');
+            expect((await enabled.service.getStatus()).history).toEqual({ firstDate: '2025-07-13', lastDate: '2026-09-29', days: 1 });
+
+            GscService.resetInstance();
+            const disabled = setup({}, false);
+            expect((await disabled.service.getStatus()).history).toBeNull();
         });
     });
 
@@ -457,13 +420,14 @@ describe('GscService', () => {
          * Wire a singleton whose key-value store holds credentials, so the
          * fetch path runs against the stubbed Search Console client.
          *
-         * @returns The service instance, the fake database, and its staged collections.
+         * @param archiveEnabled - Whether the archive double reports itself enabled.
+         * @returns The service instance, the fake database, and the archive double.
          */
-        function setupConfigured(): ReturnType<typeof setup> {
+        function setupConfigured(archiveEnabled = true): ReturnType<typeof setup> {
             return setup({
                 'gsc:credentials': JSON.stringify({ client_email: 'a@b.c', private_key: 'k' }),
                 'gsc:siteUrl': 'sc-domain:tronrelic.com'
-            });
+            }, archiveEnabled);
         }
 
         /**
@@ -504,35 +468,34 @@ describe('GscService', () => {
             }
         });
 
-        it('prunes rows in the window that the refetch did not return', async () => {
+        it('writes each request to its archive table and prunes rows the refetch did not return', async () => {
             // Fresh numbers change until a day is final, and a row from an
             // earlier fetch can be absent from a later one. Rows the run did
             // not touch keep their older fetchedAt and must be removed.
-            const { service, queries, totals, pageTotals } = setupConfigured();
+            const { service, archive } = setupConfigured();
             queryMock.mockImplementation(async (request) => oneRowPerRequest(request));
 
-            await service.fetchAndStore('2026-09-08', '2026-10-08');
+            const result = await service.fetchAndStore('2026-09-08', '2026-10-08');
 
-            const runStamp = queries.bulkWrite.mock.calls[0][0][0].updateOne.update.$set.fetchedAt;
-            const expectedFilter = {
-                date: { $gte: new Date('2026-09-08'), $lte: new Date('2026-10-08') },
-                fetchedAt: { $lt: runStamp }
-            };
-            for (const collection of [queries, totals, pageTotals]) {
-                expect(collection.deleteMany).toHaveBeenCalledWith(expectedFilter);
+            expect(result).toEqual({ rowsFetched: 3 });
+            expect(archive.writeQueries).toHaveBeenCalledWith([expect.objectContaining({ query: 'tron energy', clicks: 1 })]);
+            expect(archive.writeDailyTotals).toHaveBeenCalledWith([expect.objectContaining({ clicks: 1, impressions: 5 })]);
+            expect(archive.writePageTotals).toHaveBeenCalledWith([expect.objectContaining({ page: 'https://tronrelic.com/' })]);
+
+            const runStamp = archive.writeQueries.mock.calls[0][0][0].fetchedAt;
+            for (const table of ['gsc_queries', 'gsc_daily_totals', 'gsc_page_totals']) {
+                expect(archive.prune).toHaveBeenCalledWith(table, '2026-09-08', '2026-10-08', runStamp);
             }
         });
 
-        it('keeps stored rows when Google returns nothing for the window', async () => {
+        it('keeps stored rows and the saved day when Google returns nothing for the window', async () => {
             // An empty response must not wipe a window that held data.
-            const { service, database, queries, totals, pageTotals } = setupConfigured();
+            const { service, database, archive } = setupConfigured();
             queryMock.mockResolvedValue({ data: { rows: [] } });
 
             await service.fetchAndStore('2026-09-08', '2026-10-08');
 
-            for (const collection of [queries, totals, pageTotals]) {
-                expect(collection.deleteMany).not.toHaveBeenCalled();
-            }
+            expect(archive.prune).not.toHaveBeenCalled();
             expect(database.set).not.toHaveBeenCalledWith('gsc:firstIncompleteDate', expect.anything());
         });
 
@@ -559,6 +522,71 @@ describe('GscService', () => {
             await service.fetchAndStore('2026-09-08', '2026-10-08');
 
             expect(database.set).toHaveBeenCalledWith('gsc:firstIncompleteDate', null);
+        });
+
+        it('refuses without ClickHouse, before calling Google', async () => {
+            // There is nowhere else to store a fetch, so it must not run.
+            const { service } = setupConfigured(false);
+
+            await expect(service.fetchAndStore('2026-09-08', '2026-10-08')).rejects.toThrow('ClickHouse is not configured');
+            expect(queryMock).not.toHaveBeenCalled();
+        });
+
+        it('does not record a fetch when the archive write fails', async () => {
+            // The scheduler must see the run as failed, and the "fetched"
+            // time on the SEO tab must not claim a run that stored nothing.
+            const { service, archive, database } = setupConfigured();
+            queryMock.mockImplementation(async (request) => oneRowPerRequest(request));
+            archive.writeQueries.mockRejectedValueOnce(new Error('ClickHouse unavailable'));
+
+            await expect(service.fetchAndStore('2026-09-08', '2026-10-08')).rejects.toThrow('ClickHouse unavailable');
+
+            expect(database.set).not.toHaveBeenCalledWith('gsc:lastFetch', expect.anything());
+        });
+
+        it('records the fetch time after a successful run', async () => {
+            const { service, database } = setupConfigured();
+            queryMock.mockImplementation(async (request) => oneRowPerRequest(request));
+
+            await service.fetchAndStore('2026-09-08', '2026-10-08');
+
+            expect(database.set).toHaveBeenCalledWith('gsc:lastFetch', expect.any(String));
+        });
+    });
+
+    describe('archiveWindow()', () => {
+        beforeEach(() => {
+            queryMock.mockReset();
+        });
+
+        it('writes the archive but leaves the saved fetch markers alone', async () => {
+            // A backfilled window is months old; saving its markers would make
+            // the SEO tab mark the wrong days as not final.
+            const { service, archive, database } = setup({
+                'gsc:credentials': JSON.stringify({ client_email: 'a@b.c', private_key: 'k' }),
+                'gsc:siteUrl': 'sc-domain:tronrelic.com'
+            }, true);
+            queryMock.mockImplementation(async (request: { requestBody: { dimensions: string[] } }) => ({
+                data: {
+                    rows: [{ keys: request.requestBody.dimensions.map(d => (d === 'date' ? '2025-08-01' : `${d}-key`)), clicks: 2, impressions: 9, ctr: 0.22, position: 4 }],
+                    metadata: { firstIncompleteDate: '2025-08-01' }
+                }
+            }));
+
+            const result = await service.archiveWindow('2025-08-01', '2025-08-07');
+
+            expect(result).toEqual({ rowsFetched: 3 });
+            expect(archive.writeQueries).toHaveBeenCalledTimes(1);
+            expect(archive.writeDailyTotals).toHaveBeenCalledTimes(1);
+            expect(archive.writePageTotals).toHaveBeenCalledTimes(1);
+            expect(database.set).not.toHaveBeenCalled();
+        });
+
+        it('refuses when the archive is disabled, before calling Google', async () => {
+            const { service } = setup({}, false);
+
+            await expect(service.archiveWindow('2025-08-01', '2025-08-07')).rejects.toThrow('ClickHouse is not configured');
+            expect(queryMock).not.toHaveBeenCalled();
         });
     });
 });

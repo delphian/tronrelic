@@ -51,7 +51,7 @@ export {
     adminGetGscKeywords,
     adminGetGscPages,
     adminGetGscKeywordPages,
-    adminGetGscKeywordsByDay,
+    adminGetGscKeywordTrend,
     // Crawler analytics functions
     adminGetBotTrend,
     adminGetBotPaths
@@ -96,7 +96,10 @@ export type {
     IGscPagesResult,
     IGscKeywordPage,
     IGscKeywordPagesResult,
-    IGscDailyKeywords,
+    IGscTrendBucket,
+    IGscTrendResult,
+    IGscWindowParams,
+    GscGranularity,
     ITrafficBucket,
     IBotClassDailyPoint,
     IRedirectRuleAdmin,

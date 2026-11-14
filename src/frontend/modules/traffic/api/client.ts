@@ -819,6 +819,27 @@ export interface IGscStatus {
     siteUrl?: string;
     /** Timestamp of last successful data fetch */
     lastFetch?: string;
+    /**
+     * Which days the permanent archive holds, so the panel can say how far
+     * back the windows reach. Null when the deployment has no ClickHouse.
+     */
+    history?: { firstDate: string | null; lastDate: string | null; days: number } | null;
+}
+
+/**
+ * The window a GSC read covers, as query-string parameters: the latest
+ * `periodHours` of delivered data, every archived day with `period: 'all'`,
+ * or an exact `startDate`–`endDate` range (YYYY-MM-DD), which wins over the rest.
+ */
+export interface IGscWindowParams {
+    /** Latest span of delivered data, in hours. */
+    periodHours?: number;
+    /** `all` for every archived day. */
+    period?: 'all';
+    /** First day of an exact range. */
+    startDate?: string;
+    /** Last day of an exact range, inclusive. */
+    endDate?: string;
 }
 
 /**
@@ -1003,15 +1024,33 @@ export async function adminRefreshGscData(): Promise<{ rowsFetched: number }> {
     return response.data as { rowsFetched: number };
 }
 
-/** One day's per-keyword GSC bucket (clicks/impressions trend + top keywords). */
-export interface IGscDailyKeywords {
-    /** Calendar day in `YYYY-MM-DD` (already offset by the GSC ingestion delay). */
+/** How a GSC trend is bucketed. Long windows use weeks or months. */
+export type GscGranularity = 'day' | 'week' | 'month';
+
+/** One bucket of the GSC trend (clicks/impressions plus that bucket's top keywords). */
+export interface IGscTrendBucket {
+    /** First day of the bucket in `YYYY-MM-DD`; a week starts on Monday. */
     date: string;
+    /** Site clicks in the bucket, anonymized queries included. */
     totalClicks: number;
+    /** Site impressions in the bucket, anonymized queries included. */
     totalImpressions: number;
-    /** True when Google had not finalized this day at the last fetch, so its figures can still change. */
+    /** True when any day in the bucket was not final at the last fetch, so its figures can still change. */
     preliminary: boolean;
+    /** The bucket's top keywords by clicks. */
     keywords: IGscKeyword[];
+}
+
+/** The GSC trend over a window, with the bucket size the backend used. */
+export interface IGscTrendResult {
+    /** Inclusive window start (ISO-8601 UTC). */
+    windowStart: string;
+    /** Inclusive window end (ISO-8601 UTC). */
+    windowEnd: string;
+    /** Bucket size of `buckets`. */
+    granularity: GscGranularity;
+    /** Buckets oldest first, zero-filled. */
+    buckets: IGscTrendBucket[];
 }
 
 /**
@@ -1032,10 +1071,10 @@ export interface IGscKeywordsResult {
 
 /**
  * Get aggregated GSC keywords for a lookback window (admin endpoint).
- * @param options - Window in hours (default 168 = 7d) and row limit
+ * @param options - Window (default the latest 168 hours) and row limit
  * @returns Keywords sorted by clicks descending plus the covered window
  */
-export async function adminGetGscKeywords(options?: { periodHours?: number; limit?: number }
+export async function adminGetGscKeywords(options?: IGscWindowParams & { limit?: number }
 ): Promise<IGscKeywordsResult> {
     const response = await apiClient.get('/admin/users/analytics/gsc/keywords', {
         params: options
@@ -1083,10 +1122,10 @@ export interface IGscPagesResult {
  *
  * Backed by the page-dimension totals, which escape GSC's query anonymization,
  * so this reveals where clicks landed even when no keyword is attributable.
- * @param options - Window in hours (default 168 = 7d) and row limit
+ * @param options - Window (default the latest 168 hours) and row limit
  * @returns Pages sorted by clicks descending plus the covered window
  */
-export async function adminGetGscPages(options?: { periodHours?: number; limit?: number }
+export async function adminGetGscPages(options?: IGscWindowParams & { limit?: number }
 ): Promise<IGscPagesResult> {
     const response = await apiClient.get('/admin/users/analytics/gsc/pages', {
         params: options
@@ -1142,10 +1181,10 @@ export interface IGscKeywordPagesResult {
  * together, so it inherits GSC's low-volume-query anonymization the same way
  * the keyword panel does — its clicks will not fully reconcile with the
  * anonymization-immune page totals.
- * @param options - Window in hours (default 168 = 7d) and row limit
+ * @param options - Window (default the latest 168 hours) and row limit
  * @returns Pairs sorted by clicks descending plus the covered window
  */
-export async function adminGetGscKeywordPages(options?: { periodHours?: number; limit?: number }
+export async function adminGetGscKeywordPages(options?: IGscWindowParams & { limit?: number }
 ): Promise<IGscKeywordPagesResult> {
     const response = await apiClient.get('/admin/users/analytics/gsc/keyword-pages', {
         params: options
@@ -1160,18 +1199,29 @@ export async function adminGetGscKeywordPages(options?: { periodHours?: number; 
 }
 
 /**
- * Get daily GSC keyword buckets for trend charting (admin endpoint).
- * @param days - Number of daily buckets (default 14)
+ * Get the GSC click and impression trend for charting (admin endpoint).
+ *
+ * The backend picks the bucket size from the window's length when none is
+ * given: days up to three months, weeks up to two years, months beyond.
+ * @param window - The span to chart
  * @param topN - Max keywords per bucket (default 15)
- * @returns Daily buckets oldest first
+ * @param granularity - Bucket size, or omit to let the backend choose
+ * @returns Buckets oldest first plus the bucket size and window covered
  */
-export async function adminGetGscKeywordsByDay(days: number = 14,
-    topN: number = 15
-): Promise<IGscDailyKeywords[]> {
+export async function adminGetGscKeywordTrend(window: IGscWindowParams,
+    topN: number = 15,
+    granularity?: GscGranularity
+): Promise<IGscTrendResult> {
     const response = await apiClient.get('/admin/users/analytics/gsc/keywords-by-day', {
-        params: { days, topN }
+        params: { ...window, topN, granularity }
     });
-    return (response.data as { buckets: IGscDailyKeywords[] }).buckets ?? [];
+    const data = response.data as Partial<IGscTrendResult>;
+    return {
+        windowStart: data.windowStart ?? '',
+        windowEnd: data.windowEnd ?? '',
+        granularity: data.granularity ?? 'day',
+        buckets: data.buckets ?? []
+    };
 }
 
 // ============================================================================

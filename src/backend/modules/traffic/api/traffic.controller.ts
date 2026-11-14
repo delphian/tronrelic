@@ -20,6 +20,11 @@ import type { IAiToolRegistry, IServiceRegistry, IAccountDirectoryService, IWall
 import type { TrafficService } from '../services/traffic.service.js';
 import { composeConversionFunnel, resolveAnalyticsRange } from '../services/traffic.service.js';
 import type { GscService } from '../services/gsc.service.js';
+import type { GscArchiveBackfill } from '../services/GscArchiveBackfill.js';
+import { GscArchiveBackfillError, type GscArchiveBackfillErrorCode } from '../services/GscArchiveBackfillError.js';
+import type { GscGranularity } from '../services/IGscArchive.js';
+import type { GscWindowRequest } from '../services/GscWindowRequest.js';
+import { parseGscDayRange } from '../services/parseGscDay.js';
 import type { IgnoredUsersService } from '../services/ignored-users.service.js';
 import { listOwnAiTools } from '../ai-tools.js';
 import { parsePositiveInt, parseNonNegativeInt } from '../../../api/query-params.js';
@@ -34,7 +39,44 @@ const BA_USER_ID_PATTERN = /^[0-9a-f]{24}$/i;
 const MAX_SINCE_HOURS = 720; // 30 days
 const MAX_LIMIT = 200;
 const MAX_HISTORY_LIMIT = 200;
-const MAX_GSC_DAYS = 90;
+
+/**
+ * Ceiling on a GSC `periodHours` window: ten years. The archive keeps every
+ * fetched day, so this only stops a nonsense value, not a real request.
+ */
+const MAX_GSC_PERIOD_HOURS = 24 * 3660;
+
+/** Bucket sizes the GSC trend accepts. */
+const GSC_GRANULARITIES: readonly GscGranularity[] = ['day', 'week', 'month'];
+
+/**
+ * Read the window a GSC request asks for from its query string.
+ *
+ * `startDate`+`endDate` (YYYY-MM-DD, both required together) is an exact
+ * range and wins over the rest; `period=all` is every archived day;
+ * otherwise `periodHours` is the latest span of delivered data, 168 by
+ * default. A malformed range is reported rather than replaced by a default,
+ * so a caller never mistakes another window's figures for the one it asked for.
+ *
+ * @param query - The request's query string.
+ * @returns The window, or the reason the request is invalid.
+ */
+function parseGscWindow(query: Request['query']): { window: GscWindowRequest } | { error: string } {
+    let result: { window: GscWindowRequest } | { error: string };
+    if (query.startDate !== undefined || query.endDate !== undefined) {
+        try {
+            const range = parseGscDayRange(query.startDate, query.endDate);
+            result = { window: { kind: 'range', ...range } };
+        } catch (error) {
+            result = { error: error instanceof Error ? error.message : 'Invalid date range' };
+        }
+    } else if (query.period === 'all') {
+        result = { window: { kind: 'all' } };
+    } else {
+        result = { window: { kind: 'period', hours: parsePositiveInt(query.periodHours, 168, MAX_GSC_PERIOD_HOURS) } };
+    }
+    return result;
+}
 
 /**
  * Allow-list for the `botClass` query param on per-bot-class reads. Mirrors
@@ -69,12 +111,25 @@ function parseExcludeBots(value: unknown): boolean {
 }
 
 /**
+ * HTTP status for each reason a GSC archive backfill is refused: 503 when the
+ * deployment cannot archive at all, 409 when the request conflicts with the
+ * current state, 400 when the dates themselves are wrong.
+ */
+const BACKFILL_REFUSAL_STATUS: Record<GscArchiveBackfillErrorCode, number> = {
+    'archive-disabled': 503,
+    'not-configured': 409,
+    'already-running': 409,
+    'invalid-range': 400
+};
+
+/**
  * Controller for the traffic-events and analytics admin surfaces.
  */
 export class TrafficController {
     constructor(
         private readonly trafficService: TrafficService,
         private readonly gscService: GscService,
+        private readonly gscArchiveBackfill: GscArchiveBackfill,
         private readonly ignoredUsersService: IgnoredUsersService,
         private readonly serviceRegistry: IServiceRegistry,
         private readonly logger: ISystemLogService
@@ -710,43 +765,90 @@ export class TrafficController {
     }
 
     /**
+     * GET /api/admin/users/analytics/gsc/archive
+     * State of the permanent ClickHouse archive: whether it is enabled, the
+     * latest backfill run's progress, and the earliest and latest archived day.
+     */
+    async getGscArchive(_req: Request, res: Response): Promise<void> {
+        try {
+            res.json(await this.gscArchiveBackfill.getOverview());
+        } catch (error) {
+            this.logger.error({ err: error }, 'Failed to read GSC archive status');
+            res.status(500).json({ error: 'InternalError', message: 'Failed to read GSC archive status' });
+        }
+    }
+
+    /**
+     * POST /api/admin/users/analytics/gsc/archive/backfill
+     * Start the one-off archive backfill. Body: `{ startDate?, endDate? }` as
+     * `YYYY-MM-DD`, defaulting to the 16 months Google keeps. Answers 202 with
+     * the run's initial status as soon as it starts; progress is read back
+     * from `GET /gsc/archive`. Refusals answer 400, 409, or 503 with a `code`.
+     */
+    async startGscArchiveBackfill(req: Request, res: Response): Promise<void> {
+        const { startDate, endDate } = req.body ?? {};
+        if ((startDate !== undefined && typeof startDate !== 'string') || (endDate !== undefined && typeof endDate !== 'string')) {
+            res.status(400).json({ error: 'ValidationError', message: 'startDate and endDate must be YYYY-MM-DD strings when given' });
+        } else {
+            try {
+                res.status(202).json(await this.gscArchiveBackfill.start(startDate, endDate));
+            } catch (error) {
+                if (error instanceof GscArchiveBackfillError) {
+                    res.status(BACKFILL_REFUSAL_STATUS[error.code]).json({ error: 'BackfillRefused', code: error.code, message: error.message });
+                } else {
+                    this.logger.error({ err: error }, 'Failed to start GSC archive backfill');
+                    res.status(500).json({ error: 'InternalError', message: 'Failed to start GSC archive backfill' });
+                }
+            }
+        }
+    }
+
+    /**
      * GET /api/admin/users/analytics/gsc/keywords?periodHours=168&limit=25
      * Aggregated GSC keywords (clicks/impressions/CTR/position) for the
-     * window. Pass-through to the daily-fetched keyword cache; returns an
-     * empty array until the `gsc:fetch` job has stored data. The response
-     * carries `windowStart`/`windowEnd` — the delay-shifted dates actually
-     * covered — so the UI can label the period truthfully.
+     * window, read from the permanent archive. The window is `periodHours`,
+     * `period=all`, or `startDate`+`endDate`; see {@link parseGscWindow}.
+     * Returns an empty array until data has been archived. The response
+     * carries `windowStart`/`windowEnd` — the dates actually covered — so the
+     * UI can label the period truthfully.
      */
     async getGscKeywords(req: Request, res: Response): Promise<void> {
-        const periodHours = parsePositiveInt(req.query.periodHours, 168, MAX_SINCE_HOURS);
+        const parsed = parseGscWindow(req.query);
         const limit = parsePositiveInt(req.query.limit, 25, MAX_LIMIT);
-        try {
-            const result = await this.gscService.getKeywordsForPeriod(periodHours, limit);
-            res.json({ periodHours, limit, ...result });
-        } catch (error) {
-            this.logger.error({ err: error }, 'Failed to fetch GSC keywords');
-            res.status(500).json({ error: 'InternalError', message: 'Failed to fetch GSC keywords' });
+        if ('error' in parsed) {
+            res.status(400).json({ error: 'ValidationError', message: parsed.error });
+        } else {
+            try {
+                const result = await this.gscService.getKeywords(parsed.window, limit);
+                res.json({ window: parsed.window, limit, ...result });
+            } catch (error) {
+                this.logger.error({ err: error }, 'Failed to fetch GSC keywords');
+                res.status(500).json({ error: 'InternalError', message: 'Failed to fetch GSC keywords' });
+            }
         }
     }
 
     /**
      * GET /api/admin/users/analytics/gsc/pages?periodHours=168&limit=25
      * Aggregated GSC landing pages (clicks/impressions/CTR/position) for the
-     * window. Backed by the [page, date] totals collection, which is immune to
-     * query anonymization — so this surfaces where clicks actually landed even
-     * when no keyword can be attributed to them. Returns an empty array until
-     * the `gsc:fetch` job has stored page totals; carries `windowStart`/
-     * `windowEnd` for a truthful period label.
+     * window. Backed by the [page, date] totals, which are immune to query
+     * anonymization — so this surfaces where clicks actually landed even when
+     * no keyword can be attributed to them. Same window parameters as
+     * `/gsc/keywords`; carries `windowStart`/`windowEnd` for a truthful label.
      */
     async getGscPages(req: Request, res: Response): Promise<void> {
-        const periodHours = parsePositiveInt(req.query.periodHours, 168, MAX_SINCE_HOURS);
+        const parsed = parseGscWindow(req.query);
         const limit = parsePositiveInt(req.query.limit, 25, MAX_LIMIT);
-        try {
-            const result = await this.gscService.getPagesForPeriod(periodHours, limit);
-            res.json({ periodHours, limit, ...result });
-        } catch (error) {
-            this.logger.error({ err: error }, 'Failed to fetch GSC pages');
-            res.status(500).json({ error: 'InternalError', message: 'Failed to fetch GSC pages' });
+        if ('error' in parsed) {
+            res.status(400).json({ error: 'ValidationError', message: parsed.error });
+        } else {
+            try {
+                const result = await this.gscService.getPages(parsed.window, limit);
+                res.json({ window: parsed.window, limit, ...result });
+            } catch (error) {
+                this.logger.error({ err: error }, 'Failed to fetch GSC pages');
+                res.status(500).json({ error: 'InternalError', message: 'Failed to fetch GSC pages' });
+            }
         }
     }
 
@@ -754,43 +856,56 @@ export class TrafficController {
      * GET /api/admin/users/analytics/gsc/keyword-pages?periodHours=168
      * Aggregated GSC keyword→page pairs for the window — which pages each
      * keyword surfaced. Uncapped by default (returns every pair); an optional
-     * `limit` requests fewer. Backed by the raw query cache (the only rows carrying
-     * query and page together), so it inherits GSC's low-volume-query
+     * `limit` requests fewer. Read from the keyword rows (the only rows
+     * carrying query and page together), so it inherits GSC's low-volume-query
      * anonymization exactly as the keyword panel does; its clicks will not
-     * fully reconcile with the anonymization-immune page totals. Returns an
-     * empty array until the `gsc:fetch` job has stored data; carries
-     * `windowStart`/`windowEnd` for a truthful period label.
+     * fully reconcile with the anonymization-immune page totals. Same window
+     * parameters as `/gsc/keywords`.
      */
     async getGscKeywordPages(req: Request, res: Response): Promise<void> {
-        const periodHours = parsePositiveInt(req.query.periodHours, 168, MAX_SINCE_HOURS);
+        const parsed = parseGscWindow(req.query);
         // Uncapped by design — the pairs view must be exhaustive to fully
         // account for every keyword→page combination. An explicit ?limit=
         // still lets a caller request fewer, but there is no default ceiling.
         const limit = req.query.limit === undefined
             ? undefined
             : parsePositiveInt(req.query.limit, 1, Number.MAX_SAFE_INTEGER);
-        try {
-            const result = await this.gscService.getKeywordPagePairsForPeriod(periodHours, limit);
-            res.json({ periodHours, limit, ...result });
-        } catch (error) {
-            this.logger.error({ err: error }, 'Failed to fetch GSC keyword-page pairs');
-            res.status(500).json({ error: 'InternalError', message: 'Failed to fetch GSC keyword-page pairs' });
+        if ('error' in parsed) {
+            res.status(400).json({ error: 'ValidationError', message: parsed.error });
+        } else {
+            try {
+                const result = await this.gscService.getKeywordPagePairs(parsed.window, limit);
+                res.json({ window: parsed.window, limit, ...result });
+            } catch (error) {
+                this.logger.error({ err: error }, 'Failed to fetch GSC keyword-page pairs');
+                res.status(500).json({ error: 'InternalError', message: 'Failed to fetch GSC keyword-page pairs' });
+            }
         }
     }
 
     /**
-     * GET /api/admin/users/analytics/gsc/keywords-by-day?days=14&topN=15
-     * Daily GSC keyword buckets (clicks/impressions trend with per-day top
-     * keywords). Already offset by the GSC ingestion delay in the service.
+     * GET /api/admin/users/analytics/gsc/keywords-by-day?periodHours=720&topN=15&granularity=day
+     * The click and impression trend, each bucket listing its top keywords.
+     * Same window parameters as `/gsc/keywords`. `granularity` (`day`,
+     * `week`, or `month`) is optional; omitted, the service picks one that
+     * keeps the series near a hundred points. The path keeps its name for
+     * existing callers even though a bucket can be a week or a month.
      */
     async getGscKeywordsByDay(req: Request, res: Response): Promise<void> {
-        const days = parsePositiveInt(req.query.days, 14, MAX_GSC_DAYS);
+        const parsed = parseGscWindow(req.query);
         const topN = parsePositiveInt(req.query.topN, 15, MAX_LIMIT);
-        try {
-            res.json(await this.gscService.getKeywordsByDay(days, topN));
-        } catch (error) {
-            this.logger.error({ err: error }, 'Failed to fetch GSC keywords by day');
-            res.status(500).json({ error: 'InternalError', message: 'Failed to fetch GSC keywords by day' });
+        const granularity = req.query.granularity;
+        if ('error' in parsed) {
+            res.status(400).json({ error: 'ValidationError', message: parsed.error });
+        } else if (granularity !== undefined && !GSC_GRANULARITIES.includes(granularity as GscGranularity)) {
+            res.status(400).json({ error: 'ValidationError', message: `granularity must be one of: ${GSC_GRANULARITIES.join(', ')}` });
+        } else {
+            try {
+                res.json(await this.gscService.getKeywordTrend(parsed.window, topN, granularity as GscGranularity | undefined));
+            } catch (error) {
+                this.logger.error({ err: error }, 'Failed to fetch GSC keyword trend');
+                res.status(500).json({ error: 'InternalError', message: 'Failed to fetch GSC keyword trend' });
+            }
         }
     }
 
