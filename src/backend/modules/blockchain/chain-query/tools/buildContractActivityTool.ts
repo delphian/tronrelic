@@ -130,6 +130,7 @@ interface IViewResult {
 export function buildContractActivityTool(toolkit: IChainQueryToolkit): IAiTool {
     return {
         name: AI_TOOL_NAMES.contractActivity,
+        title: 'Analyze smart contract usage',
         description:
             'Describe how one smart contract is being used, from a fixed menu of views. ' +
             '"summary" (default): calls, distinct callers, success and failure counts by status (such as REVERT or OUT_OF_ENERGY), TRX sent with the calls that succeeded (a failed call\'s TRX is never transferred, so it is not counted), and the energy and fees the calls consumed, split into energy from the caller\'s own staked or delegated resources, energy paid by the contract deployer, and energy paid for by burning TRX. ' +

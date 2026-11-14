@@ -258,6 +258,7 @@ export function buildPromptVariableAiTools(
 ): IAiTool[] {
     const listVariables: IAiTool = {
         name: AI_TOOL_NAMES.listVariables,
+        title: 'List prompt variables',
         description:
             'List every prompt variable TronRelic can expand, with its name, {%name%} pattern, description, category, kind (dynamic or static), sensitivity (public, internal, or secret), and readable. ' +
             `Use to find which variables exist before writing a prompt that references them, or before calling ${AI_TOOL_NAMES.getVariables}. ` +
@@ -284,6 +285,7 @@ export function buildPromptVariableAiTools(
 
     const getVariables: IAiTool = {
         name: AI_TOOL_NAMES.getVariables,
+        title: 'Read prompt variable values',
         description:
             `Get the current value of 1 to ${MAX_NAMES} prompt variables, exactly as a prompt referencing {%name%} would receive it now. ` +
             'Use to check what a variable contains before relying on it in a prompt, or to read live data a variable already computes. ' +

@@ -65,6 +65,7 @@ interface IHourRow {
 export function buildTokenActivityTool(toolkit: IChainQueryToolkit): IAiTool {
     return {
         name: AI_TOOL_NAMES.tokenActivity,
+        title: 'Show who is moving a token',
         description:
             'Show who is moving one token across the whole chain, from a fixed menu of views: "top-senders" or "top-receivers" (the addresses that sent or received the most, with transfer counts, totals, and distinct counterparties, plus the token\'s overall transfer count and volume), or "hourly" (transfers, volume, and distinct senders and receivers per hour). ' +
             'Use for market-wide questions about a token, such as the largest USDT receivers today or when activity spiked. For one wallet, use ' + AI_TOOL_NAMES.addressProfile + ' instead. ' +

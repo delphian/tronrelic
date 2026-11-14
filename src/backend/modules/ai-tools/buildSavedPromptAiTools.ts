@@ -203,6 +203,7 @@ export function buildSavedPromptAiTools(
 ): IAiTool[] {
     const listPrompts: IAiTool = {
         name: AI_TOOL_NAMES.listPrompts,
+        title: 'List saved prompts',
         description:
             'List every saved prompt with its id, name, providerId, model, toolAllowlist, ownerUserId, createdAt, updatedAt, promptChars (length of the body), and triggers[] (kind, enabled, cron or hookId and typeIdFilter, lastRunAt, lastRunFailed, failureCount). ' +
             `Use to find a prompt before calling ${AI_TOOL_NAMES.getPrompts}, or to see which scheduled prompts are failing or paused. The prompt body and error messages are not included; ${AI_TOOL_NAMES.getPrompts} returns them. ` +
@@ -232,6 +233,7 @@ export function buildSavedPromptAiTools(
 
     const getPrompts: IAiTool = {
         name: AI_TOOL_NAMES.getPrompts,
+        title: 'Read saved prompts',
         description:
             `Get the full contents of 1 to ${MAX_REFS} saved prompts, by id or by name (names match case-insensitively). ` +
             'Use to read what a prompt asks, check how it is configured, or find out why its trigger is failing. ' +

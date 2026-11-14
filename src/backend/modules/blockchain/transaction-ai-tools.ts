@@ -44,6 +44,7 @@ const TXID_PATTERN = /^[0-9a-fA-F]{64}$/;
 export function buildTransactionTool(detailService: ITransactionDetailService): IAiTool {
     return {
         name: TRANSACTION_TOOL_NAME,
+        title: 'Get a transaction',
         description:
             'Retrieve the full on-chain detail of a single TRON transaction by its ' +
             'transaction id (hash). Use when the user asks about one specific ' +

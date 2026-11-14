@@ -73,6 +73,7 @@ interface ICounterpartyRow {
 export function buildAddressCounterpartiesTool(toolkit: IChainQueryToolkit): IAiTool {
     return {
         name: AI_TOOL_NAMES.addressCounterparties,
+        title: 'Summarize address counterparties',
         description:
             'Summarize who one TRON address sent value to and received value from: one row per counterparty, direction, and token, with the number of transfers and transactions, the total amount, and first and last seen. ' +
             'Use this first when investigating a wallet\'s relationships, then pick counterparties to examine with ' + AI_TOOL_NAMES.addressTransfers + ' or follow with ' + AI_TOOL_NAMES.traceFlow + '. ' +

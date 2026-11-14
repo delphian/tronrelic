@@ -95,6 +95,7 @@ interface IPartyRow {
 export function buildContractCallGraphTool(toolkit: IChainQueryToolkit): IAiTool {
     return {
         name: AI_TOOL_NAMES.contractCallGraph,
+        title: 'Map calls between contracts',
         description:
             'Show the contract-to-contract calls around one contract, from its internal transactions, including calls that move no value. ' +
             '"callers" (default): the contracts that called this one during execution, such as a DEX router calling a token or a proxy calling a drainer. ' +

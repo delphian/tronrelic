@@ -181,6 +181,7 @@ function clip(text: string): { text: string; truncated: boolean } {
 export function buildLocalizationStatusTool(reads: ILocalizationToolReads): IAiTool {
     return {
         name: AI_TOOL_NAMES.status,
+        title: 'Check translation status',
         description:
             'Report how TronRelic\'s site translations are doing — the figures behind the Languages, Routes, ' +
             'Switches, and Translations tabs of /system/localization. English is the default language and is never ' +

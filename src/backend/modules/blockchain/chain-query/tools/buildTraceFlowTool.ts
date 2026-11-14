@@ -119,6 +119,7 @@ interface ITraceEdge {
 export function buildTraceFlowTool(toolkit: IChainQueryToolkit): IAiTool {
     return {
         name: AI_TOOL_NAMES.traceFlow,
+        title: 'Trace where tokens went',
         description:
             'Follow one token\'s funds from a TRON address across up to 3 hops and return the graph: forward to see where the money went, backward to see where it came from. ' +
             'The search runs on the server, one query per hop, so prefer this over calling ' + AI_TOOL_NAMES.addressCounterparties + ' repeatedly. ' +

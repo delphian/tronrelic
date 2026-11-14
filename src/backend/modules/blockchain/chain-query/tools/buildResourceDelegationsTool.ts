@@ -280,6 +280,7 @@ function fitsAddressWindow(input: Record<string, unknown>, toolkit: IChainQueryT
 export function buildResourceDelegationsTool(toolkit: IChainQueryToolkit): IAiTool {
     return {
         name: AI_TOOL_NAMES.resourceDelegations,
+        title: 'Show energy and bandwidth delegations',
         description:
             'Energy and bandwidth delegation and staking on TRON, from a fixed menu of views. ' +
             '"events" (default) lists individual delegations and undelegations newest first: who delegated to whom, the resource, the staked TRX behind it, any lock period, and permissionId; filter by address, role, resource, action, and minTrx. ' +

@@ -90,6 +90,7 @@ export function buildContractEventsTool(toolkit: IChainQueryToolkit): IAiTool {
     const eventNames = Object.keys(EVENT_TOPICS_BY_NAME);
     return {
         name: AI_TOOL_NAMES.contractEvents,
+        title: 'Read smart contract events',
         description:
             'Read the event logs one smart contract emitted. ' +
             '"events" (default) lists them newest first, optionally only one event type; well-known events are decoded into named fields (Transfer from, to, amount; Approval owner, spender, amount; Tether\'s Issue, Redeem, AddedBlackList, RemovedBlackList, DestroyedBlackFunds), and other events come back as raw topics and data. ' +

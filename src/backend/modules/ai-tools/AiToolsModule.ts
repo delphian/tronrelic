@@ -478,6 +478,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
     private registerBuiltinTools(): void {
         const sendToast: IAiTool = {
             name: 'send-toast',
+            title: 'Show a site-wide announcement',
             description:
                 'Broadcast a system-wide toast notification to EVERY connected browser session — all users, ' +
                 'not just the person who sent this query. This is a public site-wide announcement mechanism. ' +

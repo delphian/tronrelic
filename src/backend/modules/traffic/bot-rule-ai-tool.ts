@@ -143,6 +143,7 @@ export function createProposeBotRuleTool(deps: IProposeBotRuleToolDependencies):
     const { rules, analytics, getCuration, logger } = deps;
     return {
         name: PROPOSE_BOT_RULE_TOOL_NAME,
+        title: 'Propose a bot rule',
         description:
             'Propose a bot rule that labels automated TronRelic traffic the built-in classifier counts as human. ' +
             'Use only after diagnosing the traffic with tronrelic-list-traffic-events and confirming it is automated ' +
@@ -337,6 +338,7 @@ export function createListBotRulesTool(deps: IListBotRulesToolDependencies): IAi
     const { rules, analytics, logger } = deps;
     return {
         name: LIST_BOT_RULES_TOOL_NAME,
+        title: 'List bot rules',
         description:
             'List the TronRelic bot rules that exist, newest first, with how often each matched recently. ' +
             'A bot rule labels automated traffic the built-in classifier counts as human; it only changes analytics labels and never blocks anyone. ' +

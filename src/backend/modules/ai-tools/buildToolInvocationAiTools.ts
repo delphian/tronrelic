@@ -227,6 +227,7 @@ export function buildToolInvocationAiTools(
 ): IAiTool[] {
     const listInvocations: IAiTool = {
         name: AI_TOOL_NAMES.listInvocations,
+        title: 'List AI tool calls',
         description:
             'List recorded AI tool calls one page at a time, newest first. TronRelic records every governed tool call an AI run makes, and every provider-hosted call such as web_fetch, and keeps them for 90 days. ' +
             'Use to find which tool calls in a run or a time window failed, were denied, or ran slowly, for example every tronrelic-fetch-url call a scheduled prompt made yesterday and what each returned. ' +

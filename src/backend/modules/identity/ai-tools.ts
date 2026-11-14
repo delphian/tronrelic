@@ -361,6 +361,7 @@ async function findAccount(deps: IIdentityAiToolDependencies, input: Record<stri
 export function buildIdentityAiTools(deps: IIdentityAiToolDependencies, logger: ISystemLogService): IAiTool[] {
     const listAccounts: IAiTool = {
         name: AI_TOOL_NAMES.listAccounts,
+        title: 'List user accounts',
         description:
             'List TronRelic user accounts, newest first, optionally only those whose email or display name contains a search text. ' +
             `Use to find an account's id before calling ${AI_TOOL_NAMES.getAccount} or filtering ${AI_TOOL_NAMES.listSignInEvents} by userId, or to see who is in the admin group. ` +
@@ -401,6 +402,7 @@ export function buildIdentityAiTools(deps: IIdentityAiToolDependencies, logger: 
 
     const getAccount: IAiTool = {
         name: AI_TOOL_NAMES.getAccount,
+        title: 'Review a user account',
         description:
             'Get one TronRelic user account with everything needed to judge whether it is being used by its owner: its live sessions (when each was created and last used, from which network address and browser), linked wallets, connected apps, and its most recent sign-in events. ' +
             'Use when asked whether an account was accessed, from where, or what it has connected. A session the owner does not recognise is the sign of a takeover. ' +
@@ -449,6 +451,7 @@ export function buildIdentityAiTools(deps: IIdentityAiToolDependencies, logger: 
 
     const listSignInEvents: IAiTool = {
         name: AI_TOOL_NAMES.listSignInEvents,
+        title: 'List sign-in events',
         description:
             'List sign-in code requests and sign-in attempts, newest first. Each event is one of: code-sent (a one-time sign-in code was emailed), code-request-failed, sign-in-succeeded, sign-in-failed (a wrong or expired code, or a failed passkey or OAuth sign-in). ' +
             'Use to answer who requested a code for an address, whether a sign-in followed, where failed attempts came from, or what one network address has been trying. A code-sent with no sign-in-succeeded after it for the same email means the code was not used. ' +

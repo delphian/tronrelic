@@ -34,6 +34,7 @@ A tool is an [`IAiTool`](../../packages/types/src/ai-tools/IAiTool.ts). Its fiel
 | Field | Purpose |
 |---|---|
 | `name` | Unique; matches `^[a-zA-Z0-9_-]{1,64}$`. Lead with the first word of the owning module's or plugin's id (`blockchain-get-transaction`, `blog-propose-post`). Use `tronrelic-` only for a core tool that belongs to the platform rather than one feature. |
+| `title` | The short display name people see in place of `name`: in an MCP client's tool list and permission prompts, and in Anthropic's connector directory, whose review requires one. Sentence case, starting with a verb, two to six plain words that make sense without knowing the codebase (`Compare energy rental prices`, not `Resource Markets Get Prices`), no "TronRelic" prefix, at most 60 characters. This follows the MCP specification's definition of a title as readable "even by those unfamiliar with domain-specific terminology" and the style of GitHub's official MCP server. The model picks tools by `description`, not by title. Optional in the type, but registration logs a warning without one, and clients then see a title generated from the name. |
 | `description` | The dominant factor in selection accuracy. State what it does, when to use and not use it, every parameter, the return shape, and limits. Vague descriptions misfire. |
 | `inputSchema` | JSON Schema, top-level `type: 'object'`. Every property needs a `type` and `description`; set `additionalProperties: false`; list genuinely required params. |
 | `inputExamples` | Optional. Worked examples of valid input, forwarded to the model as Anthropic `input_examples`. Declare them for tools with array, enum, nested, or optional/format-sensitive parameters — they raise parameter accuracy and matter most for smaller models like Haiku, which otherwise guess missing params. Each example must satisfy `inputSchema` (a non-conforming example is rejected with a 400). Show the useful shapes — the required-only minimum plus one or two exercising the optional/enum fields — not every permutation. Omit for single-scalar or zero-parameter tools, where they only add prompt tokens. |
@@ -100,6 +101,7 @@ A minimal, correct read-only tool — validate input, return a descriptive error
 // Capability: read / internal — strictly read-only, safe to call repeatedly.
 const tool: IAiTool = {
     name: 'tronrelic-get-thing',
+    title: 'Get a thing',
     description:
         'Fetch one thing by its 24-character hex id. Use when the user references ' +
         'a specific thing. Returns the thing, or null when the id is unknown ' +
@@ -133,6 +135,7 @@ const tool: IAiTool = {
 ## Pre-Ship Checklist
 
 - [ ] Classified: side effect, reversibility, spend, sensitivity, untrusted-content, forces-curator-review
+- [ ] `title` is a short, sentence-case, verb-first display name with no "TronRelic" prefix
 - [ ] `description` states purpose, when (not) to use, params, return shape, limits
 - [ ] Complex-parameter tools (array / enum / nested / optional-format) declare `inputExamples`; each example satisfies `inputSchema`
 - [ ] Every input re-validated in the handler; descriptive errors returned

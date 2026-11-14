@@ -126,6 +126,7 @@ interface ITransactionRow {
 export function buildGetBlockTool(toolkit: IChainQueryToolkit): IAiTool {
     return {
         name: AI_TOOL_NAMES.getBlock,
+        title: 'Get a block',
         description:
             'Describe one stored TRON block by its number. Returns its header (blockId, parentHash, txTrieRoot, time, producer address and witness id, version), ' +
             'transactionCount as the block reports it beside the number of transactions actually stored, whether its receipts were fetched and how many are stored, ' +

@@ -333,6 +333,7 @@ const WEB_FETCH_CAPABILITY: IAiToolCapability = {
 export function createWebFetchTool(): IAiTool {
     return {
         name: TOOL_NAME,
+        title: 'Fetch a web page',
         description:
             'Fetch ONE public web page or API response over https and return its text (HTML is reduced to readable text; ' +
             'JSON and XML pass through). Read-only. Use to look up public documentation, GitHub files/issues, forum threads, ' +

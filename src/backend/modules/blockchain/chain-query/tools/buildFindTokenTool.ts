@@ -69,6 +69,7 @@ interface IActivityRow {
 export function buildFindTokenTool(toolkit: IChainQueryToolkit): IAiTool {
     return {
         name: AI_TOOL_NAMES.findToken,
+        title: 'Find a token by name',
         description:
             'Turn a token symbol or name, such as "USDT", into the TRC-20 contracts that claim it, so you can pass a contract address to the other chain query tools, which refuse symbols. ' +
             `Returns candidates[] with the contract address, the symbol, name, and decimals the contract reports, verified (true only for a contract a TronRelic operator tagged ${TOKEN_TAG_PREFIX}<symbol> as the real token), and the last day's Transfer events, non-zero transfers (standard TRC-20 Transfer events whose amount is above zero), distinct senders, and distinct receivers. Verified contracts come first; the rest are ordered by non-zero transfers. ` +

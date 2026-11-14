@@ -520,6 +520,7 @@ export function buildPromptRunAiTools(
 ): IAiTool[] {
     const listRuns: IAiTool = {
         name: AI_TOOL_NAMES.listRuns,
+        title: 'List AI prompt runs',
         description:
             'List past prompt runs one page at a time, newest first. Each run has id, conversationId, mode, model, status, outcome, stopReason, createdAt, completedAt, costUsd, usage (token counts), savedPromptId and triggerId (the saved prompt and trigger that fired it, or null), promptPreview (the first 200 characters of the prompt as typed, variables unexpanded), promptChars, toolCalls, and hasTranscript. ' +
             `Use to find a run to open with ${AI_TOOL_NAMES.getRun}, or to see which recent runs of one saved prompt failed or stopped early. For totals over many runs, use ${AI_TOOL_NAMES.summarizeRuns} instead of paging. Answers, transcripts, and error messages are not included. ` +
@@ -562,6 +563,7 @@ export function buildPromptRunAiTools(
 
     const getRun: IAiTool = {
         name: AI_TOOL_NAMES.getRun,
+        title: 'Read an AI prompt run',
         description:
             'Get the full transcript of one prompt run: the prompt as typed, the prompt with its variables expanded (secret variables stay as {%name%} tokens), any error message, the tool allowlist it ran with, and the ordered transcript of thinking, answer text, tool calls with their arguments, and tool results. ' +
             'The answer is in the transcript\'s text segments; responseText is filled only for an old run that has no transcript. ' +
@@ -624,6 +626,7 @@ export function buildPromptRunAiTools(
 
     const summarizeRuns: IAiTool = {
         name: AI_TOOL_NAMES.summarizeRuns,
+        title: 'Summarize AI prompt runs',
         description:
             'Add up every prompt run that matches the filters, in one call: how many runs, how many ended with each status and each outcome, total cost, total tokens, the first and last run times, and the last run that produced a real answer. ' +
             'Use to judge how one saved prompt has been doing over time, such as how many of its runs this month answered and what they cost, without paging through the runs. ' +

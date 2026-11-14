@@ -356,6 +356,7 @@ export function buildPageAiTools(service: IPageService, logger: ISystemLogServic
 
     const list: IAiTool = {
         name: AI_TOOL_NAMES.list,
+        title: 'List site pages',
         description:
             'List the published site pages, most recently changed first, as short summaries without the body. ' +
             `Use to see which pages exist or to browse them; use ${AI_TOOL_NAMES.search} instead to find pages about a topic. ` +
@@ -378,6 +379,7 @@ export function buildPageAiTools(service: IPageService, logger: ISystemLogServic
 
     const search: IAiTool = {
         name: AI_TOOL_NAMES.search,
+        title: 'Search site pages',
         description:
             'Search the published site pages for a text, most recently changed first, as short summaries without the body. ' +
             'The query is matched case-insensitively as a literal substring of each page\'s title, slug, description, keywords, and body. It is not a boolean or fuzzy search, so use a distinctive word or short phrase such as "energy rental", not a whole question. ' +
@@ -413,6 +415,7 @@ export function buildPageAiTools(service: IPageService, logger: ISystemLogServic
 
     const get: IAiTool = {
         name: AI_TOOL_NAMES.get,
+        title: 'Read site pages',
         description:
             'Read one or more published site pages in full, including the markdown body. ' +
             `Use after ${AI_TOOL_NAMES.list} or ${AI_TOOL_NAMES.search} to read the pages you picked, or directly when you already know a page's path or link. ` +
@@ -460,6 +463,7 @@ export function buildPageAiTools(service: IPageService, logger: ISystemLogServic
 
     const proposeEdit: IAiTool = {
         name: AI_TOOL_NAMES.proposeEdit,
+        title: 'Propose a page edit',
         description:
             'Propose an edit to an existing site page for human review. The edit is NOT applied to the live page immediately: it is held in the central curation queue, ' +
             'and visitors keep seeing the current published version until an admin approves the edit. ' +
@@ -524,6 +528,7 @@ export function buildPageAiTools(service: IPageService, logger: ISystemLogServic
 
     const proposePage: IAiTool = {
         name: AI_TOOL_NAMES.proposePage,
+        title: 'Propose a new page',
         description:
             'Propose a NEW site page for human review. The page is NOT published immediately: it is held in the central curation queue, ' +
             'and nothing is served at its address until an admin approves it. Approving it publishes it. ' +

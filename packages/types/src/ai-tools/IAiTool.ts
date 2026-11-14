@@ -75,6 +75,7 @@ export interface IAiToolInputSchema {
  * ```typescript
  * const priceTool: IAiTool = {
  *     name: 'get-energy-prices',
+ *     title: 'Get energy prices',
  *     description:
  *         'Fetches current TRON energy market prices from all providers. ' +
  *         'Use when the user asks about energy costs, rental pricing, or ' +
@@ -105,6 +106,18 @@ export interface IAiTool {
      * Alphanumeric characters, hyphens, and underscores only.
      */
     name: string;
+    /**
+     * Short display name people see in place of `name`, such as in an MCP
+     * client's tool list and permission prompts, and in a connector directory.
+     * The model selects tools by `description`, so this field is for people.
+     *
+     * Write it in sentence case, starting with a verb, in two to six plain
+     * words that make sense to someone who does not know the codebase:
+     * `Compare energy rental prices`, not `Resource Markets Get Prices`. Leave
+     * out "TronRelic", because clients show the server's own name beside it.
+     * At most 60 characters. When absent, a title is generated from `name`.
+     */
+    title?: string;
     /**
      * Detailed description shown to the model. This is the most important factor
      * in tool performance. Explain what the tool does, when to use it,
