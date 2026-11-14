@@ -49,6 +49,7 @@ import { McpCallerResolver } from './services/mcp-caller.resolver.js';
 import { McpServerFactory } from './services/mcp-server.factory.js';
 import { OAuthCallerAuthenticator } from './services/OAuthCallerAuthenticator.js';
 import { AnonymousCallerAuthenticator } from './services/AnonymousCallerAuthenticator.js';
+import { MemberOrAnonymousCallerAuthenticator } from './services/MemberOrAnonymousCallerAuthenticator.js';
 import { AnonymousCallerKeyer } from './services/AnonymousCallerKeyer.js';
 import { McpCallMeter } from './services/McpCallMeter.js';
 import { McpUsageService } from './services/McpUsageService.js';
@@ -191,7 +192,7 @@ export class McpModule implements IModule<IMcpModuleDependencies> {
     readonly metadata: IModuleMetadata = {
         id: 'mcp',
         name: 'MCP',
-        version: '1.3.0',
+        version: '1.4.0',
         description: 'Model Context Protocol endpoints serving AI tools an admin approved per user group: to members of mcp-users at /mcp, and to anonymous callers at /mcp/public'
     };
 
@@ -250,23 +251,35 @@ export class McpModule implements IModule<IMcpModuleDependencies> {
         this.identity = buildMcpServerIdentity(new URL(deps.endpoint.publicUrl).origin);
         const serverFactory = new McpServerFactory(deps.governor, new SecretScrubber(deps.knownSecrets), this.logger, this.identity);
         const allowedOriginHosts = [deps.endpoint.siteHost];
+        const anonymousCallers = new AnonymousCallerAuthenticator(new AnonymousCallerKeyer(deps.anonymousKeySalt), deps.endpoint.resourceUrl);
 
+        // `/mcp` serves members and anonymous callers on one URL, the way
+        // Claude and ChatGPT expect: anonymous tools work at once, and calling
+        // a member tool answers with the 401 that starts sign-in on the same
+        // connector. Every account joins `mcp-users`, so its tools are the
+        // ones shown to anonymous callers as "sign in to use".
         this.endpointController = new McpEndpointController(
             settings,
             exposure,
-            new OAuthCallerAuthenticator(callers, this.logger),
+            new MemberOrAnonymousCallerAuthenticator(new OAuthCallerAuthenticator(callers, this.logger), anonymousCallers),
             serverFactory,
-            { resourceUrl: deps.endpoint.resourceUrl, resourceMetadataUrl: deps.endpoint.resourceMetadataUrl, allowedOriginHosts },
+            {
+                resourceUrl: deps.endpoint.resourceUrl,
+                resourceMetadataUrl: deps.endpoint.resourceMetadataUrl,
+                allowedOriginHosts,
+                signInGroupId: MCP_USERS_GROUP_ID
+            },
             this.meter,
             this.logger
         );
-        // The public endpoint runs the same pipeline with a different
-        // authenticator. API keys, when built, will be a second authenticator
-        // tried before the anonymous one here.
+        // `/mcp/public` stays as an anonymous-only alias for clients that
+        // were given it. It never sends a 401: a challenge from this URL would
+        // point at sign-in metadata describing `/mcp`, and Claude requires the
+        // two to match exactly.
         this.publicEndpointController = new McpEndpointController(
             settings,
             exposure,
-            new AnonymousCallerAuthenticator(new AnonymousCallerKeyer(deps.anonymousKeySalt), deps.endpoint.resourceUrl),
+            anonymousCallers,
             serverFactory,
             { resourceUrl: deps.endpoint.publicUrl, allowedOriginHosts },
             this.meter,
@@ -345,7 +358,9 @@ export class McpModule implements IModule<IMcpModuleDependencies> {
         // Pre-connection discovery: the public endpoint's Server Card and the
         // AI Catalog listing it. Mounted with `all` so a wrong method gets a
         // 405 and the browser preflight an answer, both from the handler.
-        this.app.all(new URL(this.endpoint.serverCardUrl).pathname, createServerCardHandler(this.identity, this.endpoint.publicUrl));
+        // The card points clients at `/mcp`, the one address that serves
+        // both anonymous callers and members.
+        this.app.all(new URL(this.endpoint.serverCardUrl).pathname, createServerCardHandler(this.identity, this.endpoint.resourceUrl));
         this.app.all(new URL(this.endpoint.aiCatalogUrl).pathname, createAiCatalogHandler(this.identity, this.endpoint.serverCardUrl));
 
         this.app.use('/api/admin/mcp', createMcpAdminRouter(this.adminController));

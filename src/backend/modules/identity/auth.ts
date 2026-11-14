@@ -251,6 +251,7 @@ export function createAuth(deps: ICreateAuthDependencies) {
                             groupService: deps.groupService,
                             log
                         });
+                        await joinMcpUsers(user.id, deps.groupService, log);
                     }
                 }
             },
@@ -775,5 +776,31 @@ async function maybePromoteToAdmin(params: {
             { error, userId: user.id },
             'admin auto-promotion hook failed; user created without admin group'
         );
+    }
+}
+
+/**
+ * Put a new account in `mcp-users`, so every registered user can connect an
+ * AI client.
+ *
+ * The MCP endpoint lets anonymous callers use public tools and asks them to
+ * sign in when they call a member tool. Someone who signs in for the first
+ * time from that prompt gets an account here, and without the group the
+ * consent step and the token check would refuse them, leaving them at a dead
+ * end. Accounts that existed before this rule are added by an admin on
+ * `/system/users`. A failure is logged and does not stop the account being
+ * created, because the person can still use the site and an admin can add
+ * them by hand.
+ *
+ * @param userId - The new account's Better Auth user id.
+ * @param groupService - Writes the membership.
+ * @param log - Where a failure is recorded.
+ */
+async function joinMcpUsers(userId: string, groupService: GroupService, log: ISystemLogService): Promise<void> {
+    try {
+        await groupService.addMember(userId, MCP_USERS_GROUP_ID);
+        log.info({ userId, group: MCP_USERS_GROUP_ID }, 'New account added to mcp-users');
+    } catch (error) {
+        log.error({ error, userId, group: MCP_USERS_GROUP_ID }, 'Could not add new account to mcp-users; an admin must add it on /system/users');
     }
 }

@@ -20,9 +20,9 @@ describe('buildCallerBudget', () => {
         const budget = buildCallerBudget(ANONYMOUS, defaultGroupPolicy('anonymous'));
         expect(budget).toMatchObject({
             callerKey: 'mcp:anonymous:net-a',
-            callsPerMinute: 10,
+            callsPerMinute: 30,
             dayKey: 'mcp:anonymous:net-a:group:anonymous',
-            callsPerDay: 200,
+            callsPerDay: 500,
             poolKey: 'mcp-pool:anonymous',
             poolCallsPerDay: 5_000
         });

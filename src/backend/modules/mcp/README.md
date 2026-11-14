@@ -1,6 +1,6 @@
 # MCP Module
 
-TronRelic's Model Context Protocol (MCP) endpoints. Members of the `mcp-users` group connect their own AI client (Claude, Claude Desktop, Claude Code, Cursor) to `https://<site>/mcp`, sign in once in the browser, and call the AI tools an admin has granted to one of their user groups. Anyone can connect to `https://<site>/mcp/public` without signing in and call the tools granted to the virtual `anonymous` group. Each group can carry its own protections (secret scrubbing, an IP allowlist), call limits, and an on/off switch, and a group other than `mcp-users` and `anonymous` can be cleared for restricted tools. The identity module is the OAuth 2.1 authorization server; this module is the protected resource. Every tool call runs through the AI tool governor under the `mcp` trigger path and is counted in the ClickHouse `mcp_calls` table, which the usage view on `/system/mcp` totals by group, tool, and caller.
+TronRelic's Model Context Protocol (MCP) endpoints. Anyone connects their AI client (Claude, ChatGPT, Claude Code, Cursor) to `https://<site>/mcp` and calls the tools granted to the virtual `anonymous` group without signing in. Calling a member tool makes the client ask them to sign in on the same connector ("lazy authentication"); every account joins `mcp-users`, and a signed-in member calls the tools granted to any of their user groups. `https://<site>/mcp/public` remains as an anonymous-only alias. Each group can carry its own protections (secret scrubbing, an IP allowlist), call limits, and an on/off switch, and a group other than `mcp-users` and `anonymous` can be cleared for restricted tools. The identity module is the OAuth 2.1 authorization server; this module is the protected resource. Every tool call runs through the AI tool governor under the `mcp` trigger path and is counted in the ClickHouse `mcp_calls` table, which the usage view on `/system/mcp` totals by group, tool, and caller.
 
 ## Agent Quick Surface
 
@@ -8,7 +8,7 @@ TronRelic's Model Context Protocol (MCP) endpoints. Members of the `mcp-users` g
 |---|---|
 | Module id | `mcp` |
 | Module class | `src/backend/modules/mcp/McpModule.ts` |
-| Endpoints | `POST /mcp` for signed-in members and `POST /mcp/public` for anonymous callers (stateless Streamable HTTP, MCP 2026-07-28; 2025-era clients served by the SDK's legacy path). Other methods answer `405` |
+| Endpoints | `POST /mcp` for members and anonymous callers on one URL, and `POST /mcp/public`, an anonymous-only alias that never asks for sign-in (stateless Streamable HTTP, MCP 2026-07-28; 2025-era clients served by the SDK's legacy path). Other methods answer `405`. See [One URL and Lazy Sign-In](#one-url-and-lazy-sign-in) |
 | Discovery | `GET /.well-known/oauth-protected-resource/mcp` and `GET /.well-known/oauth-protected-resource` (RFC 9728), for `/mcp` only. The authorization server metadata at `/.well-known/oauth-authorization-server` is served by the identity module. For `/mcp/public`: the Server Card at `GET /mcp/public/server-card` and the AI Catalog at `GET /.well-known/ai-catalog.json`. See [Self-Description and Discovery](#self-description-and-discovery) |
 | Public docs page | `/p/mcp`, a CMS page (pages module), linked from `llms.txt` |
 | Admin page | `/system/mcp` (menu item `MCP`, order 46): kill switch above the tab row; tabs Overview (with the usage view) · Tools · Connected apps · Activity · Database · Logs |
@@ -40,6 +40,7 @@ The endpoint needs raw Express requests (the MCP SDK reads Node request and resp
 | `services/IMcpCallerAuthenticator.ts` | The contract for identifying a caller, and `McpAuthOutcome` (ok, challenge, refuse, unavailable) |
 | `services/OAuthCallerAuthenticator.ts` | `/mcp`: bearer token → caller through the resolver; no token is a 401 challenge |
 | `services/AnonymousCallerAuthenticator.ts` | `/mcp/public`: every request without credentials is an anonymous caller in `anonymous`; a request carrying `Authorization` is refused with 400 |
+| `services/MemberOrAnonymousCallerAuthenticator.ts` | `/mcp`: a request with `Authorization` goes to the OAuth authenticator, one without is an anonymous caller |
 | `services/AnonymousCallerKeyer.ts` | Salted hash of the caller's network range (/24 IPv4, /64 IPv6), the id anonymous limits count by |
 | `services/readClientName.ts` | The cleaned, length-capped `User-Agent`, kept as an unverified client label |
 | `services/IMcpCallMeter.ts`, `services/McpCallMeter.ts` | Buffers one accounting row per call and writes batches to `mcp_calls` |
@@ -73,25 +74,40 @@ Both endpoints are one `McpEndpointController` class, built twice with a differe
 | Authenticator refuses | See the two tables below |
 | Body over 256 KB or not JSON | `413` / `400` |
 
-On `/mcp` (`OAuthCallerAuthenticator`):
+On `/mcp` (`MemberOrAnonymousCallerAuthenticator`), a request **without** an `Authorization` header is admitted as an anonymous caller exactly as on `/mcp/public`, with `endpoint: 'oauth'`. A request **with** one goes to `OAuthCallerAuthenticator`, and a bad token is never downgraded to anonymous, so the client refreshes or signs in again:
 
 | Condition | Refusal |
 |---|---|
-| No bearer token | `401`, `WWW-Authenticate: Bearer resource_metadata="…", scope="mcp:tools offline_access"` — this is what starts a client's sign-in. Both scopes are listed here and in `scopes_supported` (`MCP_OAUTH_SCOPES`) so clients ask for a refresh token |
+| Anonymous call to a member tool | `401`, `WWW-Authenticate: Bearer error="invalid_token", resource_metadata="…", scope="mcp:tools offline_access"` — this is what starts a client's sign-in. See [One URL and Lazy Sign-In](#one-url-and-lazy-sign-in). Both scopes are listed here and in `scopes_supported` (`MCP_OAUTH_SCOPES`) so clients ask for a refresh token |
 | Token fails verification, grant revoked, or account deleted | `401` with `error="invalid_token"` |
 | Grant store or account directory unreadable | `503` with `Retry-After: 30` — never a `401`, which would make the client discard a token that may be valid |
 | Token lacks `mcp:tools` | `403` with `error="insufficient_scope"` |
 | User not in `mcp-users` | `403` |
 
-On `/mcp/public` (`AnonymousCallerAuthenticator`) there is no challenge. A request carrying an `Authorization` header is refused with `400` naming `/mcp`, because a client that sends credentials expects them to count. Every other request is admitted as an anonymous caller: principal kind `anonymous`, groups `['anonymous']`, no end user, and a principal id from `AnonymousCallerKeyer`.
+On `/mcp/public` (`AnonymousCallerAuthenticator`) there is never a challenge, because a `401` from that URL would point at sign-in metadata describing `/mcp`, and Claude requires the two to match exactly. A request carrying an `Authorization` header is refused with `400` naming `/mcp`, because a client that sends credentials expects them to count. Every other request is admitted as an anonymous caller: principal kind `anonymous`, groups `['anonymous']`, no end user, and a principal id from `AnonymousCallerKeyer`.
 
 The global Express body parsers skip both paths (`loaders/express.ts`), so nothing is read from an unadmitted request's body. After the checks, the served tool list is computed for this caller from their groups and request address, the caller and tools ride into the SDK on `req.auth.extra`, and `McpServerFactory` builds a server that registers only those tools.
 
-A `tools/call` for a tool that was not served gets the SDK's bare "Tool not found" answer. Before handing the request over, the endpoint writes a log entry under `tronrelic:mcp` (`error` on `/mcp`, `warn` on `/mcp/public`, where strangers probing for tools is expected traffic) naming the tool, the caller, the client, the request address, the caller's groups, and a `reason` from `explainWithheld`: `not-registered`, `disabled`, `not-granted`, `stale-grant`, `restricted-not-allowed`, `not-public`, `group-disabled`, or `ip-not-allowed` (`changed-during-request` when a grant changed between the two reads). It also counts the refusal in `mcp_calls`. At most 10 per request.
+A `tools/call` for a tool that was not served gets the SDK's bare "Tool not found" answer. Before handing the request over, the endpoint writes a log entry under `tronrelic:mcp` (`error` for a member, `warn` for an anonymous caller, where strangers probing for tools is expected traffic) naming the tool, the caller, the client, the request address, the caller's groups, and a `reason` from `explainWithheld`: `not-registered`, `disabled`, `not-granted`, `stale-grant`, `restricted-not-allowed`, `not-public`, `group-disabled`, or `ip-not-allowed` (`changed-during-request` when a grant changed between the two reads). It also counts the refusal in `mcp_calls`. At most 10 per request.
 
-## The Public Endpoint and the Anonymous Group
+## One URL and Lazy Sign-In
 
-`/mcp/public` exists so AI clients and agents can use TronRelic's public data without an account. It is a separate URL from `/mcp` because MCP clients start their sign-in flow on a `401`, which a URL that serves anonymous callers can never send; one URL would leave members unable to sign in to reach their own tools. The MCP specification makes authorization optional, so an unauthenticated endpoint is within it.
+Claude and ChatGPT both design for one URL where anonymous tools work at once and sign-in is asked for only when a tool needs an account (Claude's connector docs call it lazy authentication; OpenAI declares `noauth` and `oauth2` per tool). `/mcp` follows that model:
+
+| Step | What happens |
+|---|---|
+| Connect and `tools/list` without a token | Admitted as anonymous. Listed: the tools served to `anonymous`, plus every tool a member of `mcp-users` would be served from that address (`signInGroupId` on the controller), marked `requiresSignIn` and prefixed in their description with a note that calling them asks the user to sign in |
+| `tools/call` for a `requiresSignIn` tool | Answered before the SDK with the `401` above, because a tool result always travels in a `200` and Claude ignores a sign-in request on a `200`. Counted in `mcp_calls` with reason `sign-in-required` and logged at `info`; charged to no limit, because no tool ran |
+| User signs in | The client shows its Connect card, the user signs in or creates an account on `/oauth/authorize`, and the client retries the same call with a token. New accounts join `mcp-users` automatically (identity module, `joinMcpUsers` in `auth.ts`), so the consent step and token check let them through |
+| Later requests | Carry the token; the caller is a member and gets their groups' tools and limits |
+
+Restricted tools can never be granted to `mcp-users`, so they can never appear in the anonymous list. A `requiresSignIn` tool is left out of the governor's allowlist, and its handler only returns a "sign in" error, so it cannot run for an anonymous caller even if the `401` step were skipped. A failure to read the member tools is logged at `warn` and leaves the anonymous tools working.
+
+New members are no longer asked to sign in when they add the connector: the first request succeeds anonymously, and sign-in happens the first time the model calls a member tool. Claude Code users can sign in by hand with `/mcp`.
+
+`/mcp/public` predates the merge and stays as an anonymous-only alias for clients that were given it. The MCP specification makes authorization optional, so both are within it.
+
+## The Anonymous Group
 
 `anonymous` (`MCP_ANONYMOUS_GROUP_ID`) is a virtual group. It has no members and no record in the identity module, which refuses to create a real group with that id because grants and policies are stored by group id alone. `McpGroupPolicyService.listGroups` adds it beside the real groups, so it appears on the Tools tab and grants and limits are set for it the same way as for any group. A real group created under that id before the reservation has no MCP effect (the caller resolver drops it from members' groups, and the admin page lists only the virtual group) and startup logs a warning naming it.
 
@@ -99,7 +115,7 @@ A `tools/call` for a tool that was not served gets the SDK's bare "Tool not foun
 |---|---|
 | Only tools passing `getMcpAnonymousToolIneligibility` (the MCP floor plus `sensitivity: 'public'` and not `operatesOnUserOwnedObjects`) may be granted or served. No setting waives it | Grant (400), served list (`not-public`), and the governor's policy engine on every anonymous call |
 | Never allowed restricted tools | Policy validation (400), `mcpGroupMayHoldTool`, `toPolicy` |
-| Every limit must be set; starts at 10 calls a minute per caller, 200 per 24 hours per caller, 5,000 per 24 hours for the group (`DEFAULT_ANONYMOUS_LIMITS`) | Policy validation (400); a stored document missing a limit reads as the default |
+| Every limit must be set; starts at 30 calls a minute per caller, 500 per 24 hours per caller, 5,000 per 24 hours for the group (`DEFAULT_ANONYMOUS_LIMITS`). A caller is a network range, and Anthropic's servers carry every claude.ai user from about two dozen /24 ranges, so the per-caller limits are generous; they stay well below the pool so one scraper on one network cannot empty it and lock every anonymous caller out for the day, which is also why major public servers (Exa, Context7) keep per-IP limits on keyless use. Callers who need more sign in | Policy validation (400); a stored document missing a limit reads as the default |
 | A caller is one network range: a /24 for IPv4, a /64 for IPv6 | `AnonymousCallerKeyer`. Counting single addresses would let a caller with an IPv6 allocation rotate past every limit |
 | The id is a salted SHA-256 of the range, cut to 16 hex characters; callers with no readable address share the id `unknown` | The salt is `TRAFFIC_IP_HASH_SALT`, falling back to `SESSION_SECRET` (the traffic module's salt), passed in as `anonymousKeySalt` |
 
@@ -188,7 +204,7 @@ A changed name or redirect address is logged and nothing is revoked. Only an app
 
 ## Tool Exposure
 
-Every tool starts hidden. On the Tools tab an admin picks a user group (or the virtual `anonymous` group) and grants tools to it; each grant is one document in `module_mcp_tool_approvals`. On `/mcp`, `mcp-users` stays the only way in: a grant to another group reaches members of that group who are also in `mcp-users`. On `/mcp/public`, only `anonymous` grants count. A caller is **served** a tool when at least one of their groups holds a grant for it that passes every check below.
+Every tool starts hidden. On the Tools tab an admin picks a user group (or the virtual `anonymous` group) and grants tools to it; each grant is one document in `module_mcp_tool_approvals`. For signed-in callers on `/mcp`, `mcp-users` stays the only way in (every account joins it): a grant to another group reaches members of that group who are also in `mcp-users`. For anonymous callers on either URL, only `anonymous` grants run; `mcp-users` grants are listed to them on `/mcp` as needing sign-in. A caller is **served** a tool when at least one of their groups holds a grant for it that passes every check below.
 
 | Rule | Where enforced |
 |---|---|
@@ -254,9 +270,9 @@ Clients show a server's handshake details in their connector lists, and registri
 | `icons` | `<origin>/icon.png`, the 192-pixel PNG Next.js serves from `app/icon.png` | Handshake and card |
 | `termsUrl`, `privacyUrl` | `<origin>/terms`, `<origin>/privacy` | Public instructions |
 
-**Instructions differ by endpoint.** `/mcp` keeps one line about TronRelic's tools. `/mcp/public` also tells the model that every listed tool only reads, to quote the capture time of any price because rental prices move during the day, to wait after a limit refusal rather than retry at once, and that use is subject to the terms and privacy policy. Both end with `UNTRUSTED_CONTENT_SYSTEM_CLAUSE`.
+**Instructions differ by caller.** A signed-in member gets one line about TronRelic's tools. An anonymous caller is told that the tools working without an account only read, to quote the capture time of any price because rental prices move during the day, to wait after a limit refusal rather than retry at once, and that use is subject to the terms and privacy policy; on `/mcp` they are also told that tools marked as needing an account ask the user to sign in, which also raises their limits. All end with `UNTRUSTED_CONTENT_SYSTEM_CLAUSE`.
 
-**Server Card.** `GET /mcp/public/server-card`, the location the MCP Server Card extension (SEP-2127, final October 2026) reserves next to an endpoint. It carries `$schema`, the identity fields above, and one `streamable-http` remote at the public URL whose `supportedProtocolVersions` are `2026-07-28` followed by the SDK's `SUPPORTED_PROTOCOL_VERSIONS`. Tools are deliberately not listed; the extension leaves them to `tools/list`. The signed-in endpoint has no card.
+**Server Card.** `GET /mcp/public/server-card`. SEP-2127 (final October 2026) recommends `<endpoint>/server-card` but allows any unreserved URI; the card stays at the address already published in `llms.txt` and the catalog. It carries `$schema`, the identity fields above, and one `streamable-http` remote at **`/mcp`**, the one URL for anonymous callers and members, whose `supportedProtocolVersions` are `2026-07-28` followed by the SDK's `SUPPORTED_PROTOCOL_VERSIONS`. Tools are deliberately not listed; the extension leaves them to `tools/list`.
 
 **AI Catalog.** `GET /.well-known/ai-catalog.json` lists the card under `urn:air:<host>:mcp:public`, so a crawler that knows only the domain can find it.
 

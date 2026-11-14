@@ -23,7 +23,7 @@ tracks these markets and the chain parameters that price them.
 ## AI Assistants (MCP)
 
 - [Connect an AI assistant](https://tronrelic.com/p/mcp): How to add TronRelic's public MCP server to Claude, ChatGPT, Cursor, or VS Code
-- MCP server: https://tronrelic.com/mcp/public (Streamable HTTP, no sign-in, read-only tools for energy rental prices and market activity)
+- MCP server: https://tronrelic.com/mcp (Streamable HTTP; energy rental prices and market activity work without sign-in, and a free account unlocks more tools and higher limits)
 - [Server Card](https://tronrelic.com/mcp/public/server-card): Machine-readable description of the server, also listed in https://tronrelic.com/.well-known/ai-catalog.json
 
 ## Index

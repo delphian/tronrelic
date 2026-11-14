@@ -1,30 +1,22 @@
 /**
- * @fileoverview HTTP handling for both MCP endpoints: `/mcp` for signed-in
- * members and `/mcp/public` for anonymous callers.
+ * @fileoverview HTTP handling for both MCP endpoints: `/mcp`, which serves
+ * members and anonymous callers, and `/mcp/public`, an anonymous-only alias.
  *
  * One controller class serves both, built twice with a different
- * authenticator. Every request passes through the same checks in the same
- * order before the MCP SDK sees it:
+ * authenticator. Every request passes these checks in order before the SDK:
+ * kill switch (503), browser `Origin` (403), method (405), token in the query
+ * string (400), then the authenticator. On `/mcp` a request with credentials
+ * is a member, and a bad token is a 401 so the client refreshes; one without
+ * is anonymous. On `/mcp/public` every request is anonymous. A store a check
+ * needs being down is a 503, never a 401. Only then is the body parsed, with a
+ * small size cap.
  *
- * 1. Kill switch. While MCP is switched off, or the switch cannot be read,
- *    answer 503 and stop. It covers both endpoints.
- * 2. Origin. A browser-sent `Origin` that is not this site is refused, which
- *    blocks DNS-rebinding attacks. Server-to-server clients send no `Origin`.
- * 3. Method. Only POST is served; the stateless transport has no GET stream.
- * 4. Credentials. A token in the query string is refused outright. Then the
- *    endpoint's authenticator decides who the caller is: on `/mcp` a missing
- *    or invalid token is a 401 bearer challenge, which starts the client's
- *    sign-in; on `/mcp/public` every request without credentials is an
- *    anonymous caller. A store the check needs being down is a 503, never a
- *    401, so a client does not discard a token that may be fine.
- * 5. Body. Only now is the JSON body parsed, with a small size cap, so an
- *    unadmitted caller cannot make the server read a large body.
- *
- * Then the caller and the tools served to them ride into the SDK on
- * `req.auth`, and the per-request server factory takes over. A `tools/call`
- * naming a tool the caller was not served is logged as an error and counted
- * in the accounting table first, with the reason it was withheld, because the
- * SDK answers it with a bare "Tool not found" that tells an admin nothing.
+ * On `/mcp`, an anonymous caller is also shown the member tools as "sign in to
+ * use", and a call to one is answered with a 401 before the SDK runs, which is
+ * what makes Claude and ChatGPT ask the user to sign in (lazy authentication).
+ * Everything else rides into the SDK on `req.auth`. A call for a tool that was
+ * not listed is logged and counted first, with the reason it was withheld,
+ * because the SDK answers it with a bare "Tool not found".
  */
 
 import express from 'express';
@@ -51,8 +43,12 @@ const MAX_BODY_BYTES = '256kb';
  */
 const MAX_WITHHELD_CALLS_LOGGED = 10;
 
+/** Most tool names logged and counted for one request answered with a sign-in challenge. */
+const MAX_SIGN_IN_CALLS_LOGGED = 10;
+
 /**
- * Public URLs that describe one endpoint to clients.
+ * Public URLs that describe one endpoint to clients, and whether it offers
+ * sign-in from an anonymous session.
  */
 export interface IMcpEndpointUrls {
     /** The endpoint URL; on `/mcp`, also the audience every access token must carry. */
@@ -67,6 +63,15 @@ export interface IMcpEndpointUrls {
 
     /** Host names a browser `Origin` header may name. */
     allowedOriginHosts: string[];
+
+    /**
+     * The group whose tools an anonymous caller is shown as "sign in to use"
+     * (lazy authentication). Set on `/mcp` to `mcp-users`, the group every
+     * account joins, so an anonymous caller's model can ask for a member tool
+     * and the 401 that answers it starts sign-in on the same connector. Left
+     * unset on `/mcp/public`, which never challenges.
+     */
+    signInGroupId?: string;
 }
 
 /** What the SDK receives on `req.auth.extra` for one request. */
@@ -269,9 +274,73 @@ export class McpEndpointController {
             // failed kill-switch or grant read, not the global handler's 500.
             this.unavailable(res);
         } else {
-            await this.recordWithheldCalls(req.body, caller, tools);
-            await this.handOff(req, res, caller, token, tools);
+            const signInTools = await this.readSignInTools(caller, tools);
+            const signInNames = new Set(signInTools.map(entry => entry.tool.name));
+            const needsSignIn = calledToolNames(req.body).filter(name => signInNames.has(name));
+            if (needsSignIn.length > 0) {
+                this.askToSignIn(res, caller, needsSignIn);
+            } else {
+                const listed = [...tools, ...signInTools];
+                await this.recordWithheldCalls(req.body, caller, listed);
+                await this.handOff(req, res, caller, token, listed);
+            }
         }
+    }
+
+    /**
+     * Work out which member tools to show an anonymous caller as "sign in to
+     * use".
+     *
+     * Claude and ChatGPT start sign-in only when the model calls a tool that
+     * needs an account and the server answers 401, so the model has to see
+     * those tools first. They are the tools a member of the sign-in group
+     * would be served from this address, minus the ones already served
+     * anonymously. Restricted tools can never be granted to that group, so
+     * none appear here. A failure to read them is logged and leaves the
+     * anonymous tools working, because sign-in is an extra, not a requirement.
+     *
+     * @param caller - The admitted caller.
+     * @param served - The tools already served to them.
+     * @returns The tools to list as needing sign-in; empty for members, on an
+     *   endpoint without sign-in, or when they could not be read.
+     */
+    private async readSignInTools(caller: IMcpCaller, served: IMcpServedTool[]): Promise<IMcpServedTool[]> {
+        let signInTools: IMcpServedTool[] = [];
+        if (this.urls.signInGroupId && caller.principalKind === 'anonymous') {
+            try {
+                const servedNames = new Set(served.map(entry => entry.tool.name));
+                const memberTools = await this.exposure.getServedTools({ groups: [this.urls.signInGroupId], ip: caller.ip });
+                signInTools = memberTools
+                    .filter(entry => !servedNames.has(entry.tool.name))
+                    .map(entry => ({ ...entry, requiresSignIn: true }));
+            } catch (error: unknown) {
+                this.logger.warn({ err: error }, 'Could not read the member tools to show anonymous MCP callers; listing anonymous tools only');
+            }
+        }
+        return signInTools;
+    }
+
+    /**
+     * Answer an anonymous call to a member tool with the 401 that starts
+     * sign-in, and count it.
+     *
+     * This has to happen before the SDK runs: a tool result is always sent
+     * inside a 200, and Claude ignores a sign-in request on a 200. After the
+     * user signs in, the client retries the same call with a token. The
+     * refusal is counted in the accounting table as `sign-in-required` so the
+     * usage view shows how often visitors are asked to sign in; it is not
+     * charged to any limit, because no tool ran.
+     *
+     * @param res - The response the challenge is written to.
+     * @param caller - The anonymous caller.
+     * @param toolNames - The member tools the request asked for.
+     */
+    private askToSignIn(res: Response, caller: IMcpCaller, toolNames: string[]): void {
+        for (const name of toolNames.slice(0, MAX_SIGN_IN_CALLS_LOGGED)) {
+            this.meter.recordWithheld(caller, name, 'sign-in-required');
+        }
+        this.logger.info({ principalId: caller.principalId, tools: toolNames.slice(0, MAX_SIGN_IN_CALLS_LOGGED) }, 'Anonymous MCP caller asked to sign in for a member tool');
+        this.challenge(res, 401, 'invalid_token', 'Sign in to a free TronRelic account to use this tool.');
     }
 
     /**
@@ -283,7 +352,7 @@ export class McpEndpointController {
      * missing grant, a switched-off group, or a stale one. The reason comes
      * from the exposure service, which applies the same checks that built the
      * served list. A failure to work out the reason is logged too, and never
-     * stops the request, which the SDK still answers. On the public endpoint
+     * stops the request, which the SDK still answers. From an anonymous caller
      * a refusal is a stranger probing for tools, which is expected traffic, so
      * it is logged at `warn` rather than `error`.
      *
@@ -303,7 +372,7 @@ export class McpEndpointController {
             ip: caller.ip,
             groups: caller.groups
         };
-        const level = caller.endpoint === 'public' ? 'warn' : 'error';
+        const level = caller.principalKind === 'anonymous' ? 'warn' : 'error';
         for (const name of withheld) {
             let reason: string;
             try {
