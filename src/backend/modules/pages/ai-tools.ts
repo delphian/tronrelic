@@ -1,6 +1,6 @@
 /**
- * @fileoverview AI tools over the CMS pages: three reads and one edit that is
- * always held for review.
+ * @fileoverview AI tools over the CMS pages: three reads, plus an edit and a
+ * new-page proposal that are always held for review.
  *
  * Pages are the admin-authored content at addresses such as `/about` or
  * `/guides/energy`. An agent answering a question about the site, or drafting
@@ -19,10 +19,10 @@
  * `public` sensitivity: they can be granted to any MCP user and run in
  * scheduled prompts without exposing anything a visitor could not already read.
  *
- * The fourth tool, `pages-propose-edit`, changes an existing page. It writes
- * through `IPageService.proposeEdit`, which applies the change as a
- * non-curator, so core holds every edit in the curation queue and visitors keep
- * seeing the approved version until a curator approves it.
+ * `pages-propose-edit` changes an existing page and `pages-propose-page`
+ * drafts a new one. They write through `IPageService.proposeEdit` and
+ * `proposePage`, which apply the change as a non-curator, so core holds it in
+ * the curation queue and visitors see nothing new until a curator approves it.
  *
  * @module backend/modules/pages/ai-tools
  */
@@ -38,7 +38,7 @@ import type {
     ServiceWatchDisposer
 } from '@/types';
 import { isContentError } from '../../services/content-error.js';
-import { PageEditInputError } from './services/PageEditInputError.js';
+import { PageInputError } from './services/PageInputError.js';
 import { PAGE_CONTENT_TYPE_ID } from './services/page-content-type.js';
 import { MAX_PROPOSED_BODY_CHARACTERS } from './services/page.service.js';
 
@@ -55,16 +55,17 @@ export const AI_TOOL_NAMES = {
     list: 'pages-list',
     search: 'pages-search',
     get: 'pages-get',
-    proposeEdit: 'pages-propose-edit'
+    proposeEdit: 'pages-propose-edit',
+    proposePage: 'pages-propose-page'
 } as const;
 
 /**
- * The classification of `pages-propose-edit`.
+ * The classification of `pages-propose-edit` and `pages-propose-page`.
  *
- * External and irreversible because an approved edit changes what every
- * visitor reads, and published text has been seen once it is live.
- * `forcesCuratorReview: true` bound to `core:page` describes what the tool
- * does: every edit goes through the core content service as a non-curator, so
+ * External and irreversible because an approved edit or new page changes what
+ * every visitor reads, and published text has been seen once it is live.
+ * `forcesCuratorReview: true` bound to `core:page` describes what the tools
+ * do: every write goes through the core content service as a non-curator, so
  * core holds it in the curation queue. The binding lets the governor check that
  * claim against the live curation registration instead of trusting it.
  */
@@ -287,11 +288,11 @@ function normalizeIdentifier(value: unknown): string {
  * Run one tool call, turning an input refusal into an answer the model can act
  * on and any other failure into a generic one that is logged in full.
  *
- * A page edit can also be refused by the page service's field rules or by the
- * core content service. Those refusals describe the model's request (an
- * unknown or deleted page, a vetoed change), so their message is returned as an
- * input error. When curation is unavailable the edit was not stored, and the
- * model is told so, since retrying later is the right response.
+ * A page write can also be refused by the page service's field and slug rules
+ * or by the core content service. Those refusals describe the model's request
+ * (a taken slug, an unknown or deleted page, a vetoed change), so their message
+ * is returned as an input error. When curation is unavailable nothing was
+ * stored, and the model is told so, since retrying later is the right response.
  *
  * @param logger - Where unexpected failures are recorded.
  * @param toolName - The tool's name, for the log line.
@@ -307,27 +308,27 @@ async function runPageTool(
     try {
         response = { success: true, ...(await body()) };
     } catch (error) {
-        if (error instanceof PageToolInputError || error instanceof PageEditInputError) {
+        if (error instanceof PageToolInputError || error instanceof PageInputError) {
             response = { success: false, error: error.message, errorKind: 'input' };
         } else if (isContentError(error) && INPUT_CONTENT_ERROR_CODES.has(error.code)) {
             response = { success: false, error: error.message, errorKind: 'input' };
         } else if (isContentError(error) && error.code === 'curation-unavailable') {
-            response = { success: false, error: 'The review queue is unavailable, so the edit was not stored. Retrying later may work.', errorKind: 'failed' };
+            response = { success: false, error: 'The review queue is unavailable, so the change was not stored. Retrying later may work.', errorKind: 'failed' };
         } else {
             logger.error({ error, tool: toolName }, 'Pages AI tool failed unexpectedly');
-            response = { success: false, error: 'The page lookup failed. This is not caused by your input; retrying later may work.', errorKind: 'failed' };
+            response = { success: false, error: 'The page tool failed. This is not caused by your input; retrying later may work.', errorKind: 'failed' };
         }
     }
     return response;
 }
 
 /**
- * Build the four tools against the page service.
+ * Build the five tools against the page service.
  *
  * @param service - The page service the tools go through. Its reads own the
  *   rule that only published, visitor-visible pages are returned, and its
- *   `proposeEdit` owns the edit's field rules and the non-curator actor that
- *   makes core hold every edit for review.
+ *   `proposeEdit` and `proposePage` own the field rules and the non-curator
+ *   actor that makes core hold every write for review.
  * @param logger - Module-scoped logger for unexpected failures.
  * @returns The tools, in the order the admin page lists them.
  */
@@ -462,7 +463,7 @@ export function buildPageAiTools(service: IPageService, logger: ISystemLogServic
         description:
             'Propose an edit to an existing site page for human review. The edit is NOT applied to the live page immediately: it is held in the central curation queue, ' +
             'and visitors keep seeing the current published version until an admin approves the edit. ' +
-            'Use when asked to correct, update, or improve a page that already exists. This tool cannot create pages, delete them, publish or unpublish them, or change their address. ' +
+            `Use when asked to correct, update, or improve a page that already exists. This tool cannot create pages (use ${AI_TOOL_NAMES.proposePage}), delete them, publish or unpublish them, or change their address. ` +
             `BEFORE editing, find the page with ${AI_TOOL_NAMES.search} or ${AI_TOOL_NAMES.list} and read it in full with ${AI_TOOL_NAMES.get}, so the edit is based on what the page actually says. ` +
             'Send only the fields you are changing; an absent field keeps its current value. ' +
             `Parameters: pageId (required) is the page id (a UUID) those tools return. ` +
@@ -521,7 +522,79 @@ export function buildPageAiTools(service: IPageService, logger: ISystemLogServic
         })
     };
 
-    return [list, search, get, proposeEdit];
+    const proposePage: IAiTool = {
+        name: AI_TOOL_NAMES.proposePage,
+        description:
+            'Propose a NEW site page for human review. The page is NOT published immediately: it is held in the central curation queue, ' +
+            'and nothing is served at its address until an admin approves it. Approving it publishes it. ' +
+            'Pages are TronRelic\'s standing site pages (guides, explainers, policies, documentation) served at a path such as /developers/mcp. ' +
+            'Blog posts, news, and dated announcements are not pages; use the blog tools for those. ' +
+            `Use when asked to create a page that does not exist yet. To change an existing page, use ${AI_TOOL_NAMES.proposeEdit} instead. ` +
+            `BEFORE drafting, call ${AI_TOOL_NAMES.search} for the main subject. If a page already covers it, propose an edit to that page or tell the user, instead of creating a near-duplicate. ` +
+            'Write for a reader: plain language, clear headings, and facts that match what the site actually offers. ' +
+            'Write every link to another page on this site as a root-relative path such as /resource-markets, and every link off the site as a full https:// URL. ' +
+            'Parameters: title (required, plain text, at most 200 characters) is the page heading and search-result title. ' +
+            'slug (optional) is the address, such as "/developers/mcp": lowercase a-z, 0-9, and hyphens, with / between parts, at most 120 characters. It is normalized the way the admin editor normalizes it, and when absent it is made from the title. ' +
+            'It must not be taken by another page or by an old address a page redirects from, and must not shadow a reserved route such as /api, /system, or /blog. ' +
+            `body (required, markdown, at most ${MAX_PROPOSED_BODY_CHARACTERS} characters) is the page content, without a frontmatter block; GitHub Flavored Markdown is supported. ` +
+            'description (required, at most 500 characters, aim for about 150) is the one-sentence summary shown under the title in a search result; state what the page says rather than repeating the title. ' +
+            'keywords (optional, up to 20 short strings). ' +
+            'ogImage (optional) is the social image and must be a path on this site starting with / or an https URL. ' +
+            'Returns { success, pageId, slug, pendingReview }, where slug is the normalized address the page will be served at once approved. Never report that address as live. ' +
+            'A taken or reserved slug comes back as an input error naming the conflict; choose another slug and call again. ' +
+            'Never use this to answer the user or relay findings; write those as normal text in the conversation.',
+        capability: PAGE_EDIT_CAPABILITY,
+        inputSchema: {
+            type: 'object',
+            description: 'The new page to hold for curator review.',
+            properties: {
+                title: { type: 'string', description: 'Page title, at most 200 characters.' },
+                slug: { type: 'string', description: 'Address such as "/developers/mcp", at most 120 characters. Absent derives it from the title.' },
+                body: { type: 'string', description: `Markdown body without frontmatter, at most ${MAX_PROPOSED_BODY_CHARACTERS} characters.` },
+                description: { type: 'string', description: 'Search-result summary, 1 to 500 characters.' },
+                keywords: {
+                    type: 'array',
+                    items: { type: 'string', description: 'One keyword, at most 64 characters.' },
+                    maxItems: 20,
+                    description: 'Keyword list, up to 20 entries.'
+                },
+                ogImage: { type: 'string', description: 'Social image: a path on this site starting with /, or an https URL.' }
+            },
+            required: ['title', 'body', 'description'],
+            additionalProperties: false
+        },
+        // The smallest valid call, which lets the slug come from the title,
+        // and a fuller one choosing its own nested address and keywords.
+        inputExamples: [
+            {
+                title: 'Energy Rental Glossary',
+                description: 'Plain definitions of the terms used on TronRelic\'s energy rental pages, from bandwidth to delegation.',
+                body: '## Energy\n\nEnergy pays for smart contract calls on TRON...\n\n## Bandwidth\n\nBandwidth pays for the bytes a transaction takes...'
+            },
+            {
+                title: 'Connect an AI Assistant to TronRelic',
+                slug: '/developers/mcp',
+                description: 'How to connect Claude, ChatGPT, Cursor, or VS Code to TronRelic\'s public MCP server, and the limits that apply.',
+                body: '## Server address\n\nhttps://tronrelic.com/mcp/public\n\n## Claude\n\nAdd it as a custom connector...',
+                keywords: ['mcp', 'ai', 'claude', 'tron energy']
+            }
+        ],
+        handler: async (input) => runPageTool(logger, AI_TOOL_NAMES.proposePage, async () => {
+            // Field and slug rules belong to the service; the raw values are forwarded.
+            const outcome = await service.proposePage({
+                title: input.title as string,
+                slug: input.slug as string | undefined,
+                body: input.body as string,
+                description: input.description as string,
+                keywords: input.keywords as string[] | undefined,
+                ogImage: input.ogImage as string | undefined,
+                source: `ai-tool:${AI_TOOL_NAMES.proposePage}`
+            });
+            return { pageId: outcome.pageId, slug: outcome.slug, pendingReview: outcome.pendingReview };
+        })
+    };
+
+    return [list, search, get, proposeEdit, proposePage];
 }
 
 /**

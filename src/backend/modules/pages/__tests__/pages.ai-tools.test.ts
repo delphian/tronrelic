@@ -5,14 +5,15 @@
  * list and search return summaries without bodies, `pages-get` accepts ids,
  * slugs, and URLs and caps each body, and a bad argument comes back as an
  * input error the model can correct from rather than as a failure. The edit
- * tool declares its curation binding, checks the page id, and reports the
- * service's refusals. Which pages are visible, and how an edit is held for
- * review, are the service's rules and are covered in `page.service.test.ts`.
+ * and new-page tools declare their curation binding, check their input, and
+ * report the service's refusals. Which pages are visible, and how a change is
+ * held for review, are the service's rules and are covered in
+ * `page.service.test.ts`.
  */
 import { describe, it, expect, vi } from 'vitest';
 import type { IPageService, IPublicPage, ISystemLogService } from '@/types';
 import { AI_TOOL_NAMES, buildPageAiTools } from '../ai-tools.js';
-import { PageEditInputError } from '../services/PageEditInputError.js';
+import { PageInputError } from '../services/PageInputError.js';
 import { ContentError } from '../../../services/content-error.js';
 
 /** A content id in the shape core issues. */
@@ -222,7 +223,7 @@ describe('pages-propose-edit AI tool', () => {
 
     it('returns the service\'s field refusals and an unknown page as input errors', async () => {
         const proposeEdit = vi.fn()
-            .mockRejectedValueOnce(new PageEditInputError('Provide at least one of title, body, description, keywords, or ogImage.'))
+            .mockRejectedValueOnce(new PageInputError('Provide at least one of title, body, description, keywords, or ogImage.'))
             .mockRejectedValueOnce(new ContentError('not-found', `No page has id ${PAGE_ID}`));
         const tool = buildTools({ proposeEdit })[AI_TOOL_NAMES.proposeEdit];
 
@@ -241,5 +242,39 @@ describe('pages-propose-edit AI tool', () => {
 
         expect(result).toMatchObject({ success: false, errorKind: 'failed' });
         expect(result.error).toContain('not stored');
+    });
+});
+
+describe('pages-propose-page AI tool', () => {
+    it('shares the edit tool\'s curation binding and never offers a published flag', () => {
+        const tools = buildTools({});
+        const tool = tools[AI_TOOL_NAMES.proposePage];
+
+        expect(tool.capability).toEqual(tools[AI_TOOL_NAMES.proposeEdit].capability);
+        expect(tool.inputSchema.required).toEqual(['title', 'body', 'description']);
+        expect(Object.keys(tool.inputSchema.properties as Record<string, unknown>)).not.toContain('published');
+    });
+
+    it('forwards the page to the service with the tool as its source and reports no live URL', async () => {
+        const proposePage = vi.fn(async () => ({ pageId: PAGE_ID, slug: '/developers/mcp', pendingReview: true, curationId: 'item-1' }));
+        const tool = buildTools({ proposePage })[AI_TOOL_NAMES.proposePage];
+
+        const result = await tool.handler({ title: 'MCP', slug: '/developers/mcp', body: 'Text.', description: 'D' }) as Record<string, any>;
+
+        expect(proposePage).toHaveBeenCalledWith(expect.objectContaining({
+            title: 'MCP',
+            slug: '/developers/mcp',
+            source: 'ai-tool:pages-propose-page'
+        }));
+        expect(result).toEqual({ success: true, pageId: PAGE_ID, slug: '/developers/mcp', pendingReview: true });
+    });
+
+    it('returns a taken slug as an input error the model can act on', async () => {
+        const proposePage = vi.fn(async () => { throw new PageInputError('A page with slug "/about" already exists'); });
+        const tool = buildTools({ proposePage })[AI_TOOL_NAMES.proposePage];
+
+        const result = await tool.handler({ title: 'About', body: 'Text.', description: 'D' }) as Record<string, any>;
+
+        expect(result).toMatchObject({ success: false, errorKind: 'input', error: expect.stringContaining('/about') });
     });
 });

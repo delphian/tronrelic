@@ -2,7 +2,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { PageService } from '../services/page.service.js';
-import { PageEditInputError } from '../services/PageEditInputError.js';
+import { PageInputError } from '../services/PageInputError.js';
 import type { ICacheService, IContentActor, ICurationService } from '@/types';
 import { ObjectId } from 'mongodb';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
@@ -239,10 +239,10 @@ describe('PageService', () => {
             const created = await service.createPage(makePageMarkdown({ title: 'Stable', slug: '/stable', published: true }), curator);
             const id = created.contentId!;
 
-            await expect(service.proposeEdit(id, {})).rejects.toBeInstanceOf(PageEditInputError);
-            await expect(service.proposeEdit(id, { body: '---\nslug: "/moved"\npublished: false\n---\n# Moved' })).rejects.toBeInstanceOf(PageEditInputError);
-            await expect(service.proposeEdit(id, { ogImage: 'javascript:alert(1)' })).rejects.toBeInstanceOf(PageEditInputError);
-            await expect(service.proposeEdit(id, { ogImage: '//evil.example/x.png' })).rejects.toBeInstanceOf(PageEditInputError);
+            await expect(service.proposeEdit(id, {})).rejects.toBeInstanceOf(PageInputError);
+            await expect(service.proposeEdit(id, { body: '---\nslug: "/moved"\npublished: false\n---\n# Moved' })).rejects.toBeInstanceOf(PageInputError);
+            await expect(service.proposeEdit(id, { ogImage: 'javascript:alert(1)' })).rejects.toBeInstanceOf(PageInputError);
+            await expect(service.proposeEdit(id, { ogImage: '//evil.example/x.png' })).rejects.toBeInstanceOf(PageInputError);
             expect(curation.hold).not.toHaveBeenCalled();
         });
 
@@ -252,7 +252,7 @@ describe('PageService', () => {
                 curator
             );
 
-            await expect(service.proposeEdit(created.contentId!, { body: '# Noted\n\nNew text.' })).rejects.toBeInstanceOf(PageEditInputError);
+            await expect(service.proposeEdit(created.contentId!, { body: '# Noted\n\nNew text.' })).rejects.toBeInstanceOf(PageInputError);
             await expect(service.proposeEdit(created.contentId!, { description: 'Still editable.' })).resolves.toMatchObject({ pendingReview: true });
         });
 
@@ -260,6 +260,54 @@ describe('PageService', () => {
             await expect(
                 service.proposeEdit('3f2b8c1e-9d4a-4e7b-8a1c-5d6e7f809a1b', { title: 'Nobody' })
             ).rejects.toMatchObject({ code: 'not-found' });
+        });
+    });
+
+    describe('proposePage', () => {
+        it('creates a published page held for review and serves nothing until it is approved', async () => {
+            const result = await service.proposePage({
+                title: 'Connect an AI Assistant',
+                slug: '/Developers/MCP ',
+                body: '## Server\n\nProposed body.',
+                description: 'How to connect an AI client.',
+                keywords: ['mcp', 'mcp'],
+                source: 'ai-tool:pages-propose-page'
+            });
+
+            expect(result).toMatchObject({ slug: '/developers/mcp', pendingReview: true });
+            expect(result.pageId).toMatch(/^[0-9a-f-]{36}$/);
+            expect(curation.hold).toHaveBeenCalledWith(expect.objectContaining({ typeId: 'core:page', source: 'system:ai-tool:pages-propose-page' }));
+            expect(await service.getPublicPageBySlug('/developers/mcp')).toBeNull();
+
+            const working = await service.getPageById(result.pageId);
+            expect(working).toMatchObject({ title: 'Connect an AI Assistant', published: true, keywords: ['mcp'], description: 'How to connect an AI client.' });
+
+            const [{ ref }] = curation.hold.mock.calls.at(-1)!;
+            await ContentService.getInstance().applyDecision('core:page', ref, 'approved');
+            const render = await service.renderPublicPageBySlug('/developers/mcp');
+            expect(render?.html).toContain('Proposed body.');
+        });
+
+        it('derives the slug from the title when none is sent', async () => {
+            const result = await service.proposePage({ title: 'Energy Glossary', body: 'Text.', description: 'Terms.' });
+
+            expect(result.slug).toBe('/energy-glossary');
+        });
+
+        it('refuses a missing description, a body carrying frontmatter, and a slug that normalizes to nothing', async () => {
+            await expect(service.proposePage({ title: 'A', body: 'Text.', description: ' ' })).rejects.toBeInstanceOf(PageInputError);
+            await expect(service.proposePage({ title: 'A', body: '---\npublished: false\n---\nText', description: 'D' })).rejects.toBeInstanceOf(PageInputError);
+            await expect(service.proposePage({ title: 'A', slug: '/!!!', body: 'Text.', description: 'D' })).rejects.toBeInstanceOf(PageInputError);
+            expect(curation.hold).not.toHaveBeenCalled();
+        });
+
+        it('refuses a taken or blacklisted slug as input the caller can fix', async () => {
+            await service.createPage(makePageMarkdown({ title: 'Taken', slug: '/taken', published: true }), curator);
+
+            await expect(service.proposePage({ title: 'B', slug: '/taken', body: 'Text.', description: 'D' }))
+                .rejects.toThrow(new PageInputError('A page with slug "/taken" already exists'));
+            await expect(service.proposePage({ title: 'C', slug: '/api/x', body: 'Text.', description: 'D' }))
+                .rejects.toBeInstanceOf(PageInputError);
         });
     });
 

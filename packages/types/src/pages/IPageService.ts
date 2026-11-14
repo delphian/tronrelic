@@ -4,6 +4,8 @@ import type { IPublicPage } from './IPublicPage.js';
 import type { IPublicPageRender } from './IPublicPageRender.js';
 import type { IPageEditProposal } from './IPageEditProposal.js';
 import type { IPageEditProposalResult } from './IPageEditProposalResult.js';
+import type { IPageProposal } from './IPageProposal.js';
+import type { IPageProposalResult } from './IPageProposalResult.js';
 import type { IContentActor } from '../content/IContentActor.js';
 import type { ContentCurationState } from '../content/ContentCurationState.js';
 
@@ -60,6 +62,21 @@ export interface IPageService {
      *   deleted, or vetoed, or when curation is unavailable.
      */
     proposeEdit(pageId: string, input: IPageEditProposal): Promise<IPageEditProposalResult>;
+
+    /**
+     * Propose a new page for human review. As with `proposeEdit`, an
+     * automated caller must not publish anything without a person seeing it
+     * first, so the page is always created as a non-curator: core holds it in
+     * the curation queue and serves nothing until a curator approves it. The
+     * page is created as published, so approval is what puts it live.
+     *
+     * @param input - The new page's title, slug, body, and metadata.
+     * @returns The new page's id and normalized slug, whether it waits for
+     *   review, and the curation item id holding it.
+     * @throws When the input breaks a field rule, the slug is taken or
+     *   blacklisted, the create is vetoed, or curation is unavailable.
+     */
+    proposePage(input: IPageProposal): Promise<IPageProposalResult>;
 
     /**
      * Soft-delete a page. Its slug and redirects stay reserved, and it can be

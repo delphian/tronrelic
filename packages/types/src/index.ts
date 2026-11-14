@@ -83,7 +83,7 @@ export type {
     IClickHouseReader,
     IClickHouseReadResult
 } from './clickhouse/index.js';
-export type { IPage, IPageContent, IPublicPage, IPageSettings, IPageService, IPageEditProposal, IPageEditProposalResult, IMarkdownService, IFrontmatterData, IParsedMarkdown, IPublicPageRender, IPublicPageTranslationMetadata, IPageTranslationService } from './pages/index.js';
+export type { IPage, IPageContent, IPublicPage, IPageSettings, IPageService, IPageEditProposal, IPageEditProposalResult, IPageProposal, IPageProposalResult, IMarkdownService, IFrontmatterData, IParsedMarkdown, IPublicPageRender, IPublicPageTranslationMetadata, IPageTranslationService } from './pages/index.js';
 export type { IStorageProvider, IStorageObjectStat, IFileService, IFileRecord, IFileSource, IFileUploadOptions, IFileListFilter, IVariantOptions, IVariantFit, IFileVariant, ICropRegion, ICropOptions, IFilesSettings, IFilesSettingsService } from './files/index.js';
 export { FILE_SOURCE_KINDS, FileValidationError, FileSizeExceededError } from './files/index.js';
 export type { IModule, IModuleMetadata } from './module/index.js';
