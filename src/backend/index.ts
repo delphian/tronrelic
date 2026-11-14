@@ -673,6 +673,8 @@ async function bootstrapInit(): Promise<BootstrapContext> {
             resourceUrl: oauthConfig.mcpResourceUrl,
             resourceMetadataUrl: oauthConfig.mcpResourceMetadataUrl,
             publicUrl: oauthConfig.mcpPublicUrl,
+            serverCardUrl: oauthConfig.mcpServerCardUrl,
+            aiCatalogUrl: oauthConfig.aiCatalogUrl,
             issuer: oauthConfig.issuer,
             siteHost: oauthConfig.siteHost
         }

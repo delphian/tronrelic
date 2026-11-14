@@ -56,6 +56,9 @@ import { McpEndpointController } from './api/mcp-endpoint.controller.js';
 import { McpAdminController } from './api/mcp-admin.controller.js';
 import { createMcpAdminRouter } from './api/mcp-admin.routes.js';
 import { createProtectedResourceMetadataHandler } from './api/protected-resource-metadata.js';
+import { createAiCatalogHandler, createServerCardHandler } from './api/server-card.js';
+import { buildMcpServerIdentity } from './services/buildMcpServerIdentity.js';
+import type { IMcpServerIdentity } from './services/IMcpServerIdentity.js';
 
 /**
  * The endpoint's public URLs, computed by the identity module from the same
@@ -70,6 +73,12 @@ export interface IMcpEndpointConfig {
 
     /** The public endpoint URL, which takes no sign-in. */
     publicUrl: string;
+
+    /** Where the public endpoint's Server Card is served. */
+    serverCardUrl: string;
+
+    /** Where the site's AI Catalog, which lists the Server Card, is served. */
+    aiCatalogUrl: string;
 
     /** The OAuth issuer. */
     issuer: string;
@@ -182,7 +191,7 @@ export class McpModule implements IModule<IMcpModuleDependencies> {
     readonly metadata: IModuleMetadata = {
         id: 'mcp',
         name: 'MCP',
-        version: '1.2.0',
+        version: '1.3.0',
         description: 'Model Context Protocol endpoints serving AI tools an admin approved per user group: to members of mcp-users at /mcp, and to anonymous callers at /mcp/public'
     };
 
@@ -193,6 +202,7 @@ export class McpModule implements IModule<IMcpModuleDependencies> {
     private exposure!: McpToolExposureService;
     private policies!: McpGroupPolicyService;
     private endpoint!: IMcpEndpointConfig;
+    private identity!: IMcpServerIdentity;
 
     /**
      * Disposer for the `http.groupDeleted` handler. A core module lives for
@@ -235,7 +245,10 @@ export class McpModule implements IModule<IMcpModuleDependencies> {
         this.exposure = exposure;
         this.meter = new McpCallMeter(deps.clickhouse, this.logger);
         const callers = new McpCallerResolver(deps.tokenVerifier, deps.resolveEndUser, deps.connectedApps, this.logger);
-        const serverFactory = new McpServerFactory(deps.governor, new SecretScrubber(deps.knownSecrets), this.logger);
+        // One identity feeds the handshake and the Server Card, so what a
+        // client sees after connecting matches what it read before.
+        this.identity = buildMcpServerIdentity(new URL(deps.endpoint.publicUrl).origin);
+        const serverFactory = new McpServerFactory(deps.governor, new SecretScrubber(deps.knownSecrets), this.logger, this.identity);
         const allowedOriginHosts = [deps.endpoint.siteHost];
 
         this.endpointController = new McpEndpointController(
@@ -329,9 +342,18 @@ export class McpModule implements IModule<IMcpModuleDependencies> {
         this.app.get(new URL(this.endpoint.resourceMetadataUrl).pathname, metadata);
         this.app.get('/.well-known/oauth-protected-resource', metadata);
 
+        // Pre-connection discovery: the public endpoint's Server Card and the
+        // AI Catalog listing it. Mounted with `all` so a wrong method gets a
+        // 405 and the browser preflight an answer, both from the handler.
+        this.app.all(new URL(this.endpoint.serverCardUrl).pathname, createServerCardHandler(this.identity, this.endpoint.publicUrl));
+        this.app.all(new URL(this.endpoint.aiCatalogUrl).pathname, createAiCatalogHandler(this.identity, this.endpoint.serverCardUrl));
+
         this.app.use('/api/admin/mcp', createMcpAdminRouter(this.adminController));
 
-        this.logger.info({ resourceUrl: this.endpoint.resourceUrl, publicUrl: this.endpoint.publicUrl }, 'MCP endpoints, discovery document, and admin API mounted');
+        this.logger.info(
+            { resourceUrl: this.endpoint.resourceUrl, publicUrl: this.endpoint.publicUrl, serverCardUrl: this.endpoint.serverCardUrl },
+            'MCP endpoints, discovery documents, and admin API mounted'
+        );
     }
 
     /**

@@ -9,7 +9,8 @@ TronRelic's Model Context Protocol (MCP) endpoints. Members of the `mcp-users` g
 | Module id | `mcp` |
 | Module class | `src/backend/modules/mcp/McpModule.ts` |
 | Endpoints | `POST /mcp` for signed-in members and `POST /mcp/public` for anonymous callers (stateless Streamable HTTP, MCP 2026-07-28; 2025-era clients served by the SDK's legacy path). Other methods answer `405` |
-| Discovery | `GET /.well-known/oauth-protected-resource/mcp` and `GET /.well-known/oauth-protected-resource` (RFC 9728), for `/mcp` only. The authorization server metadata at `/.well-known/oauth-authorization-server` is served by the identity module |
+| Discovery | `GET /.well-known/oauth-protected-resource/mcp` and `GET /.well-known/oauth-protected-resource` (RFC 9728), for `/mcp` only. The authorization server metadata at `/.well-known/oauth-authorization-server` is served by the identity module. For `/mcp/public`: the Server Card at `GET /mcp/public/server-card` and the AI Catalog at `GET /.well-known/ai-catalog.json`. See [Self-Description and Discovery](#self-description-and-discovery) |
+| Public docs page | `/p/mcp`, a CMS page (pages module), linked from `llms.txt` |
 | Admin page | `/system/mcp` (menu item `MCP`, order 46): kill switch above the tab row; tabs Overview (with the usage view) · Tools · Connected apps · Activity · Database · Logs |
 | Admin API base | `/api/admin/mcp` (rate-limited + `requireAdmin`) |
 | Types package | `@delphian/tronrelic-types` → `IMcpSettings`, `IMcpStatus`, `IMcpToolExposure`, `IMcpToolGrant`, `IMcpGroup`, `IMcpGroupPolicy`, `IMcpGroupPolicyPatch`, `IMcpGroupLimits`, `McpPrincipalKind`, `McpEndpointKind`, `McpUsageWindow`, `IMcpUsageFigures`, `IMcpUsageGroupRow`, `IMcpUsageToolRow`, `IMcpUsageCallerRow`, `IMcpUsageReport`, `IMcpUsageGroupDetail`, `mcpGroupMayHoldTool`, `normaliseIpAllowlistEntries`, `IMcpAccessTokenClaims`, `IMcpAccessTokenVerifier`, `IMcpClientAdmissionPolicy`, `IMcpClientDetails`, `MCP_TOOLS_SCOPE`, `MCP_OAUTH_SCOPES`, `MCP_USERS_GROUP_ID`, `MCP_ANONYMOUS_GROUP_ID`, `getMcpToolIneligibility`, `getMcpAnonymousToolIneligibility`, `IToolInvocationOrigin`, `IToolCallerBudget`, `ToolLimitKind` |
@@ -45,6 +46,8 @@ The endpoint needs raw Express requests (the MCP SDK reads Node request and resp
 | `services/McpUsageService.ts` | Totals `mcp_calls` for the usage view |
 | `migrations/002_create_mcp_calls_table.ts` | Creates `mcp_calls` |
 | `api/protected-resource-metadata.ts` | The RFC 9728 document |
+| `api/server-card.ts` | The public endpoint's Server Card and the AI Catalog, with their CORS, caching, and ETag handling |
+| `services/IMcpServerIdentity.ts`, `services/buildMcpServerIdentity.ts` | How the server describes itself (reverse-DNS name, title, version, description, site, icon, terms and privacy URLs), built once from the site origin and shared by the handshake and the Server Card |
 | `api/mcp-admin.controller.ts`, `api/mcp-admin.routes.ts` | Admin API |
 | `services/mcp-settings.store.ts` | Kill switch persistence with a 5-second in-memory cache |
 | `services/mcp-tool-exposure.service.ts` | Per-group grants, capability fingerprints, the tool list served to one caller, which group each served tool is charged to (`chargedRoute`), and why a tool was withheld (`explainWithheld`) |
@@ -234,9 +237,37 @@ Each call becomes `governor.invoke(name, args, ctx)` with:
 | `origin` | `{ endpoint, principalKind, principalId, chargedGroupId, clientId, clientName, credentialId: <jti>, ip }`, copied onto the audit record |
 | `aiProviderId` | `'mcp'` |
 
-On the `mcp` path the governor skips the untrusted-content screen (each screen is a paid model call and the caller controls the call rate) but keeps the `{ untrustedContentNotice, data }` wrapper. The policy engine charges the caller's budget before the shared per-tool and global windows, and MCP calls count in their own shared windows, separate from the ones admin, scheduled, and programmatic runs use, so outside traffic cannot lock the platform's own AI runs out of a tool. Results go back as JSON text plus `structuredContent`; refusals come back as `isError` results carrying the governor's reason. A tool that fails while running comes back as an `isError` result with a fixed message, because the governor's error for that case is the handler's raw exception text; the real message stays on the audit record. The server's `instructions` (returned by `server/discover`) carry `UNTRUSTED_CONTENT_SYSTEM_CLAUSE`, which clients may add to the model's system prompt.
+On the `mcp` path the governor skips the untrusted-content screen (each screen is a paid model call and the caller controls the call rate) but keeps the `{ untrustedContentNotice, data }` wrapper. The policy engine charges the caller's budget before the shared per-tool and global windows, and MCP calls count in their own shared windows, separate from the ones admin, scheduled, and programmatic runs use, so outside traffic cannot lock the platform's own AI runs out of a tool. Results go back as JSON text plus `structuredContent`; refusals come back as `isError` results carrying the governor's reason. A tool that fails while running comes back as an `isError` result with a fixed message, because the governor's error for that case is the handler's raw exception text; the real message stays on the audit record. The server's `instructions` (returned by `server/discover`) end with `UNTRUSTED_CONTENT_SYSTEM_CLAUSE`, which clients may add to the model's system prompt; see [Self-Description and Discovery](#self-description-and-discovery) for what else they say.
 
 Tool annotations are derived from the capability: `readOnlyHint` (read), `destructiveHint` (irreversible), `idempotentHint` (read), `openWorldHint` (external or surfaces untrusted content).
+
+## Self-Description and Discovery
+
+Clients show a server's handshake details in their connector lists, and registries and crawlers read a Server Card before connecting. `buildMcpServerIdentity` builds one `IMcpServerIdentity` from the public endpoint's origin at startup, and both places read it, so they cannot disagree. Nothing in it names a domain, because one image serves several.
+
+| Field | Value | Where it appears |
+|---|---|---|
+| `name` | Reverse-DNS of the site host plus `/mcp` (`com.tronrelic/mcp`) | Server Card. The handshake keeps the short `serverInfo.name` `tronrelic`, which clients already store |
+| `title`, `version` | `TronRelic`, `MCP_SERVER_VERSION` | Handshake and card. Bump the version when the served surface changes shape |
+| `description` | One sentence, at most 100 characters (the card's limit; startup throws past it). Names what `anonymous` is granted, so change it when those grants change in kind | Handshake and card |
+| `websiteUrl` | The site origin | Handshake and card |
+| `icons` | `<origin>/icon.png`, the 192-pixel PNG Next.js serves from `app/icon.png` | Handshake and card |
+| `termsUrl`, `privacyUrl` | `<origin>/terms`, `<origin>/privacy` | Public instructions |
+
+**Instructions differ by endpoint.** `/mcp` keeps one line about TronRelic's tools. `/mcp/public` also tells the model that every listed tool only reads, to quote the capture time of any price because rental prices move during the day, to wait after a limit refusal rather than retry at once, and that use is subject to the terms and privacy policy. Both end with `UNTRUSTED_CONTENT_SYSTEM_CLAUSE`.
+
+**Server Card.** `GET /mcp/public/server-card`, the location the MCP Server Card extension (SEP-2127, final October 2026) reserves next to an endpoint. It carries `$schema`, the identity fields above, and one `streamable-http` remote at the public URL whose `supportedProtocolVersions` are `2026-07-28` followed by the SDK's `SUPPORTED_PROTOCOL_VERSIONS`. Tools are deliberately not listed; the extension leaves them to `tools/list`. The signed-in endpoint has no card.
+
+**AI Catalog.** `GET /.well-known/ai-catalog.json` lists the card under `urn:air:<host>:mcp:public`, so a crawler that knows only the domain can find it.
+
+| Behaviour | Both documents |
+|---|---|
+| Media type | `application/mcp-server-card+json`, `application/ai-catalog+json` |
+| CORS | `Access-Control-Allow-Origin: *`, `GET`, request headers `Content-Type, If-None-Match`, exposed `ETag`. The global CORS middleware skips both paths (`skipForPublicDiscovery` in `loaders/express.ts`), because it refuses every browser origin but the site's own |
+| Caching | `Cache-Control: public, max-age=3600`, a strong `ETag` computed once, `304` for a matching `If-None-Match` |
+| Methods | `GET` and `HEAD`; `OPTIONS` answers the preflight with `204`; anything else `405` with `Allow` |
+
+The paths are `MCP_SERVER_CARD_PATH` and `AI_CATALOG_PATH` in the identity module's `oauth-server-config.ts`, beside the endpoint paths they derive from; the bootstrap passes their URLs in as `serverCardUrl` and `aiCatalogUrl`.
 
 ## Admin REST API
 
@@ -277,9 +308,9 @@ All under `/api/admin/mcp`. Changes that widen access need a signed-in admin (`r
 
 ## Deployment
 
-Nginx must route `= /mcp`, `= /mcp/public`, and `/.well-known/oauth-` to the backend (`tronrelic-ops/scripts/droplet-setup-nginx.sh` and `droplet-dev-up.sh` do, with a per-IP limit of 10 requests per second and a 1 MB body cap on both MCP paths). Next.js rewrites the same paths for local development. The resource URL, public URL, and issuer derive from `BETTER_AUTH_URL`, falling back to `SITE_URL`; the URL users paste into their client must equal the resource URL exactly.
+Nginx must route `= /mcp`, `= /mcp/public`, `= /mcp/public/server-card`, `= /.well-known/ai-catalog.json`, and `/.well-known/oauth-` to the backend (`tronrelic-ops/scripts/droplet-setup-nginx.sh` and `droplet-dev-up.sh` do, with a per-IP limit of 10 requests per second on the MCP paths and a 1 MB body cap on both endpoints). Next.js rewrites the same paths for local development. The resource URL, public URL, and issuer derive from `BETTER_AUTH_URL`, falling back to `SITE_URL`; the URL users paste into their client must equal the resource URL exactly.
 
-To open the public endpoint: run `module:mcp:002_create_mcp_calls_table` from `/system/database` so calls are counted, grant one or more `public` tools to Anonymous on the Tools tab, review its limits, and share the public URL from the Overview tab. Nothing is served there until a tool is granted.
+To open the public endpoint: run `module:mcp:002_create_mcp_calls_table` from `/system/database` so calls are counted, grant one or more `public` tools to Anonymous on the Tools tab, review its limits, and share the public URL from the Overview tab or the `/p/mcp` docs page. Nothing is served there until a tool is granted.
 
 ## Related
 
