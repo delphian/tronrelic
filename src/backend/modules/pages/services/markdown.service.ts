@@ -332,6 +332,22 @@ export class MarkdownService implements IMarkdownService {
     }
 
     /**
+     * Write a new page's markdown from its frontmatter keys and body.
+     *
+     * A new page has no stored frontmatter to keep, so nothing is merged; the
+     * keys are written in gray-matter's YAML layout, the same layout
+     * `editFrontmatter` produces, so a page reads the same in the editor
+     * whichever path created it.
+     *
+     * @param frontmatter - The keys to write.
+     * @param body - The markdown that follows the frontmatter.
+     * @returns The full markdown, frontmatter included.
+     */
+    composeMarkdown(frontmatter: Record<string, unknown>, body: string): string {
+        return matter.stringify(body, frontmatter, MATTER_OPTIONS);
+    }
+
+    /**
      * Rebuild a page's markdown with some frontmatter keys replaced and,
      * optionally, a new body.
      *

@@ -8,6 +8,8 @@ import type {
     IPageContent,
     IPageEditProposal,
     IPageEditProposalResult,
+    IPageProposal,
+    IPageProposalResult,
     IPageSettings,
     IPublicPage,
     IPublicPageRender,
@@ -25,7 +27,7 @@ import { MarkdownService } from './markdown.service.js';
 import { PageContentType, PAGE_CONTENT_TYPE_ID } from './page-content-type.js';
 import type { IPageWriteInput } from './page-content-type.js';
 import { PageTranslatable } from './page-translatable.js';
-import { PageEditInputError } from './PageEditInputError.js';
+import { PageInputError } from './PageInputError.js';
 import { ContentError } from '../../../services/content-error.js';
 import { ObjectId } from 'mongodb';
 
@@ -48,6 +50,13 @@ const MAX_PROPOSED_KEYWORD_LENGTH = 64;
 
 /** Longest social image URL a proposed edit may set. */
 const MAX_PROPOSED_OG_IMAGE_LENGTH = 1024;
+
+/**
+ * Longest slug a proposed page may ask for, after normalizing. Long enough for
+ * a nested path such as `/guides/energy/renting-versus-staking`, short enough
+ * that a pasted sentence is refused rather than turned into an address.
+ */
+const MAX_PROPOSED_SLUG_LENGTH = 120;
 
 /** The fields of a proposed edit, checked and in the shape the stored frontmatter takes. */
 interface IValidatedPageEdit {
@@ -287,7 +296,7 @@ export class PageService implements IPageService {
      * @param input - The fields to change; at least one must be present.
      * @returns The page's id and slug, whether the edit waits for review, and
      *   the curation item id holding it.
-     * @throws PageEditInputError when the input breaks a field rule or the
+     * @throws PageInputError when the input breaks a field rule or the
      *   stored body cannot be safely replaced.
      * @throws ContentError when the page is unknown, deleted, or vetoed, or
      *   curation is unavailable.
@@ -306,11 +315,10 @@ export class PageService implements IPageService {
             { ...edit.frontmatter, slug: current.slug },
             edit.body
         );
-        const actor: IContentActor = { id: `system:${input.source ?? 'pages-service'}`, kind: 'system', isCurator: false };
         // The write itself is updatePage's, so a page has exactly one method
         // that sends a change to core; this method only builds the markdown
         // and fixes the actor as a non-curator.
-        const updated = await this.updatePage(current.id, content, actor);
+        const updated = await this.updatePage(current.id, content, this.proposalActor(input.source));
         const pendingReview = updated.curation === 'pending';
         this.logger.info(
             { contentId: updated.contentId, pendingReview, curationId: updated.curationItemId },
@@ -318,6 +326,66 @@ export class PageService implements IPageService {
         );
 
         return { pageId: updated.contentId ?? current.id, slug: updated.slug, pendingReview, curationId: updated.curationItemId ?? '' };
+    }
+
+    /**
+     * Propose a new page for human review. An automated caller must not
+     * publish anything without a person seeing it first, so the page is
+     * always created as a non-curator: core holds it in the curation queue and
+     * serves nothing, since a page held on its first version has no approved
+     * version to show.
+     *
+     * The page is written with `published: true`. A curator's approval is the
+     * decision to put it live, and a page approved while unpublished would
+     * need a second edit before anyone could read it. A curator who wants the
+     * page stored but hidden edits it on `/system/pages` instead of approving
+     * it as proposed.
+     *
+     * The slug is normalized with the same rules as the admin editor. Whether
+     * it is free and allowed is checked by the page content type during the
+     * create, which refuses it with a `PageInputError` the caller can act on.
+     *
+     * @param input - The new page's title, slug, body, and metadata.
+     * @returns The new page's id and normalized slug, whether it waits for
+     *   review, and the curation item id holding it.
+     * @throws PageInputError when the input breaks a field rule, or the slug is
+     *   taken, reserved by a redirect, or blacklisted.
+     * @throws ContentError when the create is vetoed or curation is unavailable.
+     */
+    async proposePage(input: IPageProposal): Promise<IPageProposalResult> {
+        const title = this.validateTitle(input.title);
+        const frontmatter: Record<string, unknown> = {
+            title,
+            slug: this.validateProposedSlug(input.slug, title),
+            description: this.validateDescription(input.description, true),
+            published: true
+        };
+        if (input.keywords !== undefined) {
+            frontmatter.keywords = this.validateKeywords(input.keywords);
+        }
+        if (input.ogImage !== undefined) {
+            frontmatter.ogImage = this.validateOgImage(input.ogImage);
+        }
+        const content = this.markdownService.composeMarkdown(frontmatter, this.validateBody(input.body));
+        const created = await this.createPage(content, this.proposalActor(input.source));
+        const pendingReview = created.curation === 'pending';
+        this.logger.info(
+            { contentId: created.contentId, slug: created.slug, pendingReview, curationId: created.curationItemId },
+            'New page proposed and held for curation'
+        );
+
+        return { pageId: created.contentId ?? '', slug: created.slug, pendingReview, curationId: created.curationItemId ?? '' };
+    }
+
+    /**
+     * The actor every proposal is written as: a system actor that is never a
+     * curator, so core holds the change for review whatever the caller is.
+     *
+     * @param source - Attribution from the caller, such as the AI tool's name.
+     * @returns The non-curator actor.
+     */
+    private proposalActor(source: string | undefined): IContentActor {
+        return { id: `system:${source ?? 'pages-service'}`, kind: 'system', isCurator: false };
     }
 
     /**
@@ -330,7 +398,7 @@ export class PageService implements IPageService {
      *
      * @param input - The fields the caller sent.
      * @returns The frontmatter keys to set and the replacement body, if any.
-     * @throws PageEditInputError describing the first field that is wrong, or
+     * @throws PageInputError describing the first field that is wrong, or
      *   when no field was supplied.
      */
     private validatePageEdit(input: IPageEditProposal): IValidatedPageEdit {
@@ -338,18 +406,10 @@ export class PageService implements IPageService {
         let body: string | undefined;
 
         if (input.title !== undefined) {
-            const title = typeof input.title === 'string' ? input.title.trim() : '';
-            if (!title || title.length > MAX_PROPOSED_TITLE_LENGTH) {
-                throw new PageEditInputError(`title must be text of 1 to ${MAX_PROPOSED_TITLE_LENGTH} characters.`);
-            }
-            frontmatter.title = title;
+            frontmatter.title = this.validateTitle(input.title);
         }
         if (input.description !== undefined) {
-            const description = typeof input.description === 'string' ? input.description.trim() : null;
-            if (description === null || description.length > MAX_PROPOSED_DESCRIPTION_LENGTH) {
-                throw new PageEditInputError(`description must be text of at most ${MAX_PROPOSED_DESCRIPTION_LENGTH} characters; an empty string clears it.`);
-            }
-            frontmatter.description = description || null;
+            frontmatter.description = this.validateDescription(input.description, false) || null;
         }
         if (input.keywords !== undefined) {
             frontmatter.keywords = this.validateKeywords(input.keywords);
@@ -358,19 +418,99 @@ export class PageService implements IPageService {
             frontmatter.ogImage = this.validateOgImage(input.ogImage);
         }
         if (input.body !== undefined) {
-            if (typeof input.body !== 'string' || !input.body.trim() || input.body.length > MAX_PROPOSED_BODY_CHARACTERS) {
-                throw new PageEditInputError(`body must be markdown of 1 to ${MAX_PROPOSED_BODY_CHARACTERS} characters.`);
-            }
-            if (this.markdownService.hasFrontmatter(input.body)) {
-                throw new PageEditInputError('body must not start with a frontmatter block; send only the markdown that follows it.');
-            }
-            body = input.body;
+            body = this.validateBody(input.body);
         }
         if (Object.keys(frontmatter).length === 0 && body === undefined) {
-            throw new PageEditInputError('Provide at least one of title, body, description, keywords, or ogImage.');
+            throw new PageInputError('Provide at least one of title, body, description, keywords, or ogImage.');
         }
 
         return { frontmatter, body };
+    }
+
+    /**
+     * Check a proposed title. It is the page heading and the text search
+     * results show, so it must be short plain text.
+     *
+     * @param value - The title the caller sent.
+     * @returns The trimmed title.
+     * @throws PageInputError when it is missing, blank, or too long.
+     */
+    private validateTitle(value: unknown): string {
+        const title = typeof value === 'string' ? value.trim() : '';
+        if (!title || title.length > MAX_PROPOSED_TITLE_LENGTH) {
+            throw new PageInputError(`title must be text of 1 to ${MAX_PROPOSED_TITLE_LENGTH} characters.`);
+        }
+
+        return title;
+    }
+
+    /**
+     * Check a proposed meta description, the summary a search result shows
+     * under the title.
+     *
+     * @param value - The description the caller sent.
+     * @param required - True for a new page, which must have one; false for an
+     *   edit, where an empty string clears it.
+     * @returns The trimmed description, empty when an edit clears it.
+     * @throws PageInputError when it is not text, too long, or missing where
+     *   required.
+     */
+    private validateDescription(value: unknown, required: boolean): string {
+        const description = typeof value === 'string' ? value.trim() : null;
+        if (description === null || description.length > MAX_PROPOSED_DESCRIPTION_LENGTH || (required && !description)) {
+            throw new PageInputError(required
+                ? `description must be text of 1 to ${MAX_PROPOSED_DESCRIPTION_LENGTH} characters.`
+                : `description must be text of at most ${MAX_PROPOSED_DESCRIPTION_LENGTH} characters; an empty string clears it.`);
+        }
+
+        return description;
+    }
+
+    /**
+     * Check a proposed markdown body. It is placed after the page's own
+     * frontmatter, so a frontmatter block inside it would be refused rather
+     * than stored where a reviewer could mistake it for metadata.
+     *
+     * @param value - The body the caller sent.
+     * @returns The body as sent.
+     * @throws PageInputError when it is missing, too long, or opens with
+     *   frontmatter.
+     */
+    private validateBody(value: unknown): string {
+        if (typeof value !== 'string' || !value.trim() || value.length > MAX_PROPOSED_BODY_CHARACTERS) {
+            throw new PageInputError(`body must be markdown of 1 to ${MAX_PROPOSED_BODY_CHARACTERS} characters.`);
+        }
+        if (this.markdownService.hasFrontmatter(value)) {
+            throw new PageInputError('body must not start with a frontmatter block; send only the markdown that follows it.');
+        }
+
+        return value;
+    }
+
+    /**
+     * Normalize the slug of a proposed page. The admin editor's rules apply,
+     * so the address a caller asks for becomes the one an admin typing the
+     * same text would get. An absent slug is derived from the title, as it is
+     * for a page whose frontmatter names none.
+     *
+     * @param value - The slug the caller sent, or undefined.
+     * @param title - The validated title, used when no slug was sent.
+     * @returns The normalized slug, starting with `/`.
+     * @throws PageInputError when the slug is not text, normalizes to the site
+     *   root, holds an empty path segment, or is too long.
+     */
+    private validateProposedSlug(value: unknown, title: string): string {
+        if (value !== undefined && typeof value !== 'string') {
+            throw new PageInputError('slug must be text such as "/developers/mcp".');
+        }
+        const slug = this.sanitizeSlug(typeof value === 'string' && value.trim() ? value.trim() : title).replace(/\/+$/, '');
+        if (!slug || slug === '/' || slug.includes('//') || slug.length > MAX_PROPOSED_SLUG_LENGTH) {
+            throw new PageInputError(
+                `slug must be a path such as "/developers/mcp" of at most ${MAX_PROPOSED_SLUG_LENGTH} characters, using only a-z, 0-9, - and single / between parts.`
+            );
+        }
+
+        return slug;
     }
 
     /**
@@ -380,17 +520,17 @@ export class PageService implements IPageService {
      *
      * @param value - The list the caller sent.
      * @returns The trimmed keywords without duplicates.
-     * @throws PageEditInputError when the value is not a list of short strings.
+     * @throws PageInputError when the value is not a list of short strings.
      */
     private validateKeywords(value: unknown): string[] {
         if (!Array.isArray(value) || value.length > MAX_PROPOSED_KEYWORDS) {
-            throw new PageEditInputError(`keywords must be a list of at most ${MAX_PROPOSED_KEYWORDS} strings.`);
+            throw new PageInputError(`keywords must be a list of at most ${MAX_PROPOSED_KEYWORDS} strings.`);
         }
         const keywords: string[] = [];
         for (const entry of value) {
             const keyword = typeof entry === 'string' ? entry.trim() : '';
             if (!keyword || keyword.length > MAX_PROPOSED_KEYWORD_LENGTH) {
-                throw new PageEditInputError(`Each keyword must be text of 1 to ${MAX_PROPOSED_KEYWORD_LENGTH} characters.`);
+                throw new PageInputError(`Each keyword must be text of 1 to ${MAX_PROPOSED_KEYWORD_LENGTH} characters.`);
             }
             if (!keywords.includes(keyword)) {
                 keywords.push(keyword);
@@ -407,7 +547,7 @@ export class PageService implements IPageService {
      *
      * @param value - The URL the caller sent; an empty string clears the image.
      * @returns The trimmed URL, or null to remove the image.
-     * @throws PageEditInputError when the value is not an acceptable URL.
+     * @throws PageInputError when the value is not an acceptable URL.
      */
     private validateOgImage(value: unknown): string | null {
         const url = typeof value === 'string' ? value.trim() : null;
@@ -416,7 +556,7 @@ export class PageService implements IPageService {
             && !/\s/.test(url)
             && (url === '' || /^\/(?!\/)/.test(url) || /^https:\/\/[^/]/i.test(url));
         if (!acceptable) {
-            throw new PageEditInputError(
+            throw new PageInputError(
                 `ogImage must be a path on this site starting with / or an https URL, at most ${MAX_PROPOSED_OG_IMAGE_LENGTH} characters; an empty string clears it.`
             );
         }
@@ -431,17 +571,17 @@ export class PageService implements IPageService {
      * body that is longer, or that holds either, was never shown in full.
      *
      * @param content - The page's stored markdown, including frontmatter.
-     * @throws PageEditInputError when the stored body cannot be safely replaced.
+     * @throws PageInputError when the stored body cannot be safely replaced.
      */
     private assertBodyReplaceable(content: string): void {
         const { body } = this.markdownService.parseMarkdown(content);
         if (body.length > MAX_PROPOSED_BODY_CHARACTERS) {
-            throw new PageEditInputError(
+            throw new PageInputError(
                 `This page's body is longer than ${MAX_PROPOSED_BODY_CHARACTERS} characters, so it cannot be replaced through this path; ask an admin to edit it.`
             );
         }
         if (this.markdownService.stripHiddenMarkup(body) !== body) {
-            throw new PageEditInputError(
+            throw new PageInputError(
                 'This page\'s body holds HTML comments or scripts that the page tools do not show, so replacing it would delete them; ask an admin to edit it.'
             );
         }

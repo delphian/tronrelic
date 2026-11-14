@@ -39,6 +39,7 @@ import type {
 } from '@/types';
 import type { IPageDocument, IPageVersionDocument } from '../database/index.js';
 import type { MarkdownService } from './markdown.service.js';
+import { PageInputError } from './PageInputError.js';
 
 /** Namespaced id of the page content type. */
 export const PAGE_CONTENT_TYPE_ID = 'core:page';
@@ -360,12 +361,12 @@ export class PageContentType implements IManagedContentType<IPageContent, IPageW
      *
      * @param input - The caller's input.
      * @returns The markdown.
-     * @throws Error when it is missing or blank.
+     * @throws PageInputError when it is missing or blank.
      */
     private requireContent(input: IPageWriteInput): string {
         const content = typeof input?.content === 'string' ? input.content : '';
         if (!content.trim()) {
-            throw new Error('Content is required');
+            throw new PageInputError('Content is required');
         }
 
         return content;
@@ -402,7 +403,7 @@ export class PageContentType implements IManagedContentType<IPageContent, IPageW
      *   frontmatter does not declare one, given the parsed slug (an update
      *   keeps the page's existing history, adjusted for the slug it targets).
      * @returns The parsed fields.
-     * @throws Error when the frontmatter has no title.
+     * @throws PageInputError when the frontmatter has no title.
      */
     private parseFields(
         content: string,
@@ -410,7 +411,7 @@ export class PageContentType implements IManagedContentType<IPageContent, IPageW
     ): IParsedPageFields {
         const { frontmatter } = this.markdown.parseMarkdown(content);
         if (!frontmatter.title) {
-            throw new Error('Frontmatter must include a title field');
+            throw new PageInputError('Frontmatter must include a title field');
         }
         const slug = this.slugPolicy.sanitizeSlug(frontmatter.slug || frontmatter.title);
 
@@ -439,7 +440,7 @@ export class PageContentType implements IManagedContentType<IPageContent, IPageW
     private toSlugConflictError(error: unknown, slug: string): unknown {
         const duplicate = error as { code?: number; keyPattern?: Record<string, unknown> } | null;
         const slugConflict = duplicate?.code === 11000 && duplicate.keyPattern?.slug !== undefined;
-        return slugConflict ? new Error(`A page with slug "${slug}" already exists`) : error;
+        return slugConflict ? new PageInputError(`A page with slug "${slug}" already exists`) : error;
     }
 
     /**
@@ -453,7 +454,7 @@ export class PageContentType implements IManagedContentType<IPageContent, IPageW
      *   with itself; null when creating.
      * @param checkBlacklist - Whether to test the slug against the route
      *   blacklist (skipped when an update keeps its slug).
-     * @throws Error describing the first conflict.
+     * @throws PageInputError describing the first conflict.
      */
     private async assertSlugsAvailable(
         slug: string,
@@ -462,20 +463,20 @@ export class PageContentType implements IManagedContentType<IPageContent, IPageW
         checkBlacklist: boolean
     ): Promise<void> {
         if (oldSlugs.includes(slug)) {
-            throw new Error(`Cannot set slug to "${slug}" - this is already in the page's redirect history`);
+            throw new PageInputError(`Cannot set slug to "${slug}" - this is already in the page's redirect history`);
         }
         if (checkBlacklist && await this.slugPolicy.isSlugBlacklisted(slug)) {
-            throw new Error(`Slug "${slug}" conflicts with a blacklisted route pattern`);
+            throw new PageInputError(`Slug "${slug}" conflicts with a blacklisted route pattern`);
         }
         const others = self ? { _id: { $ne: self } } : {};
 
         const holder = await this.pages.findOne({ ...others, $or: [{ slug }, { 'approved.slug': slug }] });
         if (holder) {
-            throw new Error(`A page with slug "${slug}" already exists`);
+            throw new PageInputError(`A page with slug "${slug}" already exists`);
         }
         const redirect = await this.pages.findOne({ ...others, $or: [{ oldSlugs: slug }, { 'approved.oldSlugs': slug }] });
         if (redirect) {
-            throw new Error(`Slug "${slug}" conflicts with redirect from page "${redirect.title}"`);
+            throw new PageInputError(`Slug "${slug}" conflicts with redirect from page "${redirect.title}"`);
         }
 
         if (oldSlugs.length > 0) {
@@ -494,14 +495,14 @@ export class PageContentType implements IManagedContentType<IPageContent, IPageW
                     (candidate) => candidate.slug === oldSlug || candidate.approved?.slug === oldSlug
                 );
                 if (page) {
-                    throw new Error(`Old slug "${oldSlug}" conflicts with existing page "${page.title}"`);
+                    throw new PageInputError(`Old slug "${oldSlug}" conflicts with existing page "${page.title}"`);
                 }
                 const redirecting = redirectHolders.find(
                     (candidate) => candidate.oldSlugs.includes(oldSlug)
                         || Boolean(candidate.approved?.oldSlugs?.includes(oldSlug))
                 );
                 if (redirecting) {
-                    throw new Error(`Old slug "${oldSlug}" conflicts with redirect from page "${redirecting.title}"`);
+                    throw new PageInputError(`Old slug "${oldSlug}" conflicts with redirect from page "${redirecting.title}"`);
                 }
             }
         }
