@@ -694,6 +694,7 @@ function buildTools(
 
     const overviewTool: IAiTool = {
         name: AI_TOOL_NAMES.overview,
+        title: 'Get traffic overview',
         description:
             'Get the headline TronRelic traffic KPIs for a window: visitors, pageviews, sessions, bounce rate, and ' +
             'average session duration, each with the equal-length previous window for comparison, plus a time-bucketed ' +
@@ -797,6 +798,7 @@ function buildTools(
 
     const breakdownTool: IAiTool = {
         name: AI_TOOL_NAMES.breakdown,
+        title: 'Break down site traffic',
         description:
             'Break TronRelic traffic down by one dimension over a window. Use after ' + AI_TOOL_NAMES.overview + ' to ' +
             'explain where traffic came from or what it landed on. ' +
@@ -967,6 +969,7 @@ function buildTools(
 
     const audienceTool: IAiTool = {
         name: AI_TOOL_NAMES.audience,
+        title: 'Analyze visitor behavior',
         description:
             'Get TronRelic audience behaviour over a window: the binary conversion funnel (visitors → converted → new ' +
             'accounts), returning-visitor retention, and the daily distinct-visitor series. ' +
@@ -1066,6 +1069,7 @@ function buildTools(
 
     const newVisitorsTool: IAiTool = {
         name: AI_TOOL_NAMES.newVisitors,
+        title: 'Show where new visitors come from',
         description:
             'List where TronRelic\'s newly-seen visitors came from during a window — one row per first touch with ' +
             'country, referrer domain, landing page, device, UTM campaign, search keyword, session count, and pageviews. ' +
@@ -1132,6 +1136,7 @@ function buildTools(
 
     const crawlerTool: IAiTool = {
         name: AI_TOOL_NAMES.crawlers,
+        title: 'Inspect bot and crawler traffic',
         description:
             'Inspect bot, crawler, and raw request activity against TronRelic — the reads behind the Crawlers tab. ' +
             'Bot-only views: "trend" (daily counts per bot class, human excluded) and "paths" (top paths for one bot ' +
@@ -1239,6 +1244,7 @@ function buildTools(
 
     const seoTool: IAiTool = {
         name: AI_TOOL_NAMES.seo,
+        title: 'Get search performance',
         description:
             'Read TronRelic\'s Google Search Console performance. Views: "keywords" (top search queries with clicks, ' +
             'impressions, CTR, and average position), "pages" (per-page click/impression totals, including pages that were ' +
@@ -1413,6 +1419,7 @@ function buildTools(
 
     const redirectTool: IAiTool = {
         name: AI_TOOL_NAMES.redirects,
+        title: 'Review old-URL redirects',
         description:
             'Inspect TronRelic\'s legacy-URL redirect rules and their usage. View "analytics" (the default) returns, over ' +
             'a window, the total redirects served with a human/bot split, a time-bucketed hits series, and a per-pattern ' +
@@ -1538,6 +1545,7 @@ function buildTools(
 
     const eventsTool: IAiTool = {
         name: AI_TOOL_NAMES.events,
+        title: 'Inspect traffic events',
         description:
             'Inspect individual TronRelic traffic events, or group them by source, to diagnose automated or unusual ' +
             'traffic. Use it when an aggregate from ' + AI_TOOL_NAMES.overview + ', ' + AI_TOOL_NAMES.breakdown + ', or ' +

@@ -242,6 +242,7 @@ function classifyOwnerControl(account: string, owner: IPermissionView | null): s
 export function buildPermissionChangesTool(toolkit: IChainQueryToolkit): IAiTool {
     return {
         name: AI_TOOL_NAMES.permissionChanges,
+        title: 'Find account permission changes',
         description:
             'Find changes to which keys control a TRON account, and transactions signed by keys other than the account\'s own. ' +
             '"updates" (default) lists AccountPermissionUpdate transactions newest first, with the new owner and active permissions (keys, weights, thresholds) and ownerControl: "self-controlled", "shared-owner-control" (the account\'s key needs co-signers), or "owner-control-transferred" (the account\'s own key was removed, so another key now controls it). ' +

@@ -226,6 +226,7 @@ function activationRows(funderFilter: boolean, accountFilter: boolean): string {
 export function buildNewAccountsTool(toolkit: IChainQueryToolkit): IAiTool {
     return {
         name: AI_TOOL_NAMES.newAccounts,
+        title: 'Find new account activations',
         description:
             'Find which wallets are activating new TRON accounts. ' +
             '"activators" (default) ranks the wallets that paid to activate the most new accounts in the window. ' +

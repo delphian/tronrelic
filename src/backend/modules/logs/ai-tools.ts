@@ -248,6 +248,7 @@ function projectLogDetail(log: ILogEntrySource): Record<string, unknown> {
 function buildTools(logService: SystemLogService): IAiTool[] {
     const queryTool: IAiTool = {
         name: AI_TOOL_NAMES.queryLogs,
+        title: 'Search system logs',
         description:
             'Query the TronRelic system logs with filtering and cursor pagination, newest entries first. ' +
             'Use this to investigate errors, warnings, or activity from a specific service or time window — ' +
@@ -342,6 +343,7 @@ function buildTools(logService: SystemLogService): IAiTool[] {
 
     const getTool: IAiTool = {
         name: AI_TOOL_NAMES.getLog,
+        title: 'Read a system log entry',
         description:
             'Fetch one TronRelic system log entry by its id, returning the complete record including the ' +
             'full context payload (error stacks, request details, plugin metadata) without truncation. ' +
@@ -374,6 +376,7 @@ function buildTools(logService: SystemLogService): IAiTool[] {
 
     const statsTool: IAiTool = {
         name: AI_TOOL_NAMES.getStatistics,
+        title: 'Get system log statistics',
         description:
             'Get aggregate statistics over the TronRelic system logs: total entry count, counts per severity ' +
             'level (trace through fatal), and counts per service/plugin. ' +

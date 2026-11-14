@@ -73,6 +73,7 @@ interface ITransferRow {
 export function buildAddressTransfersTool(toolkit: IChainQueryToolkit): IAiTool {
     return {
         name: AI_TOOL_NAMES.addressTransfers,
+        title: 'List address transfers',
         description:
             'List one TRON address\'s value movements (TRX, TRC-10, and TRC-20 transfers, including transfers made inside contract calls), newest first. ' +
             'Use to inspect specific transfers: who paid whom, when, how much, and in which transaction. ' +

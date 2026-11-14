@@ -22,6 +22,7 @@ import type {
 } from '@/types';
 import { AI_TOOL_NAME_PATTERN } from '@/types';
 import { lintToolCapability } from './capability-linter.js';
+import { lintToolTitle } from './lintToolTitle.js';
 
 /** Core `_kv` key (manually namespaced) for persisted per-tool enabled state. */
 const TOOL_STATES_KEY = 'ai-tools:tool-states';
@@ -108,6 +109,9 @@ export class AiToolRegistry implements IAiToolRegistry {
         }
         for (const finding of findings) {
             this.logger.warn({ tool: tool.name, provider }, finding.message);
+        }
+        for (const warning of lintToolTitle(tool)) {
+            this.logger.warn({ tool: tool.name, provider }, warning);
         }
 
         this.tools.set(tool.name, tool);

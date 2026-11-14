@@ -138,6 +138,7 @@ interface IEventRow {
 export function buildTransactionTraceTool(toolkit: IChainQueryToolkit): IAiTool {
     return {
         name: AI_TOOL_NAMES.transactionTrace,
+        title: 'Explain a transaction',
         description:
             'Explain everything one TRON transaction did. Returns the call it made (type, account, recipient or contract, amount, and for a contract call the function selector with well-known names such as transfer(address,uint256)), its status, memo, and signatureCount; ' +
             'signatures, every signature exactly as stored, each normally 130 hex characters (r, s, and the recovery byte), for checking a signature or recovering a key yourself; their order carries no meaning on TRON, since signatures sit outside the signed data and are checked as an unordered set; ' +

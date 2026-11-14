@@ -80,6 +80,7 @@ interface ILookalikeRow {
 export function buildAddressProfileTool(toolkit: IChainQueryToolkit): IAiTool {
     return {
         name: AI_TOOL_NAMES.addressProfile,
+        title: 'Get an address overview',
         description:
             'Get an overview of one TRON address\'s value movements: totals (transfers, transactions, distinct counterparties, first and last activity), a breakdown per token and direction (count, zero-value count, total, usd, counterparties), its address tags, and groups of its counterparties that look like address poisoning. ' +
             'Use this first when asked about a wallet, to decide where to look next: ' + AI_TOOL_NAMES.addressCounterparties + ' for who it deals with, ' + AI_TOOL_NAMES.addressTransfers + ' for individual transfers. ' +

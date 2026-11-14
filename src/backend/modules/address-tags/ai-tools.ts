@@ -299,6 +299,7 @@ async function runTagTool(
 export function buildAddressTagAiTools(service: IAddressTagService, logger: ISystemLogService): IAiTool[] {
     const getTags: IAiTool = {
         name: AI_TOOL_NAMES.getTags,
+        title: 'Look up address tags',
         description:
             'Get TronRelic\'s tags on up to 100 TRON addresses, with each tag\'s provenance: manual (an operator added it) and sources (each machine source asserting it, with its reference, citation URL, and when it last confirmed it). ' +
             'Use to check whether an address is sanctioned, frozen, a verified token contract, or labelled by an operator, before trusting or explaining it. ' +
@@ -348,6 +349,7 @@ export function buildAddressTagAiTools(service: IAddressTagService, logger: ISys
 
     const findByTag: IAiTool = {
         name: AI_TOOL_NAMES.findByTag,
+        title: 'Find addresses by tag',
         description:
             'List the TRON addresses that carry one or more exact tags, such as every address on the OFAC list (ofac:sdn), every address Tether has frozen (usdt:frozen), or the contract tagged as the real USDT (token:usdt), or that carry any tag starting with a prefix, such as every address tagged for one rental market (market:catfee:). ' +
             `Tags match exactly as stored, including case; use ${AI_TOOL_NAMES.listTags} to find the exact spelling. End a prefix with its separator, as in market:catfee:, so it does not also match a longer name that starts the same way. ` +
@@ -407,6 +409,7 @@ export function buildAddressTagAiTools(service: IAddressTagService, logger: ISys
 
     const listTags: IAiTool = {
         name: AI_TOOL_NAMES.listTags,
+        title: 'List address tags',
         description:
             'List the distinct tags TronRelic uses, optionally only those starting with a prefix such as "token:" or "ofac:". ' +
             `Use to learn the exact spelling of a tag before calling ${AI_TOOL_NAMES.findByTag}, or to see which token symbols have a verified contract (prefix "token:"). ` +

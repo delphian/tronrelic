@@ -119,6 +119,7 @@ const METRIC_NOTES: Readonly<Record<NetworkMetric, string>> = {
 export function buildNetworkStatsTool(toolkit: IChainQueryToolkit): IAiTool {
     return {
         name: AI_TOOL_NAMES.networkStats,
+        title: 'Chart network activity',
         description:
             'Chain-wide TRON activity as a time series, per hour or per day, choosing one metric: ' +
             '"blocks" (blocks, transactions, distinct producers); "transactions" (transaction counts by contract type); "failures" (failed smart contract calls by result, such as REVERT or OUT_OF_ENERGY); ' +

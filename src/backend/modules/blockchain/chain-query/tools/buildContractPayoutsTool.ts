@@ -130,6 +130,7 @@ interface IRecipientCountRow {
 export function buildContractPayoutsTool(toolkit: IChainQueryToolkit): IAiTool {
     return {
         name: AI_TOOL_NAMES.contractPayouts,
+        title: 'Show contract payouts',
         description:
             'Show the value one smart contract sent out (direction "out", default) or took in ("in"): TRX and TRC-10 it moved during execution (internal transactions), TRC-20 tokens it transferred (Transfer logs), and, inbound, TRX sent with calls to it. ' +
             '"summary" (default): per token and source, movements, distinct counterparties, total amount, USD value, and first and last time. ' +

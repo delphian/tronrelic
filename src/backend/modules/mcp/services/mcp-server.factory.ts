@@ -215,7 +215,7 @@ export class McpServerFactory {
             server.registerTool(
                 tool.name,
                 {
-                    title: toTitle(tool.name),
+                    title: displayTitleOf(tool),
                     description: requiresSignIn ? `${SIGN_IN_NOTE} ${tool.description}` : tool.description,
                     inputSchema: this.schemaFor(tool),
                     annotations: toAnnotations(tool)
@@ -438,7 +438,7 @@ function toAnnotations(tool: IAiTool): ToolAnnotations {
     const capability = tool.capability;
     const readOnly = capability?.sideEffect === 'read';
     return {
-        title: toTitle(tool.name),
+        title: displayTitleOf(tool),
         readOnlyHint: readOnly,
         destructiveHint: capability?.reversible === false,
         idempotentHint: readOnly,
@@ -447,7 +447,24 @@ function toAnnotations(tool: IAiTool): ToolAnnotations {
 }
 
 /**
- * Turn a tool name such as `blockchain-address-profile` into a display title.
+ * Pick the title clients display for a tool. The tool's own `title` is used
+ * when it declares one; otherwise one is generated from the name, so a tool
+ * registered without a title still shows something readable. The same value
+ * goes to the top-level `title` and to `annotations.title`, because clients
+ * older than the top-level field read only the annotation.
+ *
+ * @param tool - The tool being listed.
+ * @returns The display title.
+ */
+function displayTitleOf(tool: IAiTool): string {
+    const declared = tool.title?.trim();
+
+    return declared ? declared : toTitle(tool.name);
+}
+
+/**
+ * Turn a tool name such as `blockchain-address-profile` into a display title,
+ * for tools that declare none.
  *
  * @param name - The registered tool name.
  * @returns The name with separators replaced by spaces and each word capitalized.

@@ -115,6 +115,7 @@ interface IDeploymentFilters {
 export function buildContractDeploymentsTool(toolkit: IChainQueryToolkit): IAiTool {
     return {
         name: AI_TOOL_NAMES.contractDeployments,
+        title: 'List new smart contracts',
         description:
             'List smart contracts created in a window, newest first. ' +
             '"direct" deployments are CreateSmartContract transactions signed by a wallet: the deployer is that wallet, and the name is the one it declared. ' +
