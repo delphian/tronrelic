@@ -9,7 +9,7 @@ import { requestContext } from '../api/middleware/request-context.js';
 import { attachAuthSession } from '../api/middleware/auth-session.js';
 import { env } from '../config/env.js';
 import { corsOriginCallback } from '../config/cors.js';
-import { AI_CATALOG_PATH, MCP_ENDPOINT_PATH, MCP_PUBLIC_ENDPOINT_PATH, MCP_SERVER_CARD_PATH } from '../modules/identity/services/oauth-server-config.js';
+import { AI_CATALOG_PATH, MCP_ENDPOINT_PATH, MCP_LEGACY_SERVER_CARD_PATH, MCP_PUBLIC_ENDPOINT_PATH, MCP_SERVER_CARD_PATH } from '../modules/identity/services/oauth-server-config.js';
 
 export function createExpressApp(): Express {
   const app = express();
@@ -118,7 +118,11 @@ function routePathPattern(path: string): RegExp {
 const MCP_PATH_PATTERNS = [routePathPattern(MCP_ENDPOINT_PATH), routePathPattern(MCP_PUBLIC_ENDPOINT_PATH)];
 
 /** Public discovery documents that answer every origin with their own CORS headers. */
-const PUBLIC_DISCOVERY_PATTERNS = [routePathPattern(MCP_SERVER_CARD_PATH), routePathPattern(AI_CATALOG_PATH)];
+const PUBLIC_DISCOVERY_PATTERNS = [
+  routePathPattern(MCP_SERVER_CARD_PATH),
+  routePathPattern(MCP_LEGACY_SERVER_CARD_PATH),
+  routePathPattern(AI_CATALOG_PATH)
+];
 
 /**
  * Wrap the global CORS middleware so it skips the public discovery documents.

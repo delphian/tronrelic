@@ -280,6 +280,12 @@ const nextConfig = {
                 destination: `${resolveInternalApiOrigin()}/mcp/public`,
             },
             {
+                source: '/mcp/server-card',
+                destination: `${resolveInternalApiOrigin()}/mcp/server-card`,
+            },
+            // The Server Card's earlier address, still served for clients and
+            // crawlers that stored it.
+            {
                 source: '/mcp/public/server-card',
                 destination: `${resolveInternalApiOrigin()}/mcp/public/server-card`,
             },

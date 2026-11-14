@@ -106,8 +106,14 @@ const RULES: ReadonlyArray<{ class: BotClass; fragments: readonly string[] }> = 
             'oai-searchbot',
             'claudebot',
             'claude-web',
+            // Claude fetching a page for a chat, and Claude's search index.
+            // Without these they fall through to the generic `bot_other`
+            // bucket and Anthropic's traffic is missing from the AI view.
+            'claude-user',
+            'claude-searchbot',
             'anthropic-ai',
             'perplexitybot',
+            'perplexity-user',
             'google-extended',
             'ccbot',
             'bytespider',

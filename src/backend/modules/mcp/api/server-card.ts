@@ -1,5 +1,5 @@
 /**
- * @fileoverview The public endpoint's MCP Server Card and the site's AI Catalog.
+ * @fileoverview The MCP Server Card and the site's AI Catalog.
  *
  * A Server Card (MCP extension SEP-2127, final October 2026) is a static JSON
  * document a client or registry reads before connecting: who runs the server,
@@ -69,14 +69,15 @@ function toDiscoveryDocument(value: unknown, mediaType: string): IDiscoveryDocum
 }
 
 /**
- * Build the Server Card for the public endpoint.
+ * Build the Server Card, which points clients at the one endpoint that serves
+ * both anonymous callers and members.
  *
  * @param identity - The server identity, shared with the handshake so the two
  *   cannot disagree.
- * @param publicUrl - The public endpoint URL clients connect to.
+ * @param endpointUrl - The endpoint URL clients connect to (`/mcp`).
  * @returns The card document.
  */
-export function buildServerCard(identity: IMcpServerIdentity, publicUrl: string): Record<string, unknown> {
+export function buildServerCard(identity: IMcpServerIdentity, endpointUrl: string): Record<string, unknown> {
     return {
         $schema: SERVER_CARD_SCHEMA,
         name: identity.name,
@@ -85,7 +86,7 @@ export function buildServerCard(identity: IMcpServerIdentity, publicUrl: string)
         description: identity.description,
         websiteUrl: identity.websiteUrl,
         icons: identity.icons,
-        remotes: [{ type: 'streamable-http', url: publicUrl, supportedProtocolVersions: SUPPORTED_PROTOCOL_VERSIONS }]
+        remotes: [{ type: 'streamable-http', url: endpointUrl, supportedProtocolVersions: SUPPORTED_PROTOCOL_VERSIONS }]
     };
 }
 
@@ -94,18 +95,17 @@ export function buildServerCard(identity: IMcpServerIdentity, publicUrl: string)
  *
  * The entry identifier takes the form `urn:air:{publisher}:{namespace}:{name}`.
  * The publisher is the site's host, the namespace is `mcp`, and the name is
- * `public`, after the endpoint the card describes, which leaves room for a card
- * for the signed-in endpoint beside it.
+ * `server`: the site runs one MCP server, at `/mcp`, and the card describes it.
  *
- * @param identity - The server identity; its site URL gives the publisher.
+ * @param identity - The server identity; its site origin gives the publisher.
  * @param serverCardUrl - Where the card is served.
  * @returns The catalog document.
  */
 export function buildAiCatalog(identity: IMcpServerIdentity, serverCardUrl: string): Record<string, unknown> {
-    const publisher = new URL(identity.websiteUrl).hostname;
+    const publisher = new URL(identity.siteUrl).hostname;
     return {
         specVersion: '1.0',
-        entries: [{ identifier: `urn:air:${publisher}:mcp:public`, type: SERVER_CARD_MEDIA_TYPE, url: serverCardUrl }]
+        entries: [{ identifier: `urn:air:${publisher}:mcp:server`, type: SERVER_CARD_MEDIA_TYPE, url: serverCardUrl }]
     };
 }
 
@@ -155,14 +155,16 @@ function createDiscoveryHandler(value: unknown, mediaType: string): (req: Reques
 }
 
 /**
- * Build the handler for the public endpoint's Server Card.
+ * Build the handler for the Server Card. The module mounts the one handler at
+ * both the card's address and its earlier alias, so the two serve the same
+ * bytes and the same ETag.
  *
  * @param identity - The server identity.
- * @param publicUrl - The public endpoint URL the card points clients at.
+ * @param endpointUrl - The endpoint URL the card points clients at (`/mcp`).
  * @returns The Express handler.
  */
-export function createServerCardHandler(identity: IMcpServerIdentity, publicUrl: string): (req: Request, res: Response) => void {
-    return createDiscoveryHandler(buildServerCard(identity, publicUrl), SERVER_CARD_MEDIA_TYPE);
+export function createServerCardHandler(identity: IMcpServerIdentity, endpointUrl: string): (req: Request, res: Response) => void {
+    return createDiscoveryHandler(buildServerCard(identity, endpointUrl), SERVER_CARD_MEDIA_TYPE);
 }
 
 /**

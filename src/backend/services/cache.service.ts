@@ -96,25 +96,39 @@ export class CacheService implements ICacheService {
   /**
    * Invalidate all cache entries with a specific tag.
    *
-   * Removes matching entries from both Redis and MongoDB.
+   * Removes matching entries from MongoDB before Redis, for the reason
+   * given on `del()`: a read between the two steps would otherwise refill
+   * Redis from the MongoDB copy that is about to be removed.
    *
    * @param tag - Tag to match for invalidation
    */
   async invalidate(tag: string) {
     const docs = await this.database.find<CacheDoc>(this.COLLECTION_NAME, { tags: tag });
-    await Promise.all(docs.map(doc => this.redis.del(doc.key)));
     await this.database.deleteMany(this.COLLECTION_NAME, { tags: tag });
+    await Promise.all(docs.map(doc => this.redis.del(doc.key)));
     logger.debug({ tag }, 'Cache invalidated');
   }
 
   /**
-   * Delete a specific cache entry by key.
+   * Delete a specific cache entry by key, from both stores.
+   *
+   * `get()` refills Redis from MongoDB on a miss, so an entry removed from
+   * Redis alone comes back on the next read. The MongoDB copy is removed
+   * first; removing Redis first would let a read between the two steps
+   * restore the entry the same way.
+   *
+   * The count comes from MongoDB, where `key` is unique, so when two callers
+   * delete the same key at once exactly one of them gets 1. Callers that use
+   * an entry as a single-use token, such as the wallet challenge nonce,
+   * depend on that.
    *
    * @param key - Cache key to delete
-   * @returns Number of keys removed (0 or 1)
+   * @returns 1 when this call removed the entry, 0 when it was already gone
    */
   async del(key: string): Promise<number> {
-    return await this.redis.del(key);
+    const removed = await this.database.deleteMany<CacheDoc>(this.COLLECTION_NAME, { key });
+    await this.redis.del(key);
+    return removed;
   }
 
   /**

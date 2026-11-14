@@ -93,7 +93,7 @@ function buildInstructions(identity: IMcpServerIdentity, audience: InstructionsA
     const lines = audience === 'member'
         ? ['TronRelic exposes tools over TRON blockchain data and TronRelic content. Each tool\'s annotations say whether it only reads.']
         : [
-            `TronRelic (${identity.websiteUrl}) offers TRON data here without sign-in. The tools that work without an account only read and change nothing.`,
+            `TronRelic (${identity.siteUrl}) offers TRON data here without sign-in. The tools that work without an account only read and change nothing.`,
             ...(audience === 'anonymous-can-sign-in'
                 ? ['Tools whose description says they need a free TronRelic account make your app ask the user to sign in when called; after signing in the same call runs, and the account also gets higher limits.']
                 : []),

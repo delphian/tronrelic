@@ -1,6 +1,6 @@
 /**
- * @fileoverview Tests for the public endpoint's Server Card, the AI Catalog,
- * and the server identity both are built from.
+ * @fileoverview Tests for the MCP Server Card, the AI Catalog, and the server
+ * identity both are built from.
  *
  * They pin the parts registries and clients check: the reverse-DNS name, the
  * 100-character description limit, the card's schema URL and remote, the CORS
@@ -12,7 +12,7 @@ import type { Request, Response } from 'express';
 import { buildMcpServerIdentity } from '../services/buildMcpServerIdentity.js';
 import { buildAiCatalog, buildServerCard, createServerCardHandler } from '../api/server-card.js';
 
-const PUBLIC_URL = 'https://tronrelic.com/mcp/public';
+const ENDPOINT_URL = 'https://tronrelic.com/mcp';
 
 /**
  * A minimal Express response that records what the handler wrote.
@@ -51,7 +51,8 @@ describe('buildMcpServerIdentity', () => {
         const identity = buildMcpServerIdentity('https://tronrelic.com/some/path');
 
         expect(identity.name).toBe('com.tronrelic/mcp');
-        expect(identity.websiteUrl).toBe('https://tronrelic.com');
+        expect(identity.websiteUrl).toBe('https://tronrelic.com/p/mcp');
+        expect(identity.siteUrl).toBe('https://tronrelic.com');
         expect(identity.icons[0].src).toBe('https://tronrelic.com/icon.png');
         expect(identity.termsUrl).toBe('https://tronrelic.com/terms');
         expect(identity.description.length).toBeLessThanOrEqual(100);
@@ -62,27 +63,27 @@ describe('buildMcpServerIdentity', () => {
 describe('Server Card and AI Catalog', () => {
     const identity = buildMcpServerIdentity('https://tronrelic.com');
 
-    it('names the schema, the identity, and one streamable-http remote at the public URL', () => {
-        const card = buildServerCard(identity, PUBLIC_URL) as Record<string, any>;
+    it('names the schema, the identity, and one streamable-http remote at the endpoint URL', () => {
+        const card = buildServerCard(identity, ENDPOINT_URL) as Record<string, any>;
 
         expect(card.$schema).toBe('https://static.modelcontextprotocol.io/schemas/v1/server-card.schema.json');
         expect(card).toMatchObject({ name: 'com.tronrelic/mcp', title: 'TronRelic', version: identity.version });
-        expect(card.remotes).toEqual([expect.objectContaining({ type: 'streamable-http', url: PUBLIC_URL })]);
+        expect(card.remotes).toEqual([expect.objectContaining({ type: 'streamable-http', url: ENDPOINT_URL })]);
         expect(card.remotes[0].supportedProtocolVersions[0]).toBe('2026-07-28');
         expect(card.tools).toBeUndefined();
     });
 
     it('lists the card in the catalog under a urn:air identifier', () => {
-        const catalog = buildAiCatalog(identity, `${PUBLIC_URL}/server-card`);
+        const catalog = buildAiCatalog(identity, `${ENDPOINT_URL}/server-card`);
 
         expect(catalog).toEqual({
             specVersion: '1.0',
-            entries: [{ identifier: 'urn:air:tronrelic.com:mcp:public', type: 'application/mcp-server-card+json', url: `${PUBLIC_URL}/server-card` }]
+            entries: [{ identifier: 'urn:air:tronrelic.com:mcp:server', type: 'application/mcp-server-card+json', url: `${ENDPOINT_URL}/server-card` }]
         });
     });
 
     it('serves the card to any origin with its media type, caching headers, and ETag', () => {
-        const handler = createServerCardHandler(identity, PUBLIC_URL);
+        const handler = createServerCardHandler(identity, ENDPOINT_URL);
         const { res, headers, state } = recordingResponse();
 
         handler(request('GET'), res);
@@ -96,7 +97,7 @@ describe('Server Card and AI Catalog', () => {
     });
 
     it('answers a matching If-None-Match with 304, a preflight with 204, and another method with 405', () => {
-        const handler = createServerCardHandler(identity, PUBLIC_URL);
+        const handler = createServerCardHandler(identity, ENDPOINT_URL);
         const first = recordingResponse();
         handler(request('GET'), first.res);
 

@@ -75,8 +75,11 @@ export interface IMcpEndpointConfig {
     /** The public endpoint URL, which takes no sign-in. */
     publicUrl: string;
 
-    /** Where the public endpoint's Server Card is served. */
+    /** Where the Server Card is served: `/mcp/server-card`, beside the endpoint it describes. */
     serverCardUrl: string;
+
+    /** The card's earlier address under `/mcp/public`, still served so stored links keep working. */
+    legacyServerCardUrl: string;
 
     /** Where the site's AI Catalog, which lists the Server Card, is served. */
     aiCatalogUrl: string;
@@ -192,8 +195,8 @@ export class McpModule implements IModule<IMcpModuleDependencies> {
     readonly metadata: IModuleMetadata = {
         id: 'mcp',
         name: 'MCP',
-        version: '1.4.0',
-        description: 'Model Context Protocol endpoints serving AI tools an admin approved per user group: to members of mcp-users at /mcp, and to anonymous callers at /mcp/public'
+        version: '1.5.0',
+        description: 'Model Context Protocol endpoints serving AI tools an admin approved per user group: to anonymous callers and signed-in members at /mcp, and to anonymous callers only at the /mcp/public alias'
     };
 
     private app!: Express;
@@ -355,12 +358,15 @@ export class McpModule implements IModule<IMcpModuleDependencies> {
         this.app.get(new URL(this.endpoint.resourceMetadataUrl).pathname, metadata);
         this.app.get('/.well-known/oauth-protected-resource', metadata);
 
-        // Pre-connection discovery: the public endpoint's Server Card and the
-        // AI Catalog listing it. Mounted with `all` so a wrong method gets a
-        // 405 and the browser preflight an answer, both from the handler.
-        // The card points clients at `/mcp`, the one address that serves
-        // both anonymous callers and members.
-        this.app.all(new URL(this.endpoint.serverCardUrl).pathname, createServerCardHandler(this.identity, this.endpoint.resourceUrl));
+        // Pre-connection discovery: the Server Card and the AI Catalog listing
+        // it. Mounted with `all` so a wrong method gets a 405 and the browser
+        // preflight an answer, both from the handler. The card points clients
+        // at `/mcp`, the one address that serves both anonymous callers and
+        // members. One handler answers both card addresses, so the earlier
+        // address can never serve a different card.
+        const serverCard = createServerCardHandler(this.identity, this.endpoint.resourceUrl);
+        this.app.all(new URL(this.endpoint.serverCardUrl).pathname, serverCard);
+        this.app.all(new URL(this.endpoint.legacyServerCardUrl).pathname, serverCard);
         this.app.all(new URL(this.endpoint.aiCatalogUrl).pathname, createAiCatalogHandler(this.identity, this.endpoint.serverCardUrl));
 
         this.app.use('/api/admin/mcp', createMcpAdminRouter(this.adminController));
