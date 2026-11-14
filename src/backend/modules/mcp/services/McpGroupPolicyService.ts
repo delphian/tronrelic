@@ -30,13 +30,16 @@ export const MCP_GROUP_POLICIES_COLLECTION = 'module_mcp_group_policies';
 const POLICIES_CACHE_TTL_MS = 5_000;
 
 /**
- * The limits the `anonymous` group starts with. Low enough that a stranger
- * looping on a tool costs little, high enough for a real person asking a
- * handful of questions. An admin can raise them, but never clear them.
+ * The limits the `anonymous` group starts with. A caller is a network range,
+ * and Anthropic's servers carry every claude.ai user from a few dozen ranges,
+ * so the per-caller limits are generous; they stay well below the pool so one
+ * scraper on one network can take at most a tenth of the day's anonymous
+ * calls. The pool is the ceiling on what anonymous use can cost. An admin can
+ * change them, but never clear them.
  */
 export const DEFAULT_ANONYMOUS_LIMITS: Readonly<IMcpGroupLimits> = {
-    callsPerMinutePerCaller: 10,
-    callsPerDayPerCaller: 200,
+    callsPerMinutePerCaller: 30,
+    callsPerDayPerCaller: 500,
     callsPerDayGroup: 5_000
 };
 

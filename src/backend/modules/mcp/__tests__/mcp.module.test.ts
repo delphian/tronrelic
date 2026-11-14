@@ -57,7 +57,7 @@ describe('McpModule', () => {
         const module = new McpModule();
         expect(module.metadata.id).toBe('mcp');
         expect(module.metadata.name).toBe('MCP');
-        expect(module.metadata.version).toBe('1.3.0');
+        expect(module.metadata.version).toBe('1.4.0');
     });
 
     it('init() builds services without mounting routes or touching groups', async () => {

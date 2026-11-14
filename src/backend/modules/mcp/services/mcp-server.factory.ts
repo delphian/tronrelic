@@ -63,6 +63,15 @@ const TOOLS_LIST_TTL_MS = 60_000;
  */
 const TOOL_FAILED_MESSAGE = 'The tool call failed. Try again later.';
 
+/** Put in front of a member tool's description when it is listed to an anonymous caller. */
+const SIGN_IN_NOTE = 'Needs a free TronRelic account: calling it makes your app ask the user to sign in, then the call runs.';
+
+/** Returned if a tool that needs sign-in is ever reached without it. */
+const SIGN_IN_REQUIRED_MESSAGE = 'This tool needs a free TronRelic account. Sign in through your app and try again.';
+
+/** Which set of instructions a caller gets. */
+type InstructionsAudience = 'member' | 'anonymous' | 'anonymous-can-sign-in';
+
 /**
  * Build the guidance returned from `server/discover` for one endpoint.
  *
@@ -75,20 +84,41 @@ const TOOL_FAILED_MESSAGE = 'The tool call failed. Try again later.';
  * page to learn either from, and names the terms that apply to the service.
  *
  * @param identity - The server identity, for the site, terms, and privacy URLs.
- * @param endpoint - Which endpoint the server is answering on.
+ * @param audience - Who the server is answering: a signed-in member, an
+ *   anonymous caller on `/mcp/public`, or an anonymous caller on `/mcp`, who
+ *   can sign in from the same connector to unlock the member tools.
  * @returns The instructions text.
  */
-function buildInstructions(identity: IMcpServerIdentity, endpoint: IMcpCaller['endpoint']): string {
-    const lines = endpoint === 'public'
-        ? [
-            `TronRelic (${identity.websiteUrl}) offers read-only TRON data here without sign-in. The tools listed are the ones currently offered, and none of them change anything.`,
+function buildInstructions(identity: IMcpServerIdentity, audience: InstructionsAudience): string {
+    const lines = audience === 'member'
+        ? ['TronRelic exposes tools over TRON blockchain data and TronRelic content. Each tool\'s annotations say whether it only reads.']
+        : [
+            `TronRelic (${identity.websiteUrl}) offers TRON data here without sign-in. The tools that work without an account only read and change nothing.`,
+            ...(audience === 'anonymous-can-sign-in'
+                ? ['Tools whose description says they need a free TronRelic account make your app ask the user to sign in when called; after signing in the same call runs, and the account also gets higher limits.']
+                : []),
             'Results say when their data was captured. Rental prices change during the day, so give that time whenever you quote a price.',
             'Calls are limited per network. A refused call says which limit it hit; wait before calling again instead of retrying at once.',
             `Use of this service is subject to the terms at ${identity.termsUrl} and the privacy policy at ${identity.privacyUrl}.`
-        ]
-        : ['TronRelic exposes tools over TRON blockchain data and TronRelic content. Each tool\'s annotations say whether it only reads.'];
+        ];
 
     return [...lines, UNTRUSTED_CONTENT_SYSTEM_CLAUSE].join('\n\n');
+}
+
+/**
+ * Pick which instructions a caller gets. Signed-in members get the member
+ * text; anonymous callers get the public text, with the sign-in line only on
+ * `/mcp`, where signing in is possible from the same connector.
+ *
+ * @param caller - The admitted caller.
+ * @returns The instructions audience.
+ */
+function instructionsAudienceOf(caller: IMcpCaller): InstructionsAudience {
+    let audience: InstructionsAudience = 'member';
+    if (caller.principalKind === 'anonymous') {
+        audience = caller.endpoint === 'oauth' ? 'anonymous-can-sign-in' : 'anonymous';
+    }
+    return audience;
 }
 
 /**
@@ -125,7 +155,7 @@ export class McpServerFactory {
     private readonly schemaCache = new WeakMap<object, StandardSchemaWithJSON>();
 
     /** The instructions for each endpoint, built once because they never change at runtime. */
-    private readonly instructions: Record<IMcpCaller['endpoint'], string>;
+    private readonly instructions: Record<InstructionsAudience, string>;
 
     /**
      * @param governor - The AI tool governor every call runs through.
@@ -142,8 +172,9 @@ export class McpServerFactory {
         private readonly identity: IMcpServerIdentity
     ) {
         this.instructions = {
-            oauth: buildInstructions(identity, 'oauth'),
-            public: buildInstructions(identity, 'public')
+            member: buildInstructions(identity, 'member'),
+            anonymous: buildInstructions(identity, 'anonymous'),
+            'anonymous-can-sign-in': buildInstructions(identity, 'anonymous-can-sign-in')
         };
     }
 
@@ -168,32 +199,41 @@ export class McpServerFactory {
             },
             {
                 capabilities: { tools: { listChanged: false } },
-                instructions: this.instructions[caller.endpoint],
+                instructions: this.instructions[instructionsAudienceOf(caller)],
                 cacheHints: { 'tools/list': { ttlMs: TOOLS_LIST_TTL_MS, cacheScope: 'private' } }
             }
         );
+        // Tools listed only so an anonymous caller's model can ask for them
+        // are kept out of the governor's allowlist, so they can never run for
+        // someone who has not signed in.
+        const runnable = served.filter(entry => !entry.requiresSignIn);
         const access: IMcpCallAccess = {
-            allowlist: served.map(entry => entry.tool.name),
-            restricted: served.filter(entry => entry.restricted).map(entry => entry.tool.name)
+            allowlist: runnable.map(entry => entry.tool.name),
+            restricted: runnable.filter(entry => entry.restricted).map(entry => entry.tool.name)
         };
-        for (const { tool, scrubSecrets, chargedGroup } of served) {
+        for (const { tool, scrubSecrets, chargedGroup, requiresSignIn } of served) {
             server.registerTool(
                 tool.name,
                 {
                     title: toTitle(tool.name),
-                    description: tool.description,
+                    description: requiresSignIn ? `${SIGN_IN_NOTE} ${tool.description}` : tool.description,
                     inputSchema: this.schemaFor(tool),
                     annotations: toAnnotations(tool)
                 },
                 /**
                  * Route the client's call for this tool through the governor
-                 * rather than calling the handler directly.
+                 * rather than calling the handler directly. A tool that needs
+                 * sign-in never gets here for an anonymous caller, because the
+                 * endpoint answers that call with a 401 first; the refusal is
+                 * a backstop that keeps it from running if that step is skipped.
                  *
                  * @param args - Arguments the client supplied, already checked
                  *   against the tool's schema by the SDK.
                  * @returns The governed result shaped for MCP.
                  */
-                async (args: unknown) => this.callTool(tool.name, args, caller, access, scrubSecrets, chargedGroup)
+                async (args: unknown) => (requiresSignIn
+                    ? { content: [{ type: 'text' as const, text: SIGN_IN_REQUIRED_MESSAGE }], isError: true }
+                    : this.callTool(tool.name, args, caller, access, scrubSecrets, chargedGroup))
             );
         }
         return server;

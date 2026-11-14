@@ -89,6 +89,14 @@ export interface IMcpServedTool {
 
     /** The policy of the group the call is charged to, whose limits apply. */
     chargedGroup: IMcpGroupPolicy;
+
+    /**
+     * True for a member tool listed to an anonymous caller on `/mcp` only so
+     * the model knows it exists. Calling it is answered with the 401 that
+     * starts sign-in before any tool runs, so it is never passed to the
+     * governor.
+     */
+    requiresSignIn?: boolean;
 }
 
 /**

@@ -1,8 +1,8 @@
 /**
  * @fileoverview Tests for the checks both MCP endpoints apply before the SDK
  * sees a request: kill switch, method, token placement, bearer challenges,
- * scope, and group membership on `/mcp`, and anonymous admission on
- * `/mcp/public`.
+ * scope, and group membership on `/mcp`, anonymous admission on
+ * `/mcp/public`, and the one-URL lazy sign-in on `/mcp`.
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -11,6 +11,7 @@ import type { McpCallerOutcome } from '../services/mcp-caller.resolver.js';
 import { OAuthCallerAuthenticator } from '../services/OAuthCallerAuthenticator.js';
 import { AnonymousCallerAuthenticator } from '../services/AnonymousCallerAuthenticator.js';
 import { AnonymousCallerKeyer } from '../services/AnonymousCallerKeyer.js';
+import { MemberOrAnonymousCallerAuthenticator } from '../services/MemberOrAnonymousCallerAuthenticator.js';
 
 /** A silent logger. */
 const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), child: vi.fn() } as any;
@@ -315,6 +316,80 @@ describe('McpEndpointController', () => {
             expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({ tool: 'tronrelic-query-system-logs', reason: 'not-granted' }), expect.any(String));
             expect(logger.error).not.toHaveBeenCalled();
             expect(callMeter.recordWithheld).toHaveBeenCalledWith(expect.objectContaining({ principalKind: 'anonymous' }), 'tronrelic-query-system-logs', 'not-granted');
+        });
+    });
+
+    describe('one URL for members and anonymous callers (lazy sign-in)', () => {
+        /**
+         * Build a `/mcp` controller with the combined authenticator, where the
+         * anonymous group serves `anonymousTools` and `mcp-users` serves
+         * `memberTools`, with the hand-off to the SDK stubbed out.
+         *
+         * @param anonymousTools - Names served to anonymous callers.
+         * @param memberTools - Names served to members of mcp-users.
+         * @param outcome - What the token resolver answers when a token is sent.
+         * @returns The controller, the resolver, the meter, and the hand-off spy.
+         */
+        function buildMerged(anonymousTools: string[], memberTools: string[], outcome: McpCallerOutcome = { kind: 'invalid-token' }) {
+            const toServed = (names: string[]) => names.map(name => ({ tool: { name }, restricted: false, scrubSecrets: false }));
+            const getServedTools = vi.fn(async ({ groups }: { groups: string[] }) => toServed(groups.includes('mcp-users') ? memberTools : anonymousTools));
+            const resolve = vi.fn(async () => outcome);
+            const callMeter = meter();
+            const controller = new McpEndpointController(
+                { get: vi.fn(async () => ({ enabled: true })) } as any,
+                { getServedTools, explainWithheld: vi.fn(async () => 'not-granted') } as any,
+                new MemberOrAnonymousCallerAuthenticator(
+                    new OAuthCallerAuthenticator({ resolve } as any, logger),
+                    new AnonymousCallerAuthenticator(new AnonymousCallerKeyer('test-salt'), URLS.resourceUrl)
+                ),
+                { create: vi.fn() } as any,
+                { ...URLS, signInGroupId: 'mcp-users' },
+                callMeter,
+                logger
+            );
+            const handOff = vi.spyOn(controller as any, 'handOff').mockResolvedValue(undefined);
+            return { controller, resolve, callMeter, handOff };
+        }
+
+        it('admits a request with no credentials as anonymous and lists member tools as needing sign-in', async () => {
+            const { controller, handOff } = buildMerged(['resource-markets-get-prices'], ['resource-markets-get-prices', 'pages-get']);
+            await controller.handle(rpc({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, {}), response().res, vi.fn());
+            const [, , caller, , listed] = handOff.mock.calls[0] as any[];
+            expect(caller).toMatchObject({ principalKind: 'anonymous', endpoint: 'oauth', groups: ['anonymous'] });
+            expect(listed.map((entry: any) => [entry.tool.name, entry.requiresSignIn === true])).toEqual([
+                ['resource-markets-get-prices', false],
+                ['pages-get', true]
+            ]);
+        });
+
+        it('answers an anonymous call to a member tool with a 401 pointing at the sign-in metadata, and counts it', async () => {
+            const { controller, callMeter, handOff } = buildMerged([], ['pages-get']);
+            const { res, recorded } = response();
+            await controller.handle(rpc({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'pages-get' } }, {}), res, vi.fn());
+            expect(recorded.status).toBe(401);
+            expect(recorded.headers['WWW-Authenticate']).toContain(`resource_metadata="${URLS.resourceMetadataUrl}"`);
+            expect(recorded.headers['WWW-Authenticate']).toContain('error="invalid_token"');
+            expect(callMeter.recordWithheld).toHaveBeenCalledWith(expect.objectContaining({ principalKind: 'anonymous' }), 'pages-get', 'sign-in-required');
+            expect(handOff).not.toHaveBeenCalled();
+        });
+
+        it('still answers a bad token with a 401 instead of downgrading the caller to anonymous', async () => {
+            const { controller, handOff } = buildMerged(['resource-markets-get-prices'], []);
+            const { res, recorded } = response();
+            await controller.handle(rpc({ jsonrpc: '2.0', id: 1, method: 'tools/list' }), res, vi.fn());
+            expect(recorded.status).toBe(401);
+            expect(handOff).not.toHaveBeenCalled();
+        });
+
+        it('lists nothing as needing sign-in to a signed-in member', async () => {
+            const member: McpCallerOutcome = {
+                kind: 'ok',
+                caller: { endpoint: 'oauth', principalKind: 'user', principalId: 'user-1', groups: ['mcp-users'], claims: { userId: 'user-1', clientId: 'c', scopes: ['mcp:tools'] } } as any
+            };
+            const { controller, handOff } = buildMerged([], ['pages-get'], member);
+            await controller.handle(rpc({ jsonrpc: '2.0', id: 1, method: 'tools/list' }), response().res, vi.fn());
+            const listed = handOff.mock.calls[0][4] as any[];
+            expect(listed.map(entry => [entry.tool.name, entry.requiresSignIn === true])).toEqual([['pages-get', false]]);
         });
     });
 });
