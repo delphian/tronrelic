@@ -7,7 +7,7 @@
  * are small fakes, so each test checks one decision.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { IEmailDomainRule, INotificationService, ISignupCapConfig, ISystemLogService } from '@/types';
+import type { IDatabaseService, IEmailDomainRule, INotificationService, ISignupCapConfig, ISystemLogService } from '@/types';
 import { SIGNUP_PROTECTION_LIMITS, SIGNUP_REFUSAL_REASONS, normalizeEmailDomain } from '@/types';
 import type { IAuthRateLimitRedis } from '../services/IAuthRateLimitRedis.js';
 import type { ISignInEventDocument } from '../database/ISignInEventDocument.js';
@@ -177,6 +177,38 @@ describe('SignupProtectionConfigStore validation', () => {
         });
         expect(normalized.signupCap).toEqual(SIGNUP_PROTECTION_LIMITS.defaultCap);
         expect(normalized.domainRules.map(r => r.domain)).toEqual(['a.com', 'b.com']);
+    });
+});
+
+describe('SignupProtectionConfigStore concurrent changes', () => {
+    // Codex review on PR #736: two overlapping saves built their replacement
+    // from the same stale copy, so the later one silently dropped the earlier
+    // one's change, such as a domain block lost to a cap save.
+    it('keeps both changes when a cap save and a domain rule save overlap', async () => {
+        let stored: unknown = null;
+        const database = {
+            get: async () => stored,
+            set: async (_key: string, value: unknown) => {
+                await new Promise(resolve => setTimeout(resolve, 5));
+                stored = value;
+            }
+        } as unknown as IDatabaseService;
+        const store = new SignupProtectionConfigStore(database, buildLogger());
+        await store.load();
+
+        const block = SignupProtectionConfigStore.validateDomainRule({ domain: 'fldubai.com', action: 'block' }, null);
+        if (!block.ok) {
+            throw new Error('test rule should be valid');
+        }
+        await Promise.all([
+            store.upsertDomainRule(block.value),
+            store.setCap({ mode: 'enforce', maxPerHour: 5 }, null)
+        ]);
+
+        const saved = SignupProtectionConfigStore.normalize(stored as never);
+        expect(saved.signupCap).toEqual({ mode: 'enforce', maxPerHour: 5 });
+        expect(saved.domainRules.map(r => r.domain)).toEqual(['fldubai.com']);
+        expect(store.get().domainRules.map(r => r.domain)).toEqual(['fldubai.com']);
     });
 });
 
