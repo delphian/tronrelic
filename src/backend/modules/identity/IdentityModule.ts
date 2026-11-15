@@ -23,6 +23,7 @@ import { fromNodeHeaders, toNodeHandler } from 'better-auth/node';
 import { oauthProviderAuthServerMetadata } from '@better-auth/oauth-provider';
 import type {
     IAccountDirectoryService,
+    IAccountSession,
     ServiceWatchDisposer,
     ICacheService,
     IConnectedAppsService,
@@ -49,7 +50,10 @@ import { WalletService } from './services/wallet.service.js';
 import { UserGroupService } from './services/user-group.service.js';
 import { AccountDirectoryService } from './services/account-directory.service.js';
 import { UserSettingsService } from './services/user-settings.service.js';
-import { setAuthInstance } from './services/auth-facade.js';
+import { setActivityRecorder, setAuthInstance } from './services/auth-facade.js';
+import { AccountActivityTracker } from './services/AccountActivityTracker.js';
+import { AccountNoteStore } from './services/AccountNoteStore.js';
+import { AccountDetailsService } from './services/AccountDetailsService.js';
 import { createAuth, type Auth } from './auth.js';
 import { WalletController } from './api/wallet.controller.js';
 import { UserGroupController } from './api/user-group.controller.js';
@@ -77,7 +81,7 @@ import { SignupGuard } from './services/SignupGuard.js';
 import { SignupProtectionReportService } from './services/SignupProtectionReportService.js';
 import { SignUpProtectionController } from './api/sign-up-protection.controller.js';
 import { createSignUpProtectionRouter } from './api/sign-up-protection.routes.js';
-import { registerIdentityAiTools, type IAccountSessionView } from './ai-tools.js';
+import { registerIdentityAiTools } from './ai-tools.js';
 
 /**
  * Dependencies the identity module needs at bootstrap.
@@ -224,6 +228,8 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
     private auth!: Auth;
     private signInEventStore!: SignInEventStore;
     private signupConfigStore!: SignupProtectionConfigStore;
+    private accountNoteStore!: AccountNoteStore;
+    private accountDetailsService!: AccountDetailsService;
 
     /** Disposer for the `'ai-tools'` watch that registers the identity AI tools. */
     private unwatchAiTools: ServiceWatchDisposer | null = null;
@@ -298,6 +304,16 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
         AccountDirectoryService.setDependencies(this.database, this.logger);
         this.accountDirectoryService = AccountDirectoryService.getInstance();
         await this.accountDirectoryService.createIndexes();
+
+        // Keeps `lastSeenAt` current on each user record for the Users tab.
+        // The facade reports every resolved session to it, and the
+        // connected-apps service built below reports every MCP call.
+        const activityTracker = new AccountActivityTracker(this.database, this.logger);
+        setActivityRecorder(activityTracker);
+
+        // Private admin notes about accounts, edited in the user detail panel.
+        this.accountNoteStore = new AccountNoteStore(this.database, this.logger);
+        await this.accountNoteStore.createIndexes();
 
         // Central per-user settings store. The single home for user-centric
         // settings/preferences, addressed by (userId, namespace, key) and
@@ -413,7 +429,8 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
             async () => (await auth.$context).adapter as unknown as IOAuthStoreAdapter,
             this.database,
             this.accountDirectoryService,
-            this.logger
+            this.logger,
+            activityTracker
         );
         this.connectedAppsService = ConnectedAppsService.getInstance();
         await this.connectedAppsService.createIndexes();
@@ -463,10 +480,31 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
             logger: this.logger
         });
 
+        // One account's full admin view, read by both the user detail panel
+        // and the identity-get-account AI tool, so the two never disagree.
+        // Each read is a narrow function, so the service never holds the auth
+        // instance or a collection handle.
+        const noteStore = this.accountNoteStore;
+        const eventStore = this.signInEventStore;
+        this.accountDetailsService = new AccountDetailsService({
+            accounts: this.accountDirectoryService,
+            getNote: (userId) => noteStore.get(userId),
+            listSignInEvents: (query, page) => eventStore.list(query, page),
+            listSessions: (userId) => this.listAccountSessions(userId),
+            listWallets: (userId) => this.walletService.listWallets(userId),
+            listConnectedApps: (userId) => this.connectedAppsService.listForUser(userId)
+        });
+
         // Controllers over the BA-keyed services.
         this.walletController = new WalletController(this.walletService, this.logger);
         this.groupController = new UserGroupController(this.userGroupService, this.logger);
-        this.accountsController = new AccountsController(this.accountDirectoryService, this.accountDeletionService, this.logger);
+        this.accountsController = new AccountsController(
+            this.accountDirectoryService,
+            this.accountDeletionService,
+            this.accountDetailsService,
+            this.accountNoteStore,
+            this.logger
+        );
         this.userSettingsController = new UserSettingsController(this.userSettingsService, this.logger);
         this.connectedAppsController = new ConnectedAppsController(
             this.connectedAppsService,
@@ -522,7 +560,8 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
     }
 
     /**
-     * List one account's live sessions for the identity AI tools.
+     * List one account's live sessions for the user detail panel and the
+     * identity AI tools.
      *
      * Reads through Better Auth's own adapter, which knows how the session
      * collection stores the user id. Each session is copied field by field,
@@ -532,7 +571,7 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
      * @param userId - Better Auth user id of the account.
      * @returns The account's unexpired sessions, newest first, without tokens.
      */
-    private async listAccountSessions(userId: string): Promise<IAccountSessionView[]> {
+    private async listAccountSessions(userId: string): Promise<IAccountSession[]> {
         const context = await this.auth.$context;
         const sessions = await context.internalAdapter.listSessions(userId, { onlyActiveSessions: true });
         /**
@@ -754,9 +793,7 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
             {
                 accounts: this.accountDirectoryService,
                 listSignInEvents: (query, page) => this.signInEventStore.list(query, page),
-                listSessions: (userId) => this.listAccountSessions(userId),
-                listWallets: (userId) => this.walletService.listWallets(userId),
-                listConnectedApps: (userId) => this.connectedAppsService.listForUser(userId),
+                getAccountDetails: (account) => this.accountDetailsService.getDetails(account),
                 isAdmin: (userId) => this.userGroupService.isAdmin(userId)
             },
             this.logger

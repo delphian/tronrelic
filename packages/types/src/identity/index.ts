@@ -29,6 +29,15 @@ export type {
     IUserSettingDefinition
 } from './IUserSettingsService.js';
 
+export type { AccountSortField } from './AccountSortField.js';
+export type { AccountSortDirection } from './AccountSortDirection.js';
+export { ACCOUNT_SORT_FIELDS } from './ACCOUNT_SORT_FIELDS.js';
+export { ACCOUNT_NOTE_MAX_LENGTH } from './ACCOUNT_NOTE_MAX_LENGTH.js';
+export type { IAccountAdminNote } from './IAccountAdminNote.js';
+export type { IAccountSession } from './IAccountSession.js';
+export type { IAccountSignInEvent } from './IAccountSignInEvent.js';
+export type { IAccountDetails } from './IAccountDetails.js';
+
 export type { IConnectedApp } from './IConnectedApp.js';
 export type { IConnectedAppAdminRow } from './IConnectedAppAdminRow.js';
 export type { IConnectedAppsService } from './IConnectedAppsService.js';
@@ -36,6 +45,8 @@ export type { IOAuthConsentContext } from './IOAuthConsentContext.js';
 
 export type { SignupCapMode } from './SignupCapMode.js';
 export type { EmailDomainRuleAction } from './EmailDomainRuleAction.js';
+export type { DomainBudgetWindow } from './DomainBudgetWindow.js';
+export { DOMAIN_BUDGET_WINDOW_SECONDS } from './DOMAIN_BUDGET_WINDOW_SECONDS.js';
 export type { IEmailDomainRule } from './IEmailDomainRule.js';
 export type { ISignupCapConfig } from './ISignupCapConfig.js';
 export type { ISignupProtectionConfig } from './ISignupProtectionConfig.js';

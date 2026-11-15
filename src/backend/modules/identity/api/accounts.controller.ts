@@ -10,16 +10,31 @@
  * middleware applied at the parent router. Handlers are thin: they parse query
  * params, delegate to the service, and shape the JSON response.
  *
- * The one write is deleting an account, which goes through
- * `AccountDeletionService`. That service owns the rules for it, so the handler
- * only validates the request shape and maps the outcome to a status code.
+ * There are two writes. Deleting an account goes through
+ * `AccountDeletionService`, which owns the rules for it, so the handler only
+ * validates the request shape and maps the outcome to a status code. Saving
+ * the admin note goes through `AccountNoteStore`. The detail panel's reads go
+ * through `AccountDetailsService`, which the identity AI tools share.
  */
 
 import type { Request, Response } from 'express';
-import type { ISystemLogService, IAccountMatch, IAccountSummary } from '@/types';
+import type { AccountSortDirection, ISystemLogService, IAccountMatch, IAccountSummary } from '@/types';
+import { ACCOUNT_SORT_FIELDS } from '@/types';
 import type { AccountDirectoryService } from '../services/account-directory.service.js';
 import type { AccountDeletionOutcome, AccountDeletionService } from '../services/AccountDeletionService.js';
+import type { AccountDetailsService } from '../services/AccountDetailsService.js';
+import { AccountNoteStore } from '../services/AccountNoteStore.js';
 import { parsePositiveInt, parseNonNegativeInt } from '../../../api/query-params.js';
+
+/** Sort directions the account list accepts. */
+const SORT_DIRECTIONS: ReadonlyArray<AccountSortDirection> = ['asc', 'desc'];
+
+/** Default and largest page of sign-in events the detail panel asks for. */
+const DEFAULT_EVENT_PAGE = 20;
+const MAX_EVENT_PAGE = 100;
+
+/** Largest event offset accepted, so one request cannot ask the database to skip without bound. */
+const MAX_EVENT_OFFSET = 100_000;
 
 /** Default page size for the account list — mirrors the service default. */
 const DEFAULT_LIMIT = 50;
@@ -69,13 +84,117 @@ export class AccountsController {
     /**
      * @param accountDirectory - Read-only directory over Better Auth accounts.
      * @param accountDeletion - Soft-deletes an account and enforces the rules for it.
+     * @param accountDetails - Assembles one account's full admin view for the detail panel.
+     * @param accountNotes - Stores the admin note kept about each account.
      * @param logger - Identity-module child logger.
      */
     constructor(
         private readonly accountDirectory: AccountDirectoryService,
         private readonly accountDeletion: AccountDeletionService,
+        private readonly accountDetails: AccountDetailsService,
+        private readonly accountNotes: AccountNoteStore,
         private readonly logger: ISystemLogService
     ) {}
+
+    /**
+     * GET /api/admin/users/:id/details
+     *
+     * Everything the user detail panel shows for one account: the account,
+     * the admin note, live sessions, wallets, connected apps, and the latest
+     * sign-in events. Responds `IAccountDetails`, 400 for a malformed id, and
+     * 404 for an unknown account.
+     *
+     * @param req - Express request; reads the `:id` path param.
+     * @param res - Express response.
+     * @returns Resolves once the response has been written.
+     */
+    async getAccountDetails(req: Request, res: Response): Promise<void> {
+        const id = req.params.id;
+        if (!BA_USER_ID_PATTERN.test(id)) {
+            res.status(400).json({ error: 'InvalidId', message: 'The account id must be a 24-character hex id' });
+        } else {
+            try {
+                const account = await this.accountDirectory.getAccount(id);
+                if (account) {
+                    res.json(await this.accountDetails.getDetails(account));
+                } else {
+                    res.status(404).json({ error: 'NotFound', message: `Account "${id}" not found` });
+                }
+            } catch (error) {
+                this.logger.error({ err: error, id }, 'Failed to read account details');
+                res.status(500).json({ error: 'InternalError', message: 'Failed to read account details' });
+            }
+        }
+        return;
+    }
+
+    /**
+     * GET /api/admin/users/:id/sign-in-events?limit=&offset=
+     *
+     * One page of the sign-in events naming the account's email, newest
+     * first, for the detail panel's "show more". Responds `{ events, total }`.
+     *
+     * @param req - Express request; reads the `:id` path param and `limit`, `offset`.
+     * @param res - Express response.
+     * @returns Resolves once the response has been written.
+     */
+    async listAccountSignInEvents(req: Request, res: Response): Promise<void> {
+        const id = req.params.id;
+        if (!BA_USER_ID_PATTERN.test(id)) {
+            res.status(400).json({ error: 'InvalidId', message: 'The account id must be a 24-character hex id' });
+        } else {
+            try {
+                const account = await this.accountDirectory.getAccount(id);
+                if (account) {
+                    const limit = parsePositiveInt(req.query.limit, DEFAULT_EVENT_PAGE, MAX_EVENT_PAGE);
+                    const offset = Math.min(parseNonNegativeInt(req.query.offset, 0), MAX_EVENT_OFFSET);
+                    res.json(await this.accountDetails.listSignInEvents(account, { limit, offset }));
+                } else {
+                    res.status(404).json({ error: 'NotFound', message: `Account "${id}" not found` });
+                }
+            } catch (error) {
+                this.logger.error({ err: error, id }, 'Failed to list account sign-in events');
+                res.status(500).json({ error: 'InternalError', message: 'Failed to list sign-in events' });
+            }
+        }
+        return;
+    }
+
+    /**
+     * PUT /api/admin/users/:id/note
+     *
+     * Save or clear the admin note on an account. Body `{ note }`; an empty
+     * string clears it. The acting admin is recorded on the note, or null for
+     * the `ADMIN_API_TOKEN` service path. Responds `{ adminNote }` (null once
+     * cleared), 400 for a malformed id or note, and 404 for an unknown account.
+     *
+     * @param req - Express request; reads the `:id` path param, `note` from the body, and the acting admin.
+     * @param res - Express response.
+     * @returns Resolves once the response has been written.
+     */
+    async setAccountNote(req: Request, res: Response): Promise<void> {
+        const id = req.params.id;
+        const checked = AccountNoteStore.validate((req.body as { note?: unknown } | undefined)?.note);
+        if (!BA_USER_ID_PATTERN.test(id)) {
+            res.status(400).json({ error: 'InvalidId', message: 'The account id must be a 24-character hex id' });
+        } else if (!checked.ok) {
+            res.status(400).json({ error: 'InvalidNote', message: checked.message });
+        } else {
+            try {
+                const account = await this.accountDirectory.getAccount(id);
+                if (account) {
+                    const saved = await this.accountNotes.set(id, checked.note, req.userId ?? null);
+                    res.json({ adminNote: await this.accountDetails.toAdminNote(saved) });
+                } else {
+                    res.status(404).json({ error: 'NotFound', message: `Account "${id}" not found` });
+                }
+            } catch (error) {
+                this.logger.error({ err: error, id }, 'Failed to save account note');
+                res.status(500).json({ error: 'InternalError', message: 'Failed to save the note' });
+            }
+        }
+        return;
+    }
 
     /**
      * DELETE /api/admin/users/:id
@@ -128,26 +247,37 @@ export class AccountsController {
      * GET /api/admin/users
      *
      * Paginated account list with optional case-insensitive `search` against
-     * email/name. Returns `{ accounts: IAccountSummary[], total: number }`
-     * where `total` ignores pagination.
+     * email/name, sorted by `sortBy` (one of `ACCOUNT_SORT_FIELDS`, default
+     * `createdAt`) in `sortDirection` (`asc` or `desc`, default `desc`).
+     * Returns `{ accounts: IAccountSummary[], total: number }` where `total`
+     * ignores pagination. An unknown sort value is answered with 400 rather
+     * than silently ignored, so a typo in a script is noticed.
      *
-     * @param req - Express request; reads `limit`, `skip`, `search` query params.
+     * @param req - Express request; reads `limit`, `skip`, `search`, `sortBy`, `sortDirection` query params.
      * @param res - Express response.
      * @returns Resolves once the response has been written.
      */
     async listAccounts(req: Request, res: Response): Promise<void> {
-        try {
-            const limit = parsePositiveInt(req.query.limit, DEFAULT_LIMIT, MAX_LIMIT);
-            const skip = parseNonNegativeInt(req.query.skip, 0);
-            const search = typeof req.query.search === 'string' && req.query.search.trim()
-                ? req.query.search.trim()
-                : undefined;
+        const sortBy = ACCOUNT_SORT_FIELDS.find(field => field === req.query.sortBy);
+        const sortDirection = SORT_DIRECTIONS.find(direction => direction === req.query.sortDirection);
+        if (req.query.sortBy !== undefined && !sortBy) {
+            res.status(400).json({ error: 'InvalidSort', message: `sortBy must be one of ${ACCOUNT_SORT_FIELDS.join(', ')}` });
+        } else if (req.query.sortDirection !== undefined && !sortDirection) {
+            res.status(400).json({ error: 'InvalidSort', message: `sortDirection must be one of ${SORT_DIRECTIONS.join(', ')}` });
+        } else {
+            try {
+                const limit = parsePositiveInt(req.query.limit, DEFAULT_LIMIT, MAX_LIMIT);
+                const skip = parseNonNegativeInt(req.query.skip, 0);
+                const search = typeof req.query.search === 'string' && req.query.search.trim()
+                    ? req.query.search.trim()
+                    : undefined;
 
-            const result = await this.accountDirectory.listAccounts({ limit, skip, search });
-            res.json(result);
-        } catch (error) {
-            this.logger.error({ err: error }, 'Failed to list accounts');
-            res.status(500).json({ error: 'InternalError', message: 'Failed to list accounts' });
+                const result = await this.accountDirectory.listAccounts({ limit, skip, search, sortBy, sortDirection });
+                res.json(result);
+            } catch (error) {
+                this.logger.error({ err: error }, 'Failed to list accounts');
+                res.status(500).json({ error: 'InternalError', message: 'Failed to list accounts' });
+            }
         }
 
         return;

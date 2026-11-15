@@ -10,6 +10,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { IAccountSummary, IAiTool, ISystemLogService, IToolEndUserPrincipal } from '@/types';
 import { AI_TOOL_NAMES, buildIdentityAiTools, type IIdentityAiToolDependencies } from '../ai-tools.js';
 import type { ISignInEventDocument } from '../database/ISignInEventDocument.js';
+import type { IAccountNoteDocument } from '../database/IAccountNoteDocument.js';
+import { AccountDetailsService, type IAccountDetailsDependencies } from '../services/AccountDetailsService.js';
 import { buildSignInEventFilter } from '../services/SignInEventStore.js';
 import { logAuthAttempt } from '../services/createSignInAuditLog.js';
 
@@ -38,7 +40,19 @@ const owner: IAccountSummary = {
     createdAt: new Date('2026-01-01T00:00:00Z'),
     groups: ['admin'],
     primaryWallet: null,
-    deletedAt: null
+    deletedAt: null,
+    lastSeenAt: new Date('2026-11-14T12:00:00Z')
+};
+
+/** The admin who wrote the note on the owner's account. */
+const editor: IAccountSummary = { ...owner, id: 'e'.repeat(24), email: 'editor@example.com', lastSeenAt: null };
+
+/** The note stored on the owner's account. */
+const storedNote: IAccountNoteDocument = {
+    userId: owner.id,
+    note: 'Asked us to watch for sign-ins from abroad.',
+    updatedAt: new Date('2026-11-13T09:00:00Z'),
+    updatedBy: editor.id
 };
 
 /** A stored sign-in event the event double returns. */
@@ -64,6 +78,7 @@ const memberCaller: IToolEndUserPrincipal = { userId: 'member-user' };
 
 describe('identity AI tools', () => {
     let deps: IIdentityAiToolDependencies;
+    let detailDeps: IAccountDetailsDependencies;
     let logger: ISystemLogService;
     let tools: Record<string, IAiTool>;
 
@@ -80,15 +95,18 @@ describe('identity AI tools', () => {
 
     beforeEach(() => {
         logger = buildLogger();
-        deps = {
-            accounts: {
-                countAccounts: vi.fn(async () => 1),
-                getAccount: vi.fn(async (id: string) => (id === owner.id ? owner : null)),
-                getAccountByEmail: vi.fn(async (email: string) => (email.toLowerCase() === owner.email.toLowerCase() ? owner : null)),
-                getAccountsByIds: vi.fn(async () => [owner]),
-                listAccounts: vi.fn(async () => ({ accounts: [owner], total: 1 }))
-            },
-            listSignInEvents: vi.fn(async () => ({ events: [storedEvent], total: 1 })),
+        const accounts = {
+            countAccounts: vi.fn(async () => 1),
+            getAccount: vi.fn(async (id: string) => [owner, editor].find(account => account.id === id) ?? null),
+            getAccountByEmail: vi.fn(async (email: string) => (email.toLowerCase() === owner.email.toLowerCase() ? owner : null)),
+            getAccountsByIds: vi.fn(async () => [owner]),
+            listAccounts: vi.fn(async () => ({ accounts: [owner], total: 1 }))
+        };
+        const listSignInEvents = vi.fn(async () => ({ events: [storedEvent], total: 1 }));
+        detailDeps = {
+            accounts,
+            getNote: vi.fn(async (userId: string) => (userId === owner.id ? storedNote : null)),
+            listSignInEvents,
             listSessions: vi.fn(async () => [{
                 id: 'session-1',
                 createdAt: '2026-11-10T00:00:00.000Z',
@@ -98,7 +116,13 @@ describe('identity AI tools', () => {
                 userAgent: 'TestBrowser/1.0'
             }]),
             listWallets: vi.fn(async () => []),
-            listConnectedApps: vi.fn(async () => []),
+            listConnectedApps: vi.fn(async () => [])
+        };
+        const details = new AccountDetailsService(detailDeps);
+        deps = {
+            accounts,
+            listSignInEvents,
+            getAccountDetails: (account) => details.getDetails(account),
             isAdmin: vi.fn(async (userId: string) => userId === adminCaller.userId)
         };
         tools = Object.fromEntries(buildIdentityAiTools(deps, logger).map(tool => [tool.name, tool]));
@@ -140,7 +164,21 @@ describe('identity AI tools', () => {
 
         expect(deps.accounts.listAccounts).toHaveBeenCalledWith({ search: 'example.com', limit: 1, skip: 1 });
         expect(answer).toMatchObject({ total: 3, offset: 1, returned: 1, nextOffset: 2 });
-        expect(answer.accounts).toEqual([expect.objectContaining({ id: owner.id, createdAt: '2026-01-01T00:00:00.000Z' })]);
+        expect(answer.accounts).toEqual([expect.objectContaining({
+            id: owner.id,
+            createdAt: '2026-01-01T00:00:00.000Z',
+            lastSeenAt: '2026-11-14T12:00:00.000Z'
+        })]);
+    });
+
+    it('passes a sort through to the directory and refuses an unknown column', async () => {
+        const sorted = await call(AI_TOOL_NAMES.listAccounts, { sortBy: 'lastSeenAt', sortDirection: 'asc' }, adminCaller);
+        const unknown = await call(AI_TOOL_NAMES.listAccounts, { sortBy: 'password' }, adminCaller);
+
+        expect(deps.accounts.listAccounts).toHaveBeenCalledWith({ sortBy: 'lastSeenAt', sortDirection: 'asc', limit: 25, skip: 0 });
+        expect(sorted).toMatchObject({ success: true, sortBy: 'lastSeenAt', sortDirection: 'asc' });
+        expect(unknown).toMatchObject({ success: false, errorKind: 'input' });
+        expect(deps.accounts.listAccounts).toHaveBeenCalledTimes(1);
     });
 
     it('refuses an out-of-range limit with a message the model can correct from', async () => {
@@ -158,9 +196,21 @@ describe('identity AI tools', () => {
 
         expect(deps.accounts.getAccountByEmail).toHaveBeenCalledWith('owner@example.com');
         expect(deps.accounts.listAccounts).not.toHaveBeenCalled();
-        expect(answer).toMatchObject({ found: true, account: { id: owner.id } });
-        expect(deps.listSessions).toHaveBeenCalledWith(owner.id);
+        expect(answer).toMatchObject({ found: true, account: { id: owner.id, lastSeenAt: '2026-11-14T12:00:00.000Z' } });
+        expect(detailDeps.listSessions).toHaveBeenCalledWith(owner.id);
         expect(deps.listSignInEvents).toHaveBeenCalledWith({ email: 'owner@example.com' }, { limit: 20, offset: 0 });
+    });
+
+    it('includes the admin note, naming the admin who wrote it by email', async () => {
+        const answer = await call(AI_TOOL_NAMES.getAccount, { userId: owner.id }, adminCaller);
+
+        expect(answer.adminNote).toEqual({
+            note: storedNote.note,
+            updatedAt: '2026-11-13T09:00:00.000Z',
+            updatedBy: editor.id,
+            updatedByEmail: 'editor@example.com'
+        });
+        expect(answer.sessions).toEqual([expect.not.objectContaining({ token: expect.anything() })]);
     });
 
     it('reports an unknown account as not found instead of an error', async () => {

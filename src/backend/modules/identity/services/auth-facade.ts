@@ -26,6 +26,7 @@ import { fromNodeHeaders } from 'better-auth/node';
 import { logger } from '../../../lib/logger.js';
 import { GroupService, ADMIN_GROUP_ID } from './group.service.js';
 import type { Auth } from '../auth.js';
+import type { IAccountActivityRecorder } from './IAccountActivityRecorder.js';
 
 const facadeLogger = logger.child({ component: 'auth-facade' });
 
@@ -99,6 +100,27 @@ export interface IAugmentedSession {
  * error rather than a silent false.
  */
 let configuredAuth: Auth | null = null;
+
+/**
+ * Module-private activity recorder, told about every session that resolves so
+ * the account's `lastSeenAt` stays current. `null` until the identity module
+ * configures it; resolution works without it, which keeps unit tests that
+ * never configure one unaffected.
+ */
+let activityRecorder: IAccountActivityRecorder | null = null;
+
+/**
+ * Configure the recorder that keeps each account's `lastSeenAt` current.
+ *
+ * Called from `IdentityModule.init()`. The facade is the one place every
+ * signed-in HTTP request and socket handshake resolves its session, so
+ * recording here covers all of them without each route doing it.
+ *
+ * @param recorder - Throttled writer of `lastSeenAt`, or null to stop recording.
+ */
+export function setActivityRecorder(recorder: IAccountActivityRecorder | null): void {
+    activityRecorder = recorder;
+}
 
 /**
  * Configure the facade with the application's auth instance.
@@ -310,6 +332,8 @@ export async function getSessionFromHeaders(
             groups,
             primaryWallet
         };
+        // Throttled and fire-and-forget, so it adds no wait to the request.
+        activityRecorder?.recordSeen(resolved.user.id);
     }
     return augmented;
 }

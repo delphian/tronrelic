@@ -12,6 +12,9 @@
  * module restructure exists to enforce.
  */
 
+import type { AccountSortDirection } from './AccountSortDirection.js';
+import type { AccountSortField } from './AccountSortField.js';
+
 /**
  * Public summary of a Better Auth account.
  *
@@ -49,6 +52,15 @@ export interface IAccountSummary {
      * be treated as inactive by any consumer that acts on behalf of a user.
      */
     deletedAt: Date | null;
+
+    /**
+     * When the account last made a signed-in request or an MCP call, or null
+     * when it has not been seen since this was first recorded.
+     *
+     * Written at most once every few minutes per account, so it can trail the
+     * real last request by that much.
+     */
+    lastSeenAt: Date | null;
 }
 
 /**
@@ -83,6 +95,12 @@ export interface IListAccountsOptions {
 
     /** Case-insensitive substring match against email/name. */
     search?: string;
+
+    /** Column to sort by. Defaults to `createdAt`. */
+    sortBy?: AccountSortField;
+
+    /** Sort direction. Defaults to `desc`, so the newest accounts come first. */
+    sortDirection?: AccountSortDirection;
 }
 
 /**

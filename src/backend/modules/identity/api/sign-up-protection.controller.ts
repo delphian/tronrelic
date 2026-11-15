@@ -60,7 +60,8 @@ export class SignUpProtectionController {
 
     /**
      * PUT /domains/:domain — add or replace the rule for a domain. Body
-     * `{ action, maxCodesPerHour?, note? }`; the domain comes from the path.
+     * `{ action, maxCodes?, budgetWindow?, note? }`; the domain comes from the
+     * path. `budgetWindow` is `hour` or `day` and defaults to `hour`.
      *
      * @param req - Express request; reads the path, the body, and the acting admin.
      * @param res - Express response; answers the report, 400 naming the field to

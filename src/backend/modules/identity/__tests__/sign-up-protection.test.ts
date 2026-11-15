@@ -7,7 +7,7 @@
  * are small fakes, so each test checks one decision.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { IDatabaseService, IEmailDomainRule, INotificationService, ISignupCapConfig, ISystemLogService } from '@/types';
+import type { DomainBudgetWindow, IDatabaseService, IEmailDomainRule, INotificationService, ISignupCapConfig, ISystemLogService } from '@/types';
 import { SIGNUP_PROTECTION_LIMITS, SIGNUP_REFUSAL_REASONS, normalizeEmailDomain } from '@/types';
 import type { IAuthRateLimitRedis } from '../services/IAuthRateLimitRedis.js';
 import type { ISignInEventDocument } from '../database/ISignInEventDocument.js';
@@ -40,11 +40,20 @@ function buildLogger(): ISystemLogService {
  *
  * @param domain - The rule's domain.
  * @param action - `block` or `slow`.
- * @param maxCodesPerHour - Budget for a `slow` rule.
+ * @param maxCodes - Budget for a `slow` rule.
+ * @param budgetWindow - The span the budget is counted over; defaults to an hour for a `slow` rule.
  * @returns The rule.
  */
-function rule(domain: string, action: 'block' | 'slow', maxCodesPerHour: number | null = null): IEmailDomainRule {
-    return { domain, action, maxCodesPerHour, note: '', updatedAt: '2026-11-15T00:00:00.000Z', updatedBy: null };
+function rule(domain: string, action: 'block' | 'slow', maxCodes: number | null = null, budgetWindow: DomainBudgetWindow = 'hour'): IEmailDomainRule {
+    return {
+        domain,
+        action,
+        maxCodes,
+        budgetWindow: action === 'slow' ? budgetWindow : null,
+        note: '',
+        updatedAt: '2026-11-15T00:00:00.000Z',
+        updatedBy: null
+    };
 }
 
 /**
@@ -53,15 +62,16 @@ function rule(domain: string, action: 'block' | 'slow', maxCodesPerHour: number 
  */
 class FakeCounterRedis implements IAuthRateLimitRedis {
     readonly counts = new Map<string, number>();
+    readonly windows = new Map<string, number>();
     fail = false;
 
     /**
-     * Increment the key named in the arguments.
+     * Increment the key named in the arguments and remember the window it was given.
      *
      * @param _script - Ignored.
      * @param _numKeys - Ignored.
-     * @param args - The key first.
-     * @returns `[count, 3600]`.
+     * @param args - The key, then the window in seconds.
+     * @returns `[count, window]`.
      */
     async eval(_script: string, _numKeys: number, ...args: Array<string | number>): Promise<unknown> {
         if (this.fail) {
@@ -70,7 +80,8 @@ class FakeCounterRedis implements IAuthRateLimitRedis {
         const key = String(args[0]);
         const count = (this.counts.get(key) ?? 0) + 1;
         this.counts.set(key, count);
-        return [count, 3600];
+        this.windows.set(key, Number(args[1]));
+        return [count, Number(args[1])];
     }
 }
 
@@ -160,8 +171,22 @@ describe('findEmailDomainRule', () => {
 describe('SignupProtectionConfigStore validation', () => {
     it('requires a code budget for a slow rule and clears it for a block rule', () => {
         expect(SignupProtectionConfigStore.validateDomainRule({ domain: 'example.com', action: 'slow' }, null).ok).toBe(false);
-        const block = SignupProtectionConfigStore.validateDomainRule({ domain: '@Example.com', action: 'block', maxCodesPerHour: 5 }, 'admin-1');
-        expect(block).toMatchObject({ ok: true, value: { domain: 'example.com', action: 'block', maxCodesPerHour: null, updatedBy: 'admin-1' } });
+        const block = SignupProtectionConfigStore.validateDomainRule({ domain: '@Example.com', action: 'block', maxCodes: 5, budgetWindow: 'day' }, 'admin-1');
+        expect(block).toMatchObject({ ok: true, value: { domain: 'example.com', action: 'block', maxCodes: null, budgetWindow: null, updatedBy: 'admin-1' } });
+    });
+
+    it('accepts a daily budget, defaults a slow rule to hourly, and rejects an unknown window', () => {
+        expect(SignupProtectionConfigStore.validateDomainRule({ domain: 'example.com', action: 'slow', maxCodes: 20, budgetWindow: 'day' }, null))
+            .toMatchObject({ ok: true, value: { maxCodes: 20, budgetWindow: 'day' } });
+        expect(SignupProtectionConfigStore.validateDomainRule({ domain: 'example.com', action: 'slow', maxCodes: 3 }, null))
+            .toMatchObject({ ok: true, value: { maxCodes: 3, budgetWindow: 'hour' } });
+        expect(SignupProtectionConfigStore.validateDomainRule({ domain: 'example.com', action: 'slow', maxCodes: 3, budgetWindow: 'week' }, null).ok).toBe(false);
+    });
+
+    it('reads a slow rule stored before the budget window existed as an hourly budget', () => {
+        const legacy = { domain: 'old.com', action: 'slow', maxCodesPerHour: 4, note: '', updatedAt: '2026-11-15T00:00:00.000Z', updatedBy: null };
+        const normalized = SignupProtectionConfigStore.normalize({ domainRules: [legacy as unknown as IEmailDomainRule] });
+        expect(normalized.domainRules).toEqual([expect.objectContaining({ domain: 'old.com', maxCodes: 4, budgetWindow: 'hour' })]);
     });
 
     it('rejects a cap outside the published bounds', () => {
@@ -261,6 +286,14 @@ describe('SignupGuard.checkCodeRequest', () => {
             statusCode: 429,
             body: expect.objectContaining({ code: SIGNUP_REFUSAL_REASONS.domainSlowed })
         });
+    });
+
+    it('counts a daily budget over 24 hours under its own counter', async () => {
+        harness.state.rules = [rule('fldubai.com', 'slow', 1, 'day')];
+
+        await harness.guard.checkCodeRequest(codeRequest('a@fldubai.com'));
+        await expect(harness.guard.checkCodeRequest(codeRequest('b@fldubai.com'))).rejects.toMatchObject({ statusCode: 429 });
+        expect(harness.redis.windows.get('test:auth:signup-domain:day:fldubai.com')).toBe(86_400);
     });
 
     it('lets a slowed domain through when Redis cannot be reached', async () => {

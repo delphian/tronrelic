@@ -21,7 +21,7 @@
 
 import { APIError } from 'better-auth/api';
 import type { ISystemLogService, IEmailDomainRule } from '@/types';
-import { SIGNUP_REFUSAL_REASONS, normalizeEmailDomain } from '@/types';
+import { DOMAIN_BUDGET_WINDOW_SECONDS, SIGNUP_REFUSAL_REASONS, normalizeEmailDomain } from '@/types';
 import type { IAuthRateLimitRedis } from './IAuthRateLimitRedis.js';
 import type { ISignInEventRecorder } from './ISignInEventRecorder.js';
 import type { ISignupAccountReader } from './ISignupAccountReader.js';
@@ -34,7 +34,7 @@ import { findEmailDomainRule } from './findEmailDomainRule.js';
 /** Endpoint that emails a one-time sign-in code. */
 const SEND_CODE_PATH = '/email-otp/send-verification-otp';
 
-/** Span the cap counts over and a domain's code budget resets after, in seconds. */
+/** Span the site-wide cap counts over, in seconds. A domain's code budget uses its rule's own window. */
 const WINDOW_SECONDS = 3600;
 
 /** Longest address stored on a refusal event, the RFC 5321 limit. */
@@ -43,7 +43,7 @@ const MAX_EMAIL_LENGTH = 254;
 /** Message shown to a visitor whose email domain is blocked. */
 const DOMAIN_BLOCKED_MESSAGE = 'Sign-ups from this email domain are not accepted. Please use a different email address.';
 
-/** Message shown to a visitor whose email domain has used its hourly budget. */
+/** Message shown to a visitor whose email domain has used its code budget. */
 const DOMAIN_SLOWED_MESSAGE = 'Too many sign-ups from this email domain right now. Please try again later or use a different email address.';
 
 /** Message shown to a new visitor while the cap is enforced and reached. */
@@ -196,22 +196,26 @@ export class SignupGuard {
     }
 
     /**
-     * Use one code from a slowed domain's shared hourly budget.
+     * Use one code from a slowed domain's shared budget, counted over the
+     * rule's window (an hour or a day).
      *
      * The budget is kept per rule domain, so `a.example.com` and
-     * `b.example.com` share the budget of an `example.com` rule.
+     * `b.example.com` share the budget of an `example.com` rule. The window is
+     * part of the counter's key, so changing a rule from hourly to daily
+     * starts a fresh count instead of inheriting an hourly counter's expiry.
      *
      * @param rule - The `slow` rule that matched.
      * @returns True when the budget had room, or when Redis could not be reached.
      */
     private async withinDomainBudget(rule: IEmailDomainRule): Promise<boolean> {
         let allowed = true;
+        const budgetWindow = rule.budgetWindow ?? 'hour';
         try {
             const outcome = await consumeRedisWindow(
                 this.deps.redis,
-                `${this.deps.namespace}:auth:signup-domain:${rule.domain}`,
-                WINDOW_SECONDS,
-                rule.maxCodesPerHour ?? 0
+                `${this.deps.namespace}:auth:signup-domain:${budgetWindow}:${rule.domain}`,
+                DOMAIN_BUDGET_WINDOW_SECONDS[budgetWindow],
+                rule.maxCodes ?? 0
             );
             allowed = outcome.allowed;
         } catch (error: unknown) {

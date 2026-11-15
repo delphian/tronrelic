@@ -81,6 +81,7 @@ describe('ConnectedAppsService', () => {
     let usageRows: IUsageRow[];
     let updateOne: ReturnType<typeof usageCollectionOver>['updateOne'];
     let service: ConnectedAppsService;
+    let recordSeen: ReturnType<typeof vi.fn<(userId: string) => void>>;
 
     beforeEach(() => {
         (ConnectedAppsService as unknown as { instance?: ConnectedAppsService }).instance = undefined;
@@ -95,8 +96,17 @@ describe('ConnectedAppsService', () => {
         updateOne = usage.updateOne;
         const database = { getCollection: () => usage.collection } as any;
         const accounts = { getAccountsByIds: vi.fn(async () => [{ id: 'u1', email: 'u1@example.com' }]) } as any;
-        ConnectedAppsService.setDependencies(async () => adapterOver(store), database, accounts, logger);
+        recordSeen = vi.fn<(userId: string) => void>();
+        ConnectedAppsService.setDependencies(async () => adapterOver(store), database, accounts, logger, { recordSeen });
         service = ConnectedAppsService.getInstance();
+    });
+
+    it('reports every MCP use as account activity, even when the per-app write is throttled', async () => {
+        await service.recordUse('u1', 'https://claude.ai/meta');
+        await service.recordUse('u1', 'https://claude.ai/meta');
+
+        expect(recordSeen).toHaveBeenCalledTimes(2);
+        expect(recordSeen).toHaveBeenCalledWith('u1');
     });
 
     afterEach(() => {
