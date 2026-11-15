@@ -72,7 +72,7 @@ export function PipelineErrors({ pipeline }: IPipelineErrorsProps) {
                                     <Td label="Stage">{STAGE_NAMES[error.stage]}</Td>
                                     <Td label="Block" numeric>{formatNumber(error.blockNumber)}</Td>
                                     <Td label="Class"><Badge tone={error.stage === 'commit' ? 'danger' : 'warning'} size="xs">{error.errorClass}</Badge></Td>
-                                    <Td label="Message" muted>{error.message}</Td>
+                                    <Td label="Message" stackSpan="full" muted>{error.message}</Td>
                                 </Tr>
                             ))}
                         </Tbody>

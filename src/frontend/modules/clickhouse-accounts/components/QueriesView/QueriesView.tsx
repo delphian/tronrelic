@@ -190,7 +190,7 @@ export function QueriesView({ accountId, accountLabel, canKill }: IQueriesViewPr
                                     <Td label="Data scanned" numeric>{formatBytes(query.readBytes)}</Td>
                                     <Td label="Memory" numeric>{formatBytes(query.memoryBytes)}</Td>
                                     <Td label="Result"><QueryResult query={query} /></Td>
-                                    <Td label="Query">
+                                    <Td label="Query" stackSpan="full">
                                         <code className={styles.sql} title={query.sql}>{query.sql}</code>
                                         {query.error && <span className={styles.error}>{query.error}</span>}
                                     </Td>

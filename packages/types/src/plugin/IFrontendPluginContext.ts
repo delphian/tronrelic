@@ -729,7 +729,9 @@ export interface IUIComponents {
          * tablet but not a phone, and `phone` for one in a narrow band, such as
          * one of two side-by-side panels, where `mobile` would already stack it
          * on a desktop. Give each `Td` a `label`, because the header row is
-         * hidden while rows are stacked.
+         * hidden while rows are stacked. A stacked entry puts its labelled
+         * values side by side, as many to a line as fit, and one to a line at
+         * phone width.
          */
         stackAt?: 'tablet' | 'mobile' | 'phone';
         /**
@@ -810,12 +812,22 @@ export interface IUIComponents {
         /** Mirror the `numeric` set on this column's `Th` — see that prop. */
         numeric?: boolean;
         /**
-         * The column name shown beside the value while the table's rows are
+         * The column name shown with the value while the table's rows are
          * stacked (see `stackAt`). Omit it for a cell that should head the
          * stacked entry, such as the row's identifying value, or for a
          * trailing cell of action buttons.
          */
         label?: string;
+        /**
+         * How much of a stacked entry's line this field takes when fields sit
+         * side by side. Set `'full'` for free text such as an error message,
+         * which otherwise wraps into a tall, narrow block, and `2` for a value
+         * such as a path that would wrap to three or more lines in one column.
+         * Leave it off for short values and for a value that only wraps to two
+         * lines, because a wider field can push the entry's last field onto a
+         * line of its own. Needs `label`.
+         */
+        stackSpan?: 2 | 'full';
         colSpan?: number;
         rowSpan?: number;
         className?: string;

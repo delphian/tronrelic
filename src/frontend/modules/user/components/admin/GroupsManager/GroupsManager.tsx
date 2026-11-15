@@ -296,7 +296,7 @@ export function GroupsManager() {
                                     </span>
                                 </Td>
                                 <Td label="Name">{group.name}</Td>
-                                <Td label="Description" className={styles.description}>
+                                <Td label="Description" stackSpan="full" className={styles.description}>
                                     {group.description || <span className="text-muted">—</span>}
                                 </Td>
                                 <Td label="Updated">

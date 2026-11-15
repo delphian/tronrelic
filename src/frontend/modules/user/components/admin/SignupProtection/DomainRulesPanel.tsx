@@ -236,7 +236,7 @@ export function DomainRulesPanel({ report, onReport }: IDomainRulesPanelProps) {
                                     {/* No label: the domain heads a stacked entry. */}
                                     <Td><code>{rule.domain}</code></Td>
                                     <Td label="Rule"><DomainRuleBadge action={rule.action} maxCodes={rule.maxCodes} budgetWindow={rule.budgetWindow} /></Td>
-                                    <Td label="Note">{rule.note || <span className="text-muted">—</span>}</Td>
+                                    <Td label="Note" stackSpan={2}>{rule.note || <span className="text-muted">—</span>}</Td>
                                     <Td label="Changed"><ClientTime date={rule.updatedAt} format="date" /></Td>
                                     <Td label="Actions">
                                         <div className={styles.row_actions}>

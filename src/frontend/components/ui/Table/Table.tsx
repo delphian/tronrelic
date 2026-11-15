@@ -10,7 +10,9 @@
  * can show opts into `stackAt`, which turns each row into a labelled entry once
  * the table's own container is at or below that width. Each `Td` carries its
  * column name through `label` so the entry can still say what each value is
- * after the header row is hidden.
+ * after the header row is hidden. An entry lays its labelled values side by
+ * side, as many to a line as fit, so it stays short on a tablet; a `Td` with a
+ * long value asks for more of the line through `stackSpan`.
  */
 
 import type { HTMLAttributes, TableHTMLAttributes, TdHTMLAttributes, ThHTMLAttributes } from 'react';
@@ -75,9 +77,12 @@ interface TableProps extends TableHTMLAttributes<HTMLTableElement> {
      * table that sits in a narrow band, such as one of two side-by-side panels,
      * where `mobile` would already stack it on a desktop. Give every `Td` a
      * `label` naming its column, because the header row is hidden while the
-     * rows are stacked. A cell with no label spans the whole entry, which suits
-     * the cell that identifies the row and a cell holding row actions. Leave the
-     * prop off for a table that reads correctly at every width.
+     * rows are stacked. Labelled cells sit side by side in equal columns, as
+     * many as fit, and one to a line at phone width. A cell with no label is
+     * not given a column: the ones that open the row share its first line,
+     * which suits the cell that identifies the row, and the ones that close it
+     * go to the end of the last line, which suits a cell holding row actions.
+     * Leave the prop off for a table that reads correctly at every width.
      */
     stackAt?: TableStackAt;
     /**
@@ -279,13 +284,25 @@ interface TdProps extends TdHTMLAttributes<HTMLTableCellElement> {
      */
     numeric?: boolean;
     /**
-     * The column name shown beside this cell's value while the table's rows
+     * The column name shown with this cell's value while the table's rows
      * are stacked (see `stackAt` on `Table`). Ignored at full width, where the
      * header row already names the column. Omit it for a cell that should span
      * the whole stacked entry, such as the row's identifying value or its
      * action buttons.
      */
     label?: string;
+    /**
+     * How much of a stacked entry's line this field takes when fields sit side
+     * by side. Set `'full'` for free text such as an error message, a query,
+     * or a browser identifier, which otherwise wraps into a tall, narrow block.
+     * Set `2` for a value such as a path that would wrap to three or more
+     * lines in one column. Leave it off for short values, and for a value that
+     * only wraps to two lines: a wider field can push the entry's last field
+     * onto a line of its own, which costs more height than the wrap did. Needs
+     * `label`, and has no effect at full width or at phone width, where every
+     * field already has its own line.
+     */
+    stackSpan?: 2 | 'full';
 }
 
 /**
@@ -293,7 +310,8 @@ interface TdProps extends TdHTMLAttributes<HTMLTableCellElement> {
  *
  * Table data cell with consistent padding and optional muted text. The `label`
  * is written to `data-label`, which the stacked layout reads to draw the
- * column name beside the value.
+ * column name with the value, and `stackSpan` is written to `data-stack-span`,
+ * which the stacked layout reads to size the field.
  *
  * A labelled cell wraps its children in one value container. The stacked
  * layout puts the column name in the cell's first grid track and the value in
@@ -308,7 +326,7 @@ interface TdProps extends TdHTMLAttributes<HTMLTableCellElement> {
  * @param props - Table data cell properties
  * @returns A styled td element
  */
-export function Td({ muted, numeric, label, className, children, ...props }: TdProps) {
+export function Td({ muted, numeric, label, stackSpan, className, children, ...props }: TdProps) {
     return (
         <td
             className={cn(
@@ -318,6 +336,7 @@ export function Td({ muted, numeric, label, className, children, ...props }: TdP
                 className
             )}
             data-label={label}
+            data-stack-span={stackSpan}
             {...props}
         >
             {label ? <div className={styles.td_value}>{children}</div> : children}

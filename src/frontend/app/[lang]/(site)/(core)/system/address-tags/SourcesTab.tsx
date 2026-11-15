@@ -236,7 +236,7 @@ export function SourcesTab() {
                                                 </div>
                                             )}
                                         </Td>
-                                        <Td label="Last result">
+                                        <Td label="Last result" stackSpan={2}>
                                             {summarizeResult(source.state.lastResult)}
                                             {source.verifyState?.lastResult && (
                                                 <div className={styles.source_meta}>
@@ -244,7 +244,7 @@ export function SourcesTab() {
                                                 </div>
                                             )}
                                         </Td>
-                                        <Td label="Last error">
+                                        <Td label="Last error" stackSpan="full">
                                             {source.state.lastError && (
                                                 <div className={styles.error_text}>{source.state.lastError}</div>
                                             )}

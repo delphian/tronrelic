@@ -63,7 +63,7 @@ export function BotRuleSuggestions({ suggestions, onUse }: IBotRuleSuggestionsPr
                                 <Td label="Cookies" numeric>{s.cookies.toLocaleString()}</Td>
                                 <Td label="Reports" numeric>{s.events.toLocaleString()}</Td>
                                 <Td label="No referrer" numeric>{Math.round(s.noReferrerShare * 100)}%</Td>
-                                <Td label="Most common browser identifier" muted className={styles.cell_wrap}>
+                                <Td label="Most common browser identifier" stackSpan="full" muted className={styles.cell_wrap}>
                                     {s.topUserAgent ?? '—'}
                                     {s.distinctUserAgents > 1 && <span> (+{s.distinctUserAgents - 1} more)</span>}
                                 </Td>

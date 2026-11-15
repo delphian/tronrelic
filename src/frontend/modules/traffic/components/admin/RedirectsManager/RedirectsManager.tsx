@@ -359,7 +359,7 @@ export function RedirectsManager() {
                                                         />
                                                     </div>
                                                 </Td>
-                                                <Td label="Destination">
+                                                <Td label="Destination" stackSpan={2}>
                                                     <Input
                                                         type="text"
                                                         size="xs"
@@ -430,7 +430,7 @@ export function RedirectsManager() {
                                                     <code className={styles.path}>{rule.pattern}</code>
                                                     {rule.notes && <span className={styles.note}>{rule.notes}</span>}
                                                 </Td>
-                                                <Td label="Destination">
+                                                <Td label="Destination" stackSpan={2}>
                                                     <span className={styles.dest}>
                                                         <ArrowRight size={14} aria-hidden="true" />
                                                         <code className={styles.path}>{rule.destination}</code>

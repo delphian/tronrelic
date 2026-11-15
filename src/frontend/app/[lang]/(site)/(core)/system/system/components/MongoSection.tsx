@@ -477,7 +477,7 @@ function Migrations() {
                                             <Td label="Source">
                                                 <Badge tone="neutral">{migration.source}</Badge>
                                             </Td>
-                                            <Td label="Error">
+                                            <Td label="Error" stackSpan="full">
                                                 {migration.error ? (
                                                     <div className={styles.error_cell}>
                                                         <Button
