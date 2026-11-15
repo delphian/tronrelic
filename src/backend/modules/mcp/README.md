@@ -13,7 +13,7 @@ TronRelic's Model Context Protocol (MCP) endpoints. Anyone connects their AI cli
 | Public docs page | `/p/mcp`, a CMS page (pages module), linked from `llms.txt` |
 | Admin page | `/system/mcp` (menu item `MCP`, order 46): kill switch above the tab row; tabs Overview (with the usage view) · Tools · Connected apps · Activity · Database · Logs |
 | Admin API base | `/api/admin/mcp` (rate-limited + `requireAdmin`) |
-| Types package | `@delphian/tronrelic-types` → `IMcpSettings`, `IMcpStatus`, `IMcpToolExposure`, `IMcpToolGrant`, `IMcpGroup`, `IMcpGroupPolicy`, `IMcpGroupPolicyPatch`, `IMcpGroupLimits`, `McpPrincipalKind`, `McpEndpointKind`, `McpUsageWindow`, `IMcpUsageFigures`, `IMcpUsageGroupRow`, `IMcpUsageToolRow`, `IMcpUsageCallerRow`, `IMcpUsageReport`, `IMcpUsageGroupDetail`, `mcpGroupMayHoldTool`, `normaliseIpAllowlistEntries`, `IMcpAccessTokenClaims`, `IMcpAccessTokenVerifier`, `IMcpClientAdmissionPolicy`, `IMcpClientDetails`, `MCP_TOOLS_SCOPE`, `MCP_OAUTH_SCOPES`, `MCP_USERS_GROUP_ID`, `MCP_ANONYMOUS_GROUP_ID`, `getMcpToolIneligibility`, `getMcpAnonymousToolIneligibility`, `IToolInvocationOrigin`, `IToolCallerBudget`, `ToolLimitKind` |
+| Types package | `@delphian/tronrelic-types` → `IMcpSettings`, `IMcpStatus`, `IMcpServerDescriptionStatus`, `buildMcpServerDescriptionStatus`, `IMcpToolExposure`, `IMcpToolGrant`, `IMcpGroup`, `IMcpGroupPolicy`, `IMcpGroupPolicyPatch`, `IMcpGroupLimits`, `McpPrincipalKind`, `McpEndpointKind`, `McpUsageWindow`, `IMcpUsageFigures`, `IMcpUsageGroupRow`, `IMcpUsageToolRow`, `IMcpUsageCallerRow`, `IMcpUsageReport`, `IMcpUsageGroupDetail`, `mcpGroupMayHoldTool`, `normaliseIpAllowlistEntries`, `IMcpAccessTokenClaims`, `IMcpAccessTokenVerifier`, `IMcpClientAdmissionPolicy`, `IMcpClientDetails`, `MCP_TOOLS_SCOPE`, `MCP_OAUTH_SCOPES`, `MCP_USERS_GROUP_ID`, `MCP_ANONYMOUS_GROUP_ID`, `getMcpToolIneligibility`, `getMcpAnonymousToolIneligibility`, `IToolInvocationOrigin`, `IToolCallerBudget`, `ToolLimitKind` |
 | Allowed apps | `MCP_ALLOWED_CLIENT_HOSTS` in `services/McpClientAdmissionPolicy.ts` (`claude.ai`). See [App Admission](#app-admission) |
 | Owned collections | `module_mcp_settings` (one document: the kill switch), `module_mcp_tool_approvals` (one per tool and group), `module_mcp_group_policies` (one per configured group) |
 | Owned ClickHouse table | `mcp_calls`, one row per call, 13-month expiry. See [Accounting](#accounting) |
@@ -24,7 +24,8 @@ TronRelic's Model Context Protocol (MCP) endpoints. Anyone connects their AI cli
 | Log service | `tronrelic:mcp` |
 | Scheduler jobs | None |
 | Bootstrap order | Inits after `AiToolsModule` (needs the governor and registry) and identity (needs the verifier, grants, groups, account directory, and URLs); runs after both |
-| Hooks | Registers `'core'` handlers on `http.groupDeleted` (removes the deleted group's grants and policy) and `ai.toolInvoked` (feeds the accounting meter) |
+| Hooks | Registers `'core'` handlers on `http.groupDeleted` (removes the deleted group's grants and policy) and `ai.toolInvoked` (feeds the accounting meter and the pool alert) |
+| Notifications | Registers category `mcp.pool-exhausted` (admin group, toast, silenceable) and content type `mcp:pool-exhausted` in `run()`, through the `'notifications'` and `'content-types'` services. See [When a Pool Runs Out](#when-a-pool-runs-out) |
 
 ## Why This Is a Module
 
@@ -34,7 +35,8 @@ The endpoint needs raw Express requests (the MCP SDK reads Node request and resp
 
 | Path | Responsibility |
 |---|---|
-| `McpModule.ts` | Lifecycle; builds services in `init()`, including one endpoint controller per endpoint; in `run()` creates the group, registers the menu, registers both hook handlers, starts the meter, mounts `/mcp`, `/mcp/public`, the discovery documents (one Server Card handler at both card addresses), and the admin router |
+| `McpModule.ts` | Lifecycle; builds services in `init()`, including one endpoint controller per endpoint sharing one refusal-log limiter; in `run()` creates the group, registers the menu and the pool notification, registers both hook handlers, starts the meter, mounts `/mcp`, `/mcp/public`, the discovery documents (one Server Card handler at both card addresses), and the admin router |
+| `services/McpPoolAlerter.ts` | Watches governed calls from `ai.toolInvoked` and writes one `warn` and one admin notification when a group's daily pool first refuses a call |
 | `api/mcp-endpoint.controller.ts` | The request pipeline both endpoints share (kill switch → Origin → method → token placement → authenticator → body parse → served tools → SDK) |
 | `services/IMcpCaller.ts` | The admitted caller every later step reads: endpoint, principal kind and id, groups, and the end user for signed-in callers |
 | `services/IMcpCallerAuthenticator.ts` | The contract for identifying a caller, and `McpAuthOutcome` (ok, challenge, refuse, unavailable) |
@@ -59,7 +61,7 @@ The endpoint needs raw Express requests (the MCP SDK reads Node request and resp
 | `migrations/001_tool_approvals_group_id.ts` | Backfills `groupId: 'mcp-users'` on pre-group approvals and drops the `toolName_1` index |
 | `services/mcp-caller.resolver.ts` | Token → verified caller, with scope and `mcp-users` membership checks and a 30-second principal cache; drops `anonymous` from a member's groups; tells the identity module (`recordUse`) about each accepted request, which feeds the "Last used" column |
 | `services/mcp-server.factory.ts` | Builds the per-request `McpServer`, maps tools and annotations, routes each call through the governor with the charged group's budget (`buildCallerBudget`) and origin, and scrubs results where a group asks for it |
-| `services/McpClientAdmissionPolicy.ts` | `IMcpClientAdmissionPolicy`: which apps may register with the OAuth server, the refusal log and its limits, and the warning when a registered app changes its details |
+| `services/McpClientAdmissionPolicy.ts` | `IMcpClientAdmissionPolicy`: which apps may register with the OAuth server, the refusal log and its limits (through the shared `WindowedLogLimiter` in `src/backend/lib/`), and the warning when a registered app changes its details |
 
 ## Request Pipeline
 
@@ -89,6 +91,8 @@ On `/mcp/public` (`AnonymousCallerAuthenticator`) there is never a challenge, be
 The global Express body parsers skip both paths (`loaders/express.ts`), so nothing is read from an unadmitted request's body. After the checks, the served tool list is computed for this caller from their groups and request address, the caller and tools ride into the SDK on `req.auth.extra`, and `McpServerFactory` builds a server that registers only those tools.
 
 A `tools/call` for a tool that was not served gets the SDK's bare "Tool not found" answer. Before handing the request over, the endpoint writes a log entry under `tronrelic:mcp` (`error` for a member, `warn` for an anonymous caller, where strangers probing for tools is expected traffic) naming the tool, the caller, the client, the request address, the caller's groups, and a `reason` from `explainWithheld`: `not-registered`, `disabled`, `not-granted`, `stale-grant`, `restricted-not-allowed`, `not-public`, `group-disabled`, or `ip-not-allowed` (`changed-during-request` when a grant changed between the two reads). It also counts the refusal in `mcp_calls`. At most 10 per request.
+
+**Entries a caller can trigger at will are bounded.** The caller decides how many refused or sign-in-challenged calls to send, so one entry per call would let a stranger write to the system log as fast as Nginx admits requests. Both endpoints share one `WindowedLogLimiter` (`ENDPOINT_REFUSAL_LOG_LIMITS` in `McpModule.ts`): a refused call is logged once per caller, tool, and reason per hour, a sign-in challenge once per caller per hour, and at most 100 such entries an hour in total, after which one `warn` says logging stopped for the window. Each entry carries `repeatsNotLoggedForMinutes`. Logged tool names, which the caller chose, are cut to 100 characters. `mcp_calls` still counts every call, so the usage view is the place to see volume. The governor bounds its own refusal entries for `mcp` calls the same way; see the [AI Tools Module README](../ai-tools/README.md#system-log-surface).
 
 ## One URL and Lazy Sign-In
 
@@ -134,6 +138,17 @@ The governor also holds every caller to 30 calls a minute per tool. Day windows 
 **Charging a call to a group.** A member reaches a tool through every group of theirs that grants it. The call is charged to exactly one of them, and that group's limits apply: the most generous route, meaning the highest per-caller day limit (no limit counts highest), then the highest per-minute limit, then the group id alphabetically (`chargedRoute`). Charging the strictest route instead would make a premium group pointless, because every member is also in `mcp-users`. The charged group's id travels on the audit record as `origin.chargedGroupId` and on the accounting row as `charged_group`.
 
 `buildCallerBudget` turns the charged group's limits into the `IToolCallerBudget` the governor enforces: minute windows keyed by caller alone (`mcp:<kind>:<id>`), the day window keyed by caller and group, and the pool keyed by group (`mcp-pool:<group>`). The governor charges the minute windows, then the day window, then the pool, each only when the call fit the one before, so a caller hammering past a minute limit never spends their day budget or the group's pool. A refusal by a limit is recorded with `limitHit` naming it. See the [AI Tools Module README](../ai-tools/README.md#the-mcp-trigger-path).
+
+### When a Pool Runs Out
+
+Once a group's `callsPerDayGroup` is spent, every call charged to that group is refused until its 24-hour window resets. For `anonymous` that locks out every visitor without an account, so admins are told at once rather than left to notice it on the usage view. `McpPoolAlerter` reads each governed call from `ai.toolInvoked`, and the first call a group's pool refuses (`limitHit: 'pool-day'`) produces:
+
+| Output | Content |
+|---|---|
+| `warn` under `tronrelic:mcp` | `MCP group's daily call pool is used up; …`, with `groupId`, `poolCallsPerDay`, `tool`, `recordId` |
+| Notification `mcp.pool-exhausted` | A toast to the admin group naming the group and its limit and pointing at the Tools tab. Each admin can silence it on `/profile`, and an admin can switch it off for everyone on `/system/notifications` |
+
+A group is alerted once per exhaustion. The next successful call charged to it shows the pool has room again (`info`: `… has room again`) and re-arms the alert. The state is per process, so a restart while the pool is spent alerts once more. Without the notifications service the `warn` is still written. The governor logs each pool refusal itself at `info`, bounded as above, because this alert is the entry that needs attention.
 
 ## Accounting
 
@@ -265,13 +280,24 @@ Clients show a server's handshake details in their connector lists, and registri
 |---|---|---|
 | `name` | Reverse-DNS of the site host plus `/mcp` (`com.tronrelic/mcp`) | Server Card. The handshake keeps the short `serverInfo.name` `tronrelic`, which clients already store |
 | `title`, `version` | `TronRelic`, `MCP_SERVER_VERSION` | Handshake and card. Bump the version when the served surface changes shape |
-| `description` | One sentence, at most 100 characters (the card's limit; startup throws past it): "TRON energy rental prices and market activity from TronRelic. Free account unlocks more tools." Names what `anonymous` is granted and that an account adds more, so change it when those grants change in kind. The official MCP Registry listing (`tronrelic-ops/configs/mcp-registry/server.json`) carries the same sentence, version, and website; change them together and republish | Handshake and card |
+| `description` | One sentence, at most 100 characters (the card's limit; startup throws past it): "TRON energy rental prices and market activity from TronRelic. Free account unlocks more tools." Names what `anonymous` is granted and that an account adds more, so change it when those grants change in kind. The official MCP Registry listing (`tronrelic-ops/configs/mcp-registry/server.json`) carries the same sentence, version, and website; change them together and republish. See [Keeping the Description True](#keeping-the-description-true) | Handshake and card |
 | `websiteUrl` | `<origin>/p/mcp`, the connection docs page every installation creates | Handshake and card |
 | `siteUrl` | The site origin | Anonymous instructions (naming the site) and the AI Catalog (the publisher) |
 | `icons` | `<origin>/icon.png`, the 192-pixel PNG Next.js serves from `app/icon.png` | Handshake and card |
 | `termsUrl`, `privacyUrl` | `<origin>/terms`, `<origin>/privacy` | Public instructions |
 
-**Instructions differ by caller.** A signed-in member gets one line about TronRelic's tools. An anonymous caller is told that the tools working without an account only read, to quote the capture time of any price because rental prices move during the day, to wait after a limit refusal rather than retry at once, and that use is subject to the terms and privacy policy; on `/mcp` they are also told that tools marked as needing an account ask the user to sign in, which also raises their limits. All end with `UNTRUSTED_CONTENT_SYSTEM_CLAUSE`.
+### Keeping the Description True
+
+The description is fixed text in code, while an admin changes the anonymous grants on the Tools tab at any time, and the MCP Registry listing is a second copy that changes only when someone republishes it. Two checks catch each kind of drift.
+
+| Drift | Check |
+|---|---|
+| Anonymous grants change and the sentence no longer describes them | `DESCRIBED_ANONYMOUS_TOOLS` in `buildMcpServerIdentity.ts` names the anonymous tools the sentence was written for. `buildMcpServerDescriptionStatus` (in `@/types`, so the backend and the admin page apply one rule) compares it with the tools whose `anonymous` grant is served now. `/status` returns the result as `serverDescription`; the Tools tab shows a Server description card while Anonymous is selected, with the fix spelled out when they differ, and the Overview tab shows a warning. The page recomputes it after every toggle. Each change to an `anonymous` grant also writes an `info` entry under `tronrelic:mcp` saying whether the description still matches |
+| The registry listing drifts from what the server reports | `tronrelic-ops/scripts/check-mcp-registry-sync.sh` compares `configs/mcp-registry/server.json` with the live Server Card and with the version the registry has published. Run it before publishing; the ops repository's `mcp-registry-sync.yml` workflow also runs it daily |
+
+When the card warns: rewrite `DESCRIPTION` for the new grants, set `DESCRIBED_ANONYMOUS_TOOLS` to match, bump `MCP_SERVER_VERSION`, deploy, then copy the sentence and version into `server.json` and republish.
+
+**Instructions differ by caller.** Every caller is asked to link the TronRelic page named by a result's `pageUrl` beside the figures quoted from it (`PAGE_LINK_LINE`); the resource-markets tools return those links, tagged `utm_medium=mcp` on this path so the traffic module counts the visits. A signed-in member also gets one line about TronRelic's tools. An anonymous caller is told that the tools working without an account only read, to quote the capture time of any price because rental prices move during the day, to wait after a limit refusal rather than retry at once, and that use is subject to the terms and privacy policy; on `/mcp` they are also told that tools marked as needing an account ask the user to sign in, which also raises their limits. All end with `UNTRUSTED_CONTENT_SYSTEM_CLAUSE`.
 
 **Server Card.** `GET /mcp/server-card`, the `<endpoint>/server-card` location SEP-2127 (final October 2026) recommends, for `/mcp`, the endpoint the card describes. The card was first published at `/mcp/public/server-card`, which stays mounted with the same handler so a stored link gets the identical card and ETag. It carries `$schema`, the identity fields above, and one `streamable-http` remote at **`/mcp`**, the one URL for anonymous callers and members, whose `supportedProtocolVersions` are `2026-07-28` followed by the SDK's `SUPPORTED_PROTOCOL_VERSIONS`. Tools are deliberately not listed; the extension leaves them to `tools/list`.
 
@@ -292,7 +318,7 @@ All under `/api/admin/mcp`. Changes that widen access need a signed-in admin (`r
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/status` | `IMcpStatus`: settings, resource URL, public URL, issuer, group id, member count, served and stale tool counts |
+| GET | `/status` | `IMcpStatus`: settings, resource URL, public URL, issuer, group id, member count, served and stale tool counts, and `serverDescription` (`IMcpServerDescriptionStatus`: the description, version, the anonymous tools it was written for, those served now, and whether they match) |
 | PUT | `/settings` | `{ enabled }`. Turning on requires a signed-in admin; turning off accepts the service token |
 | GET | `/usage?window=24h\|7d\|30d` | `{ usage: IMcpUsageReport }`: endpoint totals and one row per group. `available: false` with a reason when ClickHouse is not configured or `mcp_calls` does not exist. 400 unknown window |
 | GET | `/usage/groups/:groupId?window=&tool=` | `{ detail: IMcpUsageGroupDetail }`: the group's tools and busiest callers (at most 100 each); `tool` narrows the callers. 400 · 404 unknown group |

@@ -28,17 +28,22 @@ import type {
     IAiToolRegistry,
     IClickHouseService,
     IConnectedAppsService,
+    IContentRegistry,
     IDatabaseService,
     IHookRegistry,
     IMcpAccessTokenVerifier,
     IMenuService,
     IModule,
     IModuleMetadata,
+    INotificationService,
+    IServiceRegistry,
     IUserGroupService
 } from '@/types';
-import { MCP_ANONYMOUS_GROUP_ID, MCP_USERS_GROUP_ID } from '@/types';
+import { ADMIN_GROUP_ID, MCP_ANONYMOUS_GROUP_ID, MCP_USERS_GROUP_ID } from '@/types';
 import { logger } from '../../lib/logger.js';
+import { WindowedLogLimiter } from '../../lib/WindowedLogLimiter.js';
 import { HOOKS } from '../../hooks/registry.js';
+import { CONTENT_TYPES_SERVICE } from '../../services/content-registry.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
 import { McpSettingsStore } from './services/mcp-settings.store.js';
 import { McpToolExposureService } from './services/mcp-tool-exposure.service.js';
@@ -53,12 +58,13 @@ import { MemberOrAnonymousCallerAuthenticator } from './services/MemberOrAnonymo
 import { AnonymousCallerKeyer } from './services/AnonymousCallerKeyer.js';
 import { McpCallMeter } from './services/McpCallMeter.js';
 import { McpUsageService } from './services/McpUsageService.js';
+import { McpPoolAlerter, MCP_POOL_EXHAUSTED_CATEGORY, MCP_POOL_EXHAUSTED_CONTENT_TYPE } from './services/McpPoolAlerter.js';
 import { McpEndpointController } from './api/mcp-endpoint.controller.js';
 import { McpAdminController } from './api/mcp-admin.controller.js';
 import { createMcpAdminRouter } from './api/mcp-admin.routes.js';
 import { createProtectedResourceMetadataHandler } from './api/protected-resource-metadata.js';
 import { createAiCatalogHandler, createServerCardHandler } from './api/server-card.js';
-import { buildMcpServerIdentity } from './services/buildMcpServerIdentity.js';
+import { buildMcpServerIdentity, DESCRIBED_ANONYMOUS_TOOLS } from './services/buildMcpServerIdentity.js';
 import type { IMcpServerIdentity } from './services/IMcpServerIdentity.js';
 
 /**
@@ -160,6 +166,13 @@ export interface IMcpModuleDependencies {
 
     /** The endpoints' public URLs. */
     endpoint: IMcpEndpointConfig;
+
+    /**
+     * Service registry, read in `run()` for the `'notifications'` service and
+     * the `'content-types'` registry, through which the module tells admins
+     * when a group's daily call pool runs out.
+     */
+    serviceRegistry: IServiceRegistry;
 }
 
 /** Menu namespace holding the admin page's tab row. */
@@ -171,6 +184,17 @@ const SUBMENU_NAMESPACE = 'mcp';
  * the container's stop grace period for the blockchain drain that follows.
  */
 const SHUTDOWN_DRAIN_MS = 5_000;
+
+/** Service-registry name of the notifications service the pool alert is sent through. */
+const NOTIFICATIONS_SERVICE = 'notifications';
+
+/**
+ * Bounds on the endpoints' entries for refused and sign-in-challenged calls:
+ * each distinct caller, tool, and reason once an hour, and at most 100 of them
+ * an hour, because a caller decides how many such calls to send. The meter
+ * still counts every call in `mcp_calls`.
+ */
+const ENDPOINT_REFUSAL_LOG_LIMITS = { windowMs: 60 * 60 * 1000, maxKeys: 100, maxKeyLength: 300 };
 
 /**
  * The admin page's tabs. The module owns collections and a ClickHouse table
@@ -195,7 +219,7 @@ export class McpModule implements IModule<IMcpModuleDependencies> {
     readonly metadata: IModuleMetadata = {
         id: 'mcp',
         name: 'MCP',
-        version: '1.5.0',
+        version: '1.6.0',
         description: 'Model Context Protocol endpoints serving AI tools an admin approved per user group: to anonymous callers and signed-in members at /mcp, and to anonymous callers only at the /mcp/public alias'
     };
 
@@ -221,6 +245,8 @@ export class McpModule implements IModule<IMcpModuleDependencies> {
     private publicEndpointController!: McpEndpointController;
     private adminController!: McpAdminController;
     private meter!: McpCallMeter;
+    private poolAlerter!: McpPoolAlerter;
+    private serviceRegistry!: IServiceRegistry;
     private initialized = false;
 
     private readonly logger = logger.child({ module: 'mcp' });
@@ -239,6 +265,7 @@ export class McpModule implements IModule<IMcpModuleDependencies> {
         this.userGroups = deps.userGroups;
         this.hookRegistry = deps.hookRegistry;
         this.endpoint = deps.endpoint;
+        this.serviceRegistry = deps.serviceRegistry;
 
         const settings = new McpSettingsStore(deps.database, this.logger);
         const policies = new McpGroupPolicyService(deps.database, deps.userGroups, this.logger);
@@ -248,6 +275,14 @@ export class McpModule implements IModule<IMcpModuleDependencies> {
         this.policies = policies;
         this.exposure = exposure;
         this.meter = new McpCallMeter(deps.clickhouse, this.logger);
+        this.poolAlerter = new McpPoolAlerter(
+            policies,
+            () => this.serviceRegistry.get<INotificationService>(NOTIFICATIONS_SERVICE),
+            this.logger
+        );
+        // One limiter for both endpoints, so a caller who reaches both is
+        // logged once per window rather than once on each.
+        const refusalLog = new WindowedLogLimiter(ENDPOINT_REFUSAL_LOG_LIMITS);
         const callers = new McpCallerResolver(deps.tokenVerifier, deps.resolveEndUser, deps.connectedApps, this.logger);
         // One identity feeds the handshake and the Server Card, so what a
         // client sees after connecting matches what it read before.
@@ -273,7 +308,8 @@ export class McpModule implements IModule<IMcpModuleDependencies> {
                 signInGroupId: MCP_USERS_GROUP_ID
             },
             this.meter,
-            this.logger
+            this.logger,
+            refusalLog
         );
         // `/mcp/public` stays as an anonymous-only alias for clients that
         // were given it. It never sends a 401: a challenge from this URL would
@@ -286,7 +322,8 @@ export class McpModule implements IModule<IMcpModuleDependencies> {
             serverFactory,
             { resourceUrl: deps.endpoint.publicUrl, allowedOriginHosts },
             this.meter,
-            this.logger
+            this.logger,
+            refusalLog
         );
         this.adminController = new McpAdminController(
             settings,
@@ -296,6 +333,7 @@ export class McpModule implements IModule<IMcpModuleDependencies> {
             deps.userGroups,
             new McpUsageService(deps.clickhouse, policies, deps.accountDirectory, this.logger),
             { resourceUrl: deps.endpoint.resourceUrl, publicUrl: deps.endpoint.publicUrl, issuer: deps.endpoint.issuer },
+            { identity: this.identity, describedAnonymousTools: DESCRIBED_ANONYMOUS_TOOLS },
             this.logger
         );
 
@@ -319,13 +357,20 @@ export class McpModule implements IModule<IMcpModuleDependencies> {
         await this.warnOnReservedGroup();
         await this.registerMenu();
 
+        this.registerPoolNotification();
+
         // Every call the governor handles on the `mcp` path is counted from
         // its audit record, so the accounting rows and the audit trail can
-        // never disagree about what happened. The meter ignores other paths.
+        // never disagree about what happened. The same record tells the pool
+        // alerter when a group's daily pool first refuses a call. Both ignore
+        // other paths.
         this.toolInvokedDisposer = this.hookRegistry.register(
             'core',
             HOOKS.ai.toolInvoked,
-            async (record) => { this.meter.observe(record); },
+            async (record) => {
+                this.meter.observe(record);
+                this.poolAlerter.observe(record);
+            },
             { priority: 100 }
         );
         this.meter.start();
@@ -405,6 +450,46 @@ export class McpModule implements IModule<IMcpModuleDependencies> {
             if (outcome === 'timeout') {
                 this.logger.warn({ waitedMs: SHUTDOWN_DRAIN_MS }, 'MCP accounting rows were not written before shutdown; they are lost');
             }
+        }
+    }
+
+    /**
+     * Declare the notification admins receive when a group's daily call pool
+     * runs out.
+     *
+     * Audience is the admin group, toast on by default, and silenceable by
+     * each admin and for everyone from `/system/notifications`. The
+     * notifications module runs before this one, so its service is already
+     * published. Without it the alert is still written to the log, so a
+     * missing service is a `warn`, not a startup failure.
+     */
+    private registerPoolNotification(): void {
+        const notifications = this.serviceRegistry.get<INotificationService>(NOTIFICATIONS_SERVICE);
+        if (notifications) {
+            this.serviceRegistry.get<IContentRegistry>(CONTENT_TYPES_SERVICE)?.register(
+                {
+                    typeId: MCP_POOL_EXHAUSTED_CONTENT_TYPE,
+                    label: 'MCP call pool used up',
+                    describe: (ref) => ({
+                        title: typeof ref.title === 'string' ? ref.title : undefined,
+                        body: typeof ref.body === 'string' ? ref.body : undefined
+                    })
+                },
+                this.metadata.id
+            );
+            notifications.registerCategory({
+                id: MCP_POOL_EXHAUSTED_CATEGORY,
+                label: 'MCP call pool used up',
+                description: 'Fires once when an MCP group\'s shared daily call limit runs out and every call charged to it starts being refused.',
+                source: this.metadata.id,
+                defaultAudience: { groups: [ADMIN_GROUP_ID] },
+                channelDefaults: { toast: true },
+                userConfigurable: true,
+                adminConfigurable: true,
+                mutable: true
+            });
+        } else {
+            this.logger.warn('notifications service unavailable; MCP pool alerts will only be logged');
         }
     }
 

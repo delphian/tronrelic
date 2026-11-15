@@ -66,6 +66,7 @@ import { buildPromptVariableAiTools } from './buildPromptVariableAiTools.js';
 import { buildSavedPromptAiTools } from './buildSavedPromptAiTools.js';
 import { buildPromptRunAiTools } from './buildPromptRunAiTools.js';
 import { buildToolInvocationAiTools } from './buildToolInvocationAiTools.js';
+import { WindowedLogLimiter } from '../../lib/WindowedLogLimiter.js';
 
 /** Service-registry name for the provider-neutral tool registry. */
 export const AI_TOOLS_SERVICE = 'ai-tools';
@@ -121,6 +122,14 @@ const SCHEDULED_PROMPT_CONTENT_TYPE = 'ai-tools:scheduled-prompt-run';
  * between them is the registry name and the `INotificationService` interface.
  */
 const NOTIFICATIONS_SERVICE = 'notifications';
+
+/**
+ * Bounds on the governor's log entries for refused `mcp` calls: each distinct
+ * caller, tool, and cause once an hour, and at most 100 of them an hour, so a
+ * stranger cannot fill the system log by sending refused calls in a loop.
+ * The audit trail and the `mcp_calls` table still count every refusal.
+ */
+const MCP_REFUSAL_LOG_LIMITS = { windowMs: 60 * 60 * 1000, maxKeys: 100, maxKeyLength: 300 };
 
 /**
  * Every 2 minutes (at :00 seconds). The single master tick all scheduled
@@ -393,7 +402,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
             onUnavailable: () => this.policy.setCurationResolver(() => false)
         });
 
-        this.governor = new AiToolGovernor(this.logger, this.registry, this.policy, this.audit, this.approvals, this.hookRegistry, {
+        this.governor = new AiToolGovernor(this.logger, this.registry, this.policy, this.audit, this.approvals, this.hookRegistry, new WindowedLogLimiter(MCP_REFUSAL_LOG_LIMITS), {
             config: this.screenConfig,
             providers: this.providerRegistry,
             isEgressReachable: () => this.isEgressReachable()

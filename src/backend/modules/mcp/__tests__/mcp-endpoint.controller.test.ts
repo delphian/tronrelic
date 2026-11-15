@@ -12,6 +12,7 @@ import { OAuthCallerAuthenticator } from '../services/OAuthCallerAuthenticator.j
 import { AnonymousCallerAuthenticator } from '../services/AnonymousCallerAuthenticator.js';
 import { AnonymousCallerKeyer } from '../services/AnonymousCallerKeyer.js';
 import { MemberOrAnonymousCallerAuthenticator } from '../services/MemberOrAnonymousCallerAuthenticator.js';
+import { WindowedLogLimiter } from '../../../lib/WindowedLogLimiter.js';
 
 /** A silent logger. */
 const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), child: vi.fn() } as any;
@@ -34,6 +35,11 @@ function meter() {
     return { observe: vi.fn(), recordWithheld: vi.fn() };
 }
 
+/** A fresh log limiter with the module's real window and a roomy ceiling, so each test starts with nothing logged. */
+function refusalLog(): WindowedLogLimiter {
+    return new WindowedLogLimiter({ windowMs: 60 * 60 * 1000, maxKeys: 200, maxKeyLength: 300 });
+}
+
 /**
  * Build a signed-in endpoint controller whose kill switch and caller outcome are fixed.
  *
@@ -50,7 +56,8 @@ function build(enabled: boolean, outcome: McpCallerOutcome = { kind: 'invalid-to
         { create: vi.fn() } as any,
         URLS,
         meter(),
-        logger
+        logger,
+        refusalLog()
     );
     return { controller, resolve };
 }
@@ -115,7 +122,8 @@ describe('McpEndpointController', () => {
             { create: vi.fn() } as any,
             URLS,
             meter(),
-            logger
+            logger,
+            refusalLog()
         );
         const { res, recorded } = response();
         await controller.handle(request({ headers: { Authorization: 'Bearer abc' } }), res, next);
@@ -174,7 +182,8 @@ describe('McpEndpointController', () => {
             { create: vi.fn() } as any,
             URLS,
             meter(),
-            logger
+            logger,
+            refusalLog()
         );
         const { res, recorded } = response();
         await controller.handle(request({ headers: { Authorization: 'Bearer abc' } }), res, next);
@@ -232,7 +241,8 @@ describe('McpEndpointController', () => {
                 { create: vi.fn() } as any,
                 URLS,
                 callMeter,
-                logger
+                logger,
+                refusalLog()
             );
             // The SDK hand-off needs a real Node request; these tests stop before it.
             vi.spyOn(controller as any, 'handOff').mockResolvedValue(undefined);
@@ -282,7 +292,8 @@ describe('McpEndpointController', () => {
                 { create: vi.fn() } as any,
                 PUBLIC_URLS,
                 callMeter,
-                logger
+                logger,
+                refusalLog()
             );
             const handOff = vi.spyOn(controller as any, 'handOff').mockResolvedValue(undefined);
             return { controller, getServedTools, callMeter, handOff };
@@ -317,6 +328,24 @@ describe('McpEndpointController', () => {
             expect(logger.error).not.toHaveBeenCalled();
             expect(callMeter.recordWithheld).toHaveBeenCalledWith(expect.objectContaining({ principalKind: 'anonymous' }), 'tronrelic-query-system-logs', 'not-granted');
         });
+
+        /**
+         * A stranger probing for tools decides how many calls to send, so the
+         * log entry is written once per caller, tool, and reason per window,
+         * while the meter still counts every refusal.
+         */
+        it('logs a repeated withheld call once but counts every one, and cuts a long tool name', async () => {
+            logger.warn.mockClear();
+            const { controller, callMeter } = buildPublic(['blockchain-network-stats']);
+            const longName = 'x'.repeat(500);
+            for (let call = 0; call < 4; call++) {
+                await controller.handle(rpc({ jsonrpc: '2.0', id: call, method: 'tools/call', params: { name: longName } }, {}), response().res, vi.fn());
+            }
+            const refusals = logger.warn.mock.calls.filter((call: unknown[]) => String(call[1]).startsWith('MCP tool call refused'));
+            expect(refusals).toHaveLength(1);
+            expect((refusals[0][0] as { tool: string }).tool).toHaveLength(100);
+            expect(callMeter.recordWithheld).toHaveBeenCalledTimes(4);
+        });
     });
 
     describe('one URL for members and anonymous callers (lazy sign-in)', () => {
@@ -345,7 +374,8 @@ describe('McpEndpointController', () => {
                 { create: vi.fn() } as any,
                 { ...URLS, signInGroupId: 'mcp-users' },
                 callMeter,
-                logger
+                logger,
+                refusalLog()
             );
             const handOff = vi.spyOn(controller as any, 'handOff').mockResolvedValue(undefined);
             return { controller, resolve, callMeter, handOff };

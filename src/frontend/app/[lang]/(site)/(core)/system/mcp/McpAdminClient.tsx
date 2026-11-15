@@ -21,6 +21,7 @@
 import { useCallback, useState } from 'react';
 import type { MenuNodeSerialized } from '@/shared';
 import type { IConnectedAppAdminRow, IMcpGroup, IMcpSettings, IMcpStatus, IMcpToolExposure, IMcpUsageReport } from '@/types';
+import { buildMcpServerDescriptionStatus } from '@/types';
 import { Page, PageHeader, Stack } from '../../../../../../components/layout';
 import { MenuNavClient } from '../../../../../../components/layout/MenuNav/MenuNavClient';
 import { ClickHouseTableBrowser, CollectionBrowser } from '../../../../../../modules/database';
@@ -117,12 +118,25 @@ export function McpAdminClient({
     }, []);
 
     /**
-     * Fold a tool change into the overview counts without a round trip, so
-     * the served and stale counts beside the kill switch stay accurate.
+     * Fold a tool change into the overview counts and the description check
+     * without a round trip, so the served and stale counts beside the kill
+     * switch, and the warning that the server description no longer matches
+     * the Anonymous grants, stay accurate. The check uses the same shared rule
+     * the backend reports with, so the two cannot disagree.
      */
     const handleToolsChanged = useCallback((tools: IMcpToolExposure[]) => {
         setStatus(current => current
-            ? { ...current, servedToolCount: tools.filter(t => t.served).length, staleToolCount: tools.filter(t => t.stale).length }
+            ? {
+                ...current,
+                servedToolCount: tools.filter(t => t.served).length,
+                staleToolCount: tools.filter(t => t.stale).length,
+                serverDescription: buildMcpServerDescriptionStatus(
+                    current.serverDescription.description,
+                    current.serverDescription.version,
+                    current.serverDescription.describedAnonymousTools,
+                    tools
+                )
+            }
             : current);
     }, []);
 
@@ -166,7 +180,12 @@ export function McpAdminClient({
                         tab switch would bring back the SSR snapshot, so an approval or
                         a revocation made earlier would appear to be undone. */}
                     <div hidden={activeTab !== 'tools'}>
-                        <ToolsTab initialTools={initialTools} initialGroups={initialGroups} onToolsChanged={handleToolsChanged} />
+                        <ToolsTab
+                            initialTools={initialTools}
+                            initialGroups={initialGroups}
+                            onToolsChanged={handleToolsChanged}
+                            serverDescription={status?.serverDescription ?? null}
+                        />
                     </div>
                     <div hidden={activeTab !== 'apps'}>
                         <AppsTab initialApps={initialApps} initialTotal={initialAppsTotal} />

@@ -9,6 +9,7 @@
 
 export type { IMcpSettings } from './IMcpSettings.js';
 export type { IMcpStatus } from './IMcpStatus.js';
+export type { IMcpServerDescriptionStatus } from './IMcpServerDescriptionStatus.js';
 export type { IMcpToolExposure } from './IMcpToolExposure.js';
 export type { IMcpToolGrant } from './IMcpToolGrant.js';
 export type { IMcpGroup } from './IMcpGroup.js';
@@ -33,4 +34,5 @@ export { MCP_OAUTH_SCOPES } from './MCP_OAUTH_SCOPES.js';
 export { MCP_USERS_GROUP_ID } from './MCP_USERS_GROUP_ID.js';
 export { MCP_ANONYMOUS_GROUP_ID } from './MCP_ANONYMOUS_GROUP_ID.js';
 export { mcpGroupMayHoldTool } from './mcpGroupMayHoldTool.js';
+export { buildMcpServerDescriptionStatus } from './buildMcpServerDescriptionStatus.js';
 export { normaliseIpAllowlistEntries } from './normaliseIpAllowlistEntries.js';

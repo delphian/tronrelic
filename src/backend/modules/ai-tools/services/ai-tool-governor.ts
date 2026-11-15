@@ -41,6 +41,7 @@ import type { ToolAuditStore } from './tool-audit-store.js';
 import type { ToolApprovalQueue, IToolApprovalRequest } from './tool-approval-queue.js';
 import type { ScreenConfigService } from './screen-config.service.js';
 import type { AiProviderRegistry } from './ai-provider-registry.js';
+import type { WindowedLogLimiter } from '../../../lib/WindowedLogLimiter.js';
 
 /**
  * Optional dependencies that enable the untrusted-content output screen. Absent
@@ -84,6 +85,15 @@ const DEFAULT_CAPABILITY: IAiToolCapability = { sideEffect: 'read', reversible: 
 
 /** Maximum characters retained for a result digest in the audit record. */
 const RESULT_DIGEST_MAX = 500;
+
+/**
+ * Limits on an `mcp` call that the caller is held to and was told about in
+ * the refusal: its own minute and day budgets, and the group's shared pool.
+ * Hitting one is expected traffic rather than a misconfiguration, so the
+ * refusal is logged at `info`. The pool has its own `warn` and admin alert in
+ * the MCP module, written once when it runs out rather than once per call.
+ */
+const MCP_CALLER_LIMITS: ReadonlySet<ToolLimitKind> = new Set<ToolLimitKind>(['caller-minute', 'caller-tool-minute', 'caller-day', 'pool-day']);
 
 /**
  * Shallowly validate the model's arguments against a tool's top-level JSON
@@ -253,6 +263,10 @@ export class AiToolGovernor implements IAiToolGovernor {
      * @param audit - The invocation audit store.
      * @param approvals - The human-approval queue.
      * @param hookRegistry - Hook registry for the pre/post tool seams.
+     * @param mcpRefusalLog - Bounds the log entries written for refused `mcp`
+     *   calls. An MCP caller decides how many calls to send, so one entry per
+     *   refusal would let a stranger write to the system log as fast as they
+     *   can send requests. Every refusal is still audited.
      * @param screen - Optional untrusted-content screen dependencies. Omitted in
      *   tests and pre-provider boots, in which case screening is a no-op and
      *   results flow exactly as they did before the screen existed.
@@ -264,6 +278,7 @@ export class AiToolGovernor implements IAiToolGovernor {
         private readonly audit: ToolAuditStore,
         private readonly approvals: ToolApprovalQueue,
         private readonly hookRegistry: IHookRegistry,
+        private readonly mcpRefusalLog: WindowedLogLimiter,
         private readonly screen?: IGovernorScreenDeps
     ) {}
 
@@ -966,21 +981,73 @@ export class AiToolGovernor implements IAiToolGovernor {
         // rather than info because a refusal the operator did not intend is a
         // misconfiguration they want surfaced, and the reason string says which
         // of the gates closed.
-        this.logger.warn(
-            {
-                tool: toolName,
-                providerId,
-                triggerPath: ctx.triggerPath,
-                status,
-                reason,
-                sideEffect: cap.sideEffect,
-                ...(ctx.queryId ? { queryId: ctx.queryId } : {}),
-                recordId: record.id
-            },
-            `AI tool ${status}: ${toolName}`
-        );
+        const logContext = {
+            tool: toolName,
+            providerId,
+            triggerPath: ctx.triggerPath,
+            status,
+            reason,
+            sideEffect: cap.sideEffect,
+            ...(limitHit ? { limitHit } : {}),
+            ...(ctx.queryId ? { queryId: ctx.queryId } : {}),
+            recordId: record.id
+        };
+        if (ctx.triggerPath === 'mcp') {
+            this.logMcpRefusal(toolName, ctx, status, reason, limitHit, logContext);
+        } else {
+            this.logger.warn(logContext, `AI tool ${status}: ${toolName}`);
+        }
 
         return { status, content: { error: reason }, error: reason, recordId: record.id };
+    }
+
+    /**
+     * Log a refused `mcp` call within the bounds that keep an outside caller
+     * from filling the system log.
+     *
+     * The caller chooses how many calls to send, and a client stuck in a retry
+     * loop sends one refused call after another. Each distinct caller, tool,
+     * and cause is logged once per window, a fixed number of them per window,
+     * and the rest are left to the audit trail and the `mcp_calls` table,
+     * which count every refusal. A refusal by a limit the caller is held to is
+     * logged at `info`; every other refusal is a gate the operator may not
+     * have meant to close, so it stays at `warn`.
+     *
+     * @param toolName - The refused tool.
+     * @param ctx - The call's context, whose origin names the caller.
+     * @param status - Denied or a pre-execution error.
+     * @param reason - Why the call was refused; part of the key, so a caller
+     *   refused for two different reasons gets an entry for each.
+     * @param limitHit - The limit that refused the call, when one did.
+     * @param logContext - The fields every refusal entry carries.
+     */
+    private logMcpRefusal(
+        toolName: string,
+        ctx: IToolInvocationContext,
+        status: Extract<ToolInvocationStatus, 'denied' | 'error'>,
+        reason: string,
+        limitHit: ToolLimitKind | undefined,
+        logContext: Record<string, unknown>
+    ): void {
+        const principalId = ctx.origin?.principalId ?? ctx.actor.id ?? 'unknown';
+        const verdict = this.mcpRefusalLog.admit(`${principalId}\n${toolName}\n${limitHit ?? reason}`);
+        if (verdict === 'log') {
+            const level = limitHit && MCP_CALLER_LIMITS.has(limitHit) ? 'info' : 'warn';
+            this.logger[level](
+                {
+                    ...logContext,
+                    principalId,
+                    ...(ctx.origin?.chargedGroupId ? { chargedGroupId: ctx.origin.chargedGroupId } : {}),
+                    repeatsNotLoggedForMinutes: this.mcpRefusalLog.windowMinutes
+                },
+                `AI tool ${status}: ${toolName}`
+            );
+        } else if (verdict === 'ceiling-reached') {
+            this.logger.warn(
+                { loggedRefusals: this.mcpRefusalLog.loggedKeys, windowMinutes: this.mcpRefusalLog.windowMinutes },
+                'MCP tool refusals are no longer being logged this window: the limit on distinct callers and tools was reached'
+            );
+        }
     }
 
     /**

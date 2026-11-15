@@ -32,9 +32,16 @@ import type { IMcpCaller } from '../services/IMcpCaller.js';
 import type { IMcpCallerAuthenticator, McpAuthOutcome } from '../services/IMcpCallerAuthenticator.js';
 import type { IMcpCallMeter } from '../services/IMcpCallMeter.js';
 import type { McpServerFactory } from '../services/mcp-server.factory.js';
+import type { WindowedLogLimiter } from '../../../lib/WindowedLogLimiter.js';
 
 /** Largest JSON body the endpoint accepts. Tool arguments are small; this is generous. */
 const MAX_BODY_BYTES = '256kb';
+
+/**
+ * Longest tool name written to a log entry, in characters. The name in a
+ * refused call is whatever the caller sent, so it is cut before it is logged.
+ */
+const LOGGED_TOOL_NAME_MAX_LENGTH = 100;
 
 /**
  * Most refused tool calls logged for one request. A JSON-RPC batch can name
@@ -98,6 +105,10 @@ export class McpEndpointController {
      * @param meter - Counts refused calls in the accounting table; calls that
      *   reach the governor are counted from its audit hook instead.
      * @param logger - Module logger.
+     * @param refusalLog - Bounds the entries written for refused and
+     *   sign-in-challenged calls, which a caller can send as often as it
+     *   likes. Shared by both endpoints so one caller reaching both counts
+     *   once. The meter still counts every call.
      */
     constructor(
         private readonly settings: McpSettingsStore,
@@ -106,7 +117,8 @@ export class McpEndpointController {
         serverFactory: McpServerFactory,
         private readonly urls: IMcpEndpointUrls,
         private readonly meter: IMcpCallMeter,
-        private readonly logger: ISystemLogService
+        private readonly logger: ISystemLogService,
+        private readonly refusalLog: WindowedLogLimiter
     ) {
         const handler = createMcpHandler(
             /**
@@ -329,7 +341,9 @@ export class McpEndpointController {
      * user signs in, the client retries the same call with a token. The
      * refusal is counted in the accounting table as `sign-in-required` so the
      * usage view shows how often visitors are asked to sign in; it is not
-     * charged to any limit, because no tool ran.
+     * charged to any limit, because no tool ran. A client that never signs in
+     * can repeat the call indefinitely, so the log entry is written once per
+     * caller per window.
      *
      * @param res - The response the challenge is written to.
      * @param caller - The anonymous caller.
@@ -339,8 +353,35 @@ export class McpEndpointController {
         for (const name of toolNames.slice(0, MAX_SIGN_IN_CALLS_LOGGED)) {
             this.meter.recordWithheld(caller, name, 'sign-in-required');
         }
-        this.logger.info({ principalId: caller.principalId, tools: toolNames.slice(0, MAX_SIGN_IN_CALLS_LOGGED) }, 'Anonymous MCP caller asked to sign in for a member tool');
+        this.writeBounded(`sign-in\n${caller.principalId}`, 'info', {
+            principalId: caller.principalId,
+            tools: toolNames.slice(0, MAX_SIGN_IN_CALLS_LOGGED).map(cutToolName)
+        }, 'Anonymous MCP caller asked to sign in for a member tool');
         this.challenge(res, 401, 'invalid_token', 'Sign in to a free TronRelic account to use this tool.');
+    }
+
+    /**
+     * Write one entry for an event a caller can trigger at will, unless the
+     * same event was already logged this window.
+     *
+     * When the limiter's ceiling of distinct events is reached, one `warn`
+     * says so and later events stay out of the log until the next window.
+     *
+     * @param key - What makes two events the same, such as a caller and a tool.
+     * @param level - The level to write the entry at.
+     * @param context - The entry's fields.
+     * @param message - The entry's message.
+     */
+    private writeBounded(key: string, level: 'info' | 'warn' | 'error', context: Record<string, unknown>, message: string): void {
+        const verdict = this.refusalLog.admit(key);
+        if (verdict === 'log') {
+            this.logger[level]({ ...context, repeatsNotLoggedForMinutes: this.refusalLog.windowMinutes }, message);
+        } else if (verdict === 'ceiling-reached') {
+            this.logger.warn(
+                { loggedEvents: this.refusalLog.loggedKeys, windowMinutes: this.refusalLog.windowMinutes },
+                'MCP refused and sign-in calls are no longer being logged this window: the limit on distinct callers and tools was reached'
+            );
+        }
     }
 
     /**
@@ -354,7 +395,9 @@ export class McpEndpointController {
      * served list. A failure to work out the reason is logged too, and never
      * stops the request, which the SDK still answers. From an anonymous caller
      * a refusal is a stranger probing for tools, which is expected traffic, so
-     * it is logged at `warn` rather than `error`.
+     * it is logged at `warn` rather than `error`. Each caller, tool, and reason
+     * is logged once per window, because the caller decides how often to send
+     * the call; every refusal is still counted by the meter.
      *
      * @param body - The parsed JSON-RPC body: one message, or a batch.
      * @param caller - The admitted caller, named in each entry.
@@ -374,15 +417,26 @@ export class McpEndpointController {
         };
         const level = caller.principalKind === 'anonymous' ? 'warn' : 'error';
         for (const name of withheld) {
+            const loggedName = cutToolName(name);
             let reason: string;
             try {
                 // Null means a grant or setting changed after the served list
                 // was built, so the tool would be served on the next call.
                 reason = (await this.exposure.explainWithheld(name, audienceOf(caller))) ?? 'changed-during-request';
-                this.logger[level]({ ...context, tool: name, reason }, `MCP tool call refused: ${name} is not served to this caller (${reason})`);
+                this.writeBounded(
+                    `withheld\n${caller.principalId}\n${loggedName}\n${reason}`,
+                    level,
+                    { ...context, tool: loggedName, reason },
+                    `MCP tool call refused: ${loggedName} is not served to this caller (${reason})`
+                );
             } catch (error: unknown) {
                 reason = 'reason-unavailable';
-                this.logger[level]({ ...context, tool: name, err: error }, `MCP tool call refused: ${name} is not served to this caller (reason unavailable)`);
+                this.writeBounded(
+                    `withheld\n${caller.principalId}\n${loggedName}\n${reason}`,
+                    level,
+                    { ...context, tool: loggedName, err: error },
+                    `MCP tool call refused: ${loggedName} is not served to this caller (reason unavailable)`
+                );
             }
             this.meter.recordWithheld(caller, name, reason);
         }
@@ -505,6 +559,11 @@ export class McpEndpointController {
  */
 function audienceOf(caller: IMcpCaller): IMcpToolAudience {
     return { groups: caller.groups, ip: caller.ip };
+}
+
+/** Cut a caller-supplied tool name to a fixed length before it is logged. */
+function cutToolName(name: string): string {
+    return name.length > LOGGED_TOOL_NAME_MAX_LENGTH ? name.slice(0, LOGGED_TOOL_NAME_MAX_LENGTH) : name;
 }
 
 /**

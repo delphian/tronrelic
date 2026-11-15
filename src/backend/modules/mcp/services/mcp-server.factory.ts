@@ -69,6 +69,14 @@ const SIGN_IN_NOTE = 'Needs a free TronRelic account: calling it makes your app 
 /** Returned if a tool that needs sign-in is ever reached without it. */
 const SIGN_IN_REQUIRED_MESSAGE = 'This tool needs a free TronRelic account. Sign in through your app and try again.';
 
+/**
+ * Asks the model to cite the page a figure came from. Tools whose figures are
+ * shown on a TronRelic page return that page as `pageUrl`, and a reader given
+ * the link can check the figure and act on it there. Written without naming
+ * any tool, because which tools return the field is each tool's own business.
+ */
+const PAGE_LINK_LINE = 'When a result includes a "pageUrl", link that TronRelic page beside the figures you quote from it, so the reader can check them there.';
+
 /** Which set of instructions a caller gets. */
 type InstructionsAudience = 'member' | 'anonymous' | 'anonymous-can-sign-in';
 
@@ -91,13 +99,17 @@ type InstructionsAudience = 'member' | 'anonymous' | 'anonymous-can-sign-in';
  */
 function buildInstructions(identity: IMcpServerIdentity, audience: InstructionsAudience): string {
     const lines = audience === 'member'
-        ? ['TronRelic exposes tools over TRON blockchain data and TronRelic content. Each tool\'s annotations say whether it only reads.']
+        ? [
+            'TronRelic exposes tools over TRON blockchain data and TronRelic content. Each tool\'s annotations say whether it only reads.',
+            PAGE_LINK_LINE
+        ]
         : [
             `TronRelic (${identity.siteUrl}) offers TRON data here without sign-in. The tools that work without an account only read and change nothing.`,
             ...(audience === 'anonymous-can-sign-in'
                 ? ['Tools whose description says they need a free TronRelic account make your app ask the user to sign in when called; after signing in the same call runs, and the account also gets higher limits.']
                 : []),
             'Results say when their data was captured. Rental prices change during the day, so give that time whenever you quote a price.',
+            PAGE_LINK_LINE,
             'Calls are limited per network. A refused call says which limit it hit; wait before calling again instead of retrying at once.',
             `Use of this service is subject to the terms at ${identity.termsUrl} and the privacy policy at ${identity.privacyUrl}.`
         ];

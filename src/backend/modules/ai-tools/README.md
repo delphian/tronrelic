@@ -77,6 +77,7 @@ The [MCP module](../mcp/README.md) calls the governor for tools invoked from an 
 | MCP calls count in their own shared per-tool and global windows (keys prefixed `mcp:`), separate from the windows admin, scheduled, and programmatic runs use, so outside traffic cannot lock the platform's own AI runs out of a tool | Policy engine `consumeRate` |
 | A refusal by a rate, day, pool, or cost limit records which limit as `limitHit` (`ToolLimitKind`) on the audit record, so usage reports count refusals by cause | Policy decision `limit` → governor `fail` |
 | The untrusted-content screen is skipped; the wrap is kept | Governor `screenUntrusted` |
+| Refusal log entries are bounded per caller, tool, and cause, and a caller's own limit logs at `info` (see [System Log Surface](#system-log-surface)) | Governor `logMcpRefusal` |
 | Curation auto-approve never applies (it is `interactive`-only), and the external-tool default-deny does (it keys on `!== 'interactive'`) | Existing policy, unchanged |
 
 ## System Log Surface
@@ -87,7 +88,8 @@ What the module writes to `system_logs`, queryable at `/system/logs`. The audit 
 |---|---|---|---|
 | info | `AI tool ran: <name>` | Any invocation that reached the handler and did not error | `tool`, `triggerPath`, `status`, `durationMs`, `sideEffect`, `sensitivity`, `screenFlagged`, `queryId`, `recordId` |
 | info | `AI provider-hosted tool ran: <name>` | A vendor-hosted tool (Anthropic `web_search` / `web_fetch`) reported after the fact through `recordServerToolInvocation` | `hosted: true`, `tool`, `triggerPath`, `status`, `sideEffect`, `sensitivity`, `queryId`, `error`, `recordId`. No `durationMs` or `screenFlagged` — the provider reports neither, and a defaulted `0ms` would read as a real measurement |
-| warn | `AI tool denied: <name>` / `AI tool error: <name>` | Refused before execution — unregistered, disabled, outside the query allowlist, schema-invalid, hook-vetoed, or policy-denied | `reason`, `triggerPath`, `sideEffect`, `recordId` |
+| warn | `AI tool denied: <name>` / `AI tool error: <name>` | Refused before execution — unregistered, disabled, outside the query allowlist, schema-invalid, hook-vetoed, or policy-denied. On the `mcp` path the entry is bounded and a caller's own limit is logged at `info`; see below | `reason`, `triggerPath`, `sideEffect`, `limitHit` (when a limit refused it), `recordId`; on `mcp` also `principalId`, `chargedGroupId`, `repeatsNotLoggedForMinutes` |
+| warn | `MCP tool refusals are no longer being logged this window: …` | The `mcp` refusal log reached its ceiling of distinct entries for the hour. Written once per window | `loggedRefusals`, `windowMinutes` |
 | warn | `AI tool held for admin approval: <name>` | An external/irreversible call parked in the approval queue | `approvalId`, `reversible`, `recordId` |
 | error | `AI tool handler failed: <name>` | The handler threw or exceeded its timeout | `error` |
 | warn | Untrusted-content screen lines | The screen flagged a result, could not run, or failed open/closed | `tool`, `reason`, `why` |
@@ -101,6 +103,8 @@ What the module writes to `system_logs`, queryable at `/system/logs`. The audit 
 | warn | `Prompt variable "<name>" failed to resolve while sizing` | A resolver threw while the Registry tab measured it. The row shows 0 bytes, which reads as empty rather than broken, and the next prompt referencing it will fail too | `err`, `variable` |
 
 Every autonomous run closes with exactly one of the three saved-prompt lines. That matters because the run previously logged `Running saved prompt` on the way in and nothing at all on the way out unless the query threw, so a prompt that finished without producing anything was indistinguishable in the logs from one that worked. Filtering `/system/logs` to `warn` surfaces exactly the runs that need attention.
+
+**Refusals on the `mcp` path are bounded.** An MCP caller decides how many calls to send, and a client stuck in a retry loop sends one refused call after another, so one entry per refusal would let a stranger write to the system log as fast as they can send requests. The governor passes `mcp` refusals through an injected `WindowedLogLimiter` (`MCP_REFUSAL_LOG_LIMITS` in `AiToolsModule.ts`): each distinct caller, tool, and cause (the limit, or else the reason) is logged once per hour, at most 100 an hour, then one ceiling entry. A refusal by a limit the caller is held to (`caller-minute`, `caller-tool-minute`, `caller-day`, `pool-day`) is expected traffic and logs at `info`; any other `mcp` refusal stays at `warn`. The audit record and the MCP module's `mcp_calls` row are still written for every call. A spent pool also gets one `warn` and an admin notification from the MCP module. Refusals on every other path are logged in full as before, because no outside caller controls their rate.
 
 **A rejected input is not logged; a fault is.** The admin routes answer a bad request with a 400, 404, or 409 whose body already states what was wrong, and logging those would fill the log with other people's typos. Every line above marks something the caller was *not* told — a sanitized browser message, a bare 500, a silent degradation, or a broken invariant.
 
