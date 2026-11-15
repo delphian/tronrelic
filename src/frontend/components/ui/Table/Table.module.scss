@@ -204,6 +204,16 @@
     color: var(--color-text-muted);
 }
 
+/*
+ * The value container `<Td label>` wraps its children in. It generates no box
+ * of its own, so at full width the children lay out against the cell exactly
+ * as they would without it. The stacked rules below give it a box, and that
+ * single box is what holds the whole value in the value track.
+ */
+.td_value {
+    display: contents;
+}
+
 /* Responsive: Hide columns on smaller containers */
 @container table (max-width: #{$breakpoint-mobile-lg}) {
     .th,
@@ -295,6 +305,17 @@
         font-weight: var(--font-weight-medium);
         color: var(--color-text-muted);
         line-height: var(--line-height-normal);
+    }
+
+    /* The value container is the cell's one other grid item, so everything the
+       cell holds stays in the value track and reads as one value. Without it a
+       grid makes every child an item of its own: the first lands beside the
+       column name and the rest fall back under it, splitting a figure from its
+       limit and spreading a list across both tracks. `min-width: 0` lets a long
+       unbroken value wrap instead of widening the row. */
+    #{$cell}[data-label] > .td_value {
+        display: block;
+        min-width: 0;
     }
 
     #{$cell}:not([data-label]) {
