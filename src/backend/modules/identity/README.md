@@ -8,11 +8,12 @@ Owns Better Auth and everything keyed by the Better Auth user id: the auth insta
 |---------|-------|
 | Module id | `identity` |
 | Module class | `src/backend/modules/identity/IdentityModule.ts` |
-| Admin page | `/system/users` (menu item `Users`, order 25, registered in `run()`); tabs Users, Groups, Database, Logs, registered as nodes in the `identity` menu namespace |
+| Admin page | `/system/users` (menu item `Users`, order 25, registered in `run()`); tabs Users, Groups, Sign-ups, Database, Logs, registered as nodes in the `identity` menu namespace |
 | Log service name | `tronrelic:identity`, which the Logs tab is scoped to |
 | Service registry names | `'user-groups'`, `'wallets'`, `'accounts'`, `'user-settings'` |
-| Mounted routes | `/api/auth/*`, `/.well-known/oauth-authorization-server`, `/api/user/wallets/*`, `/api/user/settings`, `/api/user/connected-apps`, `/api/user/oauth/authorize-context`, `/api/admin/users/groups/*`, `/api/admin/users` (accounts), `/api/admin/accounts/search` |
-| Types package | `@delphian/tronrelic-types` → `IWalletService`, `IAccountDirectoryService`, `IUserGroupService`, `IUserSettingsService`, `IConnectedAppsService`, `IConnectedApp`, `IConnectedAppAdminRow`, `IOAuthConsentContext`, `IMcpAccessTokenVerifier` |
+| Mounted routes | `/api/auth/*`, `/.well-known/oauth-authorization-server`, `/api/user/wallets/*`, `/api/user/settings`, `/api/user/connected-apps`, `/api/user/oauth/authorize-context`, `/api/admin/users/groups/*`, `/api/admin/users/sign-ups/*`, `/api/admin/users` (accounts), `/api/admin/accounts/search` |
+| Types package | `@delphian/tronrelic-types` → `IWalletService`, `IAccountDirectoryService`, `IUserGroupService`, `IUserSettingsService`, `IConnectedAppsService`, `IConnectedApp`, `IConnectedAppAdminRow`, `IOAuthConsentContext`, `IMcpAccessTokenVerifier`, `ISignupProtectionConfig`, `ISignupProtectionReport`, `IEmailDomainRule`, `SIGNUP_PROTECTION_LIMITS`, `SIGNUP_REFUSAL_REASONS`, `normalizeEmailDomain` |
+| Sign-up protections | Site-wide cap on new accounts per hour and email domain rules, stored in `_kv` under `identity:sign-up-protection`. See [Sign-up Protections](#sign-up-protections) |
 | Auth collections | `module_user_auth_users` / `_sessions` / `_accounts` / `_verifications` / `_passkeys` / `_jwks` / `_oauth_clients` / `_oauth_resources` / `_oauth_client_resources` / `_oauth_refresh_tokens` / `_oauth_access_tokens` / `_oauth_consents` / `_oauth_client_assertions` |
 | OAuth authorization server | Issuer = site origin; access tokens are JWTs bound to the MCP resource URL; consent page `/oauth/authorize`. See [OAuth Authorization Server](#oauth-authorization-server) |
 | Bootstrap getters | `getAccessTokenVerifier()`, `getConnectedAppsService()`, `getOAuthServerConfig()`, `getUserGroupService()`, `getAccountDirectoryService()` — consumed by the MCP module |
@@ -36,8 +37,16 @@ Better Auth is the sole identity layer — the legacy UUID identity system was r
 | `services/auth-constants.ts` | Physical BA collection names (`AUTH_USERS_COLLECTION`, `AUTH_COLLECTIONS`) |
 | `services/consumeRedisWindow.ts` | Atomic fixed-window counter in Redis (one Lua step for increment + expiry); shared by both limiters below |
 | `services/createRedisRateLimitStorage.ts` | Better Auth `rateLimit.customStorage` — moves BA's per-IP counters from process memory to Redis |
-| `services/createEmailOtpThrottle.ts` | `hooks.before` middleware adding per-email limits to the OTP send and check endpoints (`EMAIL_OTP_THROTTLE`) |
-| `services/createSignInAuditLog.ts` | `hooks.after` middleware logging every sign-in code request and sign-in attempt (`logAuthAttempt`) |
+| `services/createAuthBeforeHook.ts` | The Better Auth `hooks.before` middleware: the sign-up protections, then the per-email code limits |
+| `services/enforceEmailOtpLimit.ts` | Per-email limits on the OTP send and check endpoints (`EMAIL_OTP_THROTTLE`) |
+| `services/createSignInAuditLog.ts` | `hooks.after` middleware logging every sign-in code request and sign-in attempt (`logAuthAttempt`); exports `describeCaller` |
+| `services/SignupGuard.ts` | Applies the domain rules and the cap to code requests (before-hook) and to account creation (`databaseHooks.user.create.before`); alerts after creation |
+| `services/SignupProtectionConfigStore.ts` | The sign-up protection settings in `_kv`: load, validate, set the cap, add or remove domain rules |
+| `services/SignupCapAlerter.ts` | The once-an-hour cap alert (`warn` plus notification), held by a Redis `SET NX EX` key |
+| `services/SignupProtectionReportService.ts` | Builds `ISignupProtectionReport` for the Sign-ups tab |
+| `services/findEmailDomainRule.ts` | Picks the rule for an address: subdomains match, the longest domain wins |
+| `services/ISignupAccountReader.ts` | The two account reads the guard needs (`hasAccount`, `countCreatedSince`) |
+| `api/sign-up-protection.{controller,routes}.ts` | `/api/admin/users/sign-ups/*`: the report, the cap, and domain rules |
 | `services/SignInEventStore.ts` | `module_user_sign_in_events`: writes from the audit hook, filtered reads for the AI tools, and the indexes including the 90-day expiry |
 | `services/ISignInEventRecorder.ts` | The one storage operation the audit hook needs (`record`) |
 | `database/ISignInEventDocument.ts` | Sign-in event document, its kinds, the collection name, and the retention period |
@@ -76,7 +85,8 @@ Email sign-in sends a six-digit one-time code (OTP). Two layers of limits protec
 | Layer | Keyed by | Limits | Source |
 |-------|----------|--------|--------|
 | Better Auth built-in | IP address + path | BA defaults: 3 requests / 60 s on each email-OTP endpoint, 100 / 10 s elsewhere. Enabled in production only | `createRedisRateLimitStorage` |
-| Per-email throttle | Lowercased email | 5 codes sent / hour; 10 code checks / hour across `/sign-in/email-otp`, `/email-otp/check-verification-otp`, `/email-otp/verify-email` | `createEmailOtpThrottle` |
+| Per-email throttle | Lowercased email | 5 codes sent / hour; 10 code checks / hour across `/sign-in/email-otp`, `/email-otp/check-verification-otp`, `/email-otp/verify-email` | `enforceEmailOtpLimit` |
+| Sign-up protections | Email domain, and the whole site | Admin-set; new addresses only. See [Sign-up Protections](#sign-up-protections) | `SignupGuard` |
 
 The per-email layer exists because the per-IP layer alone lets anyone who rotates IP addresses keep guessing a victim's code, about three guesses a minute per extra address, or flood an inbox with codes. Refusals return `429` and log a warning with the email domain only.
 
@@ -95,11 +105,17 @@ Every sign-in code request and sign-in attempt writes a log entry under `tronrel
 | `Account created` | info | `databaseHooks.user.create.after` | `userId`, `email`, `emailVerified` |
 | `Session ended` | info | `databaseHooks.session.delete.after` | `userId`, `sessionId`; covers sign-out, revocation, and expiry cleanup |
 | `Auth rate limit reached; request refused` | warn | `createRedisRateLimitStorage` | `key` (caller address and path), `retryAfter`; once per key per window |
-| `Per-email OTP limit reached; request refused` | warn | `createEmailOtpThrottle` | `emailDomain`, `bucket`, `retryAfter` |
+| `Per-email OTP limit reached; request refused` | warn | `enforceEmailOtpLimit` | `emailDomain`, `bucket`, `retryAfter` |
+| `Sign-in code request refused by a sign-up protection` | warn | `SignupGuard` | `emailDomain`, `reason`, `ip`, `country` |
+| `Account creation refused: …` | warn | `SignupGuard` | `emailDomain`, and for the cap `createdLastHour`, `maxPerHour` |
+| `New accounts reached the sign-up cap: …` | warn | `SignupCapAlerter` | `createdLastHour`, `maxPerHour`, `mode`; at most once an hour |
+| `Sign-up cap changed`, `Email domain rule saved: …`, `Email domain rule removed: …` | info | `SignupProtectionConfigStore` | the change and the acting admin |
 
 `ip` is `CF-Connecting-IP`, which Cloudflare sets, falling back to the first `X-Forwarded-For` entry. The full email address is logged, so anyone who can read these logs, including a user group granted the system-log AI tools on `/system/mcp`, can see which addresses signed in. The one-time code and the session token are never logged, and every value copied from the request is cut to a fixed length.
 
-A request refused by either limiter never reaches the audit hook, which is why the two limiters log their own refusals.
+A request refused by either limiter never reaches the audit hook, which is why the two limiters log their own refusals. A code request refused by a sign-up protection never reaches it either, so `SignupGuard` stores that refusal as a `code-request-failed` event itself, with the reason code from `SIGNUP_REFUSAL_REASONS`.
+
+A request whose body fails Better Auth's schema, such as a code request with no email, is logged as a failure with reason `VALIDATION_ERROR`. Better Auth reports these with better-call's `ValidationError`, which is not a subclass of its `APIError`, so the hook tests a result with Better Auth's `isAPIError` rather than `instanceof APIError`. An `instanceof` test records these refusals as codes sent.
 
 ### Stored sign-in events
 
@@ -115,6 +131,30 @@ The four `createSignInAuditLog` rows above are also stored in `module_user_sign_
 | `occurredAt` | A Date, so the expiry index can act on it |
 
 Indexes: `{ occurredAt }` with a 90-day time-to-live (`SIGN_IN_EVENT_RETENTION_DAYS`), and `{ email, occurredAt }`, `{ userId, occurredAt }`, `{ ip, occurredAt }` for lookups. MongoDB deletes expired documents itself, so the module needs no scheduler job. `Account created`, `Session ended`, and the limiter refusals are log entries only.
+
+## Sign-up Protections
+
+The per-IP and per-email limits cannot see an account farm that uses a new random address and a new network address for every account, which is what a prober did on 15 Nov 2026: eight accounts on a disposable domain in 45 minutes. Two admin-set protections cover that case, edited on the Sign-ups tab of `/system/users`. **Neither ever applies to an address that already has an account**, so no setting can lock out an existing user.
+
+| Protection | Settings | Effect |
+|------------|----------|--------|
+| Site-wide cap | `mode` (`off`, `alert`, `enforce`) and `maxPerHour` (1–10,000) | Counts accounts created in the last 60 minutes, by every sign-in method. At or above the maximum: `alert` notifies admins and refuses nobody; `enforce` notifies admins and refuses new accounts with `429 SIGN_UPS_PAUSED`. Starts at `alert`, 10 per hour (`SIGNUP_PROTECTION_LIMITS.defaultCap`) |
+| Domain rule, `block` | `domain`, optional `note` | Refuses new addresses on the domain and its subdomains with `403 EMAIL_DOMAIN_BLOCKED`, by every sign-in method |
+| Domain rule, `slow` | `domain`, `maxCodesPerHour` (1–1,000), optional `note` | Every new address on the domain shares one hourly budget of sign-in codes, counted in Redis under `<REDIS_NAMESPACE>:auth:signup-domain:<rule domain>`. Over budget: `429 EMAIL_DOMAIN_SLOWED` |
+
+**Where they run.** `SignupGuard.checkCodeRequest` runs first in the before-hook (`createAuthBeforeHook`), on `/email-otp/send-verification-otp`, so a refused visitor learns before waiting for an email and no Resend quota is spent. It checks block, then the enforced cap, then the domain budget, so a request refused for another reason does not spend the budget. `SignupGuard.checkAccountCreation` runs in `databaseHooks.user.create.before`, which every account creation passes through, including Google and GitHub sign-in, which never request a code; only `block` and the enforced cap apply there. `noteAccountCreated` runs in `user.create.after` and alerts when the new account brought the count up to the cap.
+
+**Matching.** A rule matches its domain and every subdomain (`example.com` covers `mail.example.com`, not `badexample.com`), and the longest matching domain wins, so a subdomain can be slowed under a blocked parent. Domains are normalized by `normalizeEmailDomain` in `@/types`, which the admin form uses too: lowercase, no leading `@` or trailing dot, two or more labels, internationalised domains in their `xn--` form. At most 500 rules.
+
+**The alert.** `SignupCapAlerter` writes a `warn` entry and sends a notification in category `identity.signup-cap-reached` (content type `identity:signup-cap-reached`, default audience the `admin` group, toast channel), at most once an hour. The hour is held by a Redis key set with `SET NX EX 3600` under `<REDIS_NAMESPACE>:auth:signup-cap-alert`, so concurrent sign-ups, a restart, and a second process all send one alert; the key's value is the alert time the report shows. The category is registered when the `'notifications'` service appears, because the notifications module runs after this one.
+
+**Limits of the design.**
+- The count is read, then compared, so a burst of simultaneous sign-ups can pass the cap by a few accounts. It is a brake, not a quota.
+- Deleted accounts are counted, because deleting a farm's accounts does not slow the farm.
+- A Redis failure lets a slowed domain through and logs an error, like the other limiters. A failure claiming the alert skips the alert and logs an error.
+- The settings are cached in memory at startup and replaced on every save, so a second backend process would serve its own copy until it restarts.
+
+**The report.** `GET /api/admin/users/sign-ups` answers `ISignupProtectionReport`: the settings; accounts created in the last hour and 24 hours, whether the cap is reached, and the last alert time; refusals per reason code over 24 hours and 7 days, read from the stored sign-in events; and the 25 busiest email domains over 7 days, merging new accounts (from the account collection, grouped by domain) with refusals, each with the rule that matches it today. The tab offers a one-click Block on each domain without a block rule. Every write endpoint answers with the same report.
 
 ## Deleting an Account
 
@@ -218,6 +258,8 @@ Registered on the service registry during `run()`. Consume via `services.get<T>(
 | `unlinkWallet(userId, input)` | Detach a wallet |
 | `setPrimaryWallet(userId, input)` | Promote an existing wallet to primary (step-up) |
 
+**What a caller is told.** The wallet service throws `WalletUserError` (`services/WalletUserError.ts`) for failures the caller caused, with a logged `message` and a `userMessage` for the response. The two differ only for a wallet another account owns: the log says so, and the caller reads "This wallet can't be added to this account. If you linked it before, sign in with that account." `WalletController.sendFailure` answers a `WalletUserError` or a `ValidationError` with 400 and that text, and anything else with 500 and a generic message per operation, so an internal error's text never reaches the browser. Every failure is logged in full at `error`.
+
 Every method takes the resolved Better Auth user id first — the service never reads cookies/sessions. Mutations denormalize the primary address onto the BA user record so the session surfaces it without a second query. After a successful `linkWallet`, the service fires the `http.walletLinked` observer hook (`{ userId, address }`) so feature modules react to new verified ownership without identity depending on them — account-history enrolls the address into its backfill. See [system-hooks.md](../../../../docs/system/system-hooks.md).
 
 ### `'accounts'` → `IAccountDirectoryService`
@@ -271,17 +313,21 @@ First consumer: the notifications module persists per-user opt-outs here under t
 | GET/POST | `/api/admin/users/groups` | `requireAdmin` | List / create group definitions |
 | GET/PATCH/DELETE | `/api/admin/users/groups/:id` | `requireAdmin` | Read / update / delete a definition |
 | GET | `/api/admin/users/groups/:id/members` | `requireAdmin` | Paginated member ids |
+| GET | `/api/admin/users/sign-ups` | `requireAdmin` | `ISignupProtectionReport`: the sign-up protection settings and the sign-up report |
+| PUT | `/api/admin/users/sign-ups/cap` | `requireAdmin` | Replace the cap; body `{ mode, maxPerHour }`. 400 names the field to fix |
+| PUT | `/api/admin/users/sign-ups/domains/:domain` | `requireAdmin` | Add or replace a domain rule; body `{ action, maxCodesPerHour?, note? }`. 400 for a bad field, 409 at 500 rules |
+| DELETE | `/api/admin/users/sign-ups/domains/:domain` | `requireAdmin` | Remove a domain rule; 404 when none exists |
 | GET | `/api/admin/users` | `requireAdmin` | Paginated / searched account summaries (`IAccountSummary[]` + total) |
 | GET | `/api/admin/users/:id` | `requireAdmin` | One account summary, or 404 |
 | PUT | `/api/admin/users/:id/groups` | `requireAdmin` | Set an account's group membership |
 | DELETE | `/api/admin/users/:id` | `requireAdmin` + `requireAdminUser`, rate-limited | Soft-delete an account; body `{ confirmEmail }`. See [Deleting an Account](#deleting-an-account) |
 | GET | `/api/admin/accounts/search?q=` | `requireAdmin` | Typeahead account search → `{ accounts: IAccountMatch[] }`; backs `context.ui.AccountPicker` |
 
-`/api/admin/users` is a `/:id` catch-all, so it mounts **last**. The literal-segment routers must mount ahead of it: the groups router here, and the traffic module's `/api/admin/users/{traffic,analytics}` routers (TrafficModule runs before this module). Without that order the catch-all would shadow `traffic`, `analytics`, and `groups`.
+`/api/admin/users` is a `/:id` catch-all, so it mounts **last**. The literal-segment routers must mount ahead of it: the groups and sign-ups routers here, and the traffic module's `/api/admin/users/{traffic,analytics}` routers (TrafficModule runs before this module). Without that order the catch-all would shadow `traffic`, `analytics`, and `groups`.
 
 ## Lifecycle
 
-**`init()`** constructs (in order) `GroupService` (with a membership listener that disconnects the user's sockets), `WalletService`, `UserGroupService` (seeds the `admin` group), `AccountDirectoryService`, `UserSettingsService`, the OAuth server config (from `BETTER_AUTH_URL`, falling back to `SITE_URL`, then to `http://localhost:3000` outside production; the same resolved URL becomes Better Auth's `baseURL`, so the auth server and the OAuth issuer cannot disagree), and the Better Auth instance (handed the injected `redis` client for its rate-limit counters, `socketDisconnector` for its session-delete hook, the OAuth config, and the injected `oauthClientAdmission` rule for which apps may register), then wires the auth facade, builds `ConnectedAppsService` (creating its last-use index), `OAuthAccessTokenVerifier`, and `AccountDeletionService`, and builds the wallet + group + user-settings + connected-apps controllers. **`run()`** registers the `Users` menu item under the System container, the `/system/users` tab row (the `identity` namespace, every node `requiresAdmin`), and the profile tab row (the `Connected apps` tab carries `requiresGroups: ['mcp-users']`), mounts `/api/auth/*`, `/.well-known/oauth-authorization-server`, the connected-apps and consent-context routers, the wallet router, the user-settings router, the admin group router, the admin accounts router (`/api/admin/users`, the `/:id` catch-all, last), and the admin account-search router (`/api/admin/accounts`, a dedicated literal prefix), then registers `'user-groups'`, `'wallets'`, `'accounts'`, `'user-settings'`, and watches `'ai-tools'` to register the three identity AI tools. `init()` also builds `SignInEventStore` and creates its indexes before the Better Auth instance, which receives it as the audit hook's recorder.
+**`init()`** constructs (in order) `GroupService` (with a membership listener that disconnects the user's sockets), `WalletService`, `UserGroupService` (seeds the `admin` group), `AccountDirectoryService`, `UserSettingsService`, the OAuth server config (from `BETTER_AUTH_URL`, falling back to `SITE_URL`, then to `http://localhost:3000` outside production; the same resolved URL becomes Better Auth's `baseURL`, so the auth server and the OAuth issuer cannot disagree), and the Better Auth instance (handed the injected `redis` client for its rate-limit counters, `socketDisconnector` for its session-delete hook, the OAuth config, and the injected `oauthClientAdmission` rule for which apps may register), then wires the auth facade, builds `ConnectedAppsService` (creating its last-use index), `OAuthAccessTokenVerifier`, and `AccountDeletionService`, and builds the wallet + group + user-settings + connected-apps controllers. **`run()`** registers the `Users` menu item under the System container, the `/system/users` tab row (the `identity` namespace, every node `requiresAdmin`), and the profile tab row (the `Connected apps` tab carries `requiresGroups: ['mcp-users']`), mounts `/api/auth/*`, `/.well-known/oauth-authorization-server`, the connected-apps and consent-context routers, the wallet router, the user-settings router, the admin group router, the admin accounts router (`/api/admin/users`, the `/:id` catch-all, last), and the admin account-search router (`/api/admin/accounts`, a dedicated literal prefix), then registers `'user-groups'`, `'wallets'`, `'accounts'`, `'user-settings'`, and watches `'ai-tools'` to register the three identity AI tools. `init()` also builds `SignInEventStore` and creates its indexes before the Better Auth instance, which receives it as the audit hook's recorder. It creates the `createdAt` index on the account collection the cap counts against, loads `SignupProtectionConfigStore`, and builds `SignupCapAlerter` and `SignupGuard` before the auth instance, which receives the guard. `run()` mounts `/api/admin/users/sign-ups` before the accounts catch-all and watches `'notifications'` to register the cap alert's category.
 
 ## Related
 

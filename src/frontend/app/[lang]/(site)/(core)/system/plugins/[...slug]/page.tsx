@@ -1,3 +1,11 @@
+/**
+ * Catch-all route for plugin admin pages under /system/plugins/.
+ *
+ * Plugin admin pages render here, rather than in the site-wide catch-all, so
+ * they sit inside the system layout with its auth gate and navigation. A path
+ * that no enabled plugin registers returns 404.
+ */
+import { notFound } from 'next/navigation';
 import { PluginPageWithZones } from '../../../../../../../components/PluginPageWithZones';
 import { runPluginServerDataFetcher } from '../../../../../../../lib/runPluginServerDataFetcher';
 import { getEnabledPluginPageConfig } from '../../../../../../../lib/serverPluginRegistry';
@@ -33,6 +41,7 @@ interface IPageParams {
  * Architecture:
  * 1. User navigates to /system/plugins/telegram-bot/settings
  * 2. Next.js matches this catch-all route (within system layout)
+ *    - If no enabled plugin registers the path, the route calls notFound()
  * 3. The page's serverDataFetcher, if it declares one, runs here so the
  *    component receives `initialData`, exactly as a public plugin page does
  * 4. PluginPageWithZones fetches widgets and wraps with widget zones
@@ -52,8 +61,15 @@ export default async function PluginAdminPage({ params }: { params: Promise<IPag
     const { lang, slug } = await params;
     const fullSlug = '/system/plugins/' + slug.join('/');
 
+    // A path no enabled plugin registers must answer 404. Rendering it anyway
+    // returns a 200 with an empty body, because PluginPageHandler draws
+    // nothing for an unknown slug.
     const pageConfig = await getEnabledPluginPageConfig(fullSlug);
-    const initialData = pageConfig ? await runPluginServerDataFetcher(pageConfig, fullSlug, lang) : undefined;
+    if (!pageConfig) {
+        notFound();
+    }
+
+    const initialData = await runPluginServerDataFetcher(pageConfig, fullSlug, lang);
 
     return <PluginPageWithZones slug={fullSlug} initialData={initialData} />;
 }

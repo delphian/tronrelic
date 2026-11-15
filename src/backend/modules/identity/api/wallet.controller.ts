@@ -8,14 +8,21 @@
  *
  * The controller is a thin HTTP adapter: it resolves the session user
  * id, validates the request body, delegates to {@link WalletService},
- * and maps service errors to 4xx. All wallet business logic — challenge
- * verification, signature recovery, primary recomputation — lives in
- * the service.
+ * and maps service errors to responses. All wallet business logic —
+ * challenge verification, signature recovery, primary recomputation —
+ * lives in the service.
+ *
+ * A caller is only ever shown the text of an error the service marked as
+ * safe (`WalletUserError`) or an input validation error. Anything else is
+ * answered with a generic message and a 500, so an internal failure never
+ * reaches the browser. Every failure is still logged in full.
  */
 
 import type { Request, Response } from 'express';
 import type { ISystemLogService } from '@/types';
 import type { WalletService, WalletAction } from '../services/wallet.service.js';
+import { WalletUserError } from '../services/WalletUserError.js';
+import { ValidationError } from '../../../lib/errors.js';
 
 /**
  * Wallet operations a challenge may be minted for.
@@ -91,11 +98,7 @@ export class WalletController {
             const challenge = await this.walletService.issueChallenge(userId, action, address);
             res.json(challenge);
         } catch (error) {
-            this.logger.error({ error, userId }, 'Failed to issue wallet challenge');
-            res.status(400).json({
-                error: 'Failed to issue wallet challenge',
-                message: error instanceof Error ? error.message : 'Unknown error'
-            });
+            this.sendFailure(res, error, userId, 'Failed to issue wallet challenge', 'Could not start wallet verification. Please try again.');
         }
     }
 
@@ -117,11 +120,7 @@ export class WalletController {
             const wallets = await this.walletService.linkWallet(userId, input);
             res.json({ wallets });
         } catch (error) {
-            this.logger.error({ error, userId }, 'Failed to link wallet');
-            res.status(400).json({
-                error: 'Failed to link wallet',
-                message: error instanceof Error ? error.message : 'Unknown error'
-            });
+            this.sendFailure(res, error, userId, 'Failed to link wallet', 'Could not link this wallet. Please try again.');
         }
     }
 
@@ -152,11 +151,7 @@ export class WalletController {
             });
             res.json({ wallets });
         } catch (error) {
-            this.logger.error({ error, userId }, 'Failed to unlink wallet');
-            res.status(400).json({
-                error: 'Failed to unlink wallet',
-                message: error instanceof Error ? error.message : 'Unknown error'
-            });
+            this.sendFailure(res, error, userId, 'Failed to unlink wallet', 'Could not unlink this wallet. Please try again.');
         }
     }
 
@@ -187,12 +182,40 @@ export class WalletController {
             });
             res.json({ wallets });
         } catch (error) {
-            this.logger.error({ error, userId }, 'Failed to set primary wallet');
-            res.status(400).json({
-                error: 'Failed to set primary wallet',
-                message: error instanceof Error ? error.message : 'Unknown error'
-            });
+            this.sendFailure(res, error, userId, 'Failed to set primary wallet', 'Could not set the primary wallet. Please try again.');
         }
+    }
+
+    /**
+     * Log a failed wallet operation in full and answer the caller with only
+     * what they may see.
+     *
+     * A `WalletUserError` answers 400 with its user-facing text, which for
+     * some failures is worded differently from the logged cause. A
+     * `ValidationError` (a malformed address or signature) answers 400 with
+     * its own text. Anything else is unexpected, so it answers 500 with the
+     * generic message rather than whatever the failing code said. The log
+     * entry always carries the original error, so the cause stays visible on
+     * the Logs tab of `/system/users`.
+     *
+     * @param res - Express response.
+     * @param error - What the service threw.
+     * @param userId - The signed-in caller, for the log entry.
+     * @param logMessage - The log entry's message, and the response's `error` field.
+     * @param genericMessage - What the caller is told when the error is not one they may see.
+     */
+    private sendFailure(res: Response, error: unknown, userId: string, logMessage: string, genericMessage: string): void {
+        let status = 500;
+        let message = genericMessage;
+        if (error instanceof WalletUserError) {
+            status = 400;
+            message = error.userMessage;
+        } else if (error instanceof ValidationError) {
+            status = 400;
+            message = error.message;
+        }
+        this.logger.error({ error, userId }, logMessage);
+        res.status(status).json({ error: logMessage, message });
     }
 
     /**

@@ -104,12 +104,55 @@ export class AccountDirectoryService implements IAccountDirectoryService {
     }
 
     /**
+     * Create the index the sign-up cap counts against. The cap counts recent
+     * accounts on every code request for a new address and on every account
+     * creation, so the count has to read an index range, not every account.
+     */
+    public async createIndexes(): Promise<void> {
+        await this.authUsers.createIndex({ createdAt: -1 }, { name: 'createdAt_desc' });
+        this.logger.info('Account creation-time index ensured on the Better Auth user collection');
+    }
+
+    /**
      * Count all Better Auth accounts.
      *
      * @returns The total account count.
      */
     public async countAccounts(): Promise<number> {
         return this.authUsers.countDocuments();
+    }
+
+    /**
+     * Count accounts created at or after a moment. Deleted accounts are
+     * counted too, because the sign-up cap measures how fast accounts are
+     * being made, and an admin deleting a farm's accounts does not slow it.
+     *
+     * @param since - Start of the span to count.
+     * @returns How many accounts were created since then.
+     */
+    public async countCreatedSince(since: Date): Promise<number> {
+        return this.authUsers.countDocuments({ createdAt: { $gte: since } });
+    }
+
+    /**
+     * Count accounts created since a moment, grouped by email domain, busiest
+     * domain first. Backs the domain list on the Sign-ups tab, where an admin
+     * spots a domain an account farm is using.
+     *
+     * @param since - Start of the span to count.
+     * @param limit - Most domains to return.
+     * @returns Each domain with its count of new accounts.
+     */
+    public async countCreatedByEmailDomainSince(since: Date, limit: number): Promise<Array<{ domain: string; count: number }>> {
+        const rows = await this.authUsers.aggregate<{ _id: string | null; count: number }>([
+            { $match: { createdAt: { $gte: since } } },
+            { $group: { _id: { $toLower: { $arrayElemAt: [{ $split: ['$email', '@'] }, -1] } }, count: { $sum: 1 } } },
+            { $sort: { count: -1, _id: 1 } },
+            { $limit: limit }
+        ]).toArray();
+        return rows
+            .filter((row): row is { _id: string; count: number } => typeof row._id === 'string' && row._id.length > 0)
+            .map(row => ({ domain: row._id, count: row.count }));
     }
 
     /**

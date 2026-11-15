@@ -123,6 +123,44 @@ export class SignInEventStore implements ISignInEventRecorder {
     }
 
     /**
+     * Count events with one of the given reasons since a moment, per reason.
+     * Backs the refusal counts on the Sign-ups tab of `/system/users`.
+     *
+     * @param reasons - Reason codes to count, such as the sign-up refusal codes.
+     * @param since - Start of the span to count.
+     * @returns Each reason that occurred, with its count. Reasons with no events are left out.
+     */
+    async countByReasonSince(reasons: ReadonlyArray<string>, since: Date): Promise<Array<{ reason: string; count: number }>> {
+        const rows = await this.collection.aggregate<{ _id: string; count: number }>([
+            { $match: { occurredAt: { $gte: since }, reason: { $in: [...reasons] } } },
+            { $group: { _id: '$reason', count: { $sum: 1 } } }
+        ]).toArray();
+        return rows.map(row => ({ reason: row._id, count: row.count }));
+    }
+
+    /**
+     * Count events with one of the given reasons since a moment, per email
+     * domain, busiest domain first. Lets the Sign-ups tab show which domains
+     * the protections are refusing.
+     *
+     * @param reasons - Reason codes to count.
+     * @param since - Start of the span to count.
+     * @param limit - Most domains to return.
+     * @returns Each domain with its count. Events with no address are left out.
+     */
+    async countByEmailDomainSince(reasons: ReadonlyArray<string>, since: Date, limit: number): Promise<Array<{ domain: string; count: number }>> {
+        const rows = await this.collection.aggregate<{ _id: string | null; count: number }>([
+            { $match: { occurredAt: { $gte: since }, reason: { $in: [...reasons] }, email: { $type: 'string' } } },
+            { $group: { _id: { $arrayElemAt: [{ $split: ['$email', '@'] }, -1] }, count: { $sum: 1 } } },
+            { $sort: { count: -1, _id: 1 } },
+            { $limit: limit }
+        ]).toArray();
+        return rows
+            .filter((row): row is { _id: string; count: number } => typeof row._id === 'string' && row._id.length > 0)
+            .map(row => ({ domain: row._id, count: row.count }));
+    }
+
+    /**
      * Read one page of events, newest first, with the number that match.
      *
      * @param query - Which events to return.

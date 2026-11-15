@@ -26,6 +26,28 @@ function buildLogger(): ISystemLogService {
     return logger;
 }
 
+/**
+ * Build an error shaped like better-call's `ValidationError`, which Better Auth
+ * throws when a request body fails its schema.
+ *
+ * The real class is not imported because better-call is only a transitive
+ * dependency. What matters is reproduced here: the error is named `APIError`
+ * and carries a status and body, but it is not an instance of Better Auth's
+ * `APIError` class.
+ *
+ * @param message - The validation message Better Auth would report.
+ * @returns An error the audit log must treat as a refused request.
+ */
+function buildValidationError(message: string): Error {
+    return Object.assign(new Error(message), {
+        name: 'APIError',
+        status: 'BAD_REQUEST',
+        statusCode: 400,
+        body: { message, code: 'VALIDATION_ERROR' },
+        headers: {}
+    });
+}
+
 /** Headers of a request that arrived through Cloudflare. */
 const cloudflareHeaders = new Headers({
     'cf-connecting-ip': '203.0.113.7',
@@ -75,6 +97,41 @@ describe('logAuthAttempt', () => {
             'Sign-in code request failed'
         );
         expect(logger.info).not.toHaveBeenCalled();
+    });
+
+    // A prober on production sent code requests with no usable email. Better
+    // Auth refused them with a validation error, and the audit log recorded
+    // each one as "Sign-in code sent" with a null email although nothing was
+    // sent.
+    it('records a code request refused by body validation as a failure, not a code sent', () => {
+        const refusal = buildValidationError('[body.email] Invalid input: expected string, received undefined');
+        expect(refusal).not.toBeInstanceOf(APIError);
+
+        logAuthAttempt(logger, {
+            path: '/email-otp/send-verification-otp',
+            body: { type: 'sign-in' },
+            headers: cloudflareHeaders,
+            returned: refusal
+        });
+
+        expect(logger.warn).toHaveBeenCalledWith(
+            expect.objectContaining({ email: null, status: 400, reason: 'VALIDATION_ERROR', ip: '203.0.113.7' }),
+            'Sign-in code request failed'
+        );
+        expect(logger.info).not.toHaveBeenCalled();
+    });
+
+    it('records a sign-in refused by body validation as a failed sign-in', () => {
+        logAuthAttempt(logger, {
+            path: '/sign-in/email-otp',
+            body: { email: 'owner@example.com' },
+            returned: buildValidationError('[body.otp] Invalid input: expected string, received undefined')
+        });
+
+        expect(logger.warn).toHaveBeenCalledWith(
+            expect.objectContaining({ email: 'owner@example.com', status: 400, reason: 'VALIDATION_ERROR' }),
+            'Sign-in failed'
+        );
     });
 
     it('records a successful sign-in with the user and session ids', () => {

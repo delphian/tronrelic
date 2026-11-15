@@ -3,9 +3,9 @@
 /**
  * @fileoverview Client shell for /system/users.
  *
- * Holds the in-page tab row and its four panels: the account directory, the
- * user groups, the identity module's MongoDB storage, and the identity
- * module's log entries. The tab row is the menu module's Submenu Pattern, a
+ * Holds the in-page tab row and its five panels: the account directory, the
+ * user groups, the sign-up protections, the identity module's MongoDB
+ * storage, and the identity module's log entries. The tab row is the menu module's Submenu Pattern, a
  * namespaced menu rendered with `MenuNavClient`, so it inherits per-user
  * gating, ordering, and live `menu:update` refresh. Clicking a tab changes
  * local state instead of navigating, and the address bar is kept as a real
@@ -24,13 +24,13 @@ import { Page, PageHeader, Stack } from '../../../../../../components/layout';
 import { MenuNavClient } from '../../../../../../components/layout/MenuNav/MenuNavClient';
 import { CollectionBrowser } from '../../../../../../modules/database';
 import { SystemLogsMonitor } from '../../../../../../modules/logs';
-import { UsersMonitor, GroupsManager } from '../../../../../../modules/user';
+import { UsersMonitor, GroupsManager, SignupProtectionTab } from '../../../../../../modules/user';
 
 /** The page's tab ids; the `?tab=` value carried by each submenu node. */
-type TabId = 'users' | 'groups' | 'database' | 'logs';
+type TabId = 'users' | 'groups' | 'sign-ups' | 'database' | 'logs';
 
 /** Every tab id, so the deep link and the click handler share one list. */
-const TAB_IDS: ReadonlyArray<TabId> = ['users', 'groups', 'database', 'logs'];
+const TAB_IDS: ReadonlyArray<TabId> = ['users', 'groups', 'sign-ups', 'database', 'logs'];
 
 /** The menu namespace the identity module registers the tab nodes under. */
 const SUBMENU_NAMESPACE = 'identity';
@@ -122,6 +122,7 @@ export function UsersAdminClient({ submenuTree, submenuGeneratedAt, initialTab }
 
                 {activeTab === 'users' && <UsersMonitor />}
                 {activeTab === 'groups' && <GroupsManager />}
+                {activeTab === 'sign-ups' && <SignupProtectionTab />}
 
                 {/* Read-only. These collections hold accounts, sessions, and
                     OAuth grants, and a hand edit can grant the admin group or
