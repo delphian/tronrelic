@@ -669,6 +669,8 @@ async function bootstrapInit(): Promise<BootstrapContext> {
         // The same salt the traffic module hashes visitor addresses with, so
         // no new secret is needed. SESSION_SECRET is enforced in production.
         anonymousKeySalt: env.TRAFFIC_IP_HASH_SALT || env.SESSION_SECRET || '',
+        // For the admin notification sent when a group's daily call pool runs out.
+        serviceRegistry,
         endpoint: {
             resourceUrl: oauthConfig.mcpResourceUrl,
             resourceMetadataUrl: oauthConfig.mcpResourceMetadataUrl,

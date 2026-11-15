@@ -189,10 +189,11 @@ export type {
     IStaticPromptVariableInput,
     IStaticPromptVariableUpdate
 } from './ai-tools/index.js';
-export { MCP_TOOLS_SCOPE, MCP_OAUTH_SCOPES, MCP_USERS_GROUP_ID, MCP_ANONYMOUS_GROUP_ID, mcpGroupMayHoldTool, normaliseIpAllowlistEntries } from './mcp/index.js';
+export { MCP_TOOLS_SCOPE, MCP_OAUTH_SCOPES, MCP_USERS_GROUP_ID, MCP_ANONYMOUS_GROUP_ID, mcpGroupMayHoldTool, normaliseIpAllowlistEntries, buildMcpServerDescriptionStatus } from './mcp/index.js';
 export type {
     IMcpSettings,
     IMcpStatus,
+    IMcpServerDescriptionStatus,
     IMcpToolExposure,
     IMcpToolGrant,
     IMcpGroup,

@@ -14,8 +14,18 @@
  */
 
 import type { Request, Response } from 'express';
-import type { IConnectedAppsService, IMcpGroupLimits, IMcpGroupPolicyPatch, IMcpStatus, ISystemLogService, IUserGroupService } from '@/types';
-import { MCP_USERS_GROUP_ID } from '@/types';
+import type {
+    IConnectedAppsService,
+    IMcpGroupLimits,
+    IMcpGroupPolicyPatch,
+    IMcpServerDescriptionStatus,
+    IMcpStatus,
+    IMcpToolExposure,
+    ISystemLogService,
+    IUserGroupService
+} from '@/types';
+import { MCP_ANONYMOUS_GROUP_ID, MCP_USERS_GROUP_ID, buildMcpServerDescriptionStatus } from '@/types';
+import type { IMcpServerIdentity } from '../services/IMcpServerIdentity.js';
 import { isAdminUserRequest } from '../../../api/middleware/admin-auth.js';
 import type { McpSettingsStore } from '../services/mcp-settings.store.js';
 import { McpToolExposureError, type McpToolExposureService } from '../services/mcp-tool-exposure.service.js';
@@ -24,6 +34,15 @@ import { McpUsageError, parseUsageWindow, type McpUsageService } from '../servic
 
 /** Largest page of connected apps one request may ask for. */
 const MAX_APPS_PAGE = 200;
+
+/** What the overview needs to tell whether the server's description still matches the anonymous grants. */
+export interface IMcpServerDescriptionSource {
+    /** The server identity the handshake and the Server Card report. */
+    identity: Pick<IMcpServerIdentity, 'description' | 'version'>;
+
+    /** The anonymous tools the description was written for. */
+    describedAnonymousTools: readonly string[];
+}
 
 /**
  * Handlers for the MCP admin router. Each handler is an arrow property so the
@@ -40,6 +59,8 @@ export class McpAdminController {
      * @param usage - Totals the accounting table for the usage view.
      * @param endpoint - The signed-in and public endpoint URLs and the token
      *   issuer, shown on the overview.
+     * @param serverDescription - The server's description and the anonymous
+     *   tools it was written for, compared with the grants on every status read.
      * @param logger - Module logger.
      */
     constructor(
@@ -50,6 +71,7 @@ export class McpAdminController {
         private readonly userGroups: IUserGroupService,
         private readonly usage: McpUsageService,
         private readonly endpoint: { resourceUrl: string; publicUrl: string; issuer: string },
+        private readonly serverDescription: IMcpServerDescriptionSource,
         private readonly logger: ISystemLogService
     ) {}
 
@@ -151,6 +173,11 @@ export class McpAdminController {
      * @param res - Answers with the updated row, or 400 / 403 / 404. Withdrawing
      *   a tool that is no longer registered answers `{ tool: null }`, because
      *   its stale approval is removed but it has no row to return.
+     *
+     * A change to an `anonymous` grant also writes an `info` entry saying
+     * whether the server's description still matches what anonymous callers
+     * are served, because the description names those tools and does not
+     * change with them.
      */
     setToolExposure = async (req: Request, res: Response): Promise<void> => {
         const body = req.body as { exposed?: unknown; groupId?: unknown } | undefined;
@@ -164,6 +191,9 @@ export class McpAdminController {
             try {
                 const tool = await this.exposure.setExposure(req.params.name, groupId, exposed, req.userId);
                 res.json({ tool });
+                if (groupId === MCP_ANONYMOUS_GROUP_ID) {
+                    await this.noteDescriptionAfterAnonymousChange(req.params.name, exposed);
+                }
             } catch (error: unknown) {
                 if (error instanceof McpToolExposureError) {
                     res.status(error.status).json({ success: false, error: error.message });
@@ -269,6 +299,36 @@ export class McpAdminController {
     };
 
     /**
+     * Log whether the server's description still matches the anonymous
+     * grants after one of them changed.
+     *
+     * Written after the response, and any failure is logged and swallowed,
+     * because the grant change has already been saved and answered.
+     *
+     * @param toolName - The tool whose anonymous grant changed.
+     * @param exposed - Whether it was granted or withdrawn.
+     */
+    private async noteDescriptionAfterAnonymousChange(toolName: string, exposed: boolean): Promise<void> {
+        try {
+            const status = this.describe(await this.exposure.listExposures());
+            this.logger.info(
+                {
+                    tool: toolName,
+                    exposed,
+                    matchesAnonymousGrants: status.matchesAnonymousGrants,
+                    describedAnonymousTools: status.describedAnonymousTools,
+                    servedAnonymousTools: status.servedAnonymousTools
+                },
+                status.matchesAnonymousGrants
+                    ? 'Anonymous MCP grants changed; the server description still matches them'
+                    : 'Anonymous MCP grants changed; the server description no longer matches them and needs rewriting'
+            );
+        } catch (error: unknown) {
+            this.logger.warn({ err: error, tool: toolName }, 'Could not compare the MCP server description with the anonymous grants');
+        }
+    }
+
+    /**
      * Assemble the overview snapshot.
      *
      * @returns The current status.
@@ -287,8 +347,20 @@ export class McpAdminController {
             groupId: MCP_USERS_GROUP_ID,
             memberCount: members.total,
             servedToolCount: tools.filter(tool => tool.served).length,
-            staleToolCount: tools.filter(tool => tool.stale).length
+            staleToolCount: tools.filter(tool => tool.stale).length,
+            serverDescription: this.describe(tools)
         };
+    }
+
+    /**
+     * Compare the server's description with the anonymous grants in a tool list.
+     *
+     * @param tools - Every registered tool with its grants.
+     * @returns The description status the overview and the log report.
+     */
+    private describe(tools: IMcpToolExposure[]): IMcpServerDescriptionStatus {
+        const { identity, describedAnonymousTools } = this.serverDescription;
+        return buildMcpServerDescriptionStatus(identity.description, identity.version, describedAnonymousTools, tools);
     }
 }
 

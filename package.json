@@ -28,7 +28,7 @@
     "stop:termux": "node scripts/stop-termux.mjs",
     "clean": "rimraf dist .next src/frontend/.next src/plugins/*/dist src/frontend/public/plugins coverage test-results playwright-report playwright/.cache && find . -name '*.tsbuildinfo' -delete && node scripts/reset-generated.mjs",
     "reset": "docker compose -f docker-compose.npm.yml down -v",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "node --max-old-space-size=4096 node_modules/typescript/bin/tsc --noEmit",
     "typecheck:core": "npm run clean && npm run typecheck",
     "typecheck:backend": "tsc --noEmit -p tsconfig.backend.json",
     "typecheck:frontend": "tsc --noEmit -p src/frontend/tsconfig.json",

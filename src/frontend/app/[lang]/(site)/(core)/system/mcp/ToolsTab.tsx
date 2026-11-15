@@ -19,7 +19,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { IMcpGroup, IMcpGroupPolicy, IMcpToolExposure, IMcpToolGrant } from '@/types';
+import type { IMcpGroup, IMcpGroupPolicy, IMcpServerDescriptionStatus, IMcpToolExposure, IMcpToolGrant } from '@/types';
 import { mcpGroupMayHoldTool } from '@/types';
 import { Card } from '../../../../../../components/ui/Card';
 import { Stack } from '../../../../../../components/layout';
@@ -31,6 +31,7 @@ import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../../components/ui
 import { useToast } from '../../../../../../components/ui/ToastProvider';
 import { listMcpTools, setMcpToolExposure } from '../../../../../../modules/mcp';
 import { GroupPolicyCard } from './GroupPolicyCard';
+import { ServerDescriptionCard } from './ServerDescriptionCard';
 import styles from './page.module.scss';
 
 /**
@@ -43,6 +44,12 @@ interface IToolsTabProps {
     initialGroups: IMcpGroup[];
     /** Called with every row after a change, so the overview counts update. */
     onToolsChanged: (tools: IMcpToolExposure[]) => void;
+    /**
+     * The server description and whether it matches the anonymous grants,
+     * kept current by the parent after each change; null when the status
+     * could not be loaded.
+     */
+    serverDescription: IMcpServerDescriptionStatus | null;
 }
 
 /**
@@ -111,7 +118,7 @@ function restrictionNote(tool: IMcpToolExposure, group: IMcpGroup): string | nul
  * @param props - {@link IToolsTabProps}.
  * @returns The tools panel.
  */
-export function ToolsTab({ initialTools, initialGroups, onToolsChanged }: IToolsTabProps) {
+export function ToolsTab({ initialTools, initialGroups, onToolsChanged, serverDescription }: IToolsTabProps) {
     const [tools, setTools] = useState<IMcpToolExposure[]>(initialTools);
     const [groups, setGroups] = useState<IMcpGroup[]>(initialGroups);
     const [selectedId, setSelectedId] = useState<string>(initialGroups[0]?.id ?? '');
@@ -226,6 +233,9 @@ export function ToolsTab({ initialTools, initialGroups, onToolsChanged }: ITools
                         restrictedGrantCount={restrictedGrantCount}
                         onPolicyChange={handlePolicyChange}
                     />
+                    {/* The description names what works without an account, so it
+                        sits beside the Anonymous grants it has to match. */}
+                    {selected.isAnonymous && serverDescription && <ServerDescriptionCard status={serverDescription} />}
                 </>
             )}
 

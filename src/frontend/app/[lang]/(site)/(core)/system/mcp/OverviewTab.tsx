@@ -36,6 +36,15 @@ export function OverviewTab({ status, initialUsage, groups }: IOverviewTabProps)
         <div className="alert" role="alert">The MCP status could not be loaded. Refresh the page to try again.</div>
     ) : (
         <Stack gap="md">
+            {/* The description clients and registries show names what works
+                without an account, so a grant change can make it wrong. The
+                details and the fix are beside the Anonymous grants. */}
+            {!status.serverDescription.matchesAnonymousGrants && (
+                <div className="alert" role="status">
+                    The server description no longer matches the tools granted to Anonymous. Open the Tools tab and choose
+                    Anonymous to see what changed and how to update it.
+                </div>
+            )}
             <StatGrid size="sm">
                 <StatTile size="sm" label="Tools served" value={status.servedToolCount} tone={status.servedToolCount > 0 ? 'primary' : 'neutral'} note="Granted to at least one group and enabled" />
                 <StatTile size="sm" label="Needs re-approval" value={status.staleToolCount} tone={status.staleToolCount > 0 ? 'warning' : 'neutral'} note="Capability changed since approval" />

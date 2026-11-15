@@ -22,6 +22,7 @@
  */
 
 import type { IMcpClientAdmissionPolicy, IMcpClientDetails, ISystemLogService } from '@/types';
+import { WindowedLogLimiter } from '../../../lib/WindowedLogLimiter.js';
 
 /**
  * Hosts whose metadata documents the OAuth server accepts.
@@ -113,14 +114,8 @@ export class McpClientAdmissionPolicy implements IMcpClientAdmissionPolicy {
     /** The allowed hosts, lowercased, for exact comparison with a parsed host. */
     private readonly allowedHosts: ReadonlySet<string>;
 
-    /** When the current refusal-log window began, in milliseconds since the epoch. */
-    private windowStartedAt = 0;
-
-    /** The refused addresses already logged in the current window. */
-    private readonly loggedThisWindow = new Set<string>();
-
-    /** Whether the current window has already logged that its ceiling was reached. */
-    private ceilingReported = false;
+    /** Lets each refused address into the log once per window, up to the ceiling of addresses. */
+    private readonly refusalLog: WindowedLogLimiter;
 
     /**
      * @param allowedHosts - Hosts whose metadata documents are accepted, such
@@ -134,9 +129,13 @@ export class McpClientAdmissionPolicy implements IMcpClientAdmissionPolicy {
     constructor(
         allowedHosts: readonly string[],
         private readonly logger: ISystemLogService,
-        private readonly now: () => number = Date.now
+        now: () => number = Date.now
     ) {
         this.allowedHosts = new Set(allowedHosts.map(host => host.trim().toLowerCase()).filter(host => host.length > 0));
+        this.refusalLog = new WindowedLogLimiter(
+            { windowMs: REFUSAL_LOG_WINDOW_MS, maxKeys: REFUSAL_LOG_MAX_ADDRESSES, maxKeyLength: REFUSAL_LOG_MAX_ADDRESS_LENGTH },
+            now
+        );
     }
 
     /**
@@ -218,46 +217,33 @@ export class McpClientAdmissionPolicy implements IMcpClientAdmissionPolicy {
      * @param url - The parsed address, or null when it did not parse.
      */
     private recordRefusal(raw: string, url: URL | null): void {
-        const nowMs = this.now();
-        if (nowMs - this.windowStartedAt >= REFUSAL_LOG_WINDOW_MS) {
-            this.windowStartedAt = nowMs;
-            this.loggedThisWindow.clear();
-            this.ceilingReported = false;
-        }
-
         // The cut address is also the key, so a very long address cannot make
         // the set of remembered addresses large.
         const fullAddress = url === null ? null : describeAddress(url);
         const address = fullAddress === null ? null : cut(fullAddress, REFUSAL_LOG_MAX_ADDRESS_LENGTH);
-        const key = address ?? UNREADABLE_ADDRESS_KEY;
-        if (!this.loggedThisWindow.has(key)) {
-            if (this.loggedThisWindow.size >= REFUSAL_LOG_MAX_ADDRESSES) {
-                if (!this.ceilingReported) {
-                    this.ceilingReported = true;
-                    this.logger.warn(
-                        { loggedAddresses: this.loggedThisWindow.size, windowMinutes: REFUSAL_LOG_WINDOW_MS / 60_000 },
-                        'OAuth app refusals are no longer being logged this window: the limit on distinct addresses was reached'
-                    );
-                }
+        const verdict = this.refusalLog.admit(address ?? UNREADABLE_ADDRESS_KEY);
+        if (verdict === 'ceiling-reached') {
+            this.logger.warn(
+                { loggedAddresses: this.refusalLog.loggedKeys, windowMinutes: this.refusalLog.windowMinutes },
+                'OAuth app refusals are no longer being logged this window: the limit on distinct addresses was reached'
+            );
+        } else if (verdict === 'log') {
+            if (url === null || address === null || fullAddress === null) {
+                this.logger.warn(
+                    { suppliedLength: raw.length },
+                    'OAuth app refused: the address it supplied could not be read'
+                );
             } else {
-                this.loggedThisWindow.add(key);
-                if (url === null || address === null || fullAddress === null) {
-                    this.logger.warn(
-                        { suppliedLength: raw.length },
-                        'OAuth app refused: the address it supplied could not be read'
-                    );
-                } else {
-                    // Both fields are text the caller chose. They are bounded
-                    // here; whatever displays them is responsible for escaping.
-                    this.logger.warn(
-                        {
-                            callerSuppliedHost: cut(url.hostname, REFUSAL_LOG_MAX_ADDRESS_LENGTH),
-                            callerSuppliedAddress: address,
-                            addressTruncated: fullAddress.length > REFUSAL_LOG_MAX_ADDRESS_LENGTH
-                        },
-                        'OAuth app refused: its address is not on the allowed list'
-                    );
-                }
+                // Both fields are text the caller chose. They are bounded
+                // here; whatever displays them is responsible for escaping.
+                this.logger.warn(
+                    {
+                        callerSuppliedHost: cut(url.hostname, REFUSAL_LOG_MAX_ADDRESS_LENGTH),
+                        callerSuppliedAddress: address,
+                        addressTruncated: fullAddress.length > REFUSAL_LOG_MAX_ADDRESS_LENGTH
+                    },
+                    'OAuth app refused: its address is not on the allowed list'
+                );
             }
         }
     }

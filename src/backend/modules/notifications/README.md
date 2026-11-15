@@ -132,6 +132,8 @@ A category appears only when its `defaultAudience` includes the user, either by 
 
 The `ai-tools` module registers the `ai-tools.scheduled-prompt-run` category (audience: admin group, `channelDefaults: { toast: true }`, user-silenceable) plus an `ai-tools:scheduled-prompt-run` content type, and fires `notify({ category, typeId, ref })` when a cron-scheduled prompt run fails or finishes without a usable answer — so admins see a toast when a scheduled AI prompt needs attention (a run that answered normally sends nothing), any admin can opt out at `/profile` or the My Preferences tab, and an admin can disable the whole category for everyone.
 
+The `mcp` module registers `mcp.pool-exhausted` the same way (admin group, toast, user-silenceable) with an `mcp:pool-exhausted` content type, and fires it once when an MCP group's shared daily call limit runs out. See the [MCP Module README](../mcp/README.md#when-a-pool-runs-out).
+
 ## Related
 
 - [system-notifications.md](../../../../docs/system/system-notifications.md) — design rationale and the resolution pipeline in depth

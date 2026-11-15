@@ -24,6 +24,18 @@ const MAX_DESCRIPTION_LENGTH = 100;
 const DESCRIPTION = 'TRON energy rental prices and market activity from TronRelic. Free account unlocks more tools.';
 
 /**
+ * The anonymous tools {@link DESCRIPTION} was written for.
+ *
+ * An admin changes the anonymous grants on `/system/mcp` at any time, and
+ * nothing in the sentence changes with them. `/system/mcp` compares this list
+ * with the tools the `anonymous` group is served now and warns when they
+ * differ. When a warning appears, rewrite the sentence for the new grants,
+ * update this list to match, bump {@link MCP_SERVER_VERSION}, and republish
+ * the MCP Registry listing with the same sentence and version.
+ */
+export const DESCRIBED_ANONYMOUS_TOOLS: readonly string[] = ['resource-markets-get-activity', 'resource-markets-get-prices'];
+
+/**
  * The page explaining how to connect an AI client. Every installation creates
  * it, so the path is safe to report on any domain.
  */

@@ -5,6 +5,7 @@
  */
 
 import type { IMcpSettings } from './IMcpSettings.js';
+import type { IMcpServerDescriptionStatus } from './IMcpServerDescriptionStatus.js';
 
 /**
  * A snapshot of the MCP endpoint's configuration, so an operator can see at a
@@ -37,4 +38,7 @@ export interface IMcpStatus {
 
     /** Number of approved tools whose capability changed since approval. */
     staleToolCount: number;
+
+    /** The server's description and whether it still matches the anonymous grants. */
+    serverDescription: IMcpServerDescriptionStatus;
 }

@@ -40,6 +40,7 @@ function createDeps(groupExists = false): IMcpModuleDependencies & {
         resolveEndUser: vi.fn(async () => null),
         accountDirectory: { getAccountsByIds: vi.fn(async () => []) },
         anonymousKeySalt: 'test-salt',
+        serviceRegistry: { get: vi.fn(() => undefined) } as any,
         endpoint: {
             resourceUrl: 'https://tronrelic.test/mcp',
             resourceMetadataUrl: 'https://tronrelic.test/.well-known/oauth-protected-resource/mcp',
@@ -58,7 +59,7 @@ describe('McpModule', () => {
         const module = new McpModule();
         expect(module.metadata.id).toBe('mcp');
         expect(module.metadata.name).toBe('MCP');
-        expect(module.metadata.version).toBe('1.5.0');
+        expect(module.metadata.version).toBe('1.6.0');
     });
 
     it('init() builds services without mounting routes or touching groups', async () => {
@@ -156,6 +157,21 @@ describe('McpModule', () => {
             expect.any(Function),
             expect.anything()
         );
+    });
+
+    it('declares the pool notification for admins in run() when the notifications service is published', async () => {
+        const module = new McpModule();
+        const registerCategory = vi.fn(() => () => undefined);
+        const registerContentType = vi.fn(() => () => undefined);
+        const deps = createDeps(true);
+        deps.serviceRegistry = {
+            get: vi.fn((name: string) => (name === 'notifications' ? { registerCategory, notify: vi.fn(async () => ({})) } : name === 'content-types' ? { register: registerContentType } : undefined))
+        } as any;
+        await module.init(deps);
+        expect(registerCategory).not.toHaveBeenCalled();
+        await module.run();
+        expect(registerCategory).toHaveBeenCalledWith(expect.objectContaining({ id: 'mcp.pool-exhausted', defaultAudience: { groups: ['admin'] } }));
+        expect(registerContentType).toHaveBeenCalledWith(expect.objectContaining({ typeId: 'mcp:pool-exhausted' }), 'mcp');
     });
 
     it('removes a deleted group\'s grants and settings when http.groupDeleted fires', async () => {

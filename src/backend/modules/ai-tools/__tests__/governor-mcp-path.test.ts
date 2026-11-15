@@ -11,6 +11,7 @@ import type { IAiTool, IAiToolCapability, IToolCallerBudget, IToolInvocationCont
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 import { AiToolGovernor } from '../services/ai-tool-governor.js';
 import { ToolPolicyEngine } from '../services/tool-policy-engine.js';
+import { WindowedLogLimiter } from '../../../lib/WindowedLogLimiter.js';
 
 /** A silent logger. */
 const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), child: vi.fn() } as any;
@@ -53,7 +54,8 @@ function build(tools: IAiTool[]) {
     const hookRegistry = { invoke: vi.fn(async (_descriptor: unknown, _input: unknown, seed?: unknown) => seed) } as any;
     const screen = vi.fn(async () => ({ flagged: false }));
     const provider = { screenUntrustedContent: screen };
-    const governor = new AiToolGovernor(logger, registry, policy, audit, approvals, hookRegistry, {
+    const refusalLog = new WindowedLogLimiter({ windowMs: 60 * 60 * 1000, maxKeys: 2, maxKeyLength: 300 });
+    const governor = new AiToolGovernor(logger, registry, policy, audit, approvals, hookRegistry, refusalLog, {
         config: { get: () => ({ enabled: true, postureMode: 'always', onFailure: 'open', offenderThreshold: 0 }) } as any,
         providers: { getProvider: () => provider, getActive: () => provider } as any,
         isEgressReachable: () => true
@@ -264,6 +266,43 @@ describe('governor on the mcp path for anonymous callers', () => {
         }
         expect((await governor.invoke('network-stats', {}, context)).status).toBe('denied');
         expect(audit.record.mock.calls[30][0].limitHit).toBe('caller-tool-minute');
+    });
+
+    /**
+     * A caller decides how many refused calls to send, so the system log must
+     * not grow with them. The audit trail still records every one.
+     */
+    it('logs a caller\'s repeated refusals once, at info for its own limit, while auditing every one', async () => {
+        const { governor, audit } = build([tool('network-stats', PUBLIC_READ)]);
+        const context = anonymousContext('net-a', ['network-stats'], { callsPerDay: 1 });
+        await governor.invoke('network-stats', {}, context);
+        for (let call = 0; call < 5; call++) {
+            expect((await governor.invoke('network-stats', {}, context)).status).toBe('denied');
+        }
+        expect(audit.record).toHaveBeenCalledTimes(6);
+        const refusalEntries = logger.info.mock.calls.filter((call: unknown[]) => String(call[1]).startsWith('AI tool denied'));
+        expect(refusalEntries).toHaveLength(1);
+        expect(refusalEntries[0][0]).toMatchObject({ limitHit: 'caller-day', principalId: 'net-a', chargedGroupId: 'anonymous' });
+        expect(logger.warn.mock.calls.filter((call: unknown[]) => String(call[1]).startsWith('AI tool denied'))).toHaveLength(0);
+    });
+
+    it('keeps a refusal the operator may not have meant at warn, and reports once when the ceiling is reached', async () => {
+        const { governor } = build([tool('chain-lookup', UNTRUSTED_READ)]);
+        // The test limiter lets two distinct keys through per window.
+        for (const network of ['net-a', 'net-b', 'net-c', 'net-d']) {
+            await governor.invoke('chain-lookup', {}, anonymousContext(network, ['chain-lookup']));
+        }
+        const messages: string[] = logger.warn.mock.calls.map((call: unknown[]) => String(call[1]));
+        expect(messages.filter(message => message.startsWith('AI tool denied'))).toHaveLength(2);
+        expect(messages.filter(message => message.startsWith('MCP tool refusals are no longer being logged'))).toHaveLength(1);
+    });
+
+    it('keeps logging every refusal on paths an outside caller does not control', async () => {
+        const { governor } = build([]);
+        for (let call = 0; call < 3; call++) {
+            await governor.invoke('missing-tool', {}, { actor: { kind: 'admin', id: 'admin-1' }, triggerPath: 'interactive', aiProviderId: 'test' });
+        }
+        expect(logger.warn.mock.calls.filter((call: unknown[]) => String(call[1]).startsWith('AI tool denied'))).toHaveLength(3);
     });
 
     it('keeps MCP traffic out of the shared windows admin runs draw on', async () => {
