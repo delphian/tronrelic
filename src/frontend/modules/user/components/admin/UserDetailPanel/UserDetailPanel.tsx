@@ -16,7 +16,7 @@
  * the SSR + Live Updates pattern allows.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { IAccountAdminNote, IAccountSignInEvent } from '@/types';
 import { Stack } from '../../../../../components/layout';
 import { SlideOver } from '../../../../../components/ui/SlideOver';
@@ -79,14 +79,21 @@ export function UserDetailPanel({ userId, onClose }: IUserDetailPanelProps) {
     const [error, setError] = useState<string | null>(null);
     const [loadingMore, setLoadingMore] = useState(false);
 
+    // The account the panel is showing right now. A pagination request reads it
+    // after its await to tell whether the admin is still on the account it was
+    // asked for, which the captured `userId` of its own closure cannot say.
+    const selectionRef = useRef<string | null>(userId);
+
     // Load the selected account. A later selection supersedes an earlier one
     // still in flight, so a slow answer never paints over the account the
     // admin moved on to.
     useEffect(() => {
         let current = true;
+        selectionRef.current = userId;
         setDetails(null);
         setEvents([]);
         setError(null);
+        setLoadingMore(false);
         if (userId) {
             fetchAccountDetails(userId)
                 .then(loaded => {
@@ -111,17 +118,30 @@ export function UserDetailPanel({ userId, onClose }: IUserDetailPanelProps) {
         setDetails(previous => (previous ? { ...previous, adminNote } : previous));
     }, []);
 
-    /** Append the next page of older sign-in events. */
+    /**
+     * Append the next page of older sign-in events.
+     *
+     * The panel stays mounted while the admin moves between accounts, so a page
+     * that answers after the selection changed must be dropped. Appending it
+     * would credit one account's sign-in activity to another and leave the next
+     * offset counting rows the list does not hold.
+     */
     const handleShowMore = useCallback(async () => {
         if (userId) {
             setLoadingMore(true);
             try {
                 const page = await fetchAccountSignInEvents(userId, { limit: EVENT_PAGE_SIZE, offset: events.length });
-                setEvents(previous => [...previous, ...page.events]);
+                if (selectionRef.current === userId) {
+                    setEvents(previous => [...previous, ...page.events]);
+                }
             } catch (caught: unknown) {
-                setError(caught instanceof Error ? caught.message : String(caught));
+                if (selectionRef.current === userId) {
+                    setError(caught instanceof Error ? caught.message : String(caught));
+                }
             } finally {
-                setLoadingMore(false);
+                if (selectionRef.current === userId) {
+                    setLoadingMore(false);
+                }
             }
         }
     }, [events.length, userId]);
