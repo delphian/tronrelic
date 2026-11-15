@@ -18,7 +18,7 @@
  *   because Better Auth validates the body after hooks have read it.
  */
 
-import { APIError, createAuthMiddleware } from 'better-auth/api';
+import { createAuthMiddleware, isAPIError } from 'better-auth/api';
 import type { ISystemLogService } from '@/types';
 import type { ISignInEventDocument } from '../database/ISignInEventDocument.js';
 import type { ISignInEventRecorder } from './ISignInEventRecorder.js';
@@ -105,10 +105,13 @@ function bounded(value: unknown, maxLength: number): string | null {
  * is kept too, so a request that reached the server without Cloudflare can be
  * recognised.
  *
+ * Exported because the sign-up guard records the requests it refuses in the
+ * same shape, and those requests never reach this hook.
+ *
  * @param headers - The request headers, or nothing for a server-side call.
  * @returns The caller's address, forwarded chain, country, and browser.
  */
-function describeCaller(headers: Headers | null | undefined): {
+export function describeCaller(headers: Headers | null | undefined): {
     ip: string | null;
     forwardedFor: string | null;
     country: string | null;
@@ -134,12 +137,18 @@ function describeCaller(headers: Headers | null | undefined): {
  * status and the reason in the `error` query parameter of its `Location`
  * header. A successful OAuth callback redirects too, without that parameter.
  *
+ * A request whose body fails Better Auth's schema, such as one with no email
+ * or an email that is not a string, is refused with better-call's
+ * `ValidationError`. That class is not a subclass of Better Auth's `APIError`,
+ * so an `instanceof APIError` test misses it and records the refusal as a
+ * code sent. `isAPIError` is Better Auth's own test and matches both classes.
+ *
  * @param returned - What the endpoint returned or threw.
  * @returns The HTTP status and a short reason, or null when the request did not fail.
  */
 function describeFailure(returned: unknown): { status: number; reason: string | null } | null {
     let failure: { status: number; reason: string | null } | null = null;
-    if (returned instanceof APIError) {
+    if (isAPIError(returned)) {
         const body = returned.body as { code?: unknown; message?: unknown } | undefined;
         if (returned.statusCode >= 400) {
             failure = {

@@ -12,7 +12,7 @@ import type { ISystemLogService } from '@/types';
 import type { IAuthRateLimitRedis } from '../services/IAuthRateLimitRedis.js';
 import { consumeRedisWindow } from '../services/consumeRedisWindow.js';
 import { createRedisRateLimitStorage } from '../services/createRedisRateLimitStorage.js';
-import { EMAIL_OTP_THROTTLE, enforceEmailOtpLimit } from '../services/createEmailOtpThrottle.js';
+import { EMAIL_OTP_THROTTLE, enforceEmailOtpLimit } from '../services/enforceEmailOtpLimit.js';
 
 /**
  * In-memory stand-in for the Redis commands the limiters use.

@@ -108,7 +108,8 @@ export type {
     INotificationAuditRecord,
     INotificationAuditQuery
 } from './notifications/index.js';
-export type { IWalletService, ILinkedWallet, WalletAction, IWalletChallenge, IWalletMutationInput, IAccountDirectoryService, IAccountSummary, IAccountMatch, IListAccountsOptions, IListAccountsResult, IUserSettingsService, IUserSettingDefinition, IConnectedApp, IConnectedAppAdminRow, IConnectedAppsService, IOAuthConsentContext } from './identity/index.js';
+export type { IWalletService, ILinkedWallet, WalletAction, IWalletChallenge, IWalletMutationInput, IAccountDirectoryService, IAccountSummary, IAccountMatch, IListAccountsOptions, IListAccountsResult, IUserSettingsService, IUserSettingDefinition, IConnectedApp, IConnectedAppAdminRow, IConnectedAppsService, IOAuthConsentContext, SignupCapMode, EmailDomainRuleAction, IEmailDomainRule, ISignupCapConfig, ISignupProtectionConfig, ISignupCapStatus, ISignupRefusalCount, IEmailDomainActivity, ISignupProtectionReport } from './identity/index.js';
+export { SIGNUP_PROTECTION_LIMITS, SIGNUP_REFUSAL_REASONS, normalizeEmailDomain } from './identity/index.js';
 export type { IUserGroup, ICreateUserGroupInput, IUpdateUserGroupInput, IUserGroupService } from './user/index.js';
 export type {
     ITronGridService,

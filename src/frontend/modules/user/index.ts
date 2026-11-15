@@ -49,6 +49,7 @@ export type { IConnectedAppRow, IConnectedAppsTableProps } from './components';
 
 export { UsersMonitor } from './components';
 export { GroupsManager } from './components';
+export { SignupProtectionTab } from './components';
 
 // =============================================================================
 // Better Auth client

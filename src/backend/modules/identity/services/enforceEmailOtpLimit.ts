@@ -13,11 +13,12 @@
  *   floods the recipient's inbox and spends the site's Resend sending quota.
  *
  * Counting per email address closes both, because the limit then follows the
- * target rather than the caller.
+ * target rather than the caller. `createAuthBeforeHook` runs it on every auth
+ * request, after the sign-up protections.
  */
 
 import { createHash } from 'node:crypto';
-import { APIError, createAuthMiddleware } from 'better-auth/api';
+import { APIError } from 'better-auth/api';
 import type { ISystemLogService } from '@/types';
 import type { IAuthRateLimitRedis } from './IAuthRateLimitRedis.js';
 import { consumeRedisWindow } from './consumeRedisWindow.js';
@@ -132,23 +133,4 @@ export async function enforceEmailOtpLimit(
             });
         }
     }
-}
-
-/**
- * Build the Better Auth `hooks.before` middleware that enforces the
- * per-email limits through {@link enforceEmailOtpLimit}.
- *
- * @param redis - Redis client holding the counters.
- * @param namespace - Deployment Redis namespace (`REDIS_NAMESPACE`).
- * @param logger - Logger for refusals and Redis failures.
- * @returns Middleware to pass as the auth instance's `hooks.before`.
- */
-export function createEmailOtpThrottle(
-    redis: IAuthRateLimitRedis,
-    namespace: string,
-    logger: ISystemLogService
-) {
-    return createAuthMiddleware(async (ctx) => {
-        await enforceEmailOtpLimit(redis, namespace, logger, ctx.path, ctx.body);
-    });
 }

@@ -40,6 +40,24 @@ import type { WalletChallengeAction, IWalletChallenge } from './wallet-challenge
 import type { IWalletDocument, ILinkedWallet } from '../database/IWalletDocument.js';
 import { AUTH_USERS_COLLECTION } from './auth-constants.js';
 import { toUserKey } from './user-id.js';
+import { WalletUserError } from './WalletUserError.js';
+
+/**
+ * Build the error for a wallet another account already owns.
+ *
+ * The log keeps the exact cause. The caller is told what to do instead,
+ * without the response stating outright that the wallet belongs to another
+ * account. Only someone who has just signed with the wallet's key can reach
+ * this point, so the caller is the wallet's owner either way.
+ *
+ * @returns The error to throw.
+ */
+function walletOwnedElsewhereError(): WalletUserError {
+    return new WalletUserError(
+        'This wallet is already linked to another account.',
+        "This wallet can't be added to this account. If you linked it before, sign in with that account."
+    );
+}
 
 /**
  * Physical collection name for the Better Auth-keyed wallet store.
@@ -273,7 +291,8 @@ export class WalletService implements IWalletService {
      * @param userId - Better Auth user id.
      * @param input - Address, signed canonical message, signature, nonce.
      * @returns The account's wallet list after the link.
-     * @throws {Error} On challenge/signature failure or cross-account conflict.
+     * @throws {WalletUserError} On challenge failure or cross-account conflict.
+     * @throws {ValidationError} When the address or signature is malformed.
      */
     public async linkWallet(userId: string, input: IWalletMutationInput): Promise<ILinkedWallet[]> {
         const normalizedAddress = await this.verifyAction(userId, 'link', input);
@@ -281,7 +300,7 @@ export class WalletService implements IWalletService {
 
         const existing = await this.collection.findOne({ address: normalizedAddress });
         if (existing && existing.userId !== userId) {
-            throw new Error('This wallet is already linked to another account.');
+            throw walletOwnedElsewhereError();
         }
 
         if (existing) {
@@ -356,7 +375,7 @@ export class WalletService implements IWalletService {
                 // Address unique index: the same wallet was inserted
                 // concurrently. Mirror the caller's pre-check semantics.
                 if (dup.userId !== userId) {
-                    throw new Error('This wallet is already linked to another account.');
+                    throw walletOwnedElsewhereError();
                 }
                 await this.collection.updateOne(
                     { userId, address },
@@ -390,14 +409,15 @@ export class WalletService implements IWalletService {
      * @param userId - Better Auth user id.
      * @param input - Address, signed canonical message, signature, nonce.
      * @returns The account's wallet list after the unlink.
-     * @throws {Error} On challenge/signature failure or when not linked.
+     * @throws {WalletUserError} On challenge failure or when not linked.
+     * @throws {ValidationError} When the address or signature is malformed.
      */
     public async unlinkWallet(userId: string, input: IWalletMutationInput): Promise<ILinkedWallet[]> {
         const normalizedAddress = await this.verifyAction(userId, 'unlink', input);
 
         const target = await this.collection.findOne({ userId, address: normalizedAddress });
         if (!target) {
-            throw new Error('Wallet is not linked to this account.');
+            throw new WalletUserError('Wallet is not linked to this account.');
         }
 
         await this.collection.deleteOne({ userId, address: normalizedAddress });
@@ -438,14 +458,15 @@ export class WalletService implements IWalletService {
      * @param userId - Better Auth user id.
      * @param input - Address, signed canonical message, signature, nonce.
      * @returns The account's wallet list after the change.
-     * @throws {Error} On challenge/signature failure or when not linked.
+     * @throws {WalletUserError} On challenge failure or when not linked.
+     * @throws {ValidationError} When the address or signature is malformed.
      */
     public async setPrimaryWallet(userId: string, input: IWalletMutationInput): Promise<ILinkedWallet[]> {
         const normalizedAddress = await this.verifyAction(userId, 'set-primary', input);
 
         const target = await this.collection.findOne({ userId, address: normalizedAddress });
         if (!target) {
-            throw new Error('Wallet is not linked to this account.');
+            throw new WalletUserError('Wallet is not linked to this account.');
         }
 
         const now = new Date();
@@ -471,7 +492,9 @@ export class WalletService implements IWalletService {
      * @param action - Action the nonce was minted for.
      * @param input - Address, message, signature, nonce.
      * @returns Normalized base58 address.
-     * @throws {Error} On any mismatch — caller handles only the success case.
+     * @throws {WalletUserError} On a missing nonce, a non-canonical message, a
+     *   spent or expired challenge, or a signature from another address.
+     * @throws {ValidationError} When the address or signature is malformed.
      */
     private async verifyAction(
         userId: string,
@@ -481,15 +504,15 @@ export class WalletService implements IWalletService {
         const normalizedAddress = this.signatureService.normalizeAddress(input.address);
 
         if (!input.nonce) {
-            throw new Error('Wallet challenge nonce is required.');
+            throw new WalletUserError('Wallet challenge nonce is required.');
         }
         const expected = WalletChallengeService.buildMessage(action, normalizedAddress, input.nonce);
         if (input.message !== expected) {
-            throw new Error('Signed message does not match the canonical challenge form.');
+            throw new WalletUserError('Signed message does not match the canonical challenge form.');
         }
         const consumed = await this.walletChallengeService.consume(userId, action, normalizedAddress, input.nonce);
         if (!consumed) {
-            throw new Error('Wallet challenge expired or already used. Request a new challenge.');
+            throw new WalletUserError('Wallet challenge expired or already used. Request a new challenge.');
         }
 
         const recovered = await this.signatureService.verifyMessage(
@@ -498,7 +521,7 @@ export class WalletService implements IWalletService {
             input.signature
         );
         if (recovered !== normalizedAddress) {
-            throw new Error('Signature address does not match submitted address.');
+            throw new WalletUserError('Signature address does not match submitted address.');
         }
 
         return normalizedAddress;

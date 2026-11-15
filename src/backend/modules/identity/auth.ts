@@ -44,8 +44,9 @@ import type { IIdentitySocketDisconnector } from './services/IIdentitySocketDisc
 import type { IOAuthServerConfig } from './services/oauth-server-config.js';
 import type { ISignInEventRecorder } from './services/ISignInEventRecorder.js';
 import { createRedisRateLimitStorage } from './services/createRedisRateLimitStorage.js';
-import { createEmailOtpThrottle } from './services/createEmailOtpThrottle.js';
+import { createAuthBeforeHook } from './services/createAuthBeforeHook.js';
 import { createSignInAuditLog } from './services/createSignInAuditLog.js';
+import type { SignupGuard } from './services/SignupGuard.js';
 import { createMcpConsentGate } from './services/createMcpConsentGate.js';
 import { userGroups } from './services/userGroups.js';
 
@@ -112,6 +113,14 @@ export interface ICreateAuthDependencies {
      * account, or caller.
      */
     signInEvents: ISignInEventRecorder;
+
+    /**
+     * Applies the admin-configured sign-up protections (email domain rules and
+     * the site-wide cap). The before-hook asks it about every code request,
+     * and the user-create hooks ask it about every new account, whichever
+     * sign-in method creates it.
+     */
+    signupGuard: Pick<SignupGuard, 'checkCodeRequest' | 'checkAccountCreation' | 'noteAccountCreated'>;
 
     /**
      * Public URLs of the OAuth authorization server: the base URL Better Auth
@@ -209,7 +218,8 @@ export function createAuth(deps: ICreateAuthDependencies) {
             customStorage: createRedisRateLimitStorage(deps.rateLimitRedis, env.REDIS_NAMESPACE, log)
         },
         hooks: {
-            before: createEmailOtpThrottle(deps.rateLimitRedis, env.REDIS_NAMESPACE, log),
+            // The sign-up protections, then the per-email code limits.
+            before: createAuthBeforeHook(deps.signupGuard, deps.rateLimitRedis, env.REDIS_NAMESPACE, log),
             // Records every sign-in code request and sign-in attempt, so an
             // operator can see who asked for a code and whether a sign-in
             // followed.
@@ -237,6 +247,13 @@ export function createAuth(deps: ICreateAuthDependencies) {
         databaseHooks: {
             user: {
                 create: {
+                    before: async (user): Promise<void> => {
+                        // Every sign-in method that creates an account passes
+                        // here, including social sign-in, which never asks for
+                        // a code, so a blocked domain or an enforced cap holds
+                        // for all of them.
+                        await deps.signupGuard.checkAccountCreation(user.email);
+                    },
                     after: async (user): Promise<void> => {
                         // A first sign-in creates the account, so this entry
                         // is what tells a new account apart from a returning
@@ -252,6 +269,9 @@ export function createAuth(deps: ICreateAuthDependencies) {
                             log
                         });
                         await joinMcpUsers(user.id, deps.groupService, log);
+                        // Alerts admins when this account brought the count for
+                        // the last hour up to the sign-up cap.
+                        await deps.signupGuard.noteAccountCreated();
                     }
                 }
             },

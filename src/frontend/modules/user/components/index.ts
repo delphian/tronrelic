@@ -20,3 +20,4 @@ export type { IConnectedAppRow, IConnectedAppsTableProps } from './ConnectedApps
 // Admin components — identity only; traffic panels live in modules/traffic
 export { UsersMonitor } from './admin';
 export { GroupsManager } from './admin';
+export { SignupProtectionTab } from './admin';

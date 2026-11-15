@@ -18,6 +18,7 @@ import { ObjectId } from 'mongodb';
 import type { ICacheService, ISystemLogService } from '@/types';
 import { WalletService, WALLETS_COLLECTION } from '../services/wallet.service.js';
 import { WalletChallengeService } from '../services/wallet-challenge.service.js';
+import { WalletUserError } from '../services/WalletUserError.js';
 import { AUTH_USERS_COLLECTION } from '../services/auth-constants.js';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 
@@ -179,11 +180,17 @@ describe('WalletService', () => {
             expect(authPrimary(USER_A)).toBe(WALLET_1);
         });
 
-        it('rejects a wallet already linked to another account', async () => {
+        // The log keeps the exact cause; the caller gets softer wording that
+        // does not state the wallet belongs to another account.
+        it('rejects a wallet already linked to another account, with softer wording for the caller', async () => {
             await service.linkWallet(USER_A, await buildInput(USER_A, 'link', WALLET_1));
-            await expect(
-                service.linkWallet(USER_B, await buildInput(USER_B, 'link', WALLET_1))
-            ).rejects.toThrow(/already linked to another account/i);
+            const attempt = service.linkWallet(USER_B, await buildInput(USER_B, 'link', WALLET_1));
+            await expect(attempt).rejects.toBeInstanceOf(WalletUserError);
+            await expect(attempt).rejects.toThrow(/already linked to another account/i);
+            await expect(attempt).rejects.toMatchObject({
+                userMessage: expect.stringMatching(/can't be added to this account.*sign in with that account/i)
+            });
+            await expect(attempt).rejects.not.toMatchObject({ userMessage: expect.stringMatching(/another account/i) });
         });
 
         it('is idempotent when the same account re-links a held wallet', async () => {

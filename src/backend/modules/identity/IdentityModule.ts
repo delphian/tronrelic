@@ -26,6 +26,7 @@ import type {
     ServiceWatchDisposer,
     ICacheService,
     IConnectedAppsService,
+    IContentRegistry,
     IDatabaseService,
     IHookRegistry,
     IMcpAccessTokenVerifier,
@@ -33,10 +34,12 @@ import type {
     IMenuService,
     IModule,
     IModuleMetadata,
+    INotificationService,
     IServiceRegistry,
     IUserGroupService
 } from '@/types';
-import { MCP_USERS_GROUP_ID } from '@/types';
+import { ADMIN_GROUP_ID, MCP_USERS_GROUP_ID } from '@/types';
+import { CONTENT_TYPES_SERVICE } from '../../services/content-registry.js';
 import { env } from '../../config/env.js';
 import { logger } from '../../lib/logger.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
@@ -68,6 +71,12 @@ import { AccountDeletionService } from './services/AccountDeletionService.js';
 import type { IAuthRateLimitRedis } from './services/IAuthRateLimitRedis.js';
 import type { IIdentitySocketDisconnector } from './services/IIdentitySocketDisconnector.js';
 import { SignInEventStore } from './services/SignInEventStore.js';
+import { SignupProtectionConfigStore } from './services/SignupProtectionConfigStore.js';
+import { SignupCapAlerter, SIGNUP_CAP_REACHED_CATEGORY, SIGNUP_CAP_REACHED_CONTENT_TYPE } from './services/SignupCapAlerter.js';
+import { SignupGuard } from './services/SignupGuard.js';
+import { SignupProtectionReportService } from './services/SignupProtectionReportService.js';
+import { SignUpProtectionController } from './api/sign-up-protection.controller.js';
+import { createSignUpProtectionRouter } from './api/sign-up-protection.routes.js';
 import { registerIdentityAiTools, type IAccountSessionView } from './ai-tools.js';
 
 /**
@@ -158,6 +167,9 @@ const USERS_ADMIN_SUBMENU_NAMESPACE = 'identity';
  * per-user gating, ordering, and live `menu:update` refresh, and so a plugin
  * can add a tab.
  *
+ * Sign-ups holds the sign-up protections (the site-wide cap and the email
+ * domain rules) beside the report an admin reads to set them.
+ *
  * Database and Logs are the tabs every module with storage and an admin page
  * must offer. An operator checking who requested a sign-in code, or who signed
  * in, reads the module's own log entries and collections on this page instead
@@ -167,9 +179,13 @@ const USERS_ADMIN_SUBMENU_NAMESPACE = 'identity';
 const USERS_ADMIN_SUBMENU_TABS: ReadonlyArray<{ label: string; tab: string; icon: string; order: number }> = [
     { label: 'Users', tab: 'users', icon: 'Users', order: 0 },
     { label: 'Groups', tab: 'groups', icon: 'UsersRound', order: 1 },
-    { label: 'Database', tab: 'database', icon: 'Database', order: 2 },
-    { label: 'Logs', tab: 'logs', icon: 'ScrollText', order: 3 }
+    { label: 'Sign-ups', tab: 'sign-ups', icon: 'UserPlus', order: 2 },
+    { label: 'Database', tab: 'database', icon: 'Database', order: 3 },
+    { label: 'Logs', tab: 'logs', icon: 'ScrollText', order: 4 }
 ];
+
+/** Registry name the notifications module publishes its service under. */
+const NOTIFICATIONS_SERVICE = 'notifications';
 
 /**
  * Rate limit on deleting accounts, per caller IP address: at most 20 in ten
@@ -187,8 +203,8 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
     readonly metadata: IModuleMetadata = {
         id: 'identity',
         name: 'Identity',
-        version: '1.0.0',
-        description: 'Better Auth identity, wallet linking, and group membership'
+        version: '1.1.0',
+        description: 'Better Auth identity, wallet linking, group membership, and sign-up protections'
     };
 
     private database!: IDatabaseService;
@@ -207,15 +223,20 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
     private oauthConfig!: IOAuthServerConfig;
     private auth!: Auth;
     private signInEventStore!: SignInEventStore;
+    private signupConfigStore!: SignupProtectionConfigStore;
 
     /** Disposer for the `'ai-tools'` watch that registers the identity AI tools. */
     private unwatchAiTools: ServiceWatchDisposer | null = null;
+
+    /** Disposer for the `'notifications'` watch that registers the sign-up cap alert category. */
+    private unwatchNotifications: ServiceWatchDisposer | null = null;
 
     private walletController!: WalletController;
     private groupController!: UserGroupController;
     private accountsController!: AccountsController;
     private userSettingsController!: UserSettingsController;
     private connectedAppsController!: ConnectedAppsController;
+    private signUpProtectionController!: SignUpProtectionController;
 
     private readonly logger = logger.child({ module: 'identity' });
 
@@ -276,6 +297,7 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
         // sole sanctioned reader of module_user_auth_users outside this module.
         AccountDirectoryService.setDependencies(this.database, this.logger);
         this.accountDirectoryService = AccountDirectoryService.getInstance();
+        await this.accountDirectoryService.createIndexes();
 
         // Central per-user settings store. The single home for user-centric
         // settings/preferences, addressed by (userId, namespace, key) and
@@ -314,6 +336,45 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
         this.signInEventStore = new SignInEventStore(this.database, this.logger);
         await this.signInEventStore.createIndexes();
 
+        // Admin-configured sign-up protections: the site-wide cap on new
+        // accounts and the email domain rules. The guard is built before the
+        // auth instance, whose hooks call it. The notifications service is
+        // published after this module runs, so the alerter looks it up when it
+        // fires rather than now.
+        this.signupConfigStore = new SignupProtectionConfigStore(this.database, this.logger);
+        await this.signupConfigStore.load();
+        const signupAlerter = new SignupCapAlerter(
+            dependencies.redis,
+            env.REDIS_NAMESPACE,
+            () => this.serviceRegistry.get<INotificationService>(NOTIFICATIONS_SERVICE),
+            this.logger
+        );
+        const directory = this.accountDirectoryService;
+        const signupGuard = new SignupGuard({
+            config: this.signupConfigStore,
+            accounts: {
+                /**
+                 * Report whether an address already has an account, deleted or not.
+                 *
+                 * @param email - The address from the request.
+                 * @returns True when an account uses the address.
+                 */
+                hasAccount: async (email) => (await directory.getAccountByEmail(email)) !== null,
+                /**
+                 * Count accounts created since a moment.
+                 *
+                 * @param since - Start of the span.
+                 * @returns The count.
+                 */
+                countCreatedSince: (since) => directory.countCreatedSince(since)
+            },
+            redis: dependencies.redis,
+            namespace: env.REDIS_NAMESPACE,
+            alerter: signupAlerter,
+            events: this.signInEventStore,
+            logger: this.logger
+        });
+
         this.auth = createAuth({
             db: authDb,
             groupService: this.groupService,
@@ -321,6 +382,7 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
             rateLimitRedis: dependencies.redis,
             socketDisconnector: dependencies.socketDisconnector,
             signInEvents: this.signInEventStore,
+            signupGuard,
             oauth: this.oauthConfig,
             clientAdmission: dependencies.oauthClientAdmission,
             /**
@@ -417,6 +479,16 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
              * @returns The client's public details, or null.
              */
             (clientId, req) => this.lookupPublicClient(clientId, req),
+            this.logger
+        );
+        this.signUpProtectionController = new SignUpProtectionController(
+            this.signupConfigStore,
+            new SignupProtectionReportService({
+                config: this.signupConfigStore,
+                accounts: this.accountDirectoryService,
+                events: this.signInEventStore,
+                alerter: signupAlerter
+            }),
             this.logger
         );
 
@@ -637,6 +709,11 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
         this.app.use('/api/admin/users/groups', requireAdmin, adminGroupRouter);
         this.logger.info('Admin user-groups router mounted at /api/admin/users/groups');
 
+        // Sign-up protections and their report, for the Sign-ups tab. Mounted
+        // before the accounts catch-all below for the same reason as groups.
+        this.app.use('/api/admin/users/sign-ups', requireAdmin, createSignUpProtectionRouter(this.signUpProtectionController));
+        this.logger.info('Admin sign-up protection router mounted at /api/admin/users/sign-ups');
+
         // Admin account-directory router — the catch-all `/api/admin/users`
         // mount that backs the `/system/users` dashboard. Registered after the
         // groups router here, and (via bootstrap run-order) after the traffic
@@ -685,6 +762,57 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
             this.logger
         );
 
+        // The sign-up cap alert's notification category. The notifications
+        // module runs after this one, so the category is registered when its
+        // service appears rather than now.
+        this.unwatchNotifications = this.serviceRegistry.watch<INotificationService>(NOTIFICATIONS_SERVICE, {
+            /**
+             * Register the alert's category once the notifications service exists.
+             *
+             * @param notifications - The service just published.
+             */
+            onAvailable: (notifications) => this.registerSignupCapNotification(notifications)
+        });
+
         this.logger.info('Identity module running');
+    }
+
+    /**
+     * Register the content type and notification category the sign-up cap
+     * alert is sent through, so admins receive it and can silence it on
+     * `/system/notifications` or their profile.
+     *
+     * @param notifications - The notifications service, just published.
+     */
+    private registerSignupCapNotification(notifications: INotificationService): void {
+        this.serviceRegistry.get<IContentRegistry>(CONTENT_TYPES_SERVICE)?.register(
+            {
+                typeId: SIGNUP_CAP_REACHED_CONTENT_TYPE,
+                label: 'Sign-up cap reached',
+                /**
+                 * Read the alert's title and body back out of the notification reference.
+                 *
+                 * @param ref - The reference the alerter sent.
+                 * @returns The title and body, where present.
+                 */
+                describe: (ref) => ({
+                    title: typeof ref.title === 'string' ? ref.title : undefined,
+                    body: typeof ref.body === 'string' ? ref.body : undefined
+                })
+            },
+            this.metadata.id
+        );
+        notifications.registerCategory({
+            id: SIGNUP_CAP_REACHED_CATEGORY,
+            label: 'Sign-up cap reached',
+            description: 'Fires at most once an hour when the number of accounts created in the last hour reaches the sign-up cap set on /system/users.',
+            source: this.metadata.id,
+            defaultAudience: { groups: [ADMIN_GROUP_ID] },
+            channelDefaults: { toast: true },
+            userConfigurable: true,
+            adminConfigurable: true,
+            mutable: true
+        });
+        this.logger.info('Sign-up cap notification category registered');
     }
 }

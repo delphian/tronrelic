@@ -1,0 +1,46 @@
+@use '../../../../../app/breakpoints' as *;
+
+// Shared by the cap form and the domain rule form. Each lays its fields out in
+// one row on a wide panel and stacks them on a narrow one, with its save button
+// on a row of its own underneath, so field hints of different lengths never
+// push the button out of line.
+
+// The wrapper is the container the query below measures; an element cannot
+// query its own size, so the grid itself declares none.
+.form_container {
+    container-type: inline-size;
+    container-name: signup-form;
+}
+
+.form_grid {
+    display: grid;
+    gap: var(--gap-md);
+    align-items: start;
+}
+
+.form_grid__cap {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.form_grid__rule {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.8fr) minmax(0, 1.4fr);
+}
+
+.form_actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--form-footer-gap);
+}
+
+.row_actions {
+    display: flex;
+    gap: var(--button-gap);
+    justify-content: flex-end;
+}
+
+@container signup-form (max-width: #{$breakpoint-mobile-lg}) {
+    .form_grid__cap,
+    .form_grid__rule {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
