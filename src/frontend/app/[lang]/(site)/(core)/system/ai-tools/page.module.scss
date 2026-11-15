@@ -500,10 +500,14 @@
  * TOOL DETAIL — SLIDE-OVER BODY
  * ========================================================================== */
 
+/* Declares a container so the fact grid can stack its labels above the values
+ * when the slide-over is narrow, instead of squeezing both into two columns. */
 .detail {
     display: flex;
     flex-direction: column;
     gap: var(--gap-md);
+    container-type: inline-size;
+    container-name: invocation-detail;
 }
 
 /* Always-on context strip above the tabs: provider + enable toggle, then the
@@ -561,6 +565,95 @@
     color: var(--color-text-subtle);
 }
 
+/* A section title with an action, such as a copy button, at the far end. */
+.detail_section_header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap-sm);
+    min-height: var(--button-height-xs);
+}
+
+/* The one-sentence account of what happened to a call, under its status badge. */
+.detail_outcome {
+    margin: 0;
+    font-size: var(--font-size-body);
+    line-height: var(--line-height-normal);
+    color: var(--color-text);
+}
+
+/* Shortcuts under the outcome that narrow the feed to this caller or tool. */
+.detail_actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-xs);
+}
+
+/* Activity table Caller column: the name on one line, the kind of caller
+ * beneath it in a quieter tone. */
+.caller_cell {
+    display: block;
+    word-break: break-word;
+}
+
+.caller_kind {
+    display: block;
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+/* A small way onward from a value to the page that manages it. */
+/* Its own line under the value, sized to its text so only the words are clickable. */
+.related_link {
+    display: flex;
+    width: fit-content;
+    align-items: center;
+    gap: var(--gap-2xs);
+    margin-top: var(--gap-2xs);
+    font-size: var(--font-size-caption);
+    color: var(--color-primary);
+}
+
+.related_link:hover {
+    color: var(--color-secondary);
+    text-decoration: underline;
+}
+
+/* A short explanation under a block, saying what was stored and what was not. */
+.detail_note {
+    margin: 0;
+    font-size: var(--font-size-caption);
+    line-height: var(--line-height-normal);
+    color: var(--color-text-muted);
+}
+
+/* A fact label followed by its info icon. */
+.kv_label_text {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+}
+
+.kv_help_icon {
+    color: var(--color-text-subtle);
+    cursor: help;
+}
+
+/* A value with its copy button kept on the same line where there is room. */
+.kv_value_row {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--gap-xs);
+}
+
+/* A second, quieter line under a value, such as the kind of caller. */
+.kv_value_note {
+    display: block;
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
 /* Label/value fact grid (a definition list). Labels hug their content; values
  * take the rest and wrap long ids. */
 .kv {
@@ -583,6 +676,18 @@
     font-size: var(--font-size-body-sm);
     color: var(--color-text);
     word-break: break-word;
+}
+
+/* In a narrow slide-over, put each label above its value so long ids and
+ * email addresses get the full width. */
+@container invocation-detail (max-width: #{$breakpoint-mobile-md}) {
+    .kv {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .kv_value + .kv_label {
+        margin-top: var(--gap-xs);
+    }
 }
 
 /* Pretty-printed JSON arguments — scrolls rather than stretching the panel. */

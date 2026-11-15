@@ -34,7 +34,7 @@ export interface ICapabilityLintFinding {
 /** Allowed `sideEffect` values; anything else is a typo that degrades policy. */
 const VALID_SIDE_EFFECTS: ReadonlyArray<string> = ['read', 'write', 'external'];
 
-/** Allowed `sensitivity` values; an invalid one silently disables redaction. */
+/** Allowed `sensitivity` values; an invalid one silently escapes the trifecta and MCP checks. */
 const VALID_SENSITIVITIES: ReadonlyArray<string> = ['public', 'internal', 'secret'];
 
 /**
@@ -100,8 +100,9 @@ export function lintToolCapability(tool: IAiTool): ICapabilityLintFinding[] {
     // An invalid enum is worse than a missing one: types are compile-time only
     // and a plugin's capability arrives as runtime data, so a typo'd value
     // silently degrades policy. An unrecognised sideEffect slips the default-deny
-    // (only `external` is gated), and an unrecognised sensitivity skips audit
-    // redaction (only `secret` redacts) — both fail open. Reject at registration.
+    // (only `external` is gated), and an unrecognised sensitivity escapes the
+    // trifecta's private-data leg and the MCP floor (both match `secret`
+    // exactly) — both fail open. Reject at registration.
     if (!VALID_SIDE_EFFECTS.includes(cap.sideEffect)) {
         findings.push({
             severity: 'error',

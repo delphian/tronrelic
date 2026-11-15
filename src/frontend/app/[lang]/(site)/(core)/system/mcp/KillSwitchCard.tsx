@@ -83,7 +83,7 @@ export function KillSwitchCard({ status, onSettingsChange }: IKillSwitchCardProp
                     <ConfirmDialog
                         label="MCP endpoint"
                         confirmLabel="Turn on"
-                        message={<>Members of <strong>{status?.groupId ?? 'mcp-users'}</strong> will be able to connect AI clients and call the {status?.servedToolCount ?? 0} tools currently approved. Continue?</>}
+                        message={<>Anyone will be able to connect an AI client and call the tools granted to <strong>Anonymous</strong>, and signed-in members the tools granted to their groups. {status?.servedToolCount ?? 0} tools are granted now. Continue?</>}
                         onConfirm={
                             async () => { await apply(true); close(modalId); }
                         }
@@ -109,8 +109,8 @@ export function KillSwitchCard({ status, onSettingsChange }: IKillSwitchCardProp
                             {status === null
                                 ? 'The switch state could not be loaded, so it cannot be changed here. Reload the page to try again.'
                                 : enabled
-                                    ? 'Members of the MCP group can connect and call approved tools.'
-                                    : 'Every request is refused with 503. Nothing is reachable over MCP.'}
+                                    ? 'Anyone can call the tools granted to Anonymous, and signed-in members the tools granted to their groups. Turning off refuses every request at once.'
+                                    : 'Every request to /mcp and /mcp/public is refused with 503. Nothing is reachable over MCP.'}
                             {status?.settings.updatedAt && (
                                 <> Last changed <ClientTime date={status.settings.updatedAt} format="datetime" />.</>
                             )}

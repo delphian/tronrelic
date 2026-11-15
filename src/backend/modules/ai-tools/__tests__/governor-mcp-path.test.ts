@@ -12,6 +12,7 @@ import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-
 import { AiToolGovernor } from '../services/ai-tool-governor.js';
 import { ToolPolicyEngine } from '../services/tool-policy-engine.js';
 import { WindowedLogLimiter } from '../../../lib/WindowedLogLimiter.js';
+import { SecretScrubber } from '../../../lib/SecretScrubber.js';
 
 /** A silent logger. */
 const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), child: vi.fn() } as any;
@@ -55,7 +56,7 @@ function build(tools: IAiTool[]) {
     const screen = vi.fn(async () => ({ flagged: false }));
     const provider = { screenUntrustedContent: screen };
     const refusalLog = new WindowedLogLimiter({ windowMs: 60 * 60 * 1000, maxKeys: 2, maxKeyLength: 300 });
-    const governor = new AiToolGovernor(logger, registry, policy, audit, approvals, hookRegistry, refusalLog, {
+    const governor = new AiToolGovernor(logger, registry, policy, audit, approvals, hookRegistry, refusalLog, new SecretScrubber([]), {
         config: { get: () => ({ enabled: true, postureMode: 'always', onFailure: 'open', offenderThreshold: 0 }) } as any,
         providers: { getProvider: () => provider, getActive: () => provider } as any,
         isEgressReachable: () => true

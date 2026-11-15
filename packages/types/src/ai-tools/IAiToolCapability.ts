@@ -3,7 +3,7 @@
  *
  * Declarative governance metadata for an AI tool. A tool classifies what it
  * does to the world and how sensitive its data is; the governor derives the
- * guardrails (rate limit, quota, cost cap, approval, audit redaction) from the
+ * guardrails (rate limit, quota, cost cap, approval, MCP eligibility) from the
  * class instead of trusting prose in the tool description.
  */
 
@@ -16,8 +16,10 @@
 export type AiToolSideEffect = 'read' | 'write' | 'external';
 
 /**
- * Sensitivity of the data a tool returns. Drives audit-log redaction and
- * lethal-trifecta accounting.
+ * Sensitivity of the data a tool returns. Drives MCP eligibility and
+ * lethal-trifecta accounting. It does not change what the audit record keeps:
+ * every tool's arguments and result preview are stored with credentials
+ * scrubbed, whatever its sensitivity.
  * - `public` — already-public information.
  * - `internal` — operational data not meant for the public.
  * - `secret` — may contain credentials, PII, or private user data.

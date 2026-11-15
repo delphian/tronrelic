@@ -9,6 +9,7 @@ import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-
 import { McpModule, type IMcpModuleDependencies } from '../index.js';
 import { MCP_TOOL_APPROVALS_COLLECTION } from '../services/mcp-tool-exposure.service.js';
 import { MCP_GROUP_POLICIES_COLLECTION } from '../services/McpGroupPolicyService.js';
+import { SecretScrubber } from '../../../lib/SecretScrubber.js';
 
 /**
  * Build the collaborators the module needs, with spies on every integration
@@ -36,7 +37,7 @@ function createDeps(groupExists = false): IMcpModuleDependencies & {
             listGroups: vi.fn(async () => [])
         } as any,
         hookRegistry: { register: vi.fn(() => () => undefined), invoke: vi.fn() } as any,
-        knownSecrets: [],
+        secretScrubber: new SecretScrubber([]),
         resolveEndUser: vi.fn(async () => null),
         accountDirectory: { getAccountsByIds: vi.fn(async () => []) },
         anonymousKeySalt: 'test-salt',

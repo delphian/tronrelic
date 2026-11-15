@@ -673,6 +673,8 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
      * leftovers it cannot reach are listed separately (see {@link unlinkedRecords}).
      */
     const [conversationRecords, setConversationRecords] = useState<IToolInvocationRecord[]>([]);
+    /** Email addresses for the user ids those records mention, so the detail panel names people. */
+    const [conversationUserLabels, setConversationUserLabels] = useState<Record<string, string>>({});
     /** The audit record whose detail slide-over is open, or null when closed. */
     const [selectedRecord, setSelectedRecord] = useState<IToolInvocationRecord | null>(null);
 
@@ -1258,6 +1260,7 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
             // active conversation's records.
             if (isMountedRef.current && conversationId === conversationIdRef.current) {
                 setConversationRecords(page.records);
+                setConversationUserLabels(page.userLabels ?? {});
             }
         } catch {
             /* secondary data — the transcript still renders without audit links */
@@ -2445,7 +2448,7 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
                                         <span className={styles.unlinked_records_note}>
                                             Tool calls this transcript cannot link to
                                         </span>
-                                        <InvocationTable records={unlinkedRecords} onSelect={setSelectedRecord} />
+                                        <InvocationTable records={unlinkedRecords} onSelect={setSelectedRecord} userLabels={conversationUserLabels} />
                                     </div>
                                 )}
                             </div>
@@ -2627,7 +2630,7 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
                 label={selectedRecord ? `Invocation ${selectedRecord.toolName}` : undefined}
                 title={selectedRecord ? <span className={styles.slideover_title}>{selectedRecord.toolName}</span> : null}
             >
-                {selectedRecord && <InvocationDetailPanel record={selectedRecord} />}
+                {selectedRecord && <InvocationDetailPanel record={selectedRecord} userLabels={conversationUserLabels} />}
             </SlideOver>
         </div>
     );

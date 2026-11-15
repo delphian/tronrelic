@@ -14,12 +14,17 @@
  * are fetched when the admin clicks, which is the user-triggered loading the
  * SSR rule allows.
  *
+ * Each figure's column heading explains what it counts on hover, and each
+ * group and signed-in caller links to the page that manages it (the group's
+ * limits on the Tools tab, the account on /system/users).
+ *
  * Each table has eight or nine columns, more than a tablet holds, so all three
  * use the shared Table's `stackAt="tablet"`: at 1024px and below each row is an
  * entry headed by its group, tool, or caller, with every figure named.
  */
 
 import { useCallback, useState } from 'react';
+import { ArrowUpRight, Info } from 'lucide-react';
 import type { IMcpGroup, IMcpUsageCallerRow, IMcpUsageFigures, IMcpUsageGroupDetail, IMcpUsageGroupRow, IMcpUsageReport, McpUsageWindow } from '@/types';
 import { Stack } from '../../../../../../components/layout';
 import { Badge } from '../../../../../../components/ui/Badge';
@@ -30,6 +35,7 @@ import { SegmentedControl } from '../../../../../../components/ui/SegmentedContr
 import { StatGrid, StatTile } from '../../../../../../components/ui/StatTile';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../../components/ui/Table';
 import { useToast } from '../../../../../../components/ui/ToastProvider';
+import { Tooltip } from '../../../../../../components/ui/Tooltip';
 import { getMcpUsage, getMcpUsageGroupDetail } from '../../../../../../modules/mcp';
 import { ActivityTab } from '../ai-tools/tabs/ActivityTab';
 import styles from './page.module.scss';
@@ -90,8 +96,47 @@ function figureCells(figures: IMcpUsageFigures) {
             <Td label="Refused" numeric muted={figures.refused === 0}>{count(figures.refused)}</Td>
             <Td label="By a limit" numeric muted={figures.limited === 0}>{count(figures.limited)}</Td>
             <Td label="Failed" numeric muted={figures.failed === 0}>{count(figures.failed)}</Td>
-            <Td label="p95" numeric muted>{figures.p95DurationMs === null ? '—' : `${count(figures.p95DurationMs)} ms`}</Td>
+            <Td label="p95 time" numeric muted>{figures.p95DurationMs === null ? '—' : `${count(figures.p95DurationMs)} ms`}</Td>
         </>
+    );
+}
+
+/** What each usage figure counts, shown on hover over its column heading. */
+const FIGURE_HELP = {
+    calls: 'Every call charged to this row in the window, whatever happened to it.',
+    refused: 'Calls turned away before the tool ran: a limit, a tool not granted to the caller, a call that needed sign-in, or a policy refusal. Nothing ran.',
+    limited: 'The refused calls that a call limit stopped: the caller\'s per-minute or 24-hour limit, or the group\'s shared pool. Raise limits on the Tools tab.',
+    failed: 'Calls where the tool started running and then threw an error or ran out of time.',
+    p95: '95% of calls finished faster than this. A rising figure means a tool or its data source is slowing down.'
+} as const;
+
+/**
+ * Props for {@link HeaderWithHelp}.
+ */
+interface IHeaderWithHelpProps {
+    /** The column heading. */
+    label: string;
+
+    /** What the column counts. */
+    help: string;
+}
+
+/**
+ * A column heading with its meaning behind an info icon, because figures such
+ * as "By a limit" and "p95" cannot be read correctly without knowing what they
+ * count.
+ *
+ * @param props - {@link IHeaderWithHelpProps}.
+ * @returns The heading text and its icon.
+ */
+function HeaderWithHelp({ label, help }: IHeaderWithHelpProps) {
+    return (
+        <span className={styles.header_help}>
+            {label}
+            <Tooltip content={help}>
+                <Info size={14} role="img" aria-label={help} />
+            </Tooltip>
+        </span>
     );
 }
 
@@ -103,11 +148,11 @@ function figureCells(figures: IMcpUsageFigures) {
 function figureHeaders() {
     return (
         <>
-            <Th numeric>Calls</Th>
-            <Th numeric>Refused</Th>
-            <Th numeric>By a limit</Th>
-            <Th numeric>Failed</Th>
-            <Th numeric>p95</Th>
+            <Th numeric><HeaderWithHelp label="Calls" help={FIGURE_HELP.calls} /></Th>
+            <Th numeric><HeaderWithHelp label="Refused" help={FIGURE_HELP.refused} /></Th>
+            <Th numeric><HeaderWithHelp label="By a limit" help={FIGURE_HELP.limited} /></Th>
+            <Th numeric><HeaderWithHelp label="Failed" help={FIGURE_HELP.failed} /></Th>
+            <Th numeric><HeaderWithHelp label="p95 time" help={FIGURE_HELP.p95} /></Th>
         </>
     );
 }
@@ -202,9 +247,9 @@ export function McpUsagePanel({ initialUsage, groups }: IMcpUsagePanelProps) {
                                 <Tr>
                                     <Th>Group</Th>
                                     {figureHeaders()}
-                                    <Th numeric>Callers</Th>
-                                    <Th>Pool, last 24h</Th>
-                                    <Th>Open</Th>
+                                    <Th numeric><HeaderWithHelp label="Callers" help="Distinct callers: one per signed-in account, and one per network range for anonymous callers." /></Th>
+                                    <Th><HeaderWithHelp label="Pool, last 24h" help="Calls charged to the group in the last 24 hours against its shared daily pool. Amber from 80% used, red when spent, at which point every call charged to the group is refused until the window resets." /></Th>
+                                    <Th>Breakdown</Th>
                                 </Tr>
                             </Thead>
                             <Tbody>
@@ -213,6 +258,10 @@ export function McpUsagePanel({ initialUsage, groups }: IMcpUsagePanelProps) {
                                         <Td>
                                             <div className={styles.tool_name}>{names.get(row.groupId) ?? row.groupId}</div>
                                             {!row.enabled && <Badge tone="warning" size="xs">Switched off</Badge>}
+                                            <a className={styles.related_link} href={`/system/mcp?tab=tools&group=${encodeURIComponent(row.groupId)}`}>
+                                                Limits and grants
+                                                <ArrowUpRight size={14} aria-hidden />
+                                            </a>
                                         </Td>
                                         {figureCells(row)}
                                         <Td label="Callers" numeric>{count(row.callers)}</Td>
@@ -262,7 +311,7 @@ export function McpUsagePanel({ initialUsage, groups }: IMcpUsagePanelProps) {
                                     <Th>Tool</Th>
                                     {figureHeaders()}
                                     <Th numeric>Callers</Th>
-                                    <Th>Callers list</Th>
+                                    <Th>Callers below</Th>
                                 </Tr>
                             </Thead>
                             <Tbody>
@@ -271,7 +320,7 @@ export function McpUsagePanel({ initialUsage, groups }: IMcpUsagePanelProps) {
                                         <Td><span className={styles.tool_name}>{row.toolName}</span></Td>
                                         {figureCells(row)}
                                         <Td label="Callers" numeric>{count(row.callers)}</Td>
-                                        <Td label="Callers list">
+                                        <Td label="Callers below">
                                             <Button
                                                 size="xs"
                                                 variant="ghost"
@@ -307,7 +356,7 @@ export function McpUsagePanel({ initialUsage, groups }: IMcpUsagePanelProps) {
                                     <Th>Caller</Th>
                                     {figureHeaders()}
                                     <Th>Last call</Th>
-                                    <Th>Calls</Th>
+                                    <Th>Call list</Th>
                                 </Tr>
                             </Thead>
                             <Tbody>
@@ -319,10 +368,16 @@ export function McpUsagePanel({ initialUsage, groups }: IMcpUsagePanelProps) {
                                                 {row.principalKind === 'anonymous' ? 'Anonymous' : 'Signed in'}
                                                 {row.clientNames.length > 0 && ` · ${row.clientNames.join(', ')}`}
                                             </div>
+                                            {row.principalKind === 'user' && (
+                                                <a className={styles.related_link} href={`/system/users?tab=users&user=${encodeURIComponent(row.principalId)}`}>
+                                                    Open account
+                                                    <ArrowUpRight size={14} aria-hidden />
+                                                </a>
+                                            )}
                                         </Td>
                                         {figureCells(row)}
                                         <Td label="Last call"><ClientTime date={row.lastCallAt} format="relative" /></Td>
-                                        <Td label="Calls">
+                                        <Td label="Call list">
                                             <Button
                                                 size="xs"
                                                 variant="ghost"

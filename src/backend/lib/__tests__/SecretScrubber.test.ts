@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { REDACTION_MARKER, SecretScrubber } from '../services/SecretScrubber.js';
+import { REDACTION_MARKER, SecretScrubber } from '../SecretScrubber.js';
 
 /** A stand-in for the deployment's admin token. */
 const ADMIN_TOKEN = 'f3a9c2e81b7d4c06a5e2';

@@ -18,6 +18,7 @@ import { QueryStreamRegistry } from '../services/query-stream-registry.js';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 import { createMockServiceRegistry } from '../../../tests/vitest/mocks/service-registry.js';
 import { ContentRegistry, CONTENT_TYPES_SERVICE } from '../../../services/content-registry.js';
+import { SecretScrubber } from '../../../lib/SecretScrubber.js';
 
 /** Minimal menu service whose `create` records the admin nav registration. */
 function createMockMenuService(): IMenuService {
@@ -205,6 +206,7 @@ describe('AiToolsModule', () => {
             hookRegistry: mockHooks,
             menuService: createMockMenuService(),
             app: mockApp as never,
+            secretScrubber: new SecretScrubber([]),
             ...builtinVariableDeps()
         });
     });
@@ -241,6 +243,7 @@ describe('AiToolsModule', () => {
                 menuService: createMockMenuService(),
                 app: { use: vi.fn() } as never,
                 scheduler,
+                secretScrubber: new SecretScrubber([]),
                 ...builtinVariableDeps()
             });
             await scheduledModule.run();

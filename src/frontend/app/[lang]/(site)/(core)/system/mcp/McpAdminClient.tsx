@@ -76,6 +76,8 @@ interface IMcpAdminClientProps {
     submenuGeneratedAt: string;
     /** The `?tab=` deep link. */
     initialTab?: string;
+    /** The `?group=` deep link: the user group the Tools tab opens on. */
+    initialGroupId?: string;
     /** SSR-fetched status; null when the fetch failed. */
     initialStatus: IMcpStatus | null;
     /** SSR-fetched 24-hour usage report; null when the fetch failed. */
@@ -100,6 +102,7 @@ export function McpAdminClient({
     submenuTree,
     submenuGeneratedAt,
     initialTab,
+    initialGroupId,
     initialStatus,
     initialUsage,
     initialTools,
@@ -183,6 +186,7 @@ export function McpAdminClient({
                         <ToolsTab
                             initialTools={initialTools}
                             initialGroups={initialGroups}
+                            initialGroupId={initialGroupId}
                             onToolsChanged={handleToolsChanged}
                             serverDescription={status?.serverDescription ?? null}
                         />

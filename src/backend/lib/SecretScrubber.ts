@@ -1,11 +1,14 @@
 /**
- * @fileoverview Removes secrets from MCP tool results before they leave the
- * platform.
+ * @fileoverview Removes credentials from data before it leaves the platform or
+ * is kept in storage.
  *
- * A user group can be allowed restricted tools, such as the log readers, whose
- * results may carry credentials. The caller's own AI client can send anything
- * it receives off-site, so a group can also ask for its results to be
- * scrubbed. Three passes do the work:
+ * Two callers share it. The MCP module scrubs a tool result before it reaches
+ * the caller's own AI client, for a user group that asks for it, because that
+ * client can send anything it receives off-site. The AI tools governor scrubs
+ * every tool's arguments and result digest before writing the audit record,
+ * because that record is kept for 90 days and is readable beyond the admin
+ * page (the service token on /system/database, and an AI audit tool). Three
+ * passes do the work:
  *
  * 1. Exact values. The deployment's own secrets (admin token, auth secrets,
  *    API keys, database URLs) are known to the backend, so any occurrence of
@@ -21,6 +24,8 @@
  * never seen and that matches no pattern passes through, and a TRON private
  * key looks exactly like a transaction hash, so it cannot be told apart.
  */
+
+import type { ISecretScrubber } from './ISecretScrubber.js';
 
 /** What replaces each removed secret, so a reader can see that something was taken out. */
 export const REDACTION_MARKER = '[REDACTED]';
@@ -88,10 +93,10 @@ function escapeRegExp(value: string): string {
 }
 
 /**
- * Scrubs secrets out of tool results. Built once at module start with the
+ * Scrubs secrets out of tool data. Built once at startup with the
  * deployment's secret values, then shared by every request.
  */
-export class SecretScrubber {
+export class SecretScrubber implements ISecretScrubber {
     /** One alternation over every known secret, longest first so a secret containing another is matched whole. */
     private readonly knownSecretsPattern: RegExp | null;
 

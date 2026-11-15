@@ -42,6 +42,7 @@ import type { ToolApprovalQueue, IToolApprovalRequest } from './tool-approval-qu
 import type { ScreenConfigService } from './screen-config.service.js';
 import type { AiProviderRegistry } from './ai-provider-registry.js';
 import type { WindowedLogLimiter } from '../../../lib/WindowedLogLimiter.js';
+import type { ISecretScrubber } from '../../../lib/ISecretScrubber.js';
 
 /**
  * Optional dependencies that enable the untrusted-content output screen. Absent
@@ -171,41 +172,24 @@ function matchesType(value: unknown, type: string): boolean {
 }
 
 /**
- * Redact arguments for the audit record according to data sensitivity. A
- * `secret` tool's argument values are replaced with a placeholder; other
- * classes are stored verbatim (the model's arguments are already bounded).
+ * Build the short preview of a handler result that the audit record keeps,
+ * and measure the full result so a reader knows how much the preview leaves
+ * out. Only the preview is stored, because results can run to tens of
+ * kilobytes and records are kept for 90 days.
  *
- * @param input - Raw arguments.
- * @param sensitivity - The tool's data sensitivity.
- * @returns The arguments safe to persist.
+ * @param result - The handler's return value, already scrubbed of credentials.
+ * @returns The preview, cut to {@link RESULT_DIGEST_MAX} characters, and the
+ *   length of the whole serialized result.
  */
-function redactInput(input: Record<string, unknown>, sensitivity: IAiToolCapability['sensitivity']): Record<string, unknown> {
-    let result: Record<string, unknown>;
-    if (sensitivity === 'secret') {
-        result = {};
-        for (const key of Object.keys(input)) {
-            result[key] = '[redacted]';
-        }
-    } else {
-        result = input;
-    }
-    return result;
-}
-
-/**
- * Build a short, persistable digest of a handler result.
- *
- * @param result - The handler's return value.
- * @returns A truncated string preview.
- */
-function digestResult(result: unknown): string {
+function digestResult(result: unknown): { text: string; chars: number } {
     let serialized: string;
     try {
         serialized = typeof result === 'string' ? result : JSON.stringify(result) ?? 'null';
     } catch {
         serialized = String(result);
     }
-    return serialized.length > RESULT_DIGEST_MAX ? `${serialized.slice(0, RESULT_DIGEST_MAX)}…` : serialized;
+    const text = serialized.length > RESULT_DIGEST_MAX ? `${serialized.slice(0, RESULT_DIGEST_MAX)}…` : serialized;
+    return { text, chars: serialized.length };
 }
 
 /**
@@ -267,6 +251,11 @@ export class AiToolGovernor implements IAiToolGovernor {
      *   calls. An MCP caller decides how many calls to send, so one entry per
      *   refusal would let a stranger write to the system log as fast as they
      *   can send requests. Every refusal is still audited.
+     * @param scrubber - Removes credentials from every tool's arguments, result
+     *   preview, and error before the audit record is written. Arguments and
+     *   results are both kept readable for admins; only values that look like
+     *   credentials are replaced, because the record outlives the call by 90
+     *   days and is readable through the service token and an AI audit tool.
      * @param screen - Optional untrusted-content screen dependencies. Omitted in
      *   tests and pre-provider boots, in which case screening is a no-op and
      *   results flow exactly as they did before the screen existed.
@@ -279,6 +268,7 @@ export class AiToolGovernor implements IAiToolGovernor {
         private readonly approvals: ToolApprovalQueue,
         private readonly hookRegistry: IHookRegistry,
         private readonly mcpRefusalLog: WindowedLogLimiter,
+        private readonly scrubber: ISecretScrubber,
         private readonly screen?: IGovernorScreenDeps
     ) {}
 
@@ -515,7 +505,7 @@ export class AiToolGovernor implements IAiToolGovernor {
         // or rate-limit — the call already happened. Write the same record shape
         // a governed call produces (owned by the AI provider that drove it) and
         // fire the observer seam so the audit feed and the lethal-trifecta watch
-        // see it. buildRecord redacts arguments by the declared sensitivity.
+        // see it. buildRecord scrubs credentials from the arguments and preview.
         const record = this.buildRecord(
             invocation.toolName,
             invocation.context.aiProviderId,
@@ -536,7 +526,7 @@ export class AiToolGovernor implements IAiToolGovernor {
         // `hosted: true` marks that the governor saw this call only after the
         // fact, which is also why there is no duration or screen verdict to
         // report. Arguments stay out of the line exactly as on the governed
-        // path: the audit record holds them redacted by sensitivity, and
+        // path: the audit record holds them with credentials scrubbed, and
         // `recordId` is the handle for pulling that record.
         this.logger.info(
             {
@@ -617,6 +607,7 @@ export class AiToolGovernor implements IAiToolGovernor {
         let content: unknown;
         let error: string | undefined;
         let resultDigest: string | undefined;
+        let resultChars: number | undefined;
         let screenOutcome: { flagged: boolean; reason?: string } | undefined;
 
         try {
@@ -637,8 +628,12 @@ export class AiToolGovernor implements IAiToolGovernor {
             status = 'ok';
             // The digest records the raw handler value regardless of what the
             // model ultimately sees, so the audit trail is complete even when a
-            // hook or the screen withholds or alters the forwarded content.
-            resultDigest = digestResult(rawResult);
+            // hook or the screen withholds or alters the forwarded content. The
+            // value is scrubbed as a whole before it is cut, so the field-name
+            // pass still sees a `password` key that the cut would split.
+            const digest = digestResult(this.scrubber.scrub(rawResult));
+            resultDigest = digest.text;
+            resultChars = digest.chars;
 
             // ai.toolResult (waterfall): let core/plugins ALTER the result, or
             // throw HookAbortError to WITHHOLD it from the model. Runs before the
@@ -706,7 +701,7 @@ export class AiToolGovernor implements IAiToolGovernor {
             this.logger.error({ tool: tool.name, error }, `AI tool handler failed: ${tool.name}`);
         }
 
-        const record = this.buildRecord(tool.name, providerId, cap, ctx, input, status, { resultDigest, error, durationMs: Date.now() - startedAt, screen: screenOutcome });
+        const record = this.buildRecord(tool.name, providerId, cap, ctx, input, status, { resultDigest, resultChars, error, durationMs: Date.now() - startedAt, screen: screenOutcome });
         await this.audit.record(record);
         await this.notifyInvoked(record);
 
@@ -716,9 +711,9 @@ export class AiToolGovernor implements IAiToolGovernor {
         // visible in the Activity tab and nowhere else, so a question like "did
         // anything call out to the web last night?" could not be answered from the
         // logs. Arguments are deliberately absent: the audit record already holds
-        // them redacted by sensitivity, and `recordId` below is the handle for
+        // them with credentials scrubbed, and `recordId` below is the handle for
         // pulling that record, so nothing is duplicated into a second store with
-        // weaker redaction. An errored call is already logged with its cause in
+        // weaker protection. An errored call is already logged with its cause in
         // the catch above, so it is not repeated here.
         if (status !== 'error') {
             this.logger.info(
@@ -1051,7 +1046,13 @@ export class AiToolGovernor implements IAiToolGovernor {
     }
 
     /**
-     * Assemble an invocation record with redacted arguments.
+     * Assemble an invocation record, scrubbing credentials from the arguments,
+     * the result preview, and the error.
+     *
+     * Every tool's arguments are kept in full apart from that scrub, whatever
+     * its sensitivity. Blanking a `secret` tool's arguments while keeping its
+     * result hid the request an admin needs to read and kept the response,
+     * which is where such a tool's sensitive data actually is.
      *
      * @returns The record ready to persist.
      */
@@ -1062,7 +1063,7 @@ export class AiToolGovernor implements IAiToolGovernor {
         ctx: IToolInvocationContext,
         input: Record<string, unknown>,
         status: ToolInvocationStatus,
-        extra: { resultDigest?: string; error?: string; durationMs?: number; screen?: { flagged: boolean; reason?: string }; limitHit?: ToolLimitKind }
+        extra: { resultDigest?: string; resultChars?: number; error?: string; durationMs?: number; screen?: { flagged: boolean; reason?: string }; limitHit?: ToolLimitKind }
     ): IToolInvocationRecord {
         const record: IToolInvocationRecord = {
             id: crypto.randomUUID(),
@@ -1072,7 +1073,7 @@ export class AiToolGovernor implements IAiToolGovernor {
             capability: cap,
             actor: ctx.actor,
             triggerPath: ctx.triggerPath,
-            input: redactInput(input, cap.sensitivity),
+            input: this.scrubber.scrub(input),
             status,
             durationMs: extra.durationMs ?? 0,
             createdAt: new Date().toISOString()
@@ -1104,10 +1105,18 @@ export class AiToolGovernor implements IAiToolGovernor {
             record.origin = { ...ctx.origin };
         }
         if (extra.resultDigest !== undefined) {
-            record.resultDigest = extra.resultDigest;
+            // A governed call's preview arrives scrubbed already; a provider-
+            // hosted call's preview comes from the provider, so it is scrubbed
+            // here as text. Scrubbing a clean string twice changes nothing.
+            record.resultDigest = this.scrubber.scrubText(extra.resultDigest);
+        }
+        if (extra.resultChars !== undefined) {
+            record.resultChars = extra.resultChars;
         }
         if (extra.error !== undefined) {
-            record.error = extra.error;
+            // A handler's raw exception text can quote a connection string or
+            // an upstream response carrying a key.
+            record.error = this.scrubber.scrubText(extra.error);
         }
         if (extra.screen !== undefined) {
             record.screen = extra.screen;

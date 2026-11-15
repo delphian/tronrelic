@@ -32,7 +32,7 @@ import { UNTRUSTED_CONTENT_SYSTEM_CLAUSE } from '@/types';
 import type { IMcpCaller } from './IMcpCaller.js';
 import type { IMcpServerIdentity } from './IMcpServerIdentity.js';
 import type { IMcpServedTool } from './mcp-tool-exposure.service.js';
-import type { SecretScrubber } from './SecretScrubber.js';
+import type { ISecretScrubber } from '../../../lib/ISecretScrubber.js';
 
 /**
  * Server name reported to clients in `serverInfo`. Kept as the short name
@@ -179,7 +179,7 @@ export class McpServerFactory {
      */
     constructor(
         private readonly governor: IAiToolGovernor,
-        private readonly scrubber: SecretScrubber,
+        private readonly scrubber: ISecretScrubber,
         private readonly logger: ISystemLogService,
         private readonly identity: IMcpServerIdentity
     ) {
