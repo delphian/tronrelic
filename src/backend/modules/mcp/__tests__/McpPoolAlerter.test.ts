@@ -1,7 +1,8 @@
 /**
  * @fileoverview Tests for the alert raised when an MCP group's shared daily
- * pool runs out: once per exhaustion, re-armed by a successful call, ignored
- * off the MCP path, and never failing when notifications or policies do.
+ * pool runs out: once per exhaustion, re-armed only by a call admitted after
+ * the pool had room, ignored off the MCP path, and never failing when
+ * notifications or policies do.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -30,6 +31,20 @@ function record(overrides: Partial<IToolInvocationRecord> = {}): IToolInvocation
 
 /** A refused call: the group's pool was spent. */
 const POOL_REFUSAL = { status: 'denied', limitHit: 'pool-day' } as const;
+
+/**
+ * Build a successful record with the timing the governor stamps, so a test can
+ * say whether the call started before or after the pool was seen to be
+ * exhausted. The governor stamps `createdAt` when the handler returns, and the
+ * alerter subtracts `durationMs` from it to get the moment the call started.
+ *
+ * @param finishedAt - Completion time in milliseconds, written as `createdAt`.
+ * @param durationMs - How long the handler ran.
+ * @returns The record.
+ */
+function success(finishedAt: number, durationMs: number): IToolInvocationRecord {
+    return record({ createdAt: new Date(finishedAt).toISOString(), durationMs });
+}
 
 /**
  * Build an alerter whose group pool limit is 5,000 and whose notifications
@@ -74,16 +89,35 @@ describe('McpPoolAlerter', () => {
     });
 
     /**
-     * A call charged to the group can only succeed once the pool has room,
-     * so that is what allows the next exhaustion to be reported.
+     * A call that started after the pool was seen to be exhausted could only
+     * have been admitted once the pool had room again, so that is what allows
+     * the next exhaustion to be reported.
      */
-    it('alerts again only after a call charged to the group succeeds', async () => {
+    it('alerts again after a call admitted once the pool had room succeeds', async () => {
         const { alerter, notify } = build();
         alerter.observe(record(POOL_REFUSAL));
-        alerter.observe(record());
+        alerter.observe(success(Date.now() + 5_000, 1_000));
         alerter.observe(record(POOL_REFUSAL));
         await settle();
         expect(notify).toHaveBeenCalledTimes(2);
+        expect(logger.info).toHaveBeenCalledTimes(1);
+    });
+
+    /**
+     * Guards the duplicate-alert race: the governor charges the pool before it
+     * runs the handler, so a call already in flight when the pool ran out
+     * reports success afterwards without the pool having recovered. Re-arming
+     * on it sent a second notification for the same exhaustion, once for every
+     * call still running.
+     */
+    it('does not re-arm on a call that was already running when the pool ran out', async () => {
+        const { alerter, notify } = build();
+        alerter.observe(record(POOL_REFUSAL));
+        alerter.observe(success(Date.now() + 2_000, 30_000));
+        alerter.observe(record(POOL_REFUSAL));
+        await settle();
+        expect(notify).toHaveBeenCalledTimes(1);
+        expect(logger.info).not.toHaveBeenCalled();
     });
 
     it('tracks each group separately', async () => {
