@@ -225,117 +225,223 @@
 /*
  * Stacked rows (`<Table stackAt>`).
  *
- * Below the chosen width each row becomes an entry: the header row is hidden,
- * and every labelled cell becomes a two-track line with its column name on
- * the left and its value on the right. The name comes from the cell's
- * `data-label`, which `<Td label>` writes.
+ * Below the chosen width each row becomes an entry: the header row is hidden
+ * and every labelled cell becomes a field that shows its column name with its
+ * value. The name comes from the cell's `data-label`, which `<Td label>`
+ * writes.
  *
- * A cell without a label flows inline instead, so neighbouring unlabelled
- * cells share a line: an expand toggle sits beside the name it expands, and
- * the identifying value reads as the entry's heading. A labelled cell is a
- * block, so it always starts a new line, and a trailing unlabelled cell such
- * as a row's buttons lands on the entry's last line. An unlabelled cell that is
- * the row's only cell, such as a full-width detail row, stays a block, because
- * an inline block shrinks to its content and would collapse a nested table.
+ * An entry is a wrapping flex row, so it uses the width it has. Fields sit
+ * side by side in equal columns, as many as fit at `$stack-field-min` each,
+ * with the column name above the value. A phone-width container has room for
+ * one column only, and there each field is a single line with the name on the
+ * left and the value on the right. Giving every field its own line at every
+ * width does not work: on a tablet it leaves most of each line empty and makes
+ * a five-field entry six lines tall.
+ *
+ * A cell without a label is not a field. The unlabelled cells that open the
+ * row share the entry's first line, so an expand toggle sits beside the name
+ * it expands and the identifying value reads as the entry's heading. The
+ * fields start on the next line, which keeps their columns aligned from one
+ * entry to the next whatever the heading's length. Unlabelled cells that
+ * close the row, such as its buttons, move to the end of the last line.
+ * An unlabelled cell that is the row's only cell, such as a full-width detail
+ * row, takes the whole line, because it may hold a nested table.
  *
  * Entries are divided by a rule rather than boxed one by one, which keeps a
  * long list from turning into a column of nested borders inside the card.
  * The column name is sentence case on purpose: the uppercase header style is
  * built for one short row above many values and gets noisy when it repeats on
- * every line.
+ * every field.
  *
  * Every selector walks from the wrapper with child combinators. A table nested
  * inside a stacked table's cell, such as a documents list under an expanded
  * row, therefore keeps its own layout instead of being stacked by its parent.
- * The query measures the wrapper, which is the `table` container, so these
- * rules can only style what is inside it, never the wrapper itself. The rule
- * set is a mixin because Sass cannot interpolate a breakpoint per modifier
- * inside one @container block.
+ * The queries measure the wrapper, which is the `table` container, so these
+ * rules can only style what is inside it, never the wrapper itself.
  */
-@mixin stacked-rows($wrapper) {
+
+/*
+ * The narrowest a field may be when fields share a line. 160px holds a full
+ * date and time, the widest of the short values these tables show, on one
+ * line. A Sass variable rather than a design token because it has to be used
+ * in a container query condition, where a CSS custom property cannot be read.
+ */
+$stack-field-min: 160px;
+
+/*
+ * Width an entry spends on things other than fields: its own inline padding
+ * and the gaps between fields. Both are density-scaled tokens that a container
+ * query cannot read, so this is a fixed allowance sized for the default
+ * density. Being a little off only moves the width at which a column is added.
+ */
+$stack-entry-gutter: 48px;
+
+/* The most columns an entry uses. Six is what fits at the widest stack width,
+   `$breakpoint-tablet`. */
+$stack-max-columns: 6;
+
+/*
+ * The container width from which `$columns` fields fit side by side. Two
+ * columns never start at or below `$breakpoint-mobile-md`: a phone keeps the
+ * one-column layout, where each value has the whole line beside its name.
+ */
+@function stack-columns-min-width($columns) {
+    $fit: $columns * $stack-field-min + $stack-entry-gutter;
+    @return max($fit, $breakpoint-mobile-md + 1px);
+}
+
+/*
+ * Emits the stacked layout for one `stackAt` step. `$wrapper` is the wrapper
+ * modifier class for the step and `$max-width` is the container width at or
+ * below which that step stacks. A mixin because Sass cannot interpolate a
+ * breakpoint per modifier inside one @container block.
+ */
+@mixin stacked-rows($wrapper, $max-width) {
     $table: '#{$wrapper} > .table';
     $row: '#{$table} > .tbody > .tr';
     $cell: '#{$row} > .td';
 
-    #{$table} > .thead {
-        display: none;
+    @container table (max-width: #{$max-width}) {
+        #{$table} > .thead {
+            display: none;
+        }
+
+        /* The header row is gone, so the sort picker takes over its job. */
+        #{$wrapper} > .stacked_sort {
+            display: flex;
+        }
+
+        #{$table},
+        #{$table} > .tbody {
+            display: block;
+        }
+
+        #{$row} {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            column-gap: var(--gap-sm);
+            padding: var(--padding-sm) var(--card-padding-applied, var(--padding-md));
+            border-bottom: var(--border-width-thin) solid var(--color-border);
+        }
+
+        #{$row}:last-child {
+            border-bottom: none;
+        }
+
+        /* A zero-height item as wide as the entry, ordered between the cells
+           that open the row and everything from the first field on. It ends
+           the heading line so the fields always start on a line of their own.
+           Vertical spacing comes from the cells' padding rather than a row gap,
+           so this empty line adds no height. */
+        #{$row}::after {
+            content: '';
+            order: 1;
+            flex: 0 0 100%;
+        }
+
+        #{$cell} {
+            flex: 0 1 auto;
+            min-width: 0;
+            max-width: 100%;
+            padding: var(--padding-2xs) 0;
+            border-bottom: none;
+            text-align: start;
+            white-space: normal;
+            overflow-wrap: anywhere;
+        }
+
+        #{$cell}[data-label],
+        #{$cell}[data-label] ~ .td {
+            order: 2;
+        }
+
+        /* One column: the field is a whole line, name left and value right. */
+        #{$cell}[data-label] {
+            flex: 0 0 100%;
+            align-self: flex-start;
+            display: grid;
+            grid-template-columns: var(--table-stack-label-width) minmax(0, 1fr);
+            column-gap: var(--gap-sm);
+            align-items: baseline;
+            /* Without this a badge or chip in the value track stretches across
+               the whole track instead of keeping its own width. */
+            justify-items: start;
+        }
+
+        #{$cell}[data-label]::before {
+            content: attr(data-label);
+            font-size: var(--font-size-caption);
+            font-weight: var(--font-weight-medium);
+            color: var(--color-text-muted);
+            line-height: var(--line-height-normal);
+        }
+
+        /* The value container is the cell's one other grid item, so everything
+           the cell holds stays in the value track and reads as one value.
+           Without it a grid makes every child an item of its own: the first
+           lands beside the column name and the rest fall back under it,
+           splitting a figure from its limit and spreading a list across both
+           tracks. `min-width: 0` lets a long unbroken value wrap instead of
+           widening the row. */
+        #{$cell}[data-label] > .td_value {
+            display: block;
+            min-width: 0;
+        }
+
+        /* Unlabelled cells after the last field, such as the row's buttons,
+           sit at the end of the entry's last line. A cell that has a field
+           after it is left where it is, so the fields that follow it keep
+           their columns. */
+        #{$cell}[data-label] ~ .td:not([data-label]):not(:has(~ .td[data-label])) {
+            margin-inline-start: auto;
+        }
+
+        #{$cell}:not([data-label]):only-child {
+            flex: 1 1 100%;
+        }
+
+        /* A header cell inside the body, such as a group heading that spans
+           the row, becomes a full-width line instead of keeping its table-cell
+           box. */
+        #{$row} > .th {
+            flex: 0 0 100%;
+            padding: var(--padding-2xs) 0;
+            border-bottom: none;
+        }
     }
 
-    /* The header row is gone, so the sort picker takes over its job. */
-    #{$wrapper} > .stacked_sort {
-        display: flex;
-    }
+    /* Two or more columns: each field takes an equal share of the line and
+       puts its name above its value, so the value gets the field's full
+       width. A step whose columns need more room than this `stackAt` width
+       offers is never reached, so it is not emitted.
 
-    #{$table},
-    #{$table} > .tbody {
-        display: block;
-    }
+       A field whose value is longer than one column holds asks for more room
+       through `<Td stackSpan>`: two columns for a value such as an address or
+       an email address, or the whole line for free text such as an error
+       message. Without it that value wraps into a tall, narrow block and the
+       short fields beside it leave the rest of the line empty. */
+    @for $columns from 2 through $stack-max-columns {
+        $min-width: stack-columns-min-width($columns);
 
-    #{$row} {
-        display: block;
-        padding: var(--padding-sm) var(--card-padding-applied, var(--padding-md));
-        border-bottom: var(--border-width-thin) solid var(--color-border);
-    }
+        @if $min-width <= $max-width {
+            @container table (min-width: #{$min-width}) and (max-width: #{$max-width}) {
+                $column: 'calc((100% - #{$columns - 1} * var(--gap-sm)) / #{$columns})';
 
-    #{$row}:last-child {
-        border-bottom: none;
-    }
+                #{$cell}[data-label] {
+                    flex-basis: #{$column};
+                    grid-template-columns: minmax(0, 1fr);
+                }
 
-    #{$cell} {
-        padding: var(--padding-2xs) 0;
-        border-bottom: none;
-        text-align: start;
-        white-space: normal;
-        overflow-wrap: anywhere;
-    }
+                #{$cell}[data-label][data-stack-span='2'] {
+                    flex-basis: min(100%, calc(2 * #{$column} + var(--gap-sm)));
+                }
 
-    #{$cell}[data-label] {
-        display: grid;
-        grid-template-columns: var(--table-stack-label-width) minmax(0, 1fr);
-        column-gap: var(--gap-sm);
-        align-items: baseline;
-        /* Without this a badge or chip in the value track stretches across
-           the whole track instead of keeping its own width. */
-        justify-items: start;
-    }
-
-    #{$cell}[data-label]::before {
-        content: attr(data-label);
-        font-size: var(--font-size-caption);
-        font-weight: var(--font-weight-medium);
-        color: var(--color-text-muted);
-        line-height: var(--line-height-normal);
-    }
-
-    /* The value container is the cell's one other grid item, so everything the
-       cell holds stays in the value track and reads as one value. Without it a
-       grid makes every child an item of its own: the first lands beside the
-       column name and the rest fall back under it, splitting a figure from its
-       limit and spreading a list across both tracks. `min-width: 0` lets a long
-       unbroken value wrap instead of widening the row. */
-    #{$cell}[data-label] > .td_value {
-        display: block;
-        min-width: 0;
-    }
-
-    #{$cell}:not([data-label]) {
-        display: inline-block;
-        max-width: 100%;
-        margin-inline-end: var(--gap-sm);
-        vertical-align: middle;
-    }
-
-    #{$cell}:not([data-label]):only-child {
-        display: block;
-        margin-inline-end: 0;
-    }
-
-    /* A header cell inside the body, such as a group heading that spans the
-       row, becomes a full-width line instead of keeping its table-cell box. */
-    #{$row} > .th {
-        display: block;
-        padding: var(--padding-2xs) 0;
-        border-bottom: none;
+                #{$cell}[data-label][data-stack-span='full'] {
+                    flex-basis: 100%;
+                }
+            }
+        }
     }
 }
 
@@ -365,14 +471,6 @@
     max-width: var(--max-width-xs);
 }
 
-@container table (max-width: #{$breakpoint-tablet}) {
-    @include stacked-rows('.table_wrapper_stack_tablet');
-}
-
-@container table (max-width: #{$breakpoint-mobile-lg}) {
-    @include stacked-rows('.table_wrapper_stack_mobile');
-}
-
-@container table (max-width: #{$breakpoint-mobile-md}) {
-    @include stacked-rows('.table_wrapper_stack_phone');
-}
+@include stacked-rows('.table_wrapper_stack_tablet', $breakpoint-tablet);
+@include stacked-rows('.table_wrapper_stack_mobile', $breakpoint-mobile-lg);
+@include stacked-rows('.table_wrapper_stack_phone', $breakpoint-mobile-md);

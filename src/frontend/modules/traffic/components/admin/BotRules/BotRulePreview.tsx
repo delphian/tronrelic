@@ -79,9 +79,9 @@ export function BotRulePreview({ preview }: IBotRulePreviewProps) {
                             <Tr key={`${sample.timestamp}-${index}`}>
                                 <Td label="When" muted><ClientTime date={sample.timestamp} format="short" /></Td>
                                 <Td label="Type" muted>{sample.eventType}</Td>
-                                <Td label="Path" className={styles.cell_wrap}>{sample.path}</Td>
+                                <Td label="Path" stackSpan={2} className={styles.cell_wrap}>{sample.path}</Td>
                                 <Td label="Network" muted>{sample.asn !== null ? `AS${sample.asn}` : '—'}{sample.country ? ` · ${sample.country}` : ''}</Td>
-                                <Td label="Browser identifier" muted className={styles.cell_wrap}>{sample.userAgent ?? '—'}</Td>
+                                <Td label="Browser identifier" stackSpan="full" muted className={styles.cell_wrap}>{sample.userAgent ?? '—'}</Td>
                             </Tr>
                         ))}
                     </Tbody>

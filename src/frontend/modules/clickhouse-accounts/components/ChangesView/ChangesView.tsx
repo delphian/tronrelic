@@ -109,12 +109,12 @@ export function ChangesView({ accountId, refreshKey }: IChangesViewProps) {
                                     {/* No label: the time heads a stacked entry. */}
                                     <Td><ClientTime date={entry.at} format="datetime" /></Td>
                                     <Td label="Admin"><code className={styles.actor}>{entry.actorId}</code></Td>
-                                    <Td label="What changed">
+                                    <Td label="What changed" stackSpan="full">
                                         <ul className={styles.lines}>
                                             {describe(entry).map(line => <li key={line}>{line}</li>)}
                                         </ul>
                                     </Td>
-                                    <Td label="Reason">{entry.reason ?? <span className={styles.none}>None given</span>}</Td>
+                                    <Td label="Reason" stackSpan={2}>{entry.reason ?? <span className={styles.none}>None given</span>}</Td>
                                     <Td label="Result">
                                         {entry.succeeded
                                             ? <Badge tone="success" size="xs">Done</Badge>

@@ -643,7 +643,7 @@ export function VisitorsExplorer({ period, customRange, includeBots }: IVisitors
                                                     )}
                                                 </span>
                                             </Td>
-                                            <Td label="Landing" className={styles.path_cell} title={row.landingPage ?? undefined}>
+                                            <Td label="Landing" stackSpan={2} className={styles.path_cell} title={row.landingPage ?? undefined}>
                                                 {row.landingPage || <span className={styles.muted}>—</span>}
                                             </Td>
                                             <Td label="Country" className={styles.country_cell}>

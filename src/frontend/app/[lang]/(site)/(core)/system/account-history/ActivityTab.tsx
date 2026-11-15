@@ -100,7 +100,7 @@ export function ActivityTab({ stats }: { stats: IAccountHistoryStatsView | null 
                                             <Td label="Duration" muted>{(tick.durationMs / 1000).toFixed(1)}s</Td>
                                             <Td label="Calls" muted>{tick.totals.providerCalls.toLocaleString()}</Td>
                                             <Td label="Rows" muted>{tick.totals.rowsWritten.toLocaleString()}</Td>
-                                            <Td label="Accounts">
+                                            <Td label="Accounts" stackSpan="full">
                                                 {tick.accounts.length === 0
                                                     ? <span className="text-muted">—</span>
                                                     : tick.accounts.map((account) => (

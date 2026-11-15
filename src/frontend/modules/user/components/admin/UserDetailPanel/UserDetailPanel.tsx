@@ -254,7 +254,7 @@ export function UserDetailPanel({ userId, onClose }: IUserDetailPanelProps) {
                                             <Td label="Refreshed">{session.updatedAt ? <ClientTime date={session.updatedAt} format="short" /> : orDash(null)}</Td>
                                             <Td label="Expires">{session.expiresAt ? <ClientTime date={session.expiresAt} format="short" /> : orDash(null)}</Td>
                                             <Td label="Network address"><code className={styles.mono}>{orDash(session.ipAddress)}</code></Td>
-                                            <Td label="Browser"><span className={styles.user_agent}>{orDash(session.userAgent)}</span></Td>
+                                            <Td label="Browser" stackSpan="full"><span className={styles.user_agent}>{orDash(session.userAgent)}</span></Td>
                                         </Tr>
                                     ))}
                                 </Tbody>
@@ -274,7 +274,7 @@ export function UserDetailPanel({ userId, onClose }: IUserDetailPanelProps) {
                                     {details.connectedApps.map(app => (
                                         <Tr key={app.clientId}>
                                             <Td>{app.clientName}{app.loopbackOnly && <> <Badge tone="warning" size="sm">Local only</Badge></>}</Td>
-                                            <Td label="Redirects to"><span className={styles.user_agent}>{app.redirectHosts.join(', ') || '—'}</span></Td>
+                                            <Td label="Redirects to" stackSpan={2}><span className={styles.user_agent}>{app.redirectHosts.join(', ') || '—'}</span></Td>
                                             <Td label="Connected"><ClientTime date={app.grantedAt} format="short" /></Td>
                                             <Td label="Last used">{app.lastUsedAt ? <ClientTime date={app.lastUsedAt} format="short" /> : orDash(null)}</Td>
                                         </Tr>
@@ -308,7 +308,7 @@ export function UserDetailPanel({ userId, onClose }: IUserDetailPanelProps) {
                                                     <Td label="Network address"><code className={styles.mono}>{orDash(event.ip)}</code></Td>
                                                     <Td label="Country">{orDash(event.country)}</Td>
                                                     <Td label="Reason">{orDash(event.reason)}</Td>
-                                                    <Td label="Browser"><span className={styles.user_agent}>{orDash(event.userAgent)}</span></Td>
+                                                    <Td label="Browser" stackSpan="full"><span className={styles.user_agent}>{orDash(event.userAgent)}</span></Td>
                                                 </Tr>
                                             );
                                         })}

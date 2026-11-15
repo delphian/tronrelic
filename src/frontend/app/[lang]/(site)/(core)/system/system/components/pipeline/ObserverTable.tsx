@@ -165,7 +165,7 @@ export function ObserverTable({ observers, blockIntervalSeconds }: IObserverTabl
                                                 )}
                                             </span>
                                         </Td>
-                                        <Td label="Subscribed to" muted>{observer.subscriptions?.join(', ') || '—'}</Td>
+                                        <Td label="Subscribed to" stackSpan="full" muted>{observer.subscriptions?.join(', ') || '—'}</Td>
                                         <Td label="Time / block" numeric>
                                             <Badge tone={avgTimeTone(observer.avgProcessingTimeMs, blockIntervalSeconds)} size="xs" className={styles.nowrap}>
                                                 {`${observer.avgProcessingTimeMs.toFixed(1)} ms`}

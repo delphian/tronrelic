@@ -779,7 +779,9 @@
 
     /* Table - Stacked Rows
      * Width of the column-name track when a <Table stackAt> lays a row out as
-     * a labelled entry. Wide enough for the longest header in use, such as
+     * a labelled entry at phone width, where each value takes a line with its
+     * name to the left. Wider containers put the name above the value and do
+     * not use this. Wide enough for the longest header in use, such as
      * "Network address", on one line, and narrow enough to leave a 360px phone
      * most of its width for the value. A column width rather than spacing, so
      * it sits outside the density block and does not scale. */
