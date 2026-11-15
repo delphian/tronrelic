@@ -39,6 +39,18 @@
     justify-content: flex-end;
 }
 
+/* Tablet: five rule fields in one row leave each about 150px, too narrow for
+   their hints, so the rule form takes two columns with the note across both. */
+@container signup-form (max-width: #{$breakpoint-tablet}) {
+    .form_grid__rule {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .form_grid__rule > :last-child {
+        grid-column: 1 / -1;
+    }
+}
+
 @container signup-form (max-width: #{$breakpoint-mobile-lg}) {
     .form_grid__cap,
     .form_grid__rule {

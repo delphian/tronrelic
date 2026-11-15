@@ -6,6 +6,21 @@
 
 @use '../../../../../breakpoints' as *;
 
+/* Accessible-name-only page heading, so the document has an <h1> without a
+ * visible title. The standard screen-reader-only pattern, kept scoped to this
+ * page as /system/curation and the widgets admin keep their own copies. */
+.sr_only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
 /* Summary strip above the tab row: carries the live pending-approval tally a
  * menu node cannot. Mirrors the account-history summary row. */
 .summary {
@@ -56,9 +71,21 @@
     white-space: nowrap;
 }
 
+/* A control that stands in for one living in a table's header row, shown only
+ * while that table is stacked on a phone and its header is hidden — such as
+ * the Approvals select-all. The threshold matches the table's
+ * `stackAt="mobile"`, and the panel and the table are the same width. */
+.stacked_only {
+    display: none;
+}
+
 @container ai-tools-dashboard (max-width: #{$breakpoint-mobile-lg}) {
     .col_time {
         white-space: normal;
+    }
+
+    .stacked_only {
+        display: flex;
     }
 }
 

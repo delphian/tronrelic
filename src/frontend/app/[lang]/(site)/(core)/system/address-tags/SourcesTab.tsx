@@ -192,7 +192,10 @@ export function SourcesTab() {
                             {loading ? 'Loading source statuses…' : 'No sources registered.'}
                         </div>
                     ) : (
-                        <Table flush className={styles.sources_table}>
+                        /* Six columns do not fit a tablet, so each source
+                           stacks into an entry headed by its name, with Run now
+                           on the entry's last line. */
+                        <Table flush stackAt="tablet">
                             <Thead>
                                 <Tr>
                                     <Th>Source</Th>
@@ -206,7 +209,7 @@ export function SourcesTab() {
                             <Tbody>
                                 {sources.map((source) => (
                                     <Tr key={source.id}>
-                                        <Td data-label="Source">
+                                        <Td>
                                             <div className={styles.source_name}>{SOURCE_LABELS[source.id] ?? source.id}</div>
                                             <div className={styles.source_meta}>
                                                 {source.mode}
@@ -214,7 +217,7 @@ export function SourcesTab() {
                                                 {source.cursor ? ` · cursor ${source.cursor}` : ''}
                                             </div>
                                         </Td>
-                                        <Td data-label="State">
+                                        <Td label="State">
                                             <div className={styles.badge_row}>
                                                 <Badge tone={source.enabled ? 'success' : 'neutral'}>
                                                     {source.enabled ? 'enabled' : 'disabled'}
@@ -223,7 +226,7 @@ export function SourcesTab() {
                                                 {source.running && <Badge tone="info">running</Badge>}
                                             </div>
                                         </Td>
-                                        <Td data-label="Last success">
+                                        <Td label="Last success">
                                             {source.state.lastSuccessAt
                                                 ? <ClientTime date={source.state.lastSuccessAt} format="relative" />
                                                 : 'never'}
@@ -233,7 +236,7 @@ export function SourcesTab() {
                                                 </div>
                                             )}
                                         </Td>
-                                        <Td data-label="Last result">
+                                        <Td label="Last result">
                                             {summarizeResult(source.state.lastResult)}
                                             {source.verifyState?.lastResult && (
                                                 <div className={styles.source_meta}>
@@ -241,7 +244,7 @@ export function SourcesTab() {
                                                 </div>
                                             )}
                                         </Td>
-                                        <Td data-label="Last error">
+                                        <Td label="Last error">
                                             {source.state.lastError && (
                                                 <div className={styles.error_text}>{source.state.lastError}</div>
                                             )}
@@ -250,7 +253,7 @@ export function SourcesTab() {
                                             )}
                                             {!source.state.lastError && !source.verifyState?.lastError && '—'}
                                         </Td>
-                                        <Td data-label="Actions">
+                                        <Td>
                                             {source.mode !== 'lookup' && (
                                                 <Button
                                                     variant="secondary"

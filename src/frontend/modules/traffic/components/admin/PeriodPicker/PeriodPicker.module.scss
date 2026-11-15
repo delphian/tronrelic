@@ -19,10 +19,14 @@
     vertical-align: middle;
 }
 
+/* Two native date inputs and the separator need about 330px on one line, so
+   the range wraps on a phone rather than pushing past the screen edge. */
 .date_range {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--gap-sm);
+    min-width: 0;
 }
 
 .date_range__separator {

@@ -2,6 +2,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { PagesModule } from '../index.js';
+import { PAGES_ADMIN_SUBMENU_NAMESPACE } from '../PagesModule.js';
 import type { IPagesModuleDependencies } from '../index.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../../menu/index.js';
 import { PageService } from '../services/page.service.js';
@@ -197,6 +198,32 @@ describe('PagesModule', () => {
                 parent: MAIN_SYSTEM_CONTAINER_ID,
                 enabled: true
             });
+        });
+
+        /**
+         * The /system/pages tab row is a namespaced menu (Submenu Pattern). The
+         * nodes sit outside the System container, so the container's forced
+         * admin gate does not reach them; each node must set its own, or the
+         * tab row would be visible to anyone who can read the namespace.
+         */
+        it('registers the admin-gated tab row in its own namespace', async () => {
+            const module = new PagesModule();
+            await module.init(deps());
+            await module.run();
+
+            const tabNodes = mockMenu.create.mock.calls
+                .map(([node]) => node)
+                .filter(node => node.namespace === PAGES_ADMIN_SUBMENU_NAMESPACE);
+
+            expect(tabNodes.map(node => node.url)).toEqual([
+                '/system/pages?tab=pages',
+                '/system/pages?tab=settings',
+                '/system/pages?tab=database',
+                '/system/pages?tab=logs'
+            ]);
+            for (const node of tabNodes) {
+                expect(node).toMatchObject({ parent: null, enabled: true, requiresAdmin: true });
+            }
         });
 
         it('mounts admin and public routers', async () => {

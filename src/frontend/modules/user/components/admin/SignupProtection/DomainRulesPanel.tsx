@@ -220,7 +220,7 @@ export function DomainRulesPanel({ report, onReport }: IDomainRulesPanelProps) {
                 {rules.length === 0 ? (
                     <p className="text-muted">No rules yet. Domains that new accounts come from are listed under Recent sign-ups below.</p>
                 ) : (
-                    <Table variant="compact" flush>
+                    <Table variant="compact" flush stackAt="mobile">
                         <Thead>
                             <Tr>
                                 <Th>Domain</Th>
@@ -233,11 +233,12 @@ export function DomainRulesPanel({ report, onReport }: IDomainRulesPanelProps) {
                         <Tbody>
                             {rules.map(rule => (
                                 <Tr key={rule.domain}>
+                                    {/* No label: the domain heads a stacked entry. */}
                                     <Td><code>{rule.domain}</code></Td>
-                                    <Td><DomainRuleBadge action={rule.action} maxCodes={rule.maxCodes} budgetWindow={rule.budgetWindow} /></Td>
-                                    <Td>{rule.note || <span className="text-muted">—</span>}</Td>
-                                    <Td><ClientTime date={rule.updatedAt} format="date" /></Td>
-                                    <Td>
+                                    <Td label="Rule"><DomainRuleBadge action={rule.action} maxCodes={rule.maxCodes} budgetWindow={rule.budgetWindow} /></Td>
+                                    <Td label="Note">{rule.note || <span className="text-muted">—</span>}</Td>
+                                    <Td label="Changed"><ClientTime date={rule.updatedAt} format="date" /></Td>
+                                    <Td label="Actions">
                                         <div className={styles.row_actions}>
                                             <IconButton size="sm" aria-label={`Edit the rule for ${rule.domain}`} onClick={() => handleEdit(rule)}>
                                                 <Pencil size={14} aria-hidden="true" />

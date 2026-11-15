@@ -88,12 +88,9 @@
 }
 
 /*
- * In a narrow container the memory ceiling is the first thing worth dropping:
- * the used figure beside it still conveys pressure, and the row tint already
- * flags saturation.
+ * No narrow-width rules: the container table stacks on a phone through the
+ * shared Table's `stackAt`, which gives the memory figure and its ceiling a
+ * full line, so nothing has to be dropped. The container name is a row header
+ * (`<Th scope="row">`), which the stacked layout leaves as the entry's first
+ * line.
  */
-@container server-section (max-width: #{$breakpoint-mobile-md}) {
-    .cell_detail {
-        display: none;
-    }
-}

@@ -2,9 +2,13 @@
  * GroupsManager styles.
  *
  * Admin tab listing user groups with create/edit/delete affordances and
- * a colocated form rendered inside the shared ModalProvider. Container
- * query lets the table collapse padding/columns on narrow shells
- * (slideouts, mobile widths) without viewport media queries.
+ * a colocated form rendered inside the shared ModalProvider. The list is the
+ * shared Table, which stacks each group into a labelled entry on a phone, so
+ * nothing here hides a column to make the rest fit.
+ *
+ * The container carries no padding: the page shell already provides the
+ * gutter, and a second one here left this tab out of line with the others and
+ * cost a phone width it needs.
  */
 
 @use '../../../../../app/breakpoints' as *;
@@ -15,7 +19,6 @@
     display: flex;
     flex-direction: column;
     gap: var(--gap-lg);
-    padding: var(--card-padding-md);
 }
 
 .header {
@@ -47,32 +50,8 @@
     gap: var(--gap-sm);
 }
 
-.table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: var(--font-size-body-sm);
-
-    th,
-    td {
-        text-align: left;
-        padding: var(--padding-sm) var(--padding-md);
-        border-bottom: var(--border-width-thin) solid var(--color-border);
-        vertical-align: middle;
-    }
-
-    th {
-        font-weight: var(--font-weight-semibold);
-        color: var(--color-text-muted);
-        background: var(--color-surface-muted);
-    }
-
-    tbody tr:last-child td {
-        border-bottom: none;
-    }
-}
-
 .slug_cell {
-    display: flex;
+    display: inline-flex;
     align-items: center;
     gap: var(--gap-xs);
     flex-wrap: wrap;
@@ -86,18 +65,13 @@
 
 .description {
     color: var(--color-text-muted);
-    max-width: 28rem;
-}
-
-.actions_col {
-    width: 1%;
-    white-space: nowrap;
+    max-width: var(--max-width-sm);
 }
 
 .actions {
-    display: flex;
+    display: inline-flex;
+    align-items: center;
     gap: var(--gap-xs);
-    justify-content: flex-end;
     white-space: nowrap;
 }
 
@@ -135,18 +109,11 @@
     gap: var(--gap-sm);
 }
 
+/* Phone width: the New Group button drops below the heading instead of
+   squeezing the description beside it. */
 @container groups-manager (max-width: #{$breakpoint-mobile-lg}) {
     .header {
         flex-direction: column;
         align-items: stretch;
-    }
-
-    .description {
-        display: none;
-    }
-
-    .table th,
-    .table td {
-        padding: var(--padding-xs) var(--padding-sm);
     }
 }

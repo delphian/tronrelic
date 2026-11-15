@@ -635,7 +635,15 @@ export function CollectionBrowser({
                         : 'No collections found'}
                 </p>
             ) : (
-                <Table variant="compact">
+                /* Stacks on a phone, where the three numeric columns left the
+                   collection name a few dozen pixels. Stacked, the toggle and
+                   the name share the heading line, the figures are named, and
+                   a sort picker stands in for the hidden sortable headers. */
+                <Table
+                    variant="compact"
+                    stackAt="mobile"
+                    stackedSort={{ columns: COLLECTION_COLUMNS, active: sort.key, direction: sort.direction, onSort: toggleSort }}
+                >
                     <Thead>
                         <Tr>
                             <Th width="shrink" aria-label="Expand" />
@@ -707,9 +715,9 @@ export function CollectionBrowser({
                                         <Td>
                                             <code className={styles.collection_name}>{collection.name}</code>
                                         </Td>
-                                        <Td muted numeric>{collection.count.toLocaleString()}</Td>
-                                        <Td muted numeric className={styles.size_cell}>{formatBytes(collection.size)}</Td>
-                                        <Td muted numeric>{collection.indexes.toLocaleString()}</Td>
+                                        <Td muted numeric label="Documents">{collection.count.toLocaleString()}</Td>
+                                        <Td muted numeric label="Size" className={styles.size_cell}>{formatBytes(collection.size)}</Td>
+                                        <Td muted numeric label="Indexes">{collection.indexes.toLocaleString()}</Td>
                                     </Tr>
 
                                     {isCollectionOpen && (
@@ -786,7 +794,7 @@ export function CollectionBrowser({
                                                                 </div>
                                                             </div>
                                                             <div className={styles.documents_list}>
-                                                                <Table variant="compact">
+                                                                <Table variant="compact" stackAt="mobile">
                                                                     <Thead>
                                                                         <Tr>
                                                                             <Th width="shrink" aria-label="Expand" />
@@ -818,12 +826,12 @@ export function CollectionBrowser({
                                                                                         <Td>
                                                                                             <code className={styles.document_id}>{docId ?? '—'}</code>
                                                                                         </Td>
-                                                                                        <Td muted>
+                                                                                        <Td muted label="createdAt">
                                                                                             {doc.createdAt
                                                                                                 ? <ClientTime date={doc.createdAt} format="short" />
                                                                                                 : '—'}
                                                                                         </Td>
-                                                                                        <Td muted>
+                                                                                        <Td muted label="updatedAt">
                                                                                             {doc.updatedAt
                                                                                                 ? <ClientTime date={doc.updatedAt} format="short" />
                                                                                                 : '—'}

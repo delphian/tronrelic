@@ -61,17 +61,17 @@ function PluginRow({ pluginInfo, onInstall, onUninstall, onToggleEnabled, isLoad
                     </div>
                     <div className={styles.plugin_id}>{manifest.id}</div>
                 </Td>
-                <Td muted className={styles.cell_version}>
+                <Td label="Version" muted className={styles.cell_version}>
                     v{manifest.version}
                 </Td>
-                <Td className={styles.cell_status}>
+                <Td label="Status" className={styles.cell_status}>
                     {metadata.installed ? (
                         <Badge tone="success">Installed</Badge>
                     ) : (
                         <Badge tone="neutral">Available</Badge>
                     )}
                 </Td>
-                <Td className={styles.cell_enabled}>
+                <Td label="Enabled" className={styles.cell_enabled}>
                     {metadata.installed && (
                         <Switch
                             on={metadata.enabled}
@@ -81,7 +81,7 @@ function PluginRow({ pluginInfo, onInstall, onUninstall, onToggleEnabled, isLoad
                         />
                     )}
                 </Td>
-                <Td className={styles.cell_actions}>
+                <Td label="Actions" className={styles.cell_actions}>
                     <div className={styles.action_buttons}>
                         {!metadata.installed ? (
                             <Button
@@ -101,6 +101,7 @@ function PluginRow({ pluginInfo, onInstall, onUninstall, onToggleEnabled, isLoad
                                         href={manifest.adminUrl}
                                         className={styles.settings_link}
                                         title="Plugin settings"
+                                        aria-label={`Settings for ${manifest.title}`}
                                     >
                                         <Settings size={16} />
                                     </a>
@@ -113,6 +114,7 @@ function PluginRow({ pluginInfo, onInstall, onUninstall, onToggleEnabled, isLoad
                                     disabled={isLoading}
                                     loading={isThisLoading}
                                     title="Uninstall plugin"
+                                    aria-label={`Uninstall ${manifest.title}`}
                                 />
                             </>
                         )}
@@ -286,7 +288,9 @@ export default function PluginsManagementPage() {
                         No plugins found
                     </div>
                 ) : (
-                    <Table>
+                    /* Stacks on a phone instead of hiding the Version and
+                       Status columns, so every plugin's state stays visible. */
+                    <Table stackAt="mobile">
                         <Thead>
                             <Tr>
                                 <Th width="shrink"></Th>

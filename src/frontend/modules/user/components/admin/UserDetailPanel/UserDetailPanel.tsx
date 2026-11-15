@@ -14,6 +14,13 @@
  * looking at the same account see the same facts. The details load when the
  * admin opens an account, so a loading state here is the user-triggered case
  * the SSR + Live Updates pattern allows.
+ *
+ * Each table stacks its rows through the shared Table's `stackAt`. The
+ * four-column wallet and connected-app tables fit the 820px panel and stack
+ * only on a phone. The sessions and sign-in events tables have five and seven
+ * columns, which cannot fit the panel at any screen size, so they stack at the
+ * tablet threshold and therefore always read as labelled entries in the panel
+ * instead of scrolling sideways.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -210,23 +217,21 @@ export function UserDetailPanel({ userId, onClose }: IUserDetailPanelProps) {
                         {details.wallets.length === 0 ? (
                             <p className="text-muted">No wallets linked.</p>
                         ) : (
-                            <div className={styles.table_scroll}>
-                                <Table variant="compact" flush>
-                                    <Thead>
-                                        <Tr><Th>Address</Th><Th>Primary</Th><Th>Linked</Th><Th>Last used</Th></Tr>
-                                    </Thead>
-                                    <Tbody>
-                                        {details.wallets.map(wallet => (
-                                            <Tr key={wallet.address}>
-                                                <Td><TronAddress address={wallet.address} /></Td>
-                                                <Td>{wallet.isPrimary ? <Badge tone="success" size="sm">Primary</Badge> : orDash(null)}</Td>
-                                                <Td><ClientTime date={wallet.linkedAt} format="short" /></Td>
-                                                <Td><ClientTime date={wallet.lastUsedAt} format="short" /></Td>
-                                            </Tr>
-                                        ))}
-                                    </Tbody>
-                                </Table>
-                            </div>
+                            <Table variant="compact" flush stackAt="mobile">
+                                <Thead>
+                                    <Tr><Th>Address</Th><Th>Primary</Th><Th>Linked</Th><Th>Last used</Th></Tr>
+                                </Thead>
+                                <Tbody>
+                                    {details.wallets.map(wallet => (
+                                        <Tr key={wallet.address}>
+                                            <Td><TronAddress address={wallet.address} /></Td>
+                                            <Td label="Primary">{wallet.isPrimary ? <Badge tone="success" size="sm">Primary</Badge> : orDash(null)}</Td>
+                                            <Td label="Linked"><ClientTime date={wallet.linkedAt} format="short" /></Td>
+                                            <Td label="Last used"><ClientTime date={wallet.lastUsedAt} format="short" /></Td>
+                                        </Tr>
+                                    ))}
+                                </Tbody>
+                            </Table>
                         )}
                     </Panel>
 
@@ -238,24 +243,22 @@ export function UserDetailPanel({ userId, onClose }: IUserDetailPanelProps) {
                         {details.sessions.length === 0 ? (
                             <p className="text-muted">No live sessions.</p>
                         ) : (
-                            <div className={styles.table_scroll}>
-                                <Table variant="compact" flush>
-                                    <Thead>
-                                        <Tr><Th>Signed in</Th><Th>Refreshed</Th><Th>Expires</Th><Th>Network address</Th><Th>Browser</Th></Tr>
-                                    </Thead>
-                                    <Tbody>
-                                        {details.sessions.map(session => (
-                                            <Tr key={session.id}>
-                                                <Td>{session.createdAt ? <ClientTime date={session.createdAt} format="short" /> : orDash(null)}</Td>
-                                                <Td>{session.updatedAt ? <ClientTime date={session.updatedAt} format="short" /> : orDash(null)}</Td>
-                                                <Td>{session.expiresAt ? <ClientTime date={session.expiresAt} format="short" /> : orDash(null)}</Td>
-                                                <Td><code className={styles.mono}>{orDash(session.ipAddress)}</code></Td>
-                                                <Td><span className={styles.user_agent}>{orDash(session.userAgent)}</span></Td>
-                                            </Tr>
-                                        ))}
-                                    </Tbody>
-                                </Table>
-                            </div>
+                            <Table variant="compact" flush stackAt="tablet">
+                                <Thead>
+                                    <Tr><Th>Signed in</Th><Th>Refreshed</Th><Th>Expires</Th><Th>Network address</Th><Th>Browser</Th></Tr>
+                                </Thead>
+                                <Tbody>
+                                    {details.sessions.map(session => (
+                                        <Tr key={session.id}>
+                                            <Td label="Signed in">{session.createdAt ? <ClientTime date={session.createdAt} format="short" /> : orDash(null)}</Td>
+                                            <Td label="Refreshed">{session.updatedAt ? <ClientTime date={session.updatedAt} format="short" /> : orDash(null)}</Td>
+                                            <Td label="Expires">{session.expiresAt ? <ClientTime date={session.expiresAt} format="short" /> : orDash(null)}</Td>
+                                            <Td label="Network address"><code className={styles.mono}>{orDash(session.ipAddress)}</code></Td>
+                                            <Td label="Browser"><span className={styles.user_agent}>{orDash(session.userAgent)}</span></Td>
+                                        </Tr>
+                                    ))}
+                                </Tbody>
+                            </Table>
                         )}
                     </Panel>
 
@@ -263,23 +266,21 @@ export function UserDetailPanel({ userId, onClose }: IUserDetailPanelProps) {
                         {details.connectedApps.length === 0 ? (
                             <p className="text-muted">No apps connected.</p>
                         ) : (
-                            <div className={styles.table_scroll}>
-                                <Table variant="compact" flush>
-                                    <Thead>
-                                        <Tr><Th>App</Th><Th>Redirects to</Th><Th>Connected</Th><Th>Last used</Th></Tr>
-                                    </Thead>
-                                    <Tbody>
-                                        {details.connectedApps.map(app => (
-                                            <Tr key={app.clientId}>
-                                                <Td>{app.clientName}{app.loopbackOnly && <> <Badge tone="warning" size="sm">Local only</Badge></>}</Td>
-                                                <Td><span className={styles.user_agent}>{app.redirectHosts.join(', ') || '—'}</span></Td>
-                                                <Td><ClientTime date={app.grantedAt} format="short" /></Td>
-                                                <Td>{app.lastUsedAt ? <ClientTime date={app.lastUsedAt} format="short" /> : orDash(null)}</Td>
-                                            </Tr>
-                                        ))}
-                                    </Tbody>
-                                </Table>
-                            </div>
+                            <Table variant="compact" flush stackAt="mobile">
+                                <Thead>
+                                    <Tr><Th>App</Th><Th>Redirects to</Th><Th>Connected</Th><Th>Last used</Th></Tr>
+                                </Thead>
+                                <Tbody>
+                                    {details.connectedApps.map(app => (
+                                        <Tr key={app.clientId}>
+                                            <Td>{app.clientName}{app.loopbackOnly && <> <Badge tone="warning" size="sm">Local only</Badge></>}</Td>
+                                            <Td label="Redirects to"><span className={styles.user_agent}>{app.redirectHosts.join(', ') || '—'}</span></Td>
+                                            <Td label="Connected"><ClientTime date={app.grantedAt} format="short" /></Td>
+                                            <Td label="Last used">{app.lastUsedAt ? <ClientTime date={app.lastUsedAt} format="short" /> : orDash(null)}</Td>
+                                        </Tr>
+                                    ))}
+                                </Tbody>
+                            </Table>
                         )}
                     </Panel>
 
@@ -292,29 +293,27 @@ export function UserDetailPanel({ userId, onClose }: IUserDetailPanelProps) {
                             <p className="text-muted">No sign-in events recorded for this address.</p>
                         ) : (
                             <Stack gap="sm">
-                                <div className={styles.table_scroll}>
-                                    <Table variant="compact" flush>
-                                        <Thead>
-                                            <Tr><Th>When</Th><Th>Event</Th><Th>Method</Th><Th>Network address</Th><Th>Country</Th><Th>Reason</Th><Th>Browser</Th></Tr>
-                                        </Thead>
-                                        <Tbody>
-                                            {events.map((event, index) => {
-                                                const kind = EVENT_KINDS[event.kind] ?? { tone: 'neutral' as const, label: event.kind };
-                                                return (
-                                                    <Tr key={`${event.occurredAt}-${index}`}>
-                                                        <Td><ClientTime date={event.occurredAt} format="short" /></Td>
-                                                        <Td><Badge tone={kind.tone} size="sm">{kind.label}</Badge></Td>
-                                                        <Td>{orDash(event.method)}</Td>
-                                                        <Td><code className={styles.mono}>{orDash(event.ip)}</code></Td>
-                                                        <Td>{orDash(event.country)}</Td>
-                                                        <Td>{orDash(event.reason)}</Td>
-                                                        <Td><span className={styles.user_agent}>{orDash(event.userAgent)}</span></Td>
-                                                    </Tr>
-                                                );
-                                            })}
-                                        </Tbody>
-                                    </Table>
-                                </div>
+                                <Table variant="compact" flush stackAt="tablet">
+                                    <Thead>
+                                        <Tr><Th>When</Th><Th>Event</Th><Th>Method</Th><Th>Network address</Th><Th>Country</Th><Th>Reason</Th><Th>Browser</Th></Tr>
+                                    </Thead>
+                                    <Tbody>
+                                        {events.map((event, index) => {
+                                            const kind = EVENT_KINDS[event.kind] ?? { tone: 'neutral' as const, label: event.kind };
+                                            return (
+                                                <Tr key={`${event.occurredAt}-${index}`}>
+                                                    <Td label="When"><ClientTime date={event.occurredAt} format="short" /></Td>
+                                                    <Td label="Event"><Badge tone={kind.tone} size="sm">{kind.label}</Badge></Td>
+                                                    <Td label="Method">{orDash(event.method)}</Td>
+                                                    <Td label="Network address"><code className={styles.mono}>{orDash(event.ip)}</code></Td>
+                                                    <Td label="Country">{orDash(event.country)}</Td>
+                                                    <Td label="Reason">{orDash(event.reason)}</Td>
+                                                    <Td label="Browser"><span className={styles.user_agent}>{orDash(event.userAgent)}</span></Td>
+                                                </Tr>
+                                            );
+                                        })}
+                                    </Tbody>
+                                </Table>
                                 {events.length < details.signInEventsTotal && (
                                     <div className={styles.more}>
                                         <Button size="sm" variant="ghost" loading={loadingMore} onClick={() => void handleShowMore()}>

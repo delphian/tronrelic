@@ -32,6 +32,15 @@ interface StackProps extends HTMLAttributes<HTMLDivElement> {
      */
     direction?: Direction;
     /**
+     * Let a horizontal stack wrap its children onto further lines when they do
+     * not fit, instead of running past its container. Set it on a row of
+     * buttons or controls that has to work on a phone. Off by default so a row
+     * that relies on staying on one line, such as an icon beside its label,
+     * does not change.
+     * @default false
+     */
+    wrap?: boolean;
+    /**
      * Stack content
      */
     children: ReactNode;
@@ -91,6 +100,7 @@ const directionClass: Record<Direction, string> = {
 export function Stack({
     gap = 'md',
     direction = 'vertical',
+    wrap = false,
     className,
     children,
     noBackgroundImage,
@@ -102,6 +112,7 @@ export function Stack({
                 styles.stack,
                 gapClass[gap],
                 directionClass[direction],
+                wrap && styles.stack_wrap,
                 noBackgroundImage && styles.stack_no_bg_image,
                 className
             )}

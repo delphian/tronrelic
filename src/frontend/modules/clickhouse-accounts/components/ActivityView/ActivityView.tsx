@@ -182,7 +182,9 @@ export function ActivityView({ accountId, managed }: IActivityViewProps) {
 
                     <details className={styles.details}>
                         <summary>Daily figures</summary>
-                        <Table variant="compact">
+                        {/* Eight figure columns do not fit a tablet, so each
+                            day stacks into an entry headed by its date there. */}
+                        <Table variant="compact" stackAt="tablet">
                             <Thead>
                                 <Tr>
                                     <Th>Day</Th>
@@ -199,13 +201,13 @@ export function ActivityView({ accountId, managed }: IActivityViewProps) {
                                 {[...history].reverse().map(row => (
                                     <Tr key={row.day}>
                                         <Td>{row.day}</Td>
-                                        <Td numeric>{formatCount(row.queries)}</Td>
-                                        <Td numeric>{formatCount(row.failed)}</Td>
-                                        <Td numeric>{formatCount(row.limitHits)}</Td>
-                                        <Td numeric>{formatCount(row.denied)}</Td>
-                                        <Td numeric>{formatCount(row.readRows)}</Td>
-                                        <Td numeric>{formatBytes(row.readBytes)}</Td>
-                                        <Td numeric>{formatMilliseconds(row.maxDurationMs)}</Td>
+                                        <Td label="Queries" numeric>{formatCount(row.queries)}</Td>
+                                        <Td label="Failed" numeric>{formatCount(row.failed)}</Td>
+                                        <Td label="Stopped by a limit" numeric>{formatCount(row.limitHits)}</Td>
+                                        <Td label="Refused" numeric>{formatCount(row.denied)}</Td>
+                                        <Td label="Rows scanned" numeric>{formatCount(row.readRows)}</Td>
+                                        <Td label="Data scanned" numeric>{formatBytes(row.readBytes)}</Td>
+                                        <Td label="Longest" numeric>{formatMilliseconds(row.maxDurationMs)}</Td>
                                     </Tr>
                                 ))}
                             </Tbody>
@@ -220,7 +222,7 @@ export function ActivityView({ accountId, managed }: IActivityViewProps) {
                     {quota.length === 0 ? (
                         <p className={styles.empty}>No queries have counted against the quota this hour.</p>
                     ) : (
-                        <Table variant="compact">
+                        <Table variant="compact" stackAt="mobile">
                             <Thead>
                                 <Tr>
                                     <Th>Quota key</Th>
@@ -234,10 +236,10 @@ export function ActivityView({ accountId, managed }: IActivityViewProps) {
                                 {quota.map(row => (
                                     <Tr key={row.quotaKey}>
                                         <Td><code className={styles.key}>{row.quotaKey || 'No key'}</code></Td>
-                                        <Td numeric>{formatCount(row.queries)}{row.maxQueries !== null && ` of ${formatCount(row.maxQueries)}`}</Td>
-                                        <Td numeric>{formatCount(row.readRows)}{row.maxReadRows !== null && ` of ${formatCount(row.maxReadRows)}`}</Td>
-                                        <Td numeric>{formatSeconds(row.executionSeconds)}{row.maxExecutionSeconds !== null && ` of ${formatSeconds(row.maxExecutionSeconds)}`}</Td>
-                                        <Td>{row.intervalEndsAt ? <ClientTime date={row.intervalEndsAt} format="time" /> : '—'}</Td>
+                                        <Td label="Queries" numeric>{formatCount(row.queries)}{row.maxQueries !== null && ` of ${formatCount(row.maxQueries)}`}</Td>
+                                        <Td label="Rows scanned" numeric>{formatCount(row.readRows)}{row.maxReadRows !== null && ` of ${formatCount(row.maxReadRows)}`}</Td>
+                                        <Td label="Query time" numeric>{formatSeconds(row.executionSeconds)}{row.maxExecutionSeconds !== null && ` of ${formatSeconds(row.maxExecutionSeconds)}`}</Td>
+                                        <Td label="Resets">{row.intervalEndsAt ? <ClientTime date={row.intervalEndsAt} format="time" /> : '—'}</Td>
                                     </Tr>
                                 ))}
                             </Tbody>

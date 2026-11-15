@@ -1,8 +1,14 @@
 /**
  * UsersMonitor Styles
  *
- * Admin interface for viewing and searching user identities.
- * Uses container queries for responsive behavior.
+ * The Users tab of /system/users: header, search and refresh controls, the
+ * account table, and pagination. The table itself is the shared Table, which
+ * stacks each account into a labelled entry at tablet width and below; the
+ * rules here only cover what sits around it and inside its cells.
+ *
+ * The container carries no padding of its own. The page shell and <main>
+ * already provide the gutter, and a second one here cost a phone about 48px of
+ * width on each side and pushed this tab out of line with the other tabs.
  */
 
 @use '../../../../../app/breakpoints' as *;
@@ -13,7 +19,6 @@
     display: flex;
     flex-direction: column;
     gap: var(--gap-lg);
-    padding: var(--card-padding-md);
 }
 
 .header {
@@ -33,35 +38,7 @@
     font-size: var(--font-size-body-sm);
     color: var(--color-text-muted);
     margin: 0;
-}
-
-.stats {
-    display: grid;
-    grid-template-columns: repeat(6, 1fr);
-    gap: var(--grid-gap-sm);
-}
-
-.stat_card {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: var(--card-padding-sm);
-    background: var(--color-surface-muted);
-    border-radius: var(--radius-md);
-    border: var(--border-width-thin) solid var(--color-border);
-}
-
-.stat_value {
-    font-size: var(--font-size-heading-lg);
-    font-weight: var(--font-weight-bold);
-    color: var(--color-primary);
-}
-
-.stat_label {
-    font-size: var(--font-size-caption);
-    color: var(--color-text-muted);
-    text-transform: uppercase;
-    letter-spacing: var(--letter-spacing-wide);
+    max-width: var(--max-width-prose);
 }
 
 .controls {
@@ -72,60 +49,17 @@
     flex-wrap: wrap;
 }
 
-.filter_row {
-    display: flex;
-    gap: var(--input-group-gap);
-    align-items: center;
-    flex: 1;
-    flex-wrap: wrap;
-}
-
-.filter_select {
-    min-width: 200px;
-    padding: var(--input-padding);
-    padding-right: var(--gap-lg);
-    background: var(--color-surface);
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
-    color: var(--color-text);
-    font-size: var(--font-size-body-sm);
-    cursor: pointer;
-    appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right var(--gap-sm) center;
-}
-
-.filter_select:hover {
-    border-color: var(--color-border-strong);
-}
-
-.filter_select:focus-visible {
-    outline: var(--focus-outline-width) solid var(--color-focus);
-    outline-offset: var(--focus-outline-offset);
-    box-shadow: var(--focus-shadow);
-    border-color: var(--color-primary);
-}
-
-.filter_select optgroup {
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text-muted);
-}
-
-.filter_select option {
-    padding: var(--padding-xs);
-}
-
 .search_box {
     display: flex;
     gap: var(--input-group-gap);
     align-items: center;
     flex: 1;
-    max-width: 500px;
+    max-width: var(--max-width-sm);
 }
 
 .search_input {
     flex: 1;
+    min-width: 0;
 }
 
 .loading,
@@ -136,40 +70,6 @@
     background: var(--color-surface-muted);
     border-radius: var(--radius-md);
     border: var(--border-width-thin) solid var(--color-border);
-}
-
-.table_wrapper {
-    overflow-x: auto;
-}
-
-.user_table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: var(--font-size-body-sm);
-}
-
-.user_table th {
-    text-align: left;
-    padding: var(--gap-sm) var(--input-group-gap);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text-muted);
-    font-size: var(--font-size-caption);
-    text-transform: uppercase;
-    letter-spacing: var(--letter-spacing-wide);
-    border-bottom: var(--border-width-thin) solid var(--color-border);
-}
-
-.user_table td {
-    padding: var(--gap-sm) var(--input-group-gap);
-    color: var(--color-text);
-    border-bottom: var(--border-width-thin) solid var(--color-border);
-    vertical-align: middle;
-    white-space: nowrap;
-}
-
-.col_number {
-    text-align: right;
-    font-variant-numeric: tabular-nums;
 }
 
 /* Sortable column headers: the whole label is the click target, styled like
@@ -202,6 +102,12 @@
     color: var(--color-primary);
 }
 
+/* At full width the address stays on one line; stacked, the shared table lets
+   it wrap, and it becomes the entry's heading. */
+.email_cell {
+    white-space: nowrap;
+}
+
 /* The email opens the detail panel, so it is a button styled as a link. */
 .email_button {
     padding: 0;
@@ -210,6 +116,7 @@
     color: var(--color-text);
     font: inherit;
     text-align: left;
+    overflow-wrap: anywhere;
     cursor: pointer;
 }
 
@@ -223,262 +130,27 @@
     vertical-align: middle;
 }
 
-.user_row {
-    cursor: pointer;
-    transition: background-color var(--transition-fast);
-}
-
-.user_row:hover {
-    background: var(--color-primary-alpha-10);
-}
-
-.user_row:focus-visible {
-    outline: var(--focus-outline-width) solid var(--color-focus);
-    outline-offset: calc(-1 * var(--border-width-medium));
-}
-
-.user_row__expanded {
-    background: var(--color-primary-alpha-15);
-}
-
-.muted_value {
-    color: var(--color-text-subtle);
-}
-
-.detail_row td {
-    padding: var(--card-padding-sm);
-    background: var(--color-surface-elevated);
-    white-space: normal;
-    overflow-wrap: anywhere;
-}
-
-.user_id {
-    font-family: var(--font-mono);
-    font-size: var(--font-size-caption);
-    color: var(--color-text);
-}
-
-.wallet_badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 20px;
-    padding: var(--gap-2xs) var(--padding-xs);
-    background: var(--badge-success-background);
-    color: var(--badge-success-color);
-    border-radius: var(--radius-full);
-    font-size: var(--font-size-caption);
-    font-weight: var(--font-weight-medium);
-}
-
-.user_details {
-    display: grid;
-    grid-template-columns: repeat(9, 1fr);
-    gap: var(--grid-gap-md);
-}
-
-.detail_section {
-    grid-column: span 3;
-}
-
-.detail_section h4 {
-    display: flex;
-    align-items: center;
-    min-height: 24px;
-    font-size: var(--font-size-body-sm);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text);
-    margin: 0 0 var(--input-group-gap) 0;
-    padding-bottom: var(--padding-xs);
-    border-bottom: var(--border-width-thin) solid var(--color-border);
-}
-
-.no_data {
-    font-size: var(--font-size-body-sm);
-    color: var(--color-text-subtle);
-    margin: 0;
-}
-
-/* Section width modifiers for 9-column grid layout */
-.detail_section__narrow {
-    grid-column: span 1;
-}
-
-.detail_section__sessions {
-    grid-column: span 5;
-}
-
-.detail_section__pages {
-    grid-column: span 3;
-}
-
-/* Section header with inline pagination */
-.section_header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    min-height: 24px;
-    margin-bottom: var(--input-group-gap);
-    border-bottom: var(--border-width-thin) solid var(--color-border);
-}
-
-/* Group chip list shown in the Groups detail section */
 .group_chips {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--gap-xs);
+    gap: var(--badge-gap);
 }
 
-.section_header h4 {
-    margin: 0;
-    padding: 0;
-    border: none;
+.actions_cell {
+    white-space: nowrap;
 }
 
-/* Session pagination controls */
-.session_pagination {
+/* The row's buttons. They wrap instead of forcing the table wider when the
+   column is narrow. */
+.row_actions {
     display: flex;
-    align-items: center;
-    gap: var(--gap-xs);
-}
-
-.session_nav_btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
-    padding: 0;
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-sm);
-    background: var(--color-surface);
-    color: var(--color-text);
-    font-size: var(--font-size-caption);
-    cursor: pointer;
-    transition: border-color var(--transition-fast);
-}
-
-.session_nav_btn:hover:not(:disabled) {
-    border-color: var(--color-border-strong);
-    background: var(--color-surface-muted);
-}
-
-.session_nav_btn:focus-visible {
-    outline: var(--focus-outline-width) solid var(--color-focus);
-    outline-offset: var(--focus-outline-offset);
-    box-shadow: var(--focus-shadow);
-}
-
-.session_nav_btn:disabled {
-    opacity: var(--button-disabled-opacity);
-    cursor: not-allowed;
-}
-
-.session_page_info {
-    font-size: var(--font-size-caption);
-    font-family: var(--font-mono);
-    color: var(--color-text-muted);
-    min-width: 32px;
-    text-align: center;
-}
-
-.wallet_list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: var(--input-group-gap);
-}
-
-.wallet_item {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-xs);
-    padding: var(--input-group-gap);
-    background: var(--color-surface-muted);
-    border-radius: var(--radius-sm);
-}
-
-.wallet_address {
-    font-family: var(--font-mono);
-    font-size: var(--font-size-caption);
-    color: var(--color-text);
-    word-break: break-all;
-}
-
-.wallet_badges {
-    display: flex;
-    gap: var(--gap-xs);
     flex-wrap: wrap;
-}
-
-.primary_badge {
-    display: inline-flex;
-    align-items: center;
-    padding: var(--gap-xs) var(--padding-xs);
-    background: var(--badge-info-background);
-    color: var(--badge-info-color);
-    border-radius: var(--radius-sm);
-    font-size: var(--font-size-caption);
-    font-weight: var(--font-weight-medium);
-    width: fit-content;
-}
-
-.verified_badge {
-    display: inline-flex;
-    align-items: center;
-    padding: var(--gap-xs) var(--padding-xs);
-    background: var(--badge-success-background);
-    color: var(--badge-success-color);
-    border-radius: var(--radius-sm);
-    font-size: var(--font-size-caption);
-    font-weight: var(--font-weight-medium);
-    width: fit-content;
-}
-
-.registered_badge {
-    display: inline-flex;
-    align-items: center;
-    padding: var(--gap-xs) var(--padding-xs);
-    background: var(--badge-warning-background);
-    color: var(--badge-warning-color);
-    border-radius: var(--radius-sm);
-    font-size: var(--font-size-caption);
-    font-weight: var(--font-weight-medium);
-    width: fit-content;
-}
-
-.wallet_label {
-    font-size: var(--font-size-caption);
-    color: var(--color-text-muted);
-}
-
-.linked_at {
-    font-size: var(--font-size-caption);
-    color: var(--color-text-subtle);
-}
-
-.prefs_list {
-    display: grid;
-    grid-template-columns: auto 1fr;
-    gap: var(--gap-xs) var(--gap-md);
-    margin: 0;
-}
-
-.prefs_list dt {
-    font-size: var(--font-size-caption);
-    color: var(--color-text-muted);
-}
-
-.prefs_list dd {
-    font-size: var(--font-size-caption);
-    color: var(--color-text);
-    margin: 0;
+    gap: var(--button-gap);
 }
 
 .pagination {
     display: flex;
+    flex-wrap: wrap;
     justify-content: center;
     align-items: center;
     gap: var(--gap-md);
@@ -488,204 +160,36 @@
 .page_info {
     font-size: var(--font-size-body-sm);
     color: var(--color-text-muted);
+    text-align: center;
 }
 
-/* Country distribution list */
-.country_list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--gap-xs);
-}
-
-.country_item {
-    display: flex;
-    align-items: center;
-    gap: var(--gap-xs);
-    padding: var(--gap-xs) var(--padding-xs);
-    background: var(--color-surface-muted);
-    border-radius: var(--radius-sm);
-}
-
-.country_code {
-    font-family: var(--font-mono);
-    font-size: var(--font-size-caption);
-    font-weight: var(--font-weight-medium);
-    color: var(--color-text);
-}
-
-.country_count {
-    font-size: var(--font-size-caption);
-    color: var(--color-text-subtle);
-}
-
-/* Sessions list */
-.sessions_list {
-    display: flex;
-    flex-direction: column;
-    gap: 0;
-}
-
-.session_item {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    align-items: center;
-    gap: var(--gap-xs);
-    padding: var(--gap-2xs) var(--padding-xs);
-}
-
-.session_device_col {
-    display: flex;
-    align-items: center;
-    gap: var(--gap-xs);
-}
-
-.session_device {
-    font-size: var(--font-size-caption);
-    color: var(--color-text);
-}
-
-.session_screen {
-    font-size: var(--font-size-caption);
-    font-family: var(--font-mono);
-    color: var(--color-text-subtle);
-}
-
-.session_referrer_col {
-    display: flex;
-    align-items: center;
-    gap: var(--gap-xs);
-}
-
-.session_country {
-    font-size: var(--font-size-caption);
-    font-family: var(--font-mono);
-    color: var(--color-text-muted);
-}
-
-.session_referrer {
-    font-size: var(--font-size-caption);
-    color: var(--color-text-subtle);
-}
-
-.session_meta {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: var(--gap-xs);
-}
-
-.session_duration {
-    font-size: var(--font-size-caption);
-    font-weight: var(--font-weight-medium);
-    color: var(--color-primary);
-}
-
-.session_time {
-    font-size: var(--font-size-caption);
-    color: var(--color-text-subtle);
-    flex-shrink: 0;
-}
-
-/* Top pages list */
-.pages_list {
-    display: flex;
-    flex-direction: column;
-    gap: 0;
-}
-
-.page_item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: var(--gap-xs);
-    padding: var(--gap-2xs) var(--padding-xs);
-}
-
-.page_path {
-    font-family: var(--font-mono);
-    font-size: var(--font-size-caption);
-    color: var(--color-text);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    flex: 1;
-    min-width: 0;
-}
-
-.page_count {
-    font-size: var(--font-size-caption);
-    font-weight: var(--font-weight-medium);
-    color: var(--color-text-subtle);
-    flex-shrink: 0;
-}
-
-/* Container queries for responsive behavior */
+/* Tablet and below: the table has stacked, so make the email read as the
+   entry's heading and set the actions off as the entry's last line. The
+   table shows its own sort picker. */
 @container users-monitor (max-width: #{$breakpoint-tablet}) {
-    .stats {
-        grid-template-columns: repeat(3, 1fr);
+    .email_button {
+        font-size: var(--font-size-body);
+        font-weight: var(--font-weight-semibold);
+    }
+
+    .row_actions {
+        margin-top: var(--gap-sm);
     }
 }
 
-@container users-monitor (max-width: #{$breakpoint-mobile-lg}) {
-    .user_details {
-        grid-template-columns: repeat(3, 1fr);
-    }
-
-    .detail_section {
-        grid-column: span 3;
-    }
-}
-
-/* 600px: component-specific threshold between mobile-md and mobile-lg */
-@container users-monitor (max-width: 600px) {
-    .filter_row {
-        flex-direction: column;
-        align-items: stretch;
-    }
-
-    .filter_select {
-        width: 100%;
-        min-width: auto;
-    }
-
-    .search_box {
-        max-width: none;
-        width: 100%;
-    }
-}
-
+/* Phone width: search spans the row, with Refresh beneath it. */
 @container users-monitor (max-width: #{$breakpoint-mobile-md}) {
-    .container {
-        padding: var(--card-padding-sm);
-        gap: var(--gap-md);
-    }
-
-    .stats {
-        grid-template-columns: repeat(2, 1fr);
-    }
-
     .controls {
         flex-direction: column;
         align-items: stretch;
     }
 
-    .user_details {
-        grid-template-columns: 1fr;
+    .search_box {
+        max-width: none;
     }
 
-    .detail_section {
-        grid-column: span 1;
+    .page_info {
+        order: -1;
+        flex-basis: 100%;
     }
-
-    .pagination {
-        flex-wrap: wrap;
-    }
-}
-
-/* The Groups and Delete buttons at the end of an account row. They wrap
-   instead of forcing the table wider when the column is narrow. */
-.row_actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--gap-xs);
 }

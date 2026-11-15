@@ -40,7 +40,7 @@ export function BotRuleSuggestions({ suggestions, onUse }: IBotRuleSuggestionsPr
             {suggestions.length === 0 ? (
                 <p className={styles.empty}>No network currently looks like a disguised crawler.</p>
             ) : (
-                <Table variant="compact">
+                <Table variant="compact" stackAt="mobile">
                     <Thead>
                         <Tr>
                             <Th>Network</Th>
@@ -55,18 +55,20 @@ export function BotRuleSuggestions({ suggestions, onUse }: IBotRuleSuggestionsPr
                     <Tbody>
                         {suggestions.map(s => (
                             <Tr key={s.asn}>
+                                {/* No label: the network heads its entry when the table stacks on a phone. */}
                                 <Td>
                                     <span className={styles.mono}>AS{s.asn}</span>
                                     {s.countries.length > 0 && <span className={styles.muted_inline}> · {s.countries.join(', ')}</span>}
                                 </Td>
-                                <Td numeric>{s.cookies.toLocaleString()}</Td>
-                                <Td numeric>{s.events.toLocaleString()}</Td>
-                                <Td numeric>{Math.round(s.noReferrerShare * 100)}%</Td>
-                                <Td muted className={styles.cell_wrap}>
+                                <Td label="Cookies" numeric>{s.cookies.toLocaleString()}</Td>
+                                <Td label="Reports" numeric>{s.events.toLocaleString()}</Td>
+                                <Td label="No referrer" numeric>{Math.round(s.noReferrerShare * 100)}%</Td>
+                                <Td label="Most common browser identifier" muted className={styles.cell_wrap}>
                                     {s.topUserAgent ?? '—'}
                                     {s.distinctUserAgents > 1 && <span> (+{s.distinctUserAgents - 1} more)</span>}
                                 </Td>
-                                <Td muted><ClientTime date={s.lastSeen} format="relative" /></Td>
+                                <Td label="Last seen" muted><ClientTime date={s.lastSeen} format="relative" /></Td>
+                                {/* No label: the Rule button names its own action. */}
                                 <Td>
                                     <Button type="button" size="xs" variant="secondary" onClick={() => onUse(s)} aria-label={`Start a rule for AS${s.asn}`}>
                                         <Plus size={14} aria-hidden="true" /> Rule

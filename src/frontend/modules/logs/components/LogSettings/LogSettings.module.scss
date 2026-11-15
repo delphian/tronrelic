@@ -53,8 +53,15 @@
     font-size: var(--font-size-body-xs);
 }
 
+/* Phone width: the form takes the whole row, and the level dropdown grows
+   to fill it so Save stays beside it at the row's end. */
 @container log-settings (max-width: #{$breakpoint-mobile-md}) {
     .form {
         width: 100%;
+    }
+
+    .form > :first-child {
+        flex: 1;
+        min-width: 0;
     }
 }

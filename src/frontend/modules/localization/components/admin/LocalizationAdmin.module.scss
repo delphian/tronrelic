@@ -273,8 +273,15 @@
     white-space: nowrap;
 }
 
-/* Narrow containers stack table rows into cards, each cell labelled with its
-   dropped column header, reacting to the shared Table's own container width. */
+/*
+ * The translation table stacks its rows on a phone with each column name
+ * above its value. The languages and routes tables use the shared Table's
+ * `stackAt` instead, which puts the name beside the value. This table is the
+ * exception because its main cell holds the translation editor: a name column
+ * beside it would leave a 360px phone about 200px of editor, while a name above
+ * it lets the editor take the row's full width. Reacts to the shared Table's
+ * own container width, so it is correct in a slide-over too.
+ */
 @container table (max-width: #{$breakpoint-mobile-lg}) {
     .stack_table thead {
         display: none;

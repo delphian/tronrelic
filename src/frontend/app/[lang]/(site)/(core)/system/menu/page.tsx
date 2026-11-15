@@ -11,7 +11,7 @@ import type {
     MenuNodeOrigin
 } from '@/types';
 
-import { Page, Stack } from '../../../../../../components/layout';
+import { Page, PageHeader, Stack } from '../../../../../../components/layout';
 import { Badge } from '../../../../../../components/ui/Badge';
 import { Button } from '../../../../../../components/ui/Button';
 import { IconButton } from '../../../../../../components/ui/IconButton';
@@ -530,6 +530,12 @@ export default function MenuAdminPage() {
         <Page>
             <div className={styles.container}>
                 <Stack gap="md">
+                    {/* The page's single h1; the page had none before. */}
+                    <PageHeader
+                        title="Menu"
+                        subtitle="Navigation items and per-namespace display settings."
+                    />
+
                     <div className={styles.toolbar}>
                         <div className={styles.toolbar_group}>
                             <span className={styles.toolbar_label}>Namespace</span>
@@ -614,7 +620,8 @@ export default function MenuAdminPage() {
 /* Items tab                                                          */
 /* ------------------------------------------------------------------ */
 
-interface ItemsTabProps {
+/** Props for the Items tab: the flattened tree and the row actions. */
+interface IItemsTabProps {
     flatNodes: FlatNode[];
     busyNodeId: string | null;
     onCreate: () => void;
@@ -624,7 +631,20 @@ interface ItemsTabProps {
     onToggleInMenu: (node: IMenuNodeAdminView, next: boolean) => void;
 }
 
-function ItemsTab({ flatNodes, busyNodeId, onCreate, onEdit, onDelete, onToggleEnabled, onToggleInMenu }: ItemsTabProps) {
+/**
+ * The Items tab: every node of the namespace as one flat table, children
+ * indented under their parent.
+ *
+ * Eight columns do not fit a tablet, so below 1024px the table stacks each
+ * node into an entry headed by its indented label, with the edit and delete
+ * buttons on the entry's last line. The indent stays on the heading, so the
+ * hierarchy still reads in the stacked list.
+ *
+ * @param props - The flattened nodes, the node being saved, and the handlers
+ *        each row's controls call.
+ * @returns The header row and the table, or the empty state.
+ */
+function ItemsTab({ flatNodes, busyNodeId, onCreate, onEdit, onDelete, onToggleEnabled, onToggleInMenu }: IItemsTabProps) {
     return (
         <Stack gap="sm">
             <div className={styles.items_header}>
@@ -641,7 +661,7 @@ function ItemsTab({ flatNodes, busyNodeId, onCreate, onEdit, onDelete, onToggleE
                     No menu items yet. Create the first item to get started.
                 </div>
             ) : (
-                <Table variant="compact">
+                <Table variant="compact" stackAt="tablet">
                     <Thead>
                         <Tr>
                             <Th>Label</Th>
@@ -667,15 +687,15 @@ function ItemsTab({ flatNodes, busyNodeId, onCreate, onEdit, onDelete, onToggleE
                                         <span className={styles.label_text}>{node.label}</span>
                                     </span>
                                 </Td>
-                                <Td muted className={styles.url_cell}>
-                                    {node.url || '—'}
+                                <Td muted label="URL">
+                                    <span className={styles.url_cell}>{node.url || '—'}</span>
                                 </Td>
-                                <Td>{node.order}</Td>
-                                <Td muted>{parentLabel ?? '—'}</Td>
-                                <Td>
+                                <Td label="Order">{node.order}</Td>
+                                <Td muted label="Parent">{parentLabel ?? '—'}</Td>
+                                <Td label="Origin">
                                     <OriginBadge origin={node.origin} />
                                 </Td>
-                                <Td>
+                                <Td label="Enabled">
                                     <Switch
                                         size="sm"
                                         on={node.enabled}
@@ -684,7 +704,7 @@ function ItemsTab({ flatNodes, busyNodeId, onCreate, onEdit, onDelete, onToggleE
                                         aria-label={`${node.enabled ? 'Disable' : 'Enable'} ${node.label}`}
                                     />
                                 </Td>
-                                <Td>
+                                <Td label="In menu">
                                     <Switch
                                         size="sm"
                                         on={!node.hidden}

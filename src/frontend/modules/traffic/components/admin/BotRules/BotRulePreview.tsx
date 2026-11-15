@@ -64,7 +64,7 @@ export function BotRulePreview({ preview }: IBotRulePreviewProps) {
             </p>
             <FigureList rows={rows} label="Preview figures" />
             {preview.samples.length > 0 && (
-                <Table variant="compact">
+                <Table variant="compact" stackAt="mobile">
                     <Thead>
                         <Tr>
                             <Th>When</Th>
@@ -77,11 +77,11 @@ export function BotRulePreview({ preview }: IBotRulePreviewProps) {
                     <Tbody>
                         {preview.samples.map((sample, index) => (
                             <Tr key={`${sample.timestamp}-${index}`}>
-                                <Td muted><ClientTime date={sample.timestamp} format="short" /></Td>
-                                <Td muted>{sample.eventType}</Td>
-                                <Td className={styles.cell_wrap}>{sample.path}</Td>
-                                <Td muted>{sample.asn !== null ? `AS${sample.asn}` : '—'}{sample.country ? ` · ${sample.country}` : ''}</Td>
-                                <Td muted className={styles.cell_wrap}>{sample.userAgent ?? '—'}</Td>
+                                <Td label="When" muted><ClientTime date={sample.timestamp} format="short" /></Td>
+                                <Td label="Type" muted>{sample.eventType}</Td>
+                                <Td label="Path" className={styles.cell_wrap}>{sample.path}</Td>
+                                <Td label="Network" muted>{sample.asn !== null ? `AS${sample.asn}` : '—'}{sample.country ? ` · ${sample.country}` : ''}</Td>
+                                <Td label="Browser identifier" muted className={styles.cell_wrap}>{sample.userAgent ?? '—'}</Td>
                             </Tr>
                         ))}
                     </Tbody>

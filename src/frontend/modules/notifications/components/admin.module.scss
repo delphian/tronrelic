@@ -95,12 +95,16 @@
     font-size: var(--font-size-body-sm);
 }
 
-@container notification-admin (max-width: #{$breakpoint-mobile-md}) {
+/* Phone and small tablet: the trailing column (a toggle, or the history
+   entry's sender and time) cannot wrap, so beside a long body it squeezes the
+   text into a narrow column. Below 768px it drops under the text instead. */
+@container notification-admin (max-width: #{$breakpoint-mobile-lg}) {
     .row {
         flex-direction: column;
     }
 
     .history_meta {
         align-items: flex-start;
+        white-space: normal;
     }
 }

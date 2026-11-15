@@ -721,6 +721,30 @@ export interface IUIComponents {
          * the variant pulls itself down onto the card's bottom edge.
          */
         flush?: boolean;
+        /**
+         * Stack each row into a labelled entry when the table's own container
+         * is at or below this width, instead of scrolling sideways: `tablet` is
+         * 1024px, `mobile` is 768px, and `phone` is 480px. Choose `tablet` for a
+         * table whose columns do not fit 1024px, `mobile` for one that fits a
+         * tablet but not a phone, and `phone` for one in a narrow band, such as
+         * one of two side-by-side panels, where `mobile` would already stack it
+         * on a desktop. Give each `Td` a `label`, because the header row is
+         * hidden while rows are stacked.
+         */
+        stackAt?: 'tablet' | 'mobile' | 'phone';
+        /**
+         * Sorting to offer while the rows are stacked, when the header row and
+         * its sort buttons are hidden: a column picker and direction toggle
+         * shown above the stacked rows. `onSort` follows the headers' rule:
+         * the active column flips the direction, any other column switches to
+         * it. Has no effect without `stackAt`.
+         */
+        stackedSort?: {
+            columns: ReadonlyArray<{ key: string; label: string }>;
+            active: string;
+            direction: 'asc' | 'desc';
+            onSort(key: string): void;
+        };
         className?: string;
         style?: React.CSSProperties;
     }>;
@@ -785,6 +809,13 @@ export interface IUIComponents {
         muted?: boolean;
         /** Mirror the `numeric` set on this column's `Th` — see that prop. */
         numeric?: boolean;
+        /**
+         * The column name shown beside the value while the table's rows are
+         * stacked (see `stackAt`). Omit it for a cell that should head the
+         * stacked entry, such as the row's identifying value, or for a
+         * trailing cell of action buttons.
+         */
+        label?: string;
         colSpan?: number;
         rowSpan?: number;
         className?: string;
@@ -1017,6 +1048,12 @@ export interface ILayoutComponents {
         children: React.ReactNode;
         gap?: 'sm' | 'md' | 'lg';
         direction?: 'vertical' | 'horizontal';
+        /**
+         * Let a horizontal stack wrap onto further lines when its children do
+         * not fit, instead of running past its container. Set it on a row of
+         * buttons or controls that has to work on a phone.
+         */
+        wrap?: boolean;
         className?: string;
     }>;
 

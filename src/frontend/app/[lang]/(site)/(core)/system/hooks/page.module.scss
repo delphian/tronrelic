@@ -144,9 +144,11 @@
 }
 
 .hook_id {
+    min-width: 0;
     font-family: var(--font-mono);
     font-size: var(--font-size-body);
     font-weight: var(--font-weight-semibold);
+    overflow-wrap: anywhere;
 }
 
 .hook_meta {
@@ -204,6 +206,7 @@
     color: var(--color-text-muted);
     font-size: var(--font-size-caption);
     font-family: var(--font-mono);
+    overflow-wrap: anywhere;
 }
 
 .empty_body {
@@ -213,12 +216,17 @@
     margin: 0;
 }
 
+/* Phone and small tablet: a handler's metadata carries a source path and a
+   timestamp, too long to sit beside the plugin id, so it drops beneath it. */
+@container hooks-page (max-width: #{$breakpoint-mobile-lg}) {
+    .handler_row {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
 @container hooks-page (max-width: #{$breakpoint-mobile-md}) {
     .hook_meta {
         margin-left: 0;
         width: 100%;
-    }
-    .handler_row {
-        grid-template-columns: minmax(0, 1fr);
     }
 }

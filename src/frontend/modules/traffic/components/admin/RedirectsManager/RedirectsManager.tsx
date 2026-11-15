@@ -317,7 +317,9 @@ export function RedirectsManager() {
                 {loading ? (
                     <p className={styles.message}>Loading redirects…</p>
                 ) : rules && rules.length > 0 ? (
-                    <Table variant="compact" flush className={styles.dense_table}>
+                    /* Six columns fit a tablet; on a phone each rule stacks
+                       under its source path, in view and edit mode alike. */
+                    <Table variant="compact" flush stackAt="mobile" className={styles.dense_table}>
                         <Thead>
                             <Tr>
                                 <Th scope="col">Source</Th>
@@ -357,7 +359,7 @@ export function RedirectsManager() {
                                                         />
                                                     </div>
                                                 </Td>
-                                                <Td>
+                                                <Td label="Destination">
                                                     <Input
                                                         type="text"
                                                         size="xs"
@@ -368,7 +370,7 @@ export function RedirectsManager() {
                                                         disabled={savingEdit}
                                                     />
                                                 </Td>
-                                                <Td>
+                                                <Td label="Type">
                                                     <div className={styles.edit_stack}>
                                                         <label className={styles.checkbox}>
                                                             <input
@@ -390,12 +392,12 @@ export function RedirectsManager() {
                                                         </label>
                                                     </div>
                                                 </Td>
-                                                <Td>
+                                                <Td label="Status">
                                                     <Badge size="xs" tone={rule.enabled ? 'success' : 'neutral'}>
                                                         {rule.enabled ? 'active' : 'disabled'}
                                                     </Badge>
                                                 </Td>
-                                                <Td muted className={styles.nowrap}>
+                                                <Td label="Updated" muted className={styles.nowrap}>
                                                     <ClientTime date={rule.updatedAt} format="date" />
                                                 </Td>
                                                 <Td>
@@ -428,13 +430,13 @@ export function RedirectsManager() {
                                                     <code className={styles.path}>{rule.pattern}</code>
                                                     {rule.notes && <span className={styles.note}>{rule.notes}</span>}
                                                 </Td>
-                                                <Td>
+                                                <Td label="Destination">
                                                     <span className={styles.dest}>
                                                         <ArrowRight size={14} aria-hidden="true" />
                                                         <code className={styles.path}>{rule.destination}</code>
                                                     </span>
                                                 </Td>
-                                                <Td>
+                                                <Td label="Type">
                                                     <span className={styles.badges}>
                                                         <Badge size="xs" tone="neutral">{rule.isPrefix ? 'prefix' : 'exact'}</Badge>
                                                         <Badge size="xs" tone={rule.permanent ? 'info' : 'neutral'}>
@@ -442,12 +444,12 @@ export function RedirectsManager() {
                                                         </Badge>
                                                     </span>
                                                 </Td>
-                                                <Td>
+                                                <Td label="Status">
                                                     <Badge size="xs" tone={rule.enabled ? 'success' : 'neutral'}>
                                                         {rule.enabled ? 'active' : 'disabled'}
                                                     </Badge>
                                                 </Td>
-                                                <Td muted className={styles.nowrap}>
+                                                <Td label="Updated" muted className={styles.nowrap}>
                                                     <ClientTime date={rule.updatedAt} format="date" />
                                                 </Td>
                                                 <Td>

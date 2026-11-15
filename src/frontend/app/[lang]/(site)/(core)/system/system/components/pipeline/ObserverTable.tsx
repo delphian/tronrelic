@@ -139,7 +139,7 @@ export function ObserverTable({ observers, blockIntervalSeconds }: IObserverTabl
                 {rows.length === 0 ? (
                     <p className="text-muted">No observers are registered. Enable a plugin that follows transactions to see one here.</p>
                 ) : (
-                    <Table variant="compact" flush>
+                    <Table variant="compact" flush stackAt="mobile">
                         <Thead>
                             <Tr>
                                 <Th scope="col">Observer</Th>
@@ -165,8 +165,8 @@ export function ObserverTable({ observers, blockIntervalSeconds }: IObserverTabl
                                                 )}
                                             </span>
                                         </Td>
-                                        <Td muted>{observer.subscriptions?.join(', ') || '—'}</Td>
-                                        <Td numeric>
+                                        <Td label="Subscribed to" muted>{observer.subscriptions?.join(', ') || '—'}</Td>
+                                        <Td label="Time / block" numeric>
                                             <Badge tone={avgTimeTone(observer.avgProcessingTimeMs, blockIntervalSeconds)} size="xs" className={styles.nowrap}>
                                                 {`${observer.avgProcessingTimeMs.toFixed(1)} ms`}
                                             </Badge>
@@ -174,18 +174,18 @@ export function ObserverTable({ observers, blockIntervalSeconds }: IObserverTabl
                                                 {formatNumber(observer.minProcessingTimeMs)}–{formatNumber(observer.maxProcessingTimeMs)} ms
                                             </span>
                                         </Td>
-                                        <Td numeric>
+                                        <Td label="Queue" numeric>
                                             <Badge tone={queueTone(observer)} size="xs" className={styles.nowrap}>
                                                 {observer.queueCapacity
                                                     ? `${formatNumber(observer.queueDepth)} / ${formatNumber(observer.queueCapacity)}`
                                                     : formatNumber(observer.queueDepth)}
                                             </Badge>
                                         </Td>
-                                        <Td numeric>
+                                        <Td label="Processed" numeric>
                                             {formatNumber(observer.totalProcessed)}
                                             <span className={styles.row_meta}>{unit}</span>
                                         </Td>
-                                        <Td numeric>
+                                        <Td label="Errors" numeric>
                                             <Badge tone={errors} size="xs" className={styles.nowrap}>
                                                 {`${formatNumber(observer.totalErrors)} (${(observer.errorRate * 100).toFixed(2)}%)`}
                                             </Badge>

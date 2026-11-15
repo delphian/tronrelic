@@ -20,8 +20,10 @@
  * restated in this file.
  */
 
+/* Wraps so a card title and two status badges never overrun a phone. */
 .provider_header {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--gap-xs);
 }
@@ -48,10 +50,17 @@
     font-size: var(--font-size-caption);
 }
 
+/* The key field takes the room left after its reveal and save buttons, and
+   may shrink below its natural width so the buttons stay on a phone screen. */
 .input_row {
     display: flex;
     align-items: center;
     gap: var(--gap-xs);
+}
+
+.input_row > :first-child {
+    flex: 1;
+    min-width: 0;
 }
 
 .docs_link {
@@ -101,9 +110,11 @@
     font-size: var(--font-size-body-sm);
 }
 
-/* One result line per probed key, so a single dead key in the pool is visible. */
+/* One result line per probed key, so a single dead key in the pool is visible.
+   Wraps so a long failure message stays on screen on a phone. */
 .probe_row {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--gap-xs);
     font-size: var(--font-size-body-sm);

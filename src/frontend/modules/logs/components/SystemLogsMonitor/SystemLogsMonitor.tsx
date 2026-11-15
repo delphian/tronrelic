@@ -439,7 +439,7 @@ export function SystemLogsMonitor({ service, title }: ISystemLogsMonitorProps) {
         body = <p className={styles.placeholder}>{emptyText}</p>;
     } else {
         body = (
-            <div className={`table-scroll ${styles.table_wrap}`}>
+            <div className={styles.table_wrap}>
                 <Table>
                     <Thead>
                         <Tr>

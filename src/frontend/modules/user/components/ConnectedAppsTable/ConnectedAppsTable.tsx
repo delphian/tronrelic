@@ -7,6 +7,11 @@
  * which adds a user column. An app's name is its own claim, so each row also
  * shows the host sign-in results go to, flagging apps that send them only to
  * this computer.
+ *
+ * On a narrow screen the shared Table stacks each grant into a labelled entry
+ * headed by the app. The admin view's extra user column makes seven columns,
+ * which do not fit a tablet, so it stacks at tablet width; the profile view's
+ * six fit a tablet and stack only below it.
  */
 
 import { Unplug } from 'lucide-react';
@@ -65,7 +70,7 @@ export function ConnectedAppsTable({ apps, showUser = false, onRevoke, revokingK
     return apps.length === 0 ? (
         <p className={styles.empty}>{emptyMessage}</p>
     ) : (
-        <Table flush className={styles.table}>
+        <Table flush stackAt={showUser ? 'tablet' : 'mobile'}>
             <Thead>
                 <Tr>
                     <Th>App</Th>
@@ -82,16 +87,17 @@ export function ConnectedAppsTable({ apps, showUser = false, onRevoke, revokingK
                     const key = connectedAppKey(app);
                     return (
                         <Tr key={key}>
-                            <Td data-label="App">
+                            {/* No label: the app heads a stacked entry. */}
+                            <Td>
                                 <div className={styles.app_name}>{app.clientName}</div>
                                 <div className={styles.app_meta}>
                                     {app.clientUri ? displayHost(app.clientUri) : displayHost(app.clientId)}
                                 </div>
                             </Td>
                             {showUser && (
-                                <Td data-label="User" muted>{app.userEmail ?? app.userId}</Td>
+                                <Td label="User" muted>{app.userEmail ?? app.userId}</Td>
                             )}
-                            <Td data-label="Sends sign-in to">
+                            <Td label="Sends sign-in to">
                                 <div className={styles.badge_row}>
                                     {app.redirectHosts.map(host => (
                                         <Badge key={host} tone="neutral" size="sm">{host}</Badge>
@@ -99,16 +105,17 @@ export function ConnectedAppsTable({ apps, showUser = false, onRevoke, revokingK
                                     {app.loopbackOnly && <Badge tone="info" size="sm">This computer only</Badge>}
                                 </div>
                             </Td>
-                            <Td data-label="Access">
+                            <Td label="Access">
                                 <div className={styles.badge_row}>
                                     {app.scopes.map(scope => (
                                         <Badge key={scope} tone="neutral" size="sm">{scope}</Badge>
                                     ))}
                                 </div>
                             </Td>
-                            <Td data-label="Connected" muted><ClientTime date={app.grantedAt} format="date" /></Td>
-                            <Td data-label="Last used" muted><ClientTime date={app.lastUsedAt} format="relative" fallback="Never" /></Td>
-                            <Td data-label="Actions">
+                            <Td label="Connected" muted><ClientTime date={app.grantedAt} format="date" /></Td>
+                            <Td label="Last used" muted><ClientTime date={app.lastUsedAt} format="relative" fallback="Never" /></Td>
+                            {/* No label: the Revoke button ends the stacked entry. */}
+                            <Td>
                                 <Button
                                     variant="danger"
                                     size="xs"

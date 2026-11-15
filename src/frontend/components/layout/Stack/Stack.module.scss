@@ -20,6 +20,11 @@
     align-items: center;
 }
 
+/* Opt-in wrapping for a row that must fit a phone (the `wrap` prop). */
+.stack_wrap {
+    flex-wrap: wrap;
+}
+
 /* Gap size variants */
 .stack_gap_sm {
     gap: var(--stack-gap-sm);

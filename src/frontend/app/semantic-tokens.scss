@@ -777,6 +777,14 @@
        data table, which is exactly what a density setting should reach.) */
     --table-cell-border: var(--border-width-thin) solid rgba(255, 255, 255, 0.05);
 
+    /* Table - Stacked Rows
+     * Width of the column-name track when a <Table stackAt> lays a row out as
+     * a labelled entry. Wide enough for the longest header in use, such as
+     * "Network address", on one line, and narrow enough to leave a 360px phone
+     * most of its width for the value. A column width rather than spacing, so
+     * it sits outside the density block and does not scale. */
+    --table-stack-label-width: 8.5rem;
+
     /* Table - Row Hover */
     --table-row-background-hover: var(--color-primary-alpha-10);
     --table-row-transition: background-color var(--transition-base);
@@ -1106,6 +1114,10 @@
     --gap-2xs: calc(var(--spacing-1)  * var(--density));   /* base 0.25rem */
     --gap-xs:  calc(var(--spacing-2)  * var(--density));   /* base 0.25rem */
     --gap-sm:  calc(var(--spacing-4)  * var(--density));   /* base 0.5rem  */
+    /* The 12px step between sm and md, for gaps that are too loose at 8px and
+       too wide at 16px and that no use-case token (input group, grid, section)
+       describes, such as the space between figures in an admin stats bar. */
+    --gap-sm-md: calc(var(--spacing-5) * var(--density));  /* base 0.75rem */
     --gap-md:  calc(var(--spacing-7)  * var(--density));   /* base 1rem    */
     --gap-lg:  calc(var(--spacing-10) * var(--density));   /* base 1.5rem  */
     --gap-xl:  calc(var(--spacing-14) * var(--density));   /* base 3rem    */
@@ -1114,6 +1126,9 @@
     --padding-2xs: calc(var(--spacing-1)  * var(--density));   /* base 0.25rem */
     --padding-xs:  calc(var(--spacing-2)  * var(--density));   /* base 0.25rem */
     --padding-sm:  calc(var(--spacing-4)  * var(--density));   /* base 0.5rem  */
+    /* The 12px step between sm and md, for compact blocks such as inline
+       alerts and stats bars that are not a Card and so have no card padding. */
+    --padding-sm-md: calc(var(--spacing-5) * var(--density));  /* base 0.75rem */
     --padding-md:  calc(var(--spacing-7)  * var(--density));   /* base 1rem    */
     --padding-lg:  calc(var(--spacing-10) * var(--density));   /* base 1.5rem  */
     --padding-xl:  calc(var(--spacing-14) * var(--density));   /* base 3rem    */

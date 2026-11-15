@@ -219,6 +219,17 @@ export function ApprovalsTab({ onChanged }: { onChanged: () => void }) {
                 ? <div className={styles.placeholder}>No actions are awaiting approval.</div>
                 : (
                     <>
+                        {/* The header's select-all checkbox is hidden once the rows
+                            stack on a phone, so the same control is offered here,
+                            shown only at that width. */}
+                        <label className={`${styles.check_label} ${styles.stacked_only}`}>
+                            <input
+                                type="checkbox"
+                                checked={allChecked}
+                                onChange={toggleAll}
+                            />
+                            Select all
+                        </label>
                         {checked.size > 0 && (
                             <div className={styles.bulk_bar}>
                                 <span className="text-muted" style={{ fontSize: 'var(--font-size-body-sm)' }}>
@@ -229,62 +240,64 @@ export function ApprovalsTab({ onChanged }: { onChanged: () => void }) {
                                 </Button>
                             </div>
                         )}
-                        <div className="table-scroll">
-                            <Table>
-                                <Thead>
-                                    <Tr>
-                                        <Th width="shrink">
+                        {/* Six columns fit a tablet; on a phone each approval stacks,
+                            headed by its checkbox and tool, with the decision buttons
+                            on the entry's last line. Tool is the second column so the
+                            two unlabelled cells sit together on that heading line. */}
+                        <Table stackAt="mobile">
+                            <Thead>
+                                <Tr>
+                                    <Th width="shrink">
+                                        <input
+                                            type="checkbox"
+                                            checked={allChecked}
+                                            onChange={toggleAll}
+                                            aria-label="Select all approvals"
+                                        />
+                                    </Th>
+                                    <Th>Tool</Th>
+                                    <Th width="shrink">Parked</Th>
+                                    <Th width="shrink">Risk</Th>
+                                    <Th width="shrink">Trigger</Th>
+                                    <Th width="shrink">Decision</Th>
+                                </Tr>
+                            </Thead>
+                            <Tbody>
+                                {approvals.map(approval => (
+                                    <Tr
+                                        key={approval.id}
+                                        className={styles.tool_row}
+                                        onClick={() => setSelectedId(approval.id)}
+                                    >
+                                        <Td onClick={stopCellClick}>
                                             <input
                                                 type="checkbox"
-                                                checked={allChecked}
-                                                onChange={toggleAll}
-                                                aria-label="Select all approvals"
+                                                checked={checked.has(approval.id)}
+                                                onChange={() => toggleOne(approval.id)}
+                                                aria-label={`Select ${approval.toolName}`}
                                             />
-                                        </Th>
-                                        <Th width="shrink">Parked</Th>
-                                        <Th width="shrink">Risk</Th>
-                                        <Th>Tool</Th>
-                                        <Th width="shrink">Trigger</Th>
-                                        <Th width="shrink">Decision</Th>
+                                        </Td>
+                                        <Td>
+                                            <div className={styles.tool_name}>{approval.toolName}</div>
+                                            <div className={styles.tool_desc}>{approval.providerId}</div>
+                                        </Td>
+                                        <Td muted label="Parked"><ClientTime date={approval.createdAt} format="datetime" /></Td>
+                                        <Td label="Risk"><RiskChip capability={approval.capability} /></Td>
+                                        <Td muted label="Trigger">{approval.context.triggerPath}</Td>
+                                        <Td onClick={stopCellClick}>
+                                            <div className={styles.row_actions}>
+                                                <Button variant="primary" size="sm" loading={busyId === approval.id} onClick={() => handleRowApprove(approval)}>
+                                                    <Check size={16} /> Approve
+                                                </Button>
+                                                <Button variant="danger" size="sm" disabled={busyId === approval.id} onClick={() => handleReject(approval)}>
+                                                    <X size={16} /> Reject
+                                                </Button>
+                                            </div>
+                                        </Td>
                                     </Tr>
-                                </Thead>
-                                <Tbody>
-                                    {approvals.map(approval => (
-                                        <Tr
-                                            key={approval.id}
-                                            className={styles.tool_row}
-                                            onClick={() => setSelectedId(approval.id)}
-                                        >
-                                            <Td onClick={stopCellClick}>
-                                                <input
-                                                    type="checkbox"
-                                                    checked={checked.has(approval.id)}
-                                                    onChange={() => toggleOne(approval.id)}
-                                                    aria-label={`Select ${approval.toolName}`}
-                                                />
-                                            </Td>
-                                            <Td muted><ClientTime date={approval.createdAt} format="datetime" /></Td>
-                                            <Td><RiskChip capability={approval.capability} /></Td>
-                                            <Td>
-                                                <div className={styles.tool_name}>{approval.toolName}</div>
-                                                <div className={styles.tool_desc}>{approval.providerId}</div>
-                                            </Td>
-                                            <Td muted>{approval.context.triggerPath}</Td>
-                                            <Td onClick={stopCellClick}>
-                                                <div className={styles.row_actions}>
-                                                    <Button variant="primary" size="sm" loading={busyId === approval.id} onClick={() => handleRowApprove(approval)}>
-                                                        <Check size={16} /> Approve
-                                                    </Button>
-                                                    <Button variant="danger" size="sm" disabled={busyId === approval.id} onClick={() => handleReject(approval)}>
-                                                        <X size={16} /> Reject
-                                                    </Button>
-                                                </div>
-                                            </Td>
-                                        </Tr>
-                                    ))}
-                                </Tbody>
-                            </Table>
-                        </div>
+                                ))}
+                            </Tbody>
+                        </Table>
                     </>
                 )}
 

@@ -174,6 +174,12 @@ export function AiToolsAdminClient({ submenuTree, submenuGeneratedAt, initialTab
 
     return (
         <Page>
+            {/* The System layout supplies no heading, so this names the page for
+                screen readers. Visually hidden because a visible title would only
+                repeat the menu entry and the active tab; /system/curation does
+                the same. */}
+            <h1 className={styles.sr_only}>AI tools</h1>
+
             {/* The pending-approval count, the tab row, and the panel share one
                 Section so the space between them is a section gap. As separate
                 children of Page they would each be spaced by the page gap, which

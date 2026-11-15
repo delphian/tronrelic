@@ -20,6 +20,7 @@
 import { useEffect, useState } from 'react';
 import { Page, PageHeader, Stack } from '../../../../../../components/layout';
 import { Badge } from '../../../../../../components/ui/Badge';
+import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../../components/ui/Table';
 import styles from './page.module.scss';
 
 /**
@@ -98,30 +99,32 @@ export default function ContentTypesAdminPage() {
                     )}
 
                     {types.length > 0 && (
-                        <table className={styles.table}>
-                            <thead>
-                                <tr>
-                                    <th>Type ID</th>
-                                    <th>Label</th>
-                                    <th>Provider</th>
-                                    <th>Bindings</th>
-                                </tr>
-                            </thead>
-                            <tbody>
+                        /* Four columns fit a tablet; on a phone each type
+                           stacks into an entry headed by its id. */
+                        <Table stackAt="mobile">
+                            <Thead>
+                                <Tr>
+                                    <Th>Type ID</Th>
+                                    <Th>Label</Th>
+                                    <Th>Provider</Th>
+                                    <Th>Bindings</Th>
+                                </Tr>
+                            </Thead>
+                            <Tbody>
                                 {types.map((t) => (
-                                    <tr key={t.typeId}>
-                                        <td><code className={styles.type_id}>{t.typeId}</code></td>
-                                        <td>{t.label}</td>
-                                        <td><Badge tone="neutral">{t.providerId}</Badge></td>
-                                        <td>
+                                    <Tr key={t.typeId}>
+                                        <Td><code className={styles.type_id}>{t.typeId}</code></Td>
+                                        <Td label="Label">{t.label}</Td>
+                                        <Td label="Provider"><Badge tone="neutral">{t.providerId}</Badge></Td>
+                                        <Td label="Bindings">
                                             {t.curatable
                                                 ? <Badge tone="success">curation</Badge>
                                                 : <span className="text-muted">—</span>}
-                                        </td>
-                                    </tr>
+                                        </Td>
+                                    </Tr>
                                 ))}
-                            </tbody>
-                        </table>
+                            </Tbody>
+                        </Table>
                     )}
                 </Stack>
             </div>

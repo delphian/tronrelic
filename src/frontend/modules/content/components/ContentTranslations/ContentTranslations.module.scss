@@ -87,10 +87,12 @@
     color: var(--color-text-muted);
 }
 
-/* English beside the translation for each field, stacked when narrow. */
+/* English beside the translation for each field, stacked at tablet width and
+ * below, where two Markdown panes side by side leave each too narrow to edit.
+ * minmax(0, …) stops one long unbroken line from widening its pane. */
 .field_row {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: var(--gap-md);
     align-items: start;
 }
@@ -126,11 +128,13 @@
     line-height: var(--line-height-relaxed);
 }
 
-@container content-translations (max-width: #{$breakpoint-mobile-lg}) {
+@container content-translations (max-width: #{$breakpoint-tablet}) {
     .field_row {
-        grid-template-columns: 1fr;
+        grid-template-columns: minmax(0, 1fr);
     }
+}
 
+@container content-translations (max-width: #{$breakpoint-mobile-lg}) {
     .row {
         flex-direction: column;
     }

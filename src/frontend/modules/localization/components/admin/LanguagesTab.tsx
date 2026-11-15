@@ -307,7 +307,9 @@ export function LanguagesTab() {
             ) : empty ? (
                 <div className={styles.placeholder}>No languages yet. Add the first one above.</div>
             ) : (
-                <Table variant="compact" flush className={styles.stack_table}>
+                /* Six columns, two of them badge groups, do not fit a tablet,
+                   so each language stacks into an entry headed by its name. */
+                <Table variant="compact" flush stackAt="tablet">
                     <Thead>
                         <Tr>
                             <Th>Language</Th>
@@ -321,20 +323,20 @@ export function LanguagesTab() {
                     <Tbody>
                         {languages.map(language => (
                             <Tr key={language.code}>
-                                <Td data-label="Language">
+                                <Td>
                                     <div className={styles.cell_inline}>
                                         <span className={styles.cell_primary} lang={language.code}>{language.nativeName}</span>
                                         <span className={styles.cell_meta}>{language.name}</span>
                                         <span className={`${styles.cell_meta} ${styles.mono}`}>{language.code}</span>
                                     </div>
                                 </Td>
-                                <Td data-label="On published routes">
+                                <Td label="On published routes">
                                     <ProgressBadges progress={language.publishedRoutes} />
                                 </Td>
-                                <Td data-label="All keys">
+                                <Td label="All keys">
                                     <ProgressBadges progress={language} />
                                 </Td>
-                                <Td data-label="Direction">
+                                <Td label="Direction">
                                     <Select
                                         size="xs"
                                         value={language.direction}
@@ -346,7 +348,7 @@ export function LanguagesTab() {
                                         <option value="rtl">Right to left</option>
                                     </Select>
                                 </Td>
-                                <Td data-label="Enabled">
+                                <Td label="Enabled">
                                     <Switch
                                         size="sm"
                                         on={language.enabled}
@@ -355,7 +357,7 @@ export function LanguagesTab() {
                                         aria-label={`${language.enabled ? 'Disable' : 'Enable'} ${language.name}`}
                                     />
                                 </Td>
-                                <Td data-label="Actions">
+                                <Td>
                                     <div className={styles.actions}>
                                         <IconButton
                                             size="sm"

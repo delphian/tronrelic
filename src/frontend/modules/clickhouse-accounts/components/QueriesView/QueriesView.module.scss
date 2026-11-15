@@ -1,5 +1,7 @@
+/* Wraps so the scope picker and refresh button stay on a phone screen. */
 .toolbar {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
     gap: var(--gap-sm);

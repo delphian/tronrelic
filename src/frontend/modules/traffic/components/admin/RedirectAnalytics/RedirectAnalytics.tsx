@@ -196,7 +196,9 @@ export function RedirectAnalytics() {
                         empty={!hasHits || !data || data.byPattern.length === 0}
                         emptyMessage="No redirects served in this window."
                     >
-                        <Table variant="compact" flush className={styles.dense_table}>
+                        {/* Beside the chart in a two-up band on a desktop, so it
+                            stacks only at phone width, headed by the source path. */}
+                        <Table variant="compact" flush stackAt="phone" className={styles.dense_table}>
                             <Thead>
                                 <Tr>
                                     <Th scope="col">Source</Th>
@@ -209,9 +211,9 @@ export function RedirectAnalytics() {
                                 {(data?.byPattern ?? []).map(row => (
                                     <Tr key={row.pattern}>
                                         <Td className={styles.code}>{row.pattern}</Td>
-                                        <Td className={styles.code}>{row.destination}</Td>
-                                        <Td muted>{row.permanent ? '301' : '302'}</Td>
-                                        <Td numeric>{numberFormatter.format(row.hits)}</Td>
+                                        <Td label="Destination" className={styles.code}>{row.destination}</Td>
+                                        <Td label="Code" muted>{row.permanent ? '301' : '302'}</Td>
+                                        <Td label="Hits" numeric>{numberFormatter.format(row.hits)}</Td>
                                     </Tr>
                                 ))}
                             </Tbody>

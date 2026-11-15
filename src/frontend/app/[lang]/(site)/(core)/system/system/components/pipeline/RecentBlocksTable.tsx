@@ -45,7 +45,7 @@ export function RecentBlocksTable({ pipeline }: IRecentBlocksTableProps) {
                 {recentBlocks.length === 0 ? (
                     <p className="text-muted">No blocks prepared since the backend started.</p>
                 ) : (
-                    <Table variant="compact" flush>
+                    <Table variant="compact" flush stackAt="mobile">
                         <Thead>
                             <Tr>
                                 <Th scope="col" numeric>Block</Th>
@@ -64,21 +64,22 @@ export function RecentBlocksTable({ pipeline }: IRecentBlocksTableProps) {
                                 const receipt = RECEIPT_OUTCOME_DISPLAY[block.receiptOutcome];
                                 return (
                                     <Tr key={`${block.blockNumber}-${block.preparedAt}`}>
+                                        {/* No label: the block number heads a stacked entry. */}
                                         <Td numeric>{formatNumber(block.blockNumber)}</Td>
-                                        <Td><ClientTime date={block.blockTimestamp} format="relative" /></Td>
-                                        <Td numeric>{formatNumber(block.transactionCount)}</Td>
-                                        <Td>
+                                        <Td label="Produced"><ClientTime date={block.blockTimestamp} format="relative" /></Td>
+                                        <Td label="Txs" numeric>{formatNumber(block.transactionCount)}</Td>
+                                        <Td label="Receipts">
                                             <span title={receipt.hint}>
                                                 <Badge tone={receipt.tone} size="xs">{receipt.label}</Badge>
                                             </span>
                                         </Td>
-                                        <Td numeric>{formatNumber(block.eventCount)}</Td>
-                                        <Td numeric>{formatNumber(block.tokenTransferCount)}</Td>
-                                        <Td numeric>{formatMs(block.prepareMs)}</Td>
-                                        <Td numeric muted={block.commitMs === null}>
+                                        <Td label="Events" numeric>{formatNumber(block.eventCount)}</Td>
+                                        <Td label="Transfers" numeric>{formatNumber(block.tokenTransferCount)}</Td>
+                                        <Td label="Prepare" numeric>{formatMs(block.prepareMs)}</Td>
+                                        <Td label="Commit" numeric muted={block.commitMs === null}>
                                             {block.commitMs === null ? 'buffered' : formatMs(block.commitMs)}
                                         </Td>
-                                        <Td muted>{block.buffered ? 'Buffer' : 'Direct'}</Td>
+                                        <Td label="Path" muted>{block.buffered ? 'Buffer' : 'Direct'}</Td>
                                     </Tr>
                                 );
                             })}

@@ -76,11 +76,22 @@
     font-size: var(--font-size-caption);
 }
 
+/* Wraps so the control drops under its label on a phone instead of squeezing
+   the label's description into a narrow column. */
 .setting_row {
     display: flex;
+    flex-wrap: wrap;
     align-items: flex-start;
     justify-content: space-between;
     gap: var(--gap-md);
+}
+
+/* The label block starts from a fixed basis rather than its text width, so on
+   a wide screen it fills the row beside the control and only wraps the
+   control below it once fewer than that many pixels remain. */
+.setting_row > :first-child {
+    flex: 1 1 var(--max-width-xs);
+    min-width: 0;
 }
 
 .setting_label {
