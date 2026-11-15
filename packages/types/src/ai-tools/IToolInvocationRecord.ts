@@ -67,14 +67,29 @@ export interface IToolInvocationRecord {
      */
     toolUseId?: string;
 
-    /** Arguments passed to the handler, redacted according to `capability.sensitivity`. */
+    /**
+     * Arguments passed to the handler, kept in full for every tool except that
+     * values which look like credentials are replaced with `[REDACTED]`.
+     * Records written before that rule replaced every argument of a `secret`
+     * tool with `[redacted]` (lower case), whatever it held.
+     */
     input: Record<string, unknown>;
 
     /** Terminal status of the invocation. */
     status: ToolInvocationStatus;
 
-    /** Short digest or preview of the result; the full payload is not stored. */
+    /**
+     * The first 500 characters of the serialized result, with credentials
+     * replaced, and an ellipsis when it was cut. The full result is not stored.
+     */
     resultDigest?: string;
+
+    /**
+     * Length in characters of the whole serialized result the preview was cut
+     * from, so a reader can tell how much the preview leaves out. Absent on
+     * records written before it was measured and on calls with no result.
+     */
+    resultChars?: number;
 
     /** Sanitized failure reason, when the call failed or was denied. */
     error?: string;

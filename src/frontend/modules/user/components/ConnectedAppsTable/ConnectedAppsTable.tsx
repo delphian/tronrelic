@@ -95,7 +95,16 @@ export function ConnectedAppsTable({ apps, showUser = false, onRevoke, revokingK
                                 </div>
                             </Td>
                             {showUser && (
-                                <Td label="User" muted>{app.userEmail ?? app.userId}</Td>
+                                <Td label="User" muted>
+                                    {/* Admin view only: the account page shows the
+                                        user's sessions and sign-in history, the
+                                        next thing to check about an unexpected app. */}
+                                    {app.userId ? (
+                                        <a className="link" href={`/system/users?tab=users&user=${encodeURIComponent(app.userId)}`}>
+                                            {app.userEmail ?? app.userId}
+                                        </a>
+                                    ) : app.userEmail}
+                                </Td>
                             )}
                             <Td label="Sends sign-in to">
                                 <div className={styles.badge_row}>

@@ -17,6 +17,7 @@ import { writeSync } from 'node:fs';
 import http from 'node:http';
 import { env } from './config/env.js';
 import { collectDeploymentSecrets } from './config/collectDeploymentSecrets.js';
+import { SecretScrubber } from './lib/SecretScrubber.js';
 import { QueueService } from './services/queue.service.js';
 import { createExpressApp } from './loaders/express.js';
 import { errorHandler } from './api/middleware/error-handler.js';
@@ -630,8 +631,14 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     // of trp-ai-assistant), so it needs the core services those resolvers read.
     // All are singletons wired by initializeCoreServices() above; the resolvers
     // call them lazily at variable-expansion time.
+    //
+    // One scrubber, built from this deployment's own secret values, serves
+    // both the audit trail (ai-tools) and the MCP results a group asks to have
+    // scrubbed, so the two cannot apply different rules.
+    const secretScrubber = new SecretScrubber(collectDeploymentSecrets(env, process.env));
     await aiToolsModule.init({
         ...sharedDeps,
+        secretScrubber,
         scheduler: schedulerService,
         // Durable queue+worker for hook-bound saved prompts: the hook
         // subscription enqueues, the worker runs the prompt off the hook's
@@ -661,7 +668,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
         connectedApps: identityModule.getConnectedAppsService(),
         userGroups: identityModule.getUserGroupService(),
         hookRegistry,
-        knownSecrets: collectDeploymentSecrets(env, process.env),
+        secretScrubber,
         resolveEndUser: createAccountEndUserResolver(() => identityModule.getAccountDirectoryService()),
         accountDirectory: identityModule.getAccountDirectoryService(),
         // Optional: without ClickHouse, MCP calls are simply not counted.

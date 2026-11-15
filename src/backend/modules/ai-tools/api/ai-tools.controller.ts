@@ -11,11 +11,13 @@
 import { randomUUID } from 'node:crypto';
 import type { Request, Response } from 'express';
 import type {
+    IAccountDirectoryService,
     IAiConversationMessage,
     IAiStreamChunk,
     IAiToolInfo,
     IModelInfo,
     IStaticPromptVariable,
+    IToolInvocationRecord,
     IToolPolicy,
     ITrifectaStatus,
     IUntrustedScreenConfig,
@@ -179,6 +181,7 @@ export class AiToolsController {
      * @param resolveEndUser - Maps a Better Auth user id to the live end-user principal the governor scopes user-owned-object tools to (interactive query attribution + prompt-owner labelling).
      * @param screenConfig - Untrusted-content output-screen policy store (Registry tab screen section).
      * @param bindableHooks - Declared hook seams a saved prompt's hook trigger may bind to, with their registry descriptions — served to the editor's hook picker so the UI offers exactly what save-time validation accepts.
+     * @param accounts - Reads the identity module's account directory at call time, so the activity feed can name the signed-in people behind the user ids it lists. Returns undefined while identity has not published it, in which case the feed carries ids alone.
      */
     constructor(
         private readonly registry: AiToolRegistry,
@@ -195,7 +198,8 @@ export class AiToolsController {
         private readonly screenConfig: ScreenConfigService,
         private readonly queryStreams: QueryStreamRegistry,
         private readonly runSavedPromptNow: (promptId: string, conversationId?: string) => Promise<void>,
-        private readonly bindableHooks: ReadonlyArray<{ id: string; description: string }> = []
+        private readonly bindableHooks: ReadonlyArray<{ id: string; description: string }> = [],
+        private readonly accounts: () => Pick<IAccountDirectoryService, 'getAccountsByIds'> | undefined = () => undefined
     ) {}
 
     /** GET /tools — registry with capability, provider, and enabled state. */
@@ -1265,8 +1269,50 @@ export class AiToolsController {
             }
         }
         const page = await this.audit.list(query);
-        res.json(page);
+        res.json({ ...page, userLabels: await this.labelUsers(page.records) });
     };
+
+    /**
+     * Look up an email address for each signed-in person a page of audit
+     * records mentions, so an admin reading the feed sees who called rather
+     * than a 24-character id they would have to look up by hand.
+     *
+     * The ids come from the actor (a signed-in admin on the Query tab, or a
+     * member over MCP), the end user, and an MCP caller's principal. Anonymous
+     * callers carry a hashed network id, not a user id, so they are skipped,
+     * and an id that names no account, such as the service token's, is simply
+     * left out by the directory. A failed lookup leaves the ids unlabelled rather than failing
+     * the feed, because the labels are a convenience over data already shown.
+     *
+     * @param records - The page being returned.
+     * @returns Email addresses keyed by user id, for the accounts that exist.
+     */
+    private async labelUsers(records: IToolInvocationRecord[]): Promise<Record<string, string>> {
+        const ids = new Set<string>();
+        for (const record of records) {
+            if ((record.actor.kind === 'user' || record.actor.kind === 'admin') && record.actor.id) {
+                ids.add(record.actor.id);
+            }
+            if (record.endUserId) {
+                ids.add(record.endUserId);
+            }
+            if (record.origin?.principalKind === 'user' && record.origin.principalId) {
+                ids.add(record.origin.principalId);
+            }
+        }
+        const labels: Record<string, string> = {};
+        const directory = this.accounts();
+        if (directory && ids.size > 0) {
+            try {
+                for (const account of await directory.getAccountsByIds([...ids])) {
+                    labels[account.id] = account.email;
+                }
+            } catch (error) {
+                adminActionLog.warn({ err: error }, 'Could not label activity feed users with their email addresses');
+            }
+        }
+        return labels;
+    }
 
     /** GET /activity/:id — one invocation record. */
     getActivity = async (req: Request, res: Response): Promise<void> => {

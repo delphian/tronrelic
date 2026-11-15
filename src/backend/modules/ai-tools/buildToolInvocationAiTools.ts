@@ -13,14 +13,13 @@
  * first, filtered by tool, status, trigger path, run, conversation, and time
  * window.
  *
- * It is classified `secret`. The governor redacts the arguments of a
- * `secret`-classified tool, but it does not redact anything else: the result
- * digest of a secret tool, such as a log query, is stored as it came back, and
- * the arguments of a non-secret tool can carry whatever the model put in them,
- * including a secret variable's value. Returning those records makes this a
- * private-data source, so it fails the MCP safety floor, counts as the
- * trifecta's private-data leg while enabled, and has its own arguments
- * redacted in the audit record, the same as `ai-get-prompt-run`.
+ * It is classified `secret`. The governor keeps every tool's arguments and
+ * result digest in full and only replaces values that look like credentials,
+ * so the result digest of a secret tool, such as an account lookup, holds
+ * private data, and a credential no pattern recognises passes through.
+ * Returning those records makes this a private-data source, so it fails the
+ * MCP safety floor and counts as the trifecta's private-data leg while
+ * enabled, the same as `ai-get-prompt-run`.
  *
  * @module backend/modules/ai-tools/buildToolInvocationAiTools
  */
@@ -234,7 +233,7 @@ export function buildToolInvocationAiTools(
             'Not for reading a run\'s answer: use ai-list-prompt-runs and ' + GET_RUN_TOOL_NAME + ' for that. ' +
             'Each record has id, createdAt, toolName, providerId (the plugin or module that owns the tool), aiProviderId, capability, triggerPath, actorKind and actorId (who drove the run), endUserId, clientId (the MCP app, when it arrived over MCP), queryId (the run), conversationId, toolUseId, status, durationMs, costUsd, input, inputTruncated, resultDigest, error, and screen. ' +
             'status is ok when the handler returned, error when it threw or timed out, denied when policy refused it before it ran, and pending-approval when it was held for an admin. A tool that reports its own failure in its answer, such as success false or an HTTP 404, is still ok, so read resultDigest to see what came back. ' +
-            `resultDigest is the first 500 characters of the result. input is the arguments, shown as [redacted] for a secret-classified tool; arguments longer than ${MAX_INPUT_CHARS} characters come back as a cut JSON string with inputTruncated true, and the full arguments and result are in the run\'s transcript from ${GET_RUN_TOOL_NAME}, matched by toolUseId. ` +
+            `resultDigest is the first 500 characters of the result. input is the arguments; a value that looked like a credential is stored as [REDACTED], and records older than that rule show every argument of a secret-classified tool as [redacted]; arguments longer than ${MAX_INPUT_CHARS} characters come back as a cut JSON string with inputTruncated true, and the full arguments and result are in the run\'s transcript from ${GET_RUN_TOOL_NAME}, matched by toolUseId. ` +
             'Parameters, all optional: toolName (exact tool name), status (ok, denied, pending-approval, or error), triggerPath (interactive, scheduled, programmatic, or mcp; scheduled saved prompts record as programmatic), queryId (one run, the id from ai-list-prompt-runs; saved-prompt and non-streaming runs recorded before per-run correlation existed carry none, so filter those by conversationId instead), conversationId, since and until (ISO 8601 timestamps bounding createdAt, inclusive), ' +
             `limit (default ${DEFAULT_LIMIT}, at most ${MAX_LIMIT}), and offset (records to skip, default 0). Returns total (records matching the filters), offset, limit, returned, nextOffset (null on the last page), and invocations[]. ` +
             'Read-only; never runs, approves, or deletes anything.',

@@ -53,15 +53,21 @@ export interface IPendingApproval {
 }
 
 /**
- * One page of invocation audit records plus the unpaginated total. Mirrors the
- * backend `IToolInvocationPage` exactly — the activity endpoint returns
- * `{ records, total }`, so this must not rename or add fields the server never
- * sends (a cast in `listActivity` would otherwise hide the mismatch until it
- * crashes the tab at runtime).
+ * One page of invocation audit records plus the unpaginated total and the
+ * email addresses of the people it mentions. Mirrors what the activity
+ * endpoint sends exactly — `{ records, total, userLabels }` — so this must not
+ * rename or add fields the server never sends (a cast in `listActivity` would
+ * otherwise hide the mismatch until it crashes the tab at runtime).
  */
 export interface IActivityPage {
     records: IToolInvocationRecord[];
     total: number;
+    /**
+     * Email addresses keyed by user id, for every signed-in actor, end user,
+     * and MCP caller on the page whose account still exists. An id missing
+     * from it is shown as the id itself.
+     */
+    userLabels: Record<string, string>;
 }
 
 /** Filters accepted by the activity feed. */

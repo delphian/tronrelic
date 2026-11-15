@@ -79,6 +79,8 @@ interface IUsersAdminClientProps {
     submenuGeneratedAt: string;
     /** The `?tab=` value from the request URL; unknown or absent opens Users. */
     initialTab?: string;
+    /** The `?user=` value: an account id whose detail panel opens on arrival. */
+    initialUserId?: string;
 }
 
 /**
@@ -87,7 +89,7 @@ interface IUsersAdminClientProps {
  * @param props - Submenu tree, its timestamp, and the deep-linked tab.
  * @returns The page.
  */
-export function UsersAdminClient({ submenuTree, submenuGeneratedAt, initialTab }: IUsersAdminClientProps) {
+export function UsersAdminClient({ submenuTree, submenuGeneratedAt, initialTab, initialUserId }: IUsersAdminClientProps) {
     const [activeTab, setActiveTab] = useState<TabId>(isTabId(initialTab) ? initialTab : 'users');
 
     /**
@@ -120,7 +122,7 @@ export function UsersAdminClient({ submenuTree, submenuGeneratedAt, initialTab }
                     onItemSelect={handleTabSelect}
                 />
 
-                {activeTab === 'users' && <UsersMonitor />}
+                {activeTab === 'users' && <UsersMonitor initialSelectedUserId={initialUserId} />}
                 {activeTab === 'groups' && <GroupsManager />}
                 {activeTab === 'sign-ups' && <SignupProtectionTab />}
 

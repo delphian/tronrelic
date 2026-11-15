@@ -86,8 +86,13 @@ type AccountRow = IAccountRow;
  * loading state on the table is the user-triggered search/pagination case
  * the pattern explicitly permits. Mirrors the established approach in
  * `UserGroupsForm` / `GroupForm`.
+ *
+ * @param props.initialSelectedUserId - An account to open in the detail panel
+ *   on arrival, from the page's `?user=` deep link, so another admin page (such
+ *   as an MCP call's detail) can link straight to the account behind a user id.
+ * @returns The account directory and its detail panel.
  */
-export function UsersMonitor() {
+export function UsersMonitor({ initialSelectedUserId }: { initialSelectedUserId?: string } = {}) {
     const [accounts, setAccounts] = useState<AccountRow[]>([]);
     const [total, setTotal] = useState(0);
     const [loading, setLoading] = useState(true);
@@ -96,7 +101,7 @@ export function UsersMonitor() {
     const [searchInput, setSearchInput] = useState('');
     const [sortBy, setSortBy] = useState<AccountSortField>('createdAt');
     const [sortDirection, setSortDirection] = useState<AccountSortDirection>('desc');
-    const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+    const [selectedUserId, setSelectedUserId] = useState<string | null>(initialSelectedUserId ?? null);
 
     const { open: openModal, close: closeModal } = useModal();
     const { push: pushToast } = useToast();

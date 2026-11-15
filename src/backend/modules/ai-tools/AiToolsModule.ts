@@ -67,6 +67,7 @@ import { buildSavedPromptAiTools } from './buildSavedPromptAiTools.js';
 import { buildPromptRunAiTools } from './buildPromptRunAiTools.js';
 import { buildToolInvocationAiTools } from './buildToolInvocationAiTools.js';
 import { WindowedLogLimiter } from '../../lib/WindowedLogLimiter.js';
+import type { ISecretScrubber } from '../../lib/ISecretScrubber.js';
 
 /** Service-registry name for the provider-neutral tool registry. */
 export const AI_TOOLS_SERVICE = 'ai-tools';
@@ -256,6 +257,12 @@ export interface IAiToolsModuleDependencies {
     /** Express app the admin router mounts onto. */
     app: Express;
     /**
+     * Removes credentials from each tool call's arguments, result preview,
+     * and error before the audit record is written. Shared with the MCP
+     * module, which scrubs results leaving for a caller's AI client.
+     */
+    secretScrubber: ISecretScrubber;
+    /**
      * Scheduler for the audit retention sweep. Optional/nullable so tests and a
      * scheduler-disabled deployment still boot the module; when absent the prune
      * job simply is not registered and the audit collection is not auto-trimmed.
@@ -402,7 +409,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
             onUnavailable: () => this.policy.setCurationResolver(() => false)
         });
 
-        this.governor = new AiToolGovernor(this.logger, this.registry, this.policy, this.audit, this.approvals, this.hookRegistry, new WindowedLogLimiter(MCP_REFUSAL_LOG_LIMITS), {
+        this.governor = new AiToolGovernor(this.logger, this.registry, this.policy, this.audit, this.approvals, this.hookRegistry, new WindowedLogLimiter(MCP_REFUSAL_LOG_LIMITS), dependencies.secretScrubber, {
             config: this.screenConfig,
             providers: this.providerRegistry,
             isEgressReachable: () => this.isEgressReachable()
@@ -459,7 +466,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
             () => this.serviceRegistry.get<IAccountDirectoryService>('accounts')
         );
 
-        this.controller = new AiToolsController(this.registry, this.policy, this.audit, this.approvals, this.governor, this.providerRegistry, this.queryHistory, this.savedPrompts, this.promptVariables, this.systemPrompts, this.resolveEndUser, this.screenConfig, this.queryStreams, (id: string, conversationId?: string) => this.runSavedPromptNow(id, conversationId), BINDABLE_HOOK_INFOS);
+        this.controller = new AiToolsController(this.registry, this.policy, this.audit, this.approvals, this.governor, this.providerRegistry, this.queryHistory, this.savedPrompts, this.promptVariables, this.systemPrompts, this.resolveEndUser, this.screenConfig, this.queryStreams, (id: string, conversationId?: string) => this.runSavedPromptNow(id, conversationId), BINDABLE_HOOK_INFOS, () => this.serviceRegistry.get<IAccountDirectoryService>('accounts'));
 
         this.logger.info('ai-tools module initialized');
     }

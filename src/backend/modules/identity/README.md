@@ -19,7 +19,7 @@ Owns Better Auth and everything keyed by the Better Auth user id: the auth insta
 | Bootstrap getters | `getAccessTokenVerifier()`, `getConnectedAppsService()`, `getOAuthServerConfig()`, `getUserGroupService()`, `getAccountDirectoryService()` — consumed by the MCP module |
 | Owned collections | `module_user_wallets`, `module_user_groups`, `module_user_settings`, `module_user_connected_app_usage`, `module_user_sign_in_events` (90-day expiry), `module_user_admin_notes` |
 | Fields written onto the Better Auth user record | `deletedAt` (soft delete) and `lastSeenAt` (last signed-in request or MCP call). Neither is a Better Auth additional field |
-| User detail panel | Opened from the Users tab of `/system/users`; reads `GET /api/admin/users/:id/details`. See [User Detail Panel](#user-detail-panel) |
+| User detail panel | Opened from the Users tab of `/system/users`, or directly by `/system/users?tab=users&user=<id>`, which other admin pages (MCP call detail, MCP usage callers, connected apps) link to; reads `GET /api/admin/users/:id/details`. See [User Detail Panel](#user-detail-panel) |
 | Migrations | `001_backfill_last_seen_at` — operator-run starting value for `lastSeenAt` |
 | AI tools | `identity-list-accounts`, `identity-get-account`, `identity-list-sign-in-events` — read-only, `secret`, admin-only. See [AI Tools](#ai-tools) |
 | Bootstrap order | Inits/runs after `TrafficModule` so traffic's `/api/admin/users/{traffic,analytics}` routers mount before the accounts `/api/admin/users` catch-all |

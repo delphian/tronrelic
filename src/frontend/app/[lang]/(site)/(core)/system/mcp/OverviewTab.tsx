@@ -46,9 +46,9 @@ export function OverviewTab({ status, initialUsage, groups }: IOverviewTabProps)
                 </div>
             )}
             <StatGrid size="sm">
-                <StatTile size="sm" label="Tools served" value={status.servedToolCount} tone={status.servedToolCount > 0 ? 'primary' : 'neutral'} note="Granted to at least one group and enabled" />
-                <StatTile size="sm" label="Needs re-approval" value={status.staleToolCount} tone={status.staleToolCount > 0 ? 'warning' : 'neutral'} note="Capability changed since approval" />
-                <StatTile size="sm" label="Group members" value={status.memberCount} note={`Members of ${status.groupId}`} />
+                <StatTile size="sm" label="Tools served" value={status.servedToolCount} tone={status.servedToolCount > 0 ? 'primary' : 'neutral'} note="Granted to at least one group and switched on" />
+                <StatTile size="sm" label="Needs re-approval" value={status.staleToolCount} tone={status.staleToolCount > 0 ? 'warning' : 'neutral'} note="Changed since granted; hidden until granted again on the Tools tab" />
+                <StatTile size="sm" label="Accounts" value={status.memberCount} note={`Members of ${status.groupId}, which every account joins`} />
             </StatGrid>
 
             <McpUsagePanel initialUsage={initialUsage} groups={groups} />
@@ -57,29 +57,39 @@ export function OverviewTab({ status, initialUsage, groups }: IOverviewTabProps)
                 <Stack gap="sm">
                     <h3 className={styles.card_title}>Connection URLs</h3>
                     <p className={styles.intro}>
-                        A member adds the signed-in URL as a custom connector in their AI client (Claude, Claude Desktop,
-                        Claude Code, Cursor). The client opens TronRelic&apos;s sign-in page, the member approves it, and
-                        the client can then call the tools served here. Nothing has to be registered with the client&apos;s vendor.
+                        Share this URL. Anyone adds it as a custom connector in their AI client (Claude, Claude Desktop,
+                        Claude Code, Cursor) and can call the tools granted to Anonymous straight away, without an account.
+                        The first time their AI calls a tool that needs an account, the client opens TronRelic&apos;s sign-in
+                        page; once they sign in, they can call the tools granted to their user groups. Nothing has to be
+                        registered with the client&apos;s vendor.
                     </p>
                     <div className={styles.url_row}>
                         <code className={styles.url}>{status.resourceUrl}</code>
-                        <CopyButton value={status.resourceUrl} size="sm" variant="ghost" label="Copy signed-in URL" />
+                        <CopyButton value={status.resourceUrl} size="sm" variant="ghost" label="Copy URL" />
                     </div>
                     <p className={styles.intro}>
-                        Anyone can connect to the public URL without signing in. It serves only the tools granted to the
-                        Anonymous group on the Tools tab, under that group&apos;s limits, and serves nothing until you grant one.
+                        An older address that only ever serves Anonymous tools and never asks anyone to sign in. It stays
+                        for clients that were given it; there is no need to share it now.
                     </p>
                     <div className={styles.url_row}>
                         <code className={styles.url}>{status.publicUrl}</code>
-                        <CopyButton value={status.publicUrl} size="sm" variant="ghost" label="Copy public URL" />
+                        <CopyButton value={status.publicUrl} size="sm" variant="ghost" label="Copy anonymous-only URL" />
                     </div>
                     <dl className={styles.facts}>
-                        <dt>Token issuer</dt>
-                        <dd><code>{status.issuer}</code></dd>
                         <dt>Who can connect</dt>
-                        <dd>Members of the <code>{status.groupId}</code> group, managed on /system/users, at the signed-in URL; anyone at the public URL</dd>
+                        <dd>
+                            Anyone. Every account joins <code>{status.groupId}</code> automatically, and accounts are managed on{' '}
+                            <a className="link" href="/system/users?tab=users">/system/users</a>
+                        </dd>
                         <dt>What they can call</dt>
-                        <dd>The tools an admin grants to one of their user groups on the Tools tab, or to Anonymous for the public URL. Restricted tools go only to groups an admin has cleared for them, and never to Anonymous</dd>
+                        <dd>
+                            Without signing in, the tools granted to Anonymous. Signed in, the tools granted to any of their user
+                            groups as well. Grant tools on the <a className="link" href="/system/mcp?tab=tools">Tools tab</a>.
+                            Restricted tools go only to groups an admin has cleared for them, and never to Anonymous or{' '}
+                            <code>{status.groupId}</code>
+                        </dd>
+                        <dt>Token issuer</dt>
+                        <dd><code>{status.issuer}</code> — the sign-in server that issues the tokens a signed-in client sends</dd>
                     </dl>
                 </Stack>
             </Card>

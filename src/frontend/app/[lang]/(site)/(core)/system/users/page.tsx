@@ -52,15 +52,16 @@ async function fetchSubmenu(): Promise<{ roots: MenuNodeSerialized[]; generatedA
  * @param props - Next.js route props.
  * @param props.searchParams - The `?tab=` deep link (a Promise in Next.js 15+),
  *   read on the server so a refreshed, bookmarked, or shared link opens on the
- *   selected tab.
+ *   selected tab, and `?user=`, an account id whose detail panel opens on
+ *   arrival, which other admin pages link to.
  * @returns The client shell seeded with the server-fetched submenu tree.
  */
 export default async function SystemUsersPage({
     searchParams
 }: {
-    searchParams: Promise<{ tab?: string }>;
+    searchParams: Promise<{ tab?: string; user?: string }>;
 }) {
     const { roots, generatedAt } = await fetchSubmenu();
-    const { tab } = await searchParams;
-    return <UsersAdminClient submenuTree={roots} submenuGeneratedAt={generatedAt} initialTab={tab} />;
+    const { tab, user } = await searchParams;
+    return <UsersAdminClient submenuTree={roots} submenuGeneratedAt={generatedAt} initialTab={tab} initialUserId={user} />;
 }

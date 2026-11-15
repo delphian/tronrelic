@@ -30,6 +30,7 @@ import { Switch } from '../../../../../../components/ui/Switch';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../../components/ui/Table';
 import { useToast } from '../../../../../../components/ui/ToastProvider';
 import { listMcpTools, setMcpToolExposure } from '../../../../../../modules/mcp';
+import { CapabilityBadges } from '../ai-tools/components/CapabilityBadges';
 import { GroupPolicyCard } from './GroupPolicyCard';
 import { ServerDescriptionCard } from './ServerDescriptionCard';
 import styles from './page.module.scss';
@@ -42,6 +43,11 @@ interface IToolsTabProps {
     initialTools: IMcpToolExposure[];
     /** SSR-fetched user groups with their MCP settings, mcp-users first. */
     initialGroups: IMcpGroup[];
+    /**
+     * The group to manage on arrival, from the page's `?group=` deep link.
+     * An unknown id falls back to the first group.
+     */
+    initialGroupId?: string;
     /** Called with every row after a change, so the overview counts update. */
     onToolsChanged: (tools: IMcpToolExposure[]) => void;
     /**
@@ -118,10 +124,12 @@ function restrictionNote(tool: IMcpToolExposure, group: IMcpGroup): string | nul
  * @param props - {@link IToolsTabProps}.
  * @returns The tools panel.
  */
-export function ToolsTab({ initialTools, initialGroups, onToolsChanged, serverDescription }: IToolsTabProps) {
+export function ToolsTab({ initialTools, initialGroups, initialGroupId, onToolsChanged, serverDescription }: IToolsTabProps) {
     const [tools, setTools] = useState<IMcpToolExposure[]>(initialTools);
     const [groups, setGroups] = useState<IMcpGroup[]>(initialGroups);
-    const [selectedId, setSelectedId] = useState<string>(initialGroups[0]?.id ?? '');
+    const [selectedId, setSelectedId] = useState<string>(
+        initialGroups.find(group => group.id === initialGroupId)?.id ?? initialGroups[0]?.id ?? ''
+    );
     const [busy, setBusy] = useState<string | null>(null);
     const { push } = useToast();
 
@@ -160,6 +168,17 @@ export function ToolsTab({ initialTools, initialGroups, onToolsChanged, serverDe
             }
         }
     }, [selected, push]);
+
+    /**
+     * Manage another group and write it into the address, so a reload, a
+     * bookmark, or a link pasted to another admin opens on the same group.
+     *
+     * @param groupId - The group chosen in the picker.
+     */
+    const selectGroup = useCallback((groupId: string): void => {
+        setSelectedId(groupId);
+        window.history.replaceState(null, '', `/system/mcp?tab=tools&group=${encodeURIComponent(groupId)}`);
+    }, []);
 
     /**
      * Fold a stored group policy into the group list. When the server withdrew
@@ -202,11 +221,12 @@ export function ToolsTab({ initialTools, initialGroups, onToolsChanged, serverDe
     return (
         <Stack gap="md">
             <p className={styles.intro}>
-                Pick a user group, then switch on the tools its members may use. Only members of mcp-users can connect at
-                all, so a tool granted to another group reaches the people in both. Tools that fail the MCP safety rules are
-                restricted: they can never go to mcp-users, and go to another group only after you allow restricted tools for it.
-                Anonymous stands for callers of the public URL who do not sign in; only tools marked public can go to it.
-                If a tool&apos;s capability changes after you grant it, it is hidden again until you grant it again.
+                Pick a group, then switch on the tools it may use. Anonymous stands for anyone calling without signing in, and
+                only tools whose data is public can go to it. Every account is in mcp-users, so a tool granted there reaches
+                every signed-in member; grant to a narrower group to reach only its members. Tools that fail the MCP safety
+                rules are restricted: they never go to mcp-users or Anonymous, and go to another group only after you allow
+                restricted tools for it. If a tool&apos;s capability changes after you grant it, it is hidden until you grant it
+                again. Hover a capability badge to see what it means.
             </p>
 
             {selected === null ? (
@@ -217,12 +237,12 @@ export function ToolsTab({ initialTools, initialGroups, onToolsChanged, serverDe
                         <Select
                             value={selected.id}
                             onChange={
-                                event => setSelectedId(event.target.value)
+                                event => selectGroup(event.target.value)
                             }
                         >
                             {groups.map(group => (
                                 <option key={group.id} value={group.id}>
-                                    {group.isGateGroup ? `${group.name} (every MCP user)` : group.name}
+                                    {group.isGateGroup ? `${group.name} (every signed-in account)` : group.isAnonymous ? `${group.name} (anyone, without signing in)` : group.name}
                                 </option>
                             ))}
                         </Select>
@@ -269,18 +289,9 @@ export function ToolsTab({ initialTools, initialGroups, onToolsChanged, serverDe
                                         <div className={styles.tool_meta}>{tool.provider}</div>
                                     </Td>
                                     <Td label="Capability">
-                                        <div className={styles.badge_row}>
-                                            {tool.capability ? (
-                                                <>
-                                                    <Badge tone="neutral" size="sm">{tool.capability.sideEffect}</Badge>
-                                                    <Badge tone={tool.capability.sensitivity === 'secret' ? 'danger' : 'neutral'} size="sm">{tool.capability.sensitivity}</Badge>
-                                                    {tool.capability.surfacesUntrustedContent && <Badge tone="info" size="sm">untrusted content</Badge>}
-                                                    {tool.capability.spendsMoney && <Badge tone="warning" size="sm">paid</Badge>}
-                                                </>
-                                            ) : (
-                                                <Badge tone="warning" size="sm">undeclared</Badge>
-                                            )}
-                                        </div>
+                                        {/* The shared badges explain themselves on hover and
+                                            match the Activity tab's call detail. */}
+                                        <CapabilityBadges capability={tool.capability} />
                                     </Td>
                                     <Td label="Access">
                                         <div className={styles.badge_row}>

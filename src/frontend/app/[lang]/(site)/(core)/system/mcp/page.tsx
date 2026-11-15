@@ -46,15 +46,17 @@ async function fetchAdminJson<T>(path: string): Promise<T | null> {
  * MCP admin page (server entry).
  *
  * @param props - Next.js route props.
- * @param props.searchParams - The `?tab=` deep link, read SSR-first to seed the active panel.
+ * @param props.searchParams - The `?tab=` deep link, read SSR-first to seed
+ *   the active panel, and `?group=`, the user group the Tools tab opens on, so
+ *   a call's "charged to group" can link straight to that group's settings.
  * @returns The client shell seeded with SSR data.
  */
 export default async function McpAdminPage({
     searchParams
 }: {
-    searchParams: Promise<{ tab?: string }>;
+    searchParams: Promise<{ tab?: string; group?: string }>;
 }) {
-    const [menu, status, usage, tools, groups, apps, { tab }] = await Promise.all([
+    const [menu, status, usage, tools, groups, apps, { tab, group }] = await Promise.all([
         fetchAdminJson<{ tree?: { roots?: MenuNodeSerialized[]; generatedAt?: string } }>(`/api/menu?namespace=${SUBMENU_NAMESPACE}`),
         fetchAdminJson<{ status: IMcpStatus }>('/api/admin/mcp/status'),
         fetchAdminJson<{ usage: IMcpUsageReport }>('/api/admin/mcp/usage?window=24h'),
@@ -69,6 +71,7 @@ export default async function McpAdminPage({
             submenuTree={menu?.tree?.roots ?? []}
             submenuGeneratedAt={menu?.tree?.generatedAt ?? new Date().toISOString()}
             initialTab={tab}
+            initialGroupId={group}
             initialStatus={status?.status ?? null}
             initialUsage={usage?.usage ?? null}
             initialTools={tools?.tools ?? []}

@@ -185,5 +185,30 @@
     align-items: center;
 }
 
+/* A column heading followed by the info icon that explains it. */
+.header_help {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    cursor: help;
+}
+
+/* A small way onward from a row to the page that manages it, on its own line
+   and sized to its text so only the words are clickable. */
+.related_link {
+    display: flex;
+    width: fit-content;
+    align-items: center;
+    gap: var(--gap-2xs);
+    margin-top: var(--gap-2xs);
+    font-size: var(--font-size-caption);
+    color: var(--color-primary);
+}
+
+.related_link:hover {
+    color: var(--color-secondary);
+    text-decoration: underline;
+}
+
 /* The tools and usage tables stack through the shared Table's `stackAt`, so
    no table layout rules live here. */

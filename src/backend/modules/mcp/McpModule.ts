@@ -48,7 +48,7 @@ import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
 import { McpSettingsStore } from './services/mcp-settings.store.js';
 import { McpToolExposureService } from './services/mcp-tool-exposure.service.js';
 import { McpGroupPolicyService } from './services/McpGroupPolicyService.js';
-import { SecretScrubber } from './services/SecretScrubber.js';
+import type { ISecretScrubber } from '../../lib/ISecretScrubber.js';
 import type { EndUserResolver } from '../ai-tools/index.js';
 import { McpCallerResolver } from './services/mcp-caller.resolver.js';
 import { McpServerFactory } from './services/mcp-server.factory.js';
@@ -139,11 +139,12 @@ export interface IMcpModuleDependencies {
     hookRegistry: IHookRegistry;
 
     /**
-     * The deployment's own secret values (admin token, auth secrets, API keys,
-     * database URLs). Results of tools served through a group that asks for
-     * scrubbing have every occurrence of these replaced before they leave.
+     * Removes the deployment's own secret values and common credential shapes.
+     * Results of tools served through a group that asks for scrubbing pass
+     * through it before they leave. The same instance scrubs the audit trail
+     * in the AI tools module, so both apply one set of rules.
      */
-    knownSecrets: string[];
+    secretScrubber: ISecretScrubber;
 
     /** Resolves a user id to the live principal the governor scopes calls to. */
     resolveEndUser: EndUserResolver;
@@ -287,7 +288,7 @@ export class McpModule implements IModule<IMcpModuleDependencies> {
         // One identity feeds the handshake and the Server Card, so what a
         // client sees after connecting matches what it read before.
         this.identity = buildMcpServerIdentity(new URL(deps.endpoint.publicUrl).origin);
-        const serverFactory = new McpServerFactory(deps.governor, new SecretScrubber(deps.knownSecrets), this.logger, this.identity);
+        const serverFactory = new McpServerFactory(deps.governor, deps.secretScrubber, this.logger, this.identity);
         const allowedOriginHosts = [deps.endpoint.siteHost];
         const anonymousCallers = new AnonymousCallerAuthenticator(new AnonymousCallerKeyer(deps.anonymousKeySalt), deps.endpoint.resourceUrl);
 
