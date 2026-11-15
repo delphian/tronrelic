@@ -12,7 +12,10 @@
  *
  * Facts about the alert:
  * - A group is alerted once per exhaustion. It can be alerted again only after
- *   a call charged to it succeeds, which shows the pool has room again.
+ *   a call charged to it that started after that exhaustion was seen succeeds,
+ *   which shows the pool has room again. A call already running when the pool
+ *   ran out was charged while the pool still had room, so its late success is
+ *   no evidence of recovery.
  * - State is per process; a restart or a second instance may alert once more.
  * - Notification and policy failures are logged and never affect the call.
  */
@@ -33,8 +36,13 @@ export const MCP_POOL_EXHAUSTED_CONTENT_TYPE = 'mcp:pool-exhausted';
  * it from the hook it already registers for the accounting meter.
  */
 export class McpPoolAlerter {
-    /** Groups whose pool has refused a call and has not yet been seen to have room again. */
-    private readonly exhausted = new Set<string>();
+    /**
+     * Groups whose pool has refused a call and have not yet been seen to have
+     * room again, each mapped to the moment that exhaustion was first seen.
+     * Keeping the moment is what stops a call admitted before it from re-arming
+     * the alert and sending a second notification for the same exhaustion.
+     */
+    private readonly exhausted = new Map<string, number>();
 
     /**
      * @param policies - Reads the group's pool limit for the alert text.
@@ -54,23 +62,48 @@ export class McpPoolAlerter {
      * Note one governed call, alerting when it is the first a group's pool refused.
      *
      * Calls on other trigger paths, and calls charged to no group, are
-     * ignored. A successful call charged to a group clears its exhausted
-     * state, because it could only have passed the pool check if the pool had
-     * room. Returns at once; the alert itself runs in the background.
+     * ignored. A successful call clears the group's exhausted state only when
+     * it started after that exhaustion was seen, because only such a call was
+     * admitted by a pool that had room. Returns at once; the alert itself runs
+     * in the background.
      *
      * @param record - The audit record the governor wrote for the call.
      */
     observe(record: IToolInvocationRecord): void {
         const groupId = record.origin?.chargedGroupId;
         if (record.triggerPath === 'mcp' && groupId) {
-            if (record.limitHit === 'pool-day' && !this.exhausted.has(groupId)) {
-                this.exhausted.add(groupId);
+            const exhaustedAt = this.exhausted.get(groupId);
+            if (record.limitHit === 'pool-day' && exhaustedAt === undefined) {
+                this.exhausted.set(groupId, Date.now());
                 void this.alert(groupId, record);
-            } else if (record.status === 'ok' && this.exhausted.has(groupId)) {
+            } else if (record.status === 'ok' && exhaustedAt !== undefined && this.startedAfter(record, exhaustedAt)) {
                 this.exhausted.delete(groupId);
                 this.logger.info({ groupId }, `MCP group's daily call pool has room again: ${groupId}`);
             }
         }
+    }
+
+    /**
+     * Decide whether a successful call began after the pool was seen to be
+     * exhausted, which is the only success that shows the pool has room again.
+     *
+     * The governor charges the pool before it runs the handler but writes the
+     * record after the handler returns, so a call already in flight when the
+     * pool ran out reports success afterwards without the pool having recovered.
+     * Re-arming on that late success would send a second admin notification for
+     * the same exhaustion, once for every call still running. The record is
+     * stamped at completion, so subtracting the handler's duration gives the
+     * moment the call started, just after the governor admitted it. An
+     * unparseable stamp yields a NaN comparison and so no re-arm, which is the
+     * safe direction for an alert meant to fire once.
+     *
+     * @param record - The successful call's audit record.
+     * @param exhaustedAt - When this group's pool was first seen to refuse a call.
+     * @returns True when the call started after that moment.
+     */
+    private startedAfter(record: IToolInvocationRecord, exhaustedAt: number): boolean {
+        const completedAt = Date.parse(record.createdAt);
+        return completedAt - record.durationMs > exhaustedAt;
     }
 
     /**

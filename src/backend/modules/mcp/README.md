@@ -148,7 +148,7 @@ Once a group's `callsPerDayGroup` is spent, every call charged to that group is 
 | `warn` under `tronrelic:mcp` | `MCP group's daily call pool is used up; …`, with `groupId`, `poolCallsPerDay`, `tool`, `recordId` |
 | Notification `mcp.pool-exhausted` | A toast to the admin group naming the group and its limit and pointing at the Tools tab. Each admin can silence it on `/profile`, and an admin can switch it off for everyone on `/system/notifications` |
 
-A group is alerted once per exhaustion. The next successful call charged to it shows the pool has room again (`info`: `… has room again`) and re-arms the alert. The state is per process, so a restart while the pool is spent alerts once more. Without the notifications service the `warn` is still written. The governor logs each pool refusal itself at `info`, bounded as above, because this alert is the entry that needs attention.
+A group is alerted once per exhaustion. The next successful call charged to it that *started* after the exhaustion was seen shows the pool has room again (`info`: `… has room again`) and re-arms the alert; a call already running when the pool ran out was charged while the pool still had room, so its later success does not re-arm anything. The state is per process, so a restart while the pool is spent alerts once more. Without the notifications service the `warn` is still written. The governor logs each pool refusal itself at `info`, bounded as above, because this alert is the entry that needs attention.
 
 ## Accounting
 
