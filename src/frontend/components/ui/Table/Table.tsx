@@ -295,6 +295,16 @@ interface TdProps extends TdHTMLAttributes<HTMLTableCellElement> {
  * is written to `data-label`, which the stacked layout reads to draw the
  * column name beside the value.
  *
+ * A labelled cell wraps its children in one value container. The stacked
+ * layout puts the column name in the cell's first grid track and the value in
+ * the second, and a grid gives every child a track of its own, so a cell that
+ * passes two children, such as a figure and the limit beside it or a list of
+ * entries, would send everything after the first back under the column name.
+ * The container keeps the whole value in the value track however many children
+ * the call site passes, including bare text, which no CSS selector can reach.
+ * It generates no box at full width, so the cell's own layout is unchanged
+ * there. It is a `div` because several labelled cells pass `div` children.
+ *
  * @param props - Table data cell properties
  * @returns A styled td element
  */
@@ -310,7 +320,7 @@ export function Td({ muted, numeric, label, className, children, ...props }: TdP
             data-label={label}
             {...props}
         >
-            {children}
+            {label ? <div className={styles.td_value}>{children}</div> : children}
         </td>
     );
 }
