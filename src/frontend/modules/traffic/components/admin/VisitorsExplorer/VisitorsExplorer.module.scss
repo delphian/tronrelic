@@ -225,6 +225,11 @@
  *
  * Marked with an explicit class rather than :nth-child so reordering a column
  * cannot silently hide the wrong one.
+ *
+ * At phone width the shared Table stacks each row into a labelled entry
+ * (`stackAt="mobile"`), and its stacked cell rules outrank this class, so the
+ * four columns reappear there as labelled lines. Each entry is then longer but
+ * complete; the expanded row still carries the full record.
  */
 .col_optional {
     display: table-cell;

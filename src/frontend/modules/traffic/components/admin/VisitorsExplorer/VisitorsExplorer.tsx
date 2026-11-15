@@ -529,7 +529,9 @@ export function VisitorsExplorer({ period, customRange, includeBots }: IVisitors
                 ) : rows.length === 0 ? (
                     <p className={styles.empty}>No visitors found in this period.</p>
                 ) : (
-                    <Table variant="compact" flush className={styles.dense_table}>
+                    /* Six columns still fit a tablet once the optional ones drop;
+                       on a phone each visitor stacks under its identity line. */
+                    <Table variant="compact" flush stackAt="mobile" className={styles.dense_table}>
                         <Thead>
                             <Tr>
                                 <Th scope="col">Visitor</Th>
@@ -615,18 +617,18 @@ export function VisitorsExplorer({ period, customRange, includeBots }: IVisitors
                                                     )}
                                                 </span>
                                             </Td>
-                                            <Td className={styles.col_optional}>
+                                            <Td label="First seen" className={styles.col_optional}>
                                                 <ClientTime date={row.firstSeen} format="relative" />
                                             </Td>
-                                            <Td><ClientTime date={row.lastSeen} format="relative" /></Td>
-                                            <Td numeric>{row.pageViews.toLocaleString()}</Td>
-                                            <Td numeric muted className={styles.col_optional}>
+                                            <Td label="Last seen"><ClientTime date={row.lastSeen} format="relative" /></Td>
+                                            <Td label="Views" numeric>{row.pageViews.toLocaleString()}</Td>
+                                            <Td label="Paths" numeric muted className={styles.col_optional}>
                                                 {row.distinctPaths.toLocaleString()}
                                             </Td>
-                                            <Td className={`${styles.channel_cell} ${styles.col_optional}`}>
+                                            <Td label="Channel" className={`${styles.channel_cell} ${styles.col_optional}`}>
                                                 {row.channel || <span className={styles.muted}>—</span>}
                                             </Td>
-                                            <Td className={styles.source_cell}>
+                                            <Td label="Source" className={styles.source_cell}>
                                                 <span className={styles.source_inner}>
                                                     <span className={styles.source_value} title={row.referrerDomain ?? 'direct'}>
                                                         {row.referrerDomain || 'direct'}
@@ -641,13 +643,13 @@ export function VisitorsExplorer({ period, customRange, includeBots }: IVisitors
                                                     )}
                                                 </span>
                                             </Td>
-                                            <Td className={styles.path_cell} title={row.landingPage ?? undefined}>
+                                            <Td label="Landing" className={styles.path_cell} title={row.landingPage ?? undefined}>
                                                 {row.landingPage || <span className={styles.muted}>—</span>}
                                             </Td>
-                                            <Td className={styles.country_cell}>
+                                            <Td label="Country" className={styles.country_cell}>
                                                 {row.country || <span className={styles.muted}>—</span>}
                                             </Td>
-                                            <Td className={`${styles.device_cell} ${styles.col_optional}`}>
+                                            <Td label="Device" className={`${styles.device_cell} ${styles.col_optional}`}>
                                                 {getDeviceIcon(row.device)}
                                             </Td>
                                         </Tr>

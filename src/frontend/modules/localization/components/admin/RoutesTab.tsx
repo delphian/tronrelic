@@ -270,7 +270,10 @@ export function RoutesTab({ onShowKeys }: IRoutesTabProps) {
             ) : empty ? (
                 <div className={styles.placeholder}>No routes yet, so every page is English only.</div>
             ) : (
-                <Table variant="compact" flush className={styles.stack_table}>
+                /* One column per language, so the width grows with every
+                   language added. Each route stacks into an entry headed by
+                   its pattern below tablet width, with one line per language. */
+                <Table variant="compact" flush stackAt="tablet">
                     <Thead>
                         <Tr>
                             <Th>Route</Th>
@@ -288,7 +291,7 @@ export function RoutesTab({ onShowKeys }: IRoutesTabProps) {
                     <Tbody>
                         {routes.map(route => (
                             <Tr key={route.id}>
-                                <Td data-label="Route">
+                                <Td>
                                     <div className={styles.cell_inline}>
                                         <span className={`${styles.cell_primary} ${styles.mono}`}>{route.pattern}</span>
                                         <span className={styles.cell_meta}>{route.keyCount} keys</span>
@@ -299,7 +302,7 @@ export function RoutesTab({ onShowKeys }: IRoutesTabProps) {
                                     const missing = route.missingByLanguage[language.code] ?? 0;
                                     const description = describeMissing(missing, published, language.name);
                                     return (
-                                        <Td key={language.code} data-label={language.name}>
+                                        <Td key={language.code} label={language.name}>
                                             <span className={styles.route_cell}>
                                                 <Switch
                                                     size="sm"
@@ -316,7 +319,7 @@ export function RoutesTab({ onShowKeys }: IRoutesTabProps) {
                                         </Td>
                                     );
                                 })}
-                                <Td data-label="Actions">
+                                <Td>
                                     <div className={styles.actions}>
                                         <IconButton
                                             size="sm"

@@ -173,8 +173,11 @@
 /* Narrow: the columns do not fit, so each row becomes a stacked card. The
  * shared Table declares `container-name: table`, so this reacts to the table's
  * own width — correct in a slide-over or a plugin tab, not only the full
- * window. Headers are dropped and each cell shows its label from `data-label`,
- * except the message, which needs no label. */
+ * window. Headers are dropped and no column names are drawn: the clock time,
+ * the level badge, and the service name read as what they are on one line,
+ * with the message on its own line beneath, and a name before each would
+ * double the card's height for no gain. This is why the table does not use
+ * the shared `stackAt` layout, which names every value. */
 @container table (max-width: #{$breakpoint-mobile-lg}) {
     .table_wrap thead {
         display: none;

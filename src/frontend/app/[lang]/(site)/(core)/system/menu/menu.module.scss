@@ -49,6 +49,7 @@
 /* Items section header — count + create button. */
 .items_header {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
     gap: var(--gap-md);
@@ -100,11 +101,15 @@
     white-space: nowrap;
 }
 
-/* URL cell — monospace and clipped on narrow widths. */
+/* URL text — monospace and clipped to one line. It sits on a span inside the
+   cell rather than on the cell itself, because the stacked layout makes the
+   cell a grid and an ellipsis needs a block box of its own to clip against. */
 .url_cell {
+    display: inline-block;
+    max-width: 18rem;
+    vertical-align: bottom;
     font-family: var(--font-mono);
     font-size: var(--font-size-caption);
-    max-width: 18rem;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -228,6 +233,14 @@
     font-size: var(--font-size-body);
 }
 
+/* Tablet and below: the items table has stacked (its own `stackAt`), so the
+   URL may use the whole value track of its entry instead of a fixed cap. */
+@container menu-admin (max-width: #{$breakpoint-tablet}) {
+    .url_cell {
+        max-width: 100%;
+    }
+}
+
 @container menu-admin (max-width: #{$breakpoint-mobile-lg}) {
     .toolbar {
         flex-direction: column;
@@ -238,12 +251,13 @@
         flex-wrap: wrap;
     }
 
-    .field_row {
-        grid-template-columns: 1fr;
+    .select {
+        flex: 1 1 auto;
+        min-width: 0;
     }
 
-    .url_cell {
-        max-width: 12rem;
+    .field_row {
+        grid-template-columns: 1fr;
     }
 
     .form_footer,

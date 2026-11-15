@@ -70,8 +70,9 @@ export function ActivityTab({ stats }: { stats: IAccountHistoryStatsView | null 
             {ticks.length === 0
                 ? <div className="text-muted">No ticks recorded since the backend last started.</div>
                 : (
-                    <div className="table-scroll">
-                        <Table>
+                    /* Seven columns do not fit a tablet, so each tick stacks
+                       into an entry headed by its kind badge. */
+                        <Table stackAt="tablet">
                             <Thead>
                                 <Tr>
                                     <Th width="shrink">Tick</Th>
@@ -88,18 +89,18 @@ export function ActivityTab({ stats }: { stats: IAccountHistoryStatsView | null 
                                     const result = tickResult(tick);
                                     return (
                                         <Tr key={`${tick.kind}-${tick.startedAt}`} hasError={Boolean(tick.error)}>
-                                            <Td data-label="Tick">
+                                            <Td>
                                                 <Badge tone={tick.kind === 'ingest' ? 'info' : 'neutral'}>
                                                     {tick.kind === 'ingest' ? 'backfill' : 'forward sync'}
                                                 </Badge>
                                             </Td>
-                                            <Td data-label="Started" muted>
+                                            <Td label="Started" muted>
                                                 <ClientTime date={tick.startedAt} format="datetime" />
                                             </Td>
-                                            <Td data-label="Duration" muted>{(tick.durationMs / 1000).toFixed(1)}s</Td>
-                                            <Td data-label="Calls" muted>{tick.totals.providerCalls.toLocaleString()}</Td>
-                                            <Td data-label="Rows" muted>{tick.totals.rowsWritten.toLocaleString()}</Td>
-                                            <Td data-label="Accounts">
+                                            <Td label="Duration" muted>{(tick.durationMs / 1000).toFixed(1)}s</Td>
+                                            <Td label="Calls" muted>{tick.totals.providerCalls.toLocaleString()}</Td>
+                                            <Td label="Rows" muted>{tick.totals.rowsWritten.toLocaleString()}</Td>
+                                            <Td label="Accounts">
                                                 {tick.accounts.length === 0
                                                     ? <span className="text-muted">—</span>
                                                     : tick.accounts.map((account) => (
@@ -113,7 +114,7 @@ export function ActivityTab({ stats }: { stats: IAccountHistoryStatsView | null 
                                                         </div>
                                                     ))}
                                             </Td>
-                                            <Td data-label="Result">
+                                            <Td label="Result">
                                                 <Badge tone={result.tone}>{result.label}</Badge>
                                                 {tick.error && <div className={styles.account_error}>{tick.error}</div>}
                                             </Td>
@@ -122,7 +123,6 @@ export function ActivityTab({ stats }: { stats: IAccountHistoryStatsView | null 
                                 })}
                             </Tbody>
                         </Table>
-                    </div>
                 )}
         </Stack>
     );

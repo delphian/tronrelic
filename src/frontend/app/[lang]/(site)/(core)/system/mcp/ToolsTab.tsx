@@ -240,7 +240,9 @@ export function ToolsTab({ initialTools, initialGroups, onToolsChanged, serverDe
             )}
 
             <Card padding="xs">
-                <Table flush className={styles.tools_table}>
+                {/* Badge rows in three columns outgrow a tablet, so rows stack at
+                    1024px and below, each headed by the tool's name. */}
+                <Table flush stackAt="tablet">
                     <Thead>
                         <Tr>
                             <Th>Tool</Th>
@@ -262,11 +264,11 @@ export function ToolsTab({ initialTools, initialGroups, onToolsChanged, serverDe
                             const note = selected ? restrictionNote(tool, selected) : null;
                             return (
                                 <Tr key={tool.name}>
-                                    <Td data-label="Tool">
+                                    <Td>
                                         <div className={styles.tool_name}>{tool.name}</div>
                                         <div className={styles.tool_meta}>{tool.provider}</div>
                                     </Td>
-                                    <Td data-label="Capability">
+                                    <Td label="Capability">
                                         <div className={styles.badge_row}>
                                             {tool.capability ? (
                                                 <>
@@ -280,7 +282,7 @@ export function ToolsTab({ initialTools, initialGroups, onToolsChanged, serverDe
                                             )}
                                         </div>
                                     </Td>
-                                    <Td data-label="Access">
+                                    <Td label="Access">
                                         <div className={styles.badge_row}>
                                             {tool.grants.length === 0 && <span className={styles.tool_meta}>No groups</span>}
                                             {tool.grants.map(entry => (
@@ -294,7 +296,7 @@ export function ToolsTab({ initialTools, initialGroups, onToolsChanged, serverDe
                                             ))}
                                         </div>
                                     </Td>
-                                    <Td data-label="Status">
+                                    <Td label="Status">
                                         {selected && (
                                             <Stack gap="sm">
                                                 <div>{statusBadge(tool, selected, grant)}</div>
@@ -302,7 +304,7 @@ export function ToolsTab({ initialTools, initialGroups, onToolsChanged, serverDe
                                             </Stack>
                                         )}
                                     </Td>
-                                    <Td data-label="Grant">
+                                    <Td label="Grant">
                                         <Switch
                                             on={on}
                                             onChange={next => { void toggle(tool, next); }}

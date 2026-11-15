@@ -1,11 +1,9 @@
 /**
- * Styles for the History tab: a short intro, the decisions table, and the
- * narrow-container layout that turns each row into a stacked card. The table
- * uses the shared Table primitive; this module adds only the row affordance,
- * the item cell, and the delivery summary.
+ * Styles for the History tab: a short intro and the decisions table. The table
+ * uses the shared Table primitive, whose `stackAt="mobile"` turns each row into
+ * a labelled entry on a phone; this module adds only the row affordance, the
+ * item cell, and the delivery summary.
  */
-
-@use '../../../../../../breakpoints' as *;
 
 .history {
     display: flex;
@@ -101,44 +99,4 @@
 .record_title {
     font-weight: var(--font-weight-semibold);
     color: var(--color-text);
-}
-
-/* Narrow: a four-column table is too wide, so each row becomes a stacked card.
- * The shared Table declares `container-name: table`, so this reacts to the
- * table's own width — correct inside slide-overs and modals, not only the
- * full window. Column headers are dropped and each cell shows its own label
- * from the `data-label` attribute, so every value keeps its meaning. */
-@container table (max-width: #{$breakpoint-mobile-lg}) {
-    .table_wrap thead {
-        display: none;
-    }
-
-    .table_wrap tr {
-        display: block;
-        padding: var(--padding-sm);
-        border-bottom: var(--border-width-thin) solid var(--color-border);
-    }
-
-    .table_wrap td {
-        display: block;
-        padding: var(--padding-2xs) 0;
-        border-bottom: none;
-    }
-
-    .table_wrap td::before {
-        content: attr(data-label);
-        display: block;
-        margin-bottom: var(--gap-2xs);
-        font-size: var(--font-size-caption);
-        font-weight: var(--font-weight-semibold);
-        color: var(--color-text-muted);
-    }
-
-    .table_wrap .item {
-        max-width: none;
-    }
-
-    .table_wrap .col_time {
-        white-space: normal;
-    }
 }

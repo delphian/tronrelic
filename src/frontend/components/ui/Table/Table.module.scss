@@ -211,3 +211,147 @@
         padding: var(--spacing-3) var(--spacing-4);
     }
 }
+
+/*
+ * Stacked rows (`<Table stackAt>`).
+ *
+ * Below the chosen width each row becomes an entry: the header row is hidden,
+ * and every labelled cell becomes a two-track line with its column name on
+ * the left and its value on the right. The name comes from the cell's
+ * `data-label`, which `<Td label>` writes.
+ *
+ * A cell without a label flows inline instead, so neighbouring unlabelled
+ * cells share a line: an expand toggle sits beside the name it expands, and
+ * the identifying value reads as the entry's heading. A labelled cell is a
+ * block, so it always starts a new line, and a trailing unlabelled cell such
+ * as a row's buttons lands on the entry's last line. An unlabelled cell that is
+ * the row's only cell, such as a full-width detail row, stays a block, because
+ * an inline block shrinks to its content and would collapse a nested table.
+ *
+ * Entries are divided by a rule rather than boxed one by one, which keeps a
+ * long list from turning into a column of nested borders inside the card.
+ * The column name is sentence case on purpose: the uppercase header style is
+ * built for one short row above many values and gets noisy when it repeats on
+ * every line.
+ *
+ * Every selector walks from the wrapper with child combinators. A table nested
+ * inside a stacked table's cell, such as a documents list under an expanded
+ * row, therefore keeps its own layout instead of being stacked by its parent.
+ * The query measures the wrapper, which is the `table` container, so these
+ * rules can only style what is inside it, never the wrapper itself. The rule
+ * set is a mixin because Sass cannot interpolate a breakpoint per modifier
+ * inside one @container block.
+ */
+@mixin stacked-rows($wrapper) {
+    $table: '#{$wrapper} > .table';
+    $row: '#{$table} > .tbody > .tr';
+    $cell: '#{$row} > .td';
+
+    #{$table} > .thead {
+        display: none;
+    }
+
+    /* The header row is gone, so the sort picker takes over its job. */
+    #{$wrapper} > .stacked_sort {
+        display: flex;
+    }
+
+    #{$table},
+    #{$table} > .tbody {
+        display: block;
+    }
+
+    #{$row} {
+        display: block;
+        padding: var(--padding-sm) var(--card-padding-applied, var(--padding-md));
+        border-bottom: var(--border-width-thin) solid var(--color-border);
+    }
+
+    #{$row}:last-child {
+        border-bottom: none;
+    }
+
+    #{$cell} {
+        padding: var(--padding-2xs) 0;
+        border-bottom: none;
+        text-align: start;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+
+    #{$cell}[data-label] {
+        display: grid;
+        grid-template-columns: var(--table-stack-label-width) minmax(0, 1fr);
+        column-gap: var(--gap-sm);
+        align-items: baseline;
+        /* Without this a badge or chip in the value track stretches across
+           the whole track instead of keeping its own width. */
+        justify-items: start;
+    }
+
+    #{$cell}[data-label]::before {
+        content: attr(data-label);
+        font-size: var(--font-size-caption);
+        font-weight: var(--font-weight-medium);
+        color: var(--color-text-muted);
+        line-height: var(--line-height-normal);
+    }
+
+    #{$cell}:not([data-label]) {
+        display: inline-block;
+        max-width: 100%;
+        margin-inline-end: var(--gap-sm);
+        vertical-align: middle;
+    }
+
+    #{$cell}:not([data-label]):only-child {
+        display: block;
+        margin-inline-end: 0;
+    }
+
+    /* A header cell inside the body, such as a group heading that spans the
+       row, becomes a full-width line instead of keeping its table-cell box. */
+    #{$row} > .th {
+        display: block;
+        padding: var(--padding-2xs) 0;
+        border-bottom: none;
+    }
+}
+
+/*
+ * The stacked-row sort picker (`<Table stackedSort>`). Rendered inside the
+ * wrapper so the mixin above can show it under the same container query that
+ * stacks the rows; hidden otherwise, because the column headers sort at full
+ * width. Its inline padding matches a stacked row's so the two line up.
+ */
+.stacked_sort {
+    display: none;
+    align-items: center;
+    gap: var(--gap-sm);
+    padding: var(--padding-sm) var(--card-padding-applied, var(--padding-md));
+    border-bottom: var(--border-width-thin) solid var(--color-border);
+}
+
+.stacked_sort_label {
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+    white-space: nowrap;
+}
+
+.stacked_sort_select {
+    flex: 1;
+    min-width: 0;
+    max-width: var(--max-width-xs);
+}
+
+@container table (max-width: #{$breakpoint-tablet}) {
+    @include stacked-rows('.table_wrapper_stack_tablet');
+}
+
+@container table (max-width: #{$breakpoint-mobile-lg}) {
+    @include stacked-rows('.table_wrapper_stack_mobile');
+}
+
+@container table (max-width: #{$breakpoint-mobile-md}) {
+    @include stacked-rows('.table_wrapper_stack_phone');
+}

@@ -61,7 +61,7 @@ modules/pages/
 └── README.md
 ```
 
-**Two-phase lifecycle.** `init()` configures `PageService` and `PageTranslationService` with the injected `IContentService`, creates the translation values index, and builds the controllers. `run()` registers `core:page`, which carries its translation side, on the core content service, registers the `/system/pages` menu item under the System container, mounts the admin router at `/api/admin/pages` and the public router at `/api/pages`, and watches the service registry for `'ai-tools'` so the page AI tools register whenever that registry is available.
+**Two-phase lifecycle.** `init()` configures `PageService` and `PageTranslationService` with the injected `IContentService`, creates the translation values index, and builds the controllers. `run()` registers `core:page`, which carries its translation side, on the core content service, registers the `/system/pages` menu item under the System container and the page's tab row in the `pages` menu namespace, mounts the admin router at `/api/admin/pages` and the public router at `/api/pages`, and watches the service registry for `'ai-tools'` so the page AI tools register whenever that registry is available.
 
 ## Managed Content Contract
 
@@ -76,6 +76,12 @@ modules/pages/
 | Public visibility | Core serves a version (see [system-content.md](../../../../docs/system/system-content.md#the-author-keeps-two-versions)); pages additionally requires that version's `published` flag |
 | Soft delete | `deletedAt` on the document and the core row. Slugs and `oldSlugs` of a deleted page stay reserved, since there is no purge |
 | Not yet adopted | A page without `contentId` (before migration 007 runs) is served by its own `published` flag and cannot be changed |
+
+## Admin Page
+
+`/system/pages` has four tabs: **Pages** (the list and editor), **Settings** (the route blacklist), **Database**, and **Logs**. The tab row is the menu module's Submenu Pattern: `run()` registers one memory-only node per tab in the `pages` namespace (`PAGES_ADMIN_SUBMENU_NAMESPACE`), each with `requiresAdmin: true` because the namespace sits outside the System container, and `PagesAdminClient.tsx` renders them with `MenuNavClient`. The `?tab=` query parameter deep-links a tab.
+
+The Database tab shows two read-only collection browsers, because the storage has two naming schemes: the `page` prefix reaches `pages` and `page_settings`, which predate the `module_<id>_` convention, and `module_pages_` reaches the translated text. Editing is off because a change made there would skip the core content service. The Logs tab shows entries under `tronrelic:pages`. The module registers no scheduler jobs, so there is no Schedules tab.
 
 **No file dependencies.** Page editors that need attachments use `/system/files` to upload files, then paste the resulting URL into markdown. Pages does not own any file storage.
 

@@ -232,8 +232,10 @@ export function AccountsTab({ stats, onChanged }: { stats: IAccountHistoryStatsV
             {accounts.length === 0
                 ? <div className="text-muted">No accounts tracked yet.</div>
                 : (
-                    <div className="table-scroll">
-                        <Table>
+                    /* Eight columns do not fit a tablet, so each account stacks
+                       into an entry headed by its label or address, with its
+                       buttons on the entry's last line. */
+                        <Table stackAt="tablet">
                             <Thead>
                                 <Tr>
                                     <Th>Account</Th>
@@ -249,12 +251,12 @@ export function AccountsTab({ stats, onChanged }: { stats: IAccountHistoryStatsV
                             <Tbody>
                                 {accounts.map(({ account, progress }) => (
                                     <Tr key={account.address} hasError={progress.status === 'failed'}>
-                                        <Td data-label="Account">
+                                        <Td>
                                             <div className={styles.account_addr}>{account.label ?? account.address}</div>
                                             {account.label && <div className="text-muted">{account.address}</div>}
                                             {progress.lastError && <div className={styles.account_error}>{progress.lastError}</div>}
                                         </Td>
-                                        <Td data-label="Status">
+                                        <Td label="Status">
                                             <div className={styles.badge_stack}>
                                                 <Badge tone={statusTone(progress.status)}>{account.paused ? 'paused' : progress.status}</Badge>
                                                 {progress.catchingUp && !account.paused && <Badge tone="warning">catching up</Badge>}
@@ -266,19 +268,19 @@ export function AccountsTab({ stats, onChanged }: { stats: IAccountHistoryStatsV
                                                 <div className={styles.source_flags}>{describeDraining(progress.forwardDraining)}</div>
                                             )}
                                         </Td>
-                                        <Td data-label="Rows" muted>{progress.rowsIngested.toLocaleString()}</Td>
-                                        <Td data-label="Oldest reached" muted>
+                                        <Td label="Rows" muted>{progress.rowsIngested.toLocaleString()}</Td>
+                                        <Td label="Oldest reached" muted>
                                             {progress.oldestTimestampReached ? <ClientTime date={progress.oldestTimestampReached} format="datetime" /> : '—'}
                                         </Td>
-                                        <Td data-label="Newest tx" muted>
+                                        <Td label="Newest tx" muted>
                                             {progress.newestTimestampSeen ? <ClientTime date={progress.newestTimestampSeen} format="relative" /> : '—'}
                                         </Td>
-                                        <Td data-label="Snapshot" muted>
+                                        <Td label="Snapshot" muted>
                                             {/* A bare UTC day, not a timestamp — rendered verbatim, so no
                                                 ClientTime is needed and server/client HTML always match. */}
                                             {progress.lastSnapshotDay ?? '—'}
                                         </Td>
-                                        <Td data-label="Last run" muted>
+                                        <Td label="Last run" muted>
                                             {progress.lastRunAt ? <ClientTime date={progress.lastRunAt} format="datetime" /> : '—'}
                                             {progress.lastForwardRunAt && (
                                                 <div className={styles.forward_run}>
@@ -286,7 +288,7 @@ export function AccountsTab({ stats, onChanged }: { stats: IAccountHistoryStatsV
                                                 </div>
                                             )}
                                         </Td>
-                                        <Td data-label="Actions">
+                                        <Td>
                                             <div className={styles.row_actions}>
                                                 <Button
                                                     variant="ghost"
@@ -319,7 +321,6 @@ export function AccountsTab({ stats, onChanged }: { stats: IAccountHistoryStatsV
                                 ))}
                             </Tbody>
                         </Table>
-                    </div>
                 )}
         </Stack>
     );

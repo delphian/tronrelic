@@ -11,6 +11,10 @@
  *
  * The enable switch and its cell stop click propagation so toggling a tool never
  * also opens the panel; everything else on the row is a path into the detail.
+ *
+ * No cell carries a stacked label. When the Registry table stacks on a phone,
+ * the switch, risk chip, and name share the entry's first line, which is the
+ * same triage reading the full-width row gives, and the teaser wraps beneath.
  */
 
 import type { MouseEvent } from 'react';

@@ -6,25 +6,37 @@
  * for consistent theming.
  */
 
-/* Login form container */
+@use '../../../../breakpoints' as *;
+
+/* Not-admin screen container. Its own padding sits inside the <main>
+ * gutter, so on a phone it is dropped and the gutter alone frames the text;
+ * keeping both left a 360px phone with about 250px for the message. */
 .login_container {
-    max-width: 400px;
-    margin: 4rem auto;
-    padding: var(--spacing-12);
+    max-width: var(--max-width-sm);
+    margin: var(--gap-xl) auto;
+    padding: var(--card-padding-lg);
 }
 
 .login_content {
     display: grid;
-    gap: var(--spacing-10);
+    gap: var(--gap-lg);
+}
+
+/* `body` is the page-wide container declared in globals.scss. */
+@container body (max-width: #{$breakpoint-mobile-md}) {
+    .login_container {
+        margin-block: var(--gap-lg);
+        padding: 0;
+    }
 }
 
 .login_header {
     display: grid;
-    gap: var(--spacing-4);
+    gap: var(--gap-sm);
 }
 
 .login_title {
-    font-size: var(--font-size-2xl);
+    font-size: var(--font-size-heading-lg);
     font-weight: var(--font-weight-bold);
     margin: 0;
 }
@@ -32,21 +44,21 @@
 .login_subtitle {
     color: var(--color-text-muted);
     margin: 0;
-    font-size: var(--font-size-base);
+    font-size: var(--font-size-body);
 }
 
 .login_form {
     display: grid;
-    gap: var(--spacing-7);
+    gap: var(--gap-md);
 }
 
 .login_label {
     display: grid;
-    gap: var(--spacing-4);
+    gap: var(--gap-sm);
 }
 
 .login_label_text {
-    font-size: var(--font-size-base);
+    font-size: var(--font-size-body);
     font-weight: var(--font-weight-medium);
     color: var(--color-text-muted);
 }
@@ -59,14 +71,14 @@
 .layout_content {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    gap: var(--spacing-12);
+    gap: var(--grid-gap-lg);
 }
 
 .layout_nav_row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: var(--spacing-5);
+    gap: var(--gap-sm-md);
 }
 
 .layout_section {
@@ -76,11 +88,11 @@
 
 /* Error message styling */
 .error_message {
-    padding: var(--spacing-5) 1rem;
+    padding: var(--padding-sm-md) 1rem;
     background: rgba(255, 111, 125, 0.1);
     border: var(--border-width-thin) solid rgba(255, 111, 125, 0.3);
     border-radius: var(--radius-sm);
     color: var(--color-danger);
-    font-size: var(--font-size-base);
-    margin-top: var(--spacing-4);
+    font-size: var(--font-size-body);
+    margin-top: var(--gap-sm);
 }

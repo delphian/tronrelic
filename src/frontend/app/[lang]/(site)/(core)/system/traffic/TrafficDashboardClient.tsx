@@ -25,6 +25,7 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { Radio } from 'lucide-react';
 import type { MenuNodeSerialized } from '@/shared';
+import { Page, PageHeader } from '../../../../../../components/layout';
 import { MenuNavClient } from '../../../../../../components/layout/MenuNav/MenuNavClient';
 import { SegmentedControl } from '../../../../../../components/ui/SegmentedControl';
 import {
@@ -218,86 +219,94 @@ export function TrafficDashboardClient({ submenuTree, submenuGeneratedAt, initia
     // to the first view and silently ignored it on the other two.
     const showBotToggle = showGlobalControls;
 
+    // <Page> and the single <h1> come from here, as on every other /system
+    // page; the root layout owns <main>, so neither is repeated below.
     return (
-        <div className={styles.container}>
-            <div className={styles.tab_row}>
-                <div className={styles.submenu}>
-                    <MenuNavClient
-                        namespace={SUBMENU_NAMESPACE}
-                        items={submenuTree}
-                        generatedAt={submenuGeneratedAt}
-                        ariaLabel="Traffic sections"
-                        activeUrl={`/system/traffic?tab=${activeTab}`}
-                        onItemSelect={handleTabSelect}
-                    />
-                </div>
-                {liveVisitors !== null && (
-                    <span className={styles.live} title="Distinct visitors in the last 5 minutes">
-                        <Radio size={14} aria-hidden="true" />
-                        {liveVisitors.toLocaleString()} online now
-                    </span>
-                )}
-            </div>
-
-            {showGlobalControls && (
-                <div className={styles.global_controls}>
-                    <PeriodPicker
-                        period={period}
-                        onPeriodChange={setPeriod}
-                        customStart={customStart}
-                        customEnd={customEnd}
-                        onCustomStartChange={setCustomStart}
-                        onCustomEndChange={setCustomEnd}
-                    />
-                    {showBotToggle && (
-                        <SegmentedControl
-                            label="Bot traffic filter"
-                            value={includeBots ? 'include' : 'exclude'}
-                            options={BOT_FILTER_OPTIONS}
-                            onChange={(id) => setIncludeBots(id === 'include')}
+        <Page>
+            <div className={styles.container}>
+                <PageHeader
+                    title="Traffic"
+                    subtitle="Visitors, crawlers, search performance, and redirects."
+                />
+                <div className={styles.tab_row}>
+                    <div className={styles.submenu}>
+                        <MenuNavClient
+                            namespace={SUBMENU_NAMESPACE}
+                            items={submenuTree}
+                            generatedAt={submenuGeneratedAt}
+                            ariaLabel="Traffic sections"
+                            activeUrl={`/system/traffic?tab=${activeTab}`}
+                            onItemSelect={handleTabSelect}
                         />
+                    </div>
+                    {liveVisitors !== null && (
+                        <span className={styles.live} title="Distinct visitors in the last 5 minutes">
+                            <Radio size={14} aria-hidden="true" />
+                            {liveVisitors.toLocaleString()} online now
+                        </span>
                     )}
                 </div>
-            )}
 
-            <div className={styles.content}>
-                {activeTab === 'analytics' && (
-                    <AnalyticsDashboard period={period} customRange={customRange} includeBots={includeBots} refreshSignal={dashboardRefresh} />
-                )}
-                {activeTab === 'visitors' && (
-                    <VisitorsExplorer
-                        period={period}
-                        customRange={customRange}
-                        includeBots={includeBots}
-                    />
-                )}
-                {activeTab === 'crawlers' && (
-                    <div className={styles.tab_stack}>
-                        <CrawlerDashboard refreshSignal={dashboardRefresh} />
-                        <TrafficDashboard refreshSignal={dashboardRefresh} />
+                {showGlobalControls && (
+                    <div className={styles.global_controls}>
+                        <PeriodPicker
+                            period={period}
+                            onPeriodChange={setPeriod}
+                            customStart={customStart}
+                            customEnd={customEnd}
+                            onCustomStartChange={setCustomStart}
+                            onCustomEndChange={setCustomEnd}
+                        />
+                        {showBotToggle && (
+                            <SegmentedControl
+                                label="Bot traffic filter"
+                                value={includeBots ? 'include' : 'exclude'}
+                                options={BOT_FILTER_OPTIONS}
+                                onChange={(id) => setIncludeBots(id === 'include')}
+                            />
+                        )}
                     </div>
                 )}
-                {activeTab === 'seo' && <GscKeywords />}
-                {activeTab === 'redirects' && (
-                    <div className={styles.tab_stack}>
-                        <RedirectAnalytics />
-                        <RedirectsManager />
-                    </div>
-                )}
-                {activeTab === 'ai' && <AiToolsPanel />}
-                {/* Short, independent settings panels side by side when the
-                    page is wide enough, stacked otherwise; the bot rules
-                    table and editor need the full width, so they sit below. */}
-                {activeTab === 'settings' && (
-                    <div className={styles.tab_stack}>
-                        <div className={styles.settings_band}>
-                            <IgnoredUsers />
-                            <GscSettings />
+
+                <div className={styles.content}>
+                    {activeTab === 'analytics' && (
+                        <AnalyticsDashboard period={period} customRange={customRange} includeBots={includeBots} refreshSignal={dashboardRefresh} />
+                    )}
+                    {activeTab === 'visitors' && (
+                        <VisitorsExplorer
+                            period={period}
+                            customRange={customRange}
+                            includeBots={includeBots}
+                        />
+                    )}
+                    {activeTab === 'crawlers' && (
+                        <div className={styles.tab_stack}>
+                            <CrawlerDashboard refreshSignal={dashboardRefresh} />
+                            <TrafficDashboard refreshSignal={dashboardRefresh} />
                         </div>
-                        <BotRules />
-                    </div>
-                )}
+                    )}
+                    {activeTab === 'seo' && <GscKeywords />}
+                    {activeTab === 'redirects' && (
+                        <div className={styles.tab_stack}>
+                            <RedirectAnalytics />
+                            <RedirectsManager />
+                        </div>
+                    )}
+                    {activeTab === 'ai' && <AiToolsPanel />}
+                    {/* Short, independent settings panels side by side when the
+                        page is wide enough, stacked otherwise; the bot rules
+                        table and editor need the full width, so they sit below. */}
+                    {activeTab === 'settings' && (
+                        <div className={styles.tab_stack}>
+                            <div className={styles.settings_band}>
+                                <IgnoredUsers />
+                                <GscSettings />
+                            </div>
+                            <BotRules />
+                        </div>
+                    )}
+                </div>
             </div>
-        </div>
+        </Page>
     );
 }

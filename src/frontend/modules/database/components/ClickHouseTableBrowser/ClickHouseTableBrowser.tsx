@@ -449,7 +449,16 @@ export function ClickHouseTableBrowser(props: IClickHouseTableBrowserProps) {
                             : 'No tables found'}
                 </p>
             ) : (
-                <Table variant="compact">
+                /* Stacks on a phone, where the size, row and engine columns
+                   left the table name a few dozen pixels. Stacked, the toggle
+                   and the name share the heading line, the figures are named,
+                   and a sort picker stands in for the hidden sortable headers.
+                   The nested row list keeps its own layout. */
+                <Table
+                    variant="compact"
+                    stackAt="mobile"
+                    stackedSort={{ columns: TABLE_COLUMNS, active: sort.key, direction: sort.direction, onSort: toggleSort }}
+                >
                     <Thead>
                         <Tr>
                             <Th width="shrink" aria-label="Expand" />
@@ -521,9 +530,9 @@ export function ClickHouseTableBrowser(props: IClickHouseTableBrowserProps) {
                                         <Td>
                                             <code className={styles.table_name}>{label}</code>
                                         </Td>
-                                        <Td muted numeric>{table.rowCount.toLocaleString()}</Td>
-                                        <Td muted numeric className={styles.size_cell}>{formatBytes(table.sizeBytes)}</Td>
-                                        <Td muted className={styles.engine_cell}>{table.engine}</Td>
+                                        <Td label="Rows" muted numeric>{table.rowCount.toLocaleString()}</Td>
+                                        <Td label="Size" muted numeric className={styles.size_cell}>{formatBytes(table.sizeBytes)}</Td>
+                                        <Td label="Engine" muted className={styles.engine_cell}>{table.engine}</Td>
                                     </Tr>
 
                                     {isTableOpen && (

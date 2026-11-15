@@ -15,10 +15,10 @@
 .alert_success {
     display: flex;
     align-items: center;
-    gap: var(--spacing-4);
-    padding: var(--spacing-5) var(--spacing-6);
+    gap: var(--gap-sm);
+    padding: var(--padding-sm-md);
     border-radius: var(--radius-md);
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-body-sm);
 }
 
 .alert_error {
@@ -34,11 +34,13 @@
 }
 
 /* Compact Stats Bar */
+/* Wraps so five figures and their dividers never run past a phone's edge. */
 .stats_bar {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: var(--spacing-6);
-    padding: var(--spacing-5) var(--spacing-6);
+    gap: var(--gap-sm-md);
+    padding: var(--padding-sm-md);
     background: var(--card-background);
     border-radius: var(--radius-md);
     border: var(--card-border);
@@ -47,17 +49,17 @@
 .stat {
     display: flex;
     align-items: baseline;
-    gap: var(--spacing-2);
+    gap: var(--gap-xs);
 }
 
 .stat_value {
-    font-size: var(--font-size-xl);
+    font-size: var(--font-size-heading-md);
     font-weight: var(--font-weight-semibold);
     color: var(--color-text);
 }
 
 .stat_label {
-    font-size: var(--font-size-xs);
+    font-size: var(--font-size-caption);
     color: var(--color-text-muted);
     text-transform: uppercase;
     letter-spacing: var(--letter-spacing-wide);
@@ -77,7 +79,7 @@
 
 .stat_divider {
     width: var(--border-width-thin);
-    height: var(--spacing-10);
+    height: var(--gap-lg);
     background: var(--color-border);
 }
 
@@ -122,8 +124,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: var(--spacing-10);
-    height: var(--spacing-10);
+    width: var(--button-height-xs);
+    height: var(--button-height-xs);
     background: transparent;
     border: none;
     border-radius: var(--radius-sm);
@@ -140,11 +142,11 @@
 .job_name {
     display: flex;
     align-items: center;
-    gap: var(--spacing-2);
+    gap: var(--gap-xs);
     font-weight: var(--font-weight-medium);
     color: var(--color-text);
     font-family: var(--font-mono);
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-body-sm);
 }
 
 .error_icon {
@@ -173,38 +175,38 @@
 
 /* Details Row */
 .details_content {
-    padding: var(--spacing-6);
+    padding: var(--padding-sm-md);
     display: grid;
-    gap: var(--spacing-5);
+    gap: var(--grid-gap-sm);
 }
 
 .details_grid {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--spacing-6);
+    gap: var(--grid-gap-sm);
 }
 
 .detail_item {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-1);
+    gap: var(--gap-2xs);
 }
 
 .detail_label {
-    font-size: var(--font-size-xs);
+    font-size: var(--font-size-caption);
     color: var(--color-text-muted);
     text-transform: uppercase;
     letter-spacing: var(--letter-spacing-wide);
 }
 
 .detail_value {
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-body-sm);
     color: var(--color-text);
 }
 
 /* Error Block in Details */
 .error_block {
-    padding: var(--spacing-4);
+    padding: var(--padding-sm);
     background: var(--alert-danger-background);
     border: var(--border-width-thin) solid var(--alert-danger-border);
     border-radius: var(--radius-sm);
@@ -213,15 +215,15 @@
 .error_header {
     display: flex;
     align-items: center;
-    gap: var(--spacing-2);
+    gap: var(--gap-xs);
     color: var(--color-danger);
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-body-sm);
     font-weight: var(--font-weight-medium);
 }
 
 .error_message {
-    margin: var(--spacing-2) 0 0 0;
-    font-size: var(--font-size-sm);
+    margin: var(--gap-xs) 0 0 0;
+    font-size: var(--font-size-body-sm);
     color: var(--color-text-muted);
     font-family: var(--font-mono);
     word-break: break-word;
@@ -229,7 +231,7 @@
 
 /* Empty State */
 .empty_state {
-    padding: var(--spacing-12);
+    padding: var(--card-padding-lg);
     text-align: center;
     color: var(--color-text-muted);
     border: var(--border-width-thin) dashed var(--color-border);
@@ -237,15 +239,6 @@
     background: var(--card-background);
 }
 
-/* Responsive: Hide columns on smaller containers */
-@container table (max-width: #{$breakpoint-mobile-lg}) {
-    .th_last_run,
-    .cell_last_run {
-        display: none;
-    }
-
-    .th_schedule,
-    .cell_schedule {
-        display: none;
-    }
-}
+/* Narrow widths are handled by the shared Table's `stackAt="mobile"`, which
+   keeps every column as a labelled line. Columns are not hidden here: the
+   Schedule column is the only place a cron schedule can be edited. */

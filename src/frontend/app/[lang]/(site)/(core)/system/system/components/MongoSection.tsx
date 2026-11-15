@@ -438,7 +438,7 @@ function Migrations() {
                             No migration history
                         </p>
                     ) : (
-                        <Table variant="compact">
+                        <Table variant="compact" stackAt="mobile">
                             <Thead>
                                 <Tr>
                                     <Th>Migration ID</Th>
@@ -457,7 +457,7 @@ function Migrations() {
                                             <Td>
                                                 <code className={styles.cell_id}>{migration.migrationId}</code>
                                             </Td>
-                                            <Td>
+                                            <Td label="Status">
                                                 {migration.status === 'completed' ? (
                                                     <Badge tone="success">
                                                         <CheckCircle size={12} />
@@ -470,14 +470,14 @@ function Migrations() {
                                                     </Badge>
                                                 )}
                                             </Td>
-                                            <Td muted>
+                                            <Td label="Executed at" muted>
                                                 <ClientTime date={migration.executedAt} format="short" />
                                             </Td>
-                                            <Td muted>{migration.executionDuration}ms</Td>
-                                            <Td>
+                                            <Td label="Duration" muted>{migration.executionDuration}ms</Td>
+                                            <Td label="Source">
                                                 <Badge tone="neutral">{migration.source}</Badge>
                                             </Td>
-                                            <Td>
+                                            <Td label="Error">
                                                 {migration.error ? (
                                                     <div className={styles.error_cell}>
                                                         <Button

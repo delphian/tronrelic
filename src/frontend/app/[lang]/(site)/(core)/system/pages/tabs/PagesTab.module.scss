@@ -1,7 +1,13 @@
+@use '../../../../../../../app/breakpoints' as *;
+
+/* The tab is its own container, so the page rows below react to the width
+   the tab really has rather than the window's. */
 .container {
+    container-type: inline-size;
+    container-name: pages-tab;
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-7);
+    gap: var(--gap-md);
 }
 
 .error {
@@ -11,7 +17,7 @@
 
 .controls {
     display: flex;
-    gap: var(--spacing-5);
+    gap: var(--input-group-gap);
     align-items: center;
     flex-wrap: wrap;
 }
@@ -29,7 +35,7 @@
 
 .search_icon {
     position: absolute;
-    right: var(--spacing-5);
+    right: var(--padding-sm-md);
     top: 50%;
     transform: translateY(-50%);
     color: var(--color-text-muted);
@@ -38,27 +44,27 @@
 
 .empty {
     text-align: center;
-    padding: var(--spacing-14) var(--spacing-7);
+    padding: var(--padding-xl) var(--padding-md);
     color: var(--color-text-muted);
 }
 
 .empty p {
-    margin: 0 0 var(--spacing-7) 0;
-    font-size: var(--font-size-lg);
+    margin: 0 0 var(--gap-md) 0;
+    font-size: var(--font-size-heading-sm);
 }
 
 .pages_list {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-5);
+    gap: var(--gap-sm-md);
 }
 
 .page_row {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    gap: var(--spacing-7);
-    padding: var(--spacing-7);
+    gap: var(--gap-md);
+    padding: var(--card-padding-sm);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
     background: var(--color-surface);
@@ -74,7 +80,7 @@
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-4);
+    gap: var(--gap-sm);
 }
 
 .page_header {
@@ -86,15 +92,15 @@
 
 .page_title {
     margin: 0;
-    font-size: var(--font-size-lg);
+    font-size: var(--font-size-heading-sm);
     font-weight: var(--font-weight-semibold);
     color: var(--color-text);
 }
 
 .page_slug {
     margin: 0;
-    font-size: var(--font-size-sm);
-    font-family: 'Monaco', 'Courier New', monospace;
+    font-size: var(--font-size-body-sm);
+    font-family: var(--font-mono);
     color: var(--color-primary);
     text-decoration: none;
     transition: color var(--transition-base), text-decoration var(--transition-base);
@@ -108,7 +114,7 @@
 
 .page_description {
     margin: 0;
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-body-sm);
     color: var(--color-text-muted);
     line-height: 1.5;
 }
@@ -125,12 +131,42 @@
 
 .page_meta {
     margin: 0;
-    font-size: var(--font-size-xs);
+    font-size: var(--font-size-caption);
     color: var(--color-text-muted);
+}
+
+.page_info {
+    min-width: 0;
+}
+
+.page_slug {
+    overflow-wrap: anywhere;
 }
 
 .page_actions {
     display: flex;
-    gap: var(--spacing-4);
+    flex-wrap: wrap;
+    gap: var(--button-gap);
     flex-shrink: 0;
+}
+
+/* Tablet and below: three action buttons beside the page details leave the
+   details a narrow column, so the actions drop beneath them instead. On a
+   phone the search, filter, and New Page button each take a full row. */
+@container pages-tab (max-width: #{$breakpoint-tablet}) {
+    .page_row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+}
+
+@container pages-tab (max-width: #{$breakpoint-mobile-md}) {
+    .controls {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .search {
+        min-width: 0;
+    }
 }

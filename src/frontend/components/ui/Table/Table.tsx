@@ -1,13 +1,37 @@
 'use client';
 
+/**
+ * @fileoverview The shared table primitives: `Table`, `Thead`, `Tbody`, `Tr`,
+ * `Th`, and `Td`.
+ *
+ * Every data table on the site renders through these so that header type, cell
+ * rhythm, row hover, flush placement inside a card, and narrow-width behaviour
+ * are decided in one place. A table with more columns than a phone or tablet
+ * can show opts into `stackAt`, which turns each row into a labelled entry once
+ * the table's own container is at or below that width. Each `Td` carries its
+ * column name through `label` so the entry can still say what each value is
+ * after the header row is hidden.
+ */
+
 import type { HTMLAttributes, TableHTMLAttributes, TdHTMLAttributes, ThHTMLAttributes } from 'react';
 import { cn } from '../../../lib/cn';
+import { TableStackedSort, type ITableStackedSort } from './TableStackedSort';
 import styles from './Table.module.scss';
 
 /**
  * Table variant options for different visual styles.
  */
 type TableVariant = 'default' | 'compact';
+
+/**
+ * The container width at or below which a table's rows stack into labelled
+ * entries: `tablet` is 1024px, `mobile` is 768px, and `phone` is 480px, the
+ * project breakpoints `$breakpoint-tablet`, `$breakpoint-mobile-lg`, and
+ * `$breakpoint-mobile-md`. The width is measured against the table's own
+ * wrapper rather than the window, so a table in a slide-over, modal, or
+ * two-column band stacks for the space it really has.
+ */
+type TableStackAt = 'tablet' | 'mobile' | 'phone';
 
 /**
  * TableProps interface defines properties for the Table component.
@@ -42,6 +66,28 @@ interface TableProps extends TableHTMLAttributes<HTMLTableElement> {
      * @default false
      */
     flush?: boolean;
+    /**
+     * Stack each row into a labelled entry when the table's container is at or
+     * below this width, instead of scrolling sideways.
+     *
+     * Choose `tablet` for a table whose columns do not fit in 1024px, and
+     * `mobile` for one that fits a tablet but not a phone. Choose `phone` for a
+     * table that sits in a narrow band, such as one of two side-by-side panels,
+     * where `mobile` would already stack it on a desktop. Give every `Td` a
+     * `label` naming its column, because the header row is hidden while the
+     * rows are stacked. A cell with no label spans the whole entry, which suits
+     * the cell that identifies the row and a cell holding row actions. Leave the
+     * prop off for a table that reads correctly at every width.
+     */
+    stackAt?: TableStackAt;
+    /**
+     * Sorting to offer while the rows are stacked. Stacking hides the header
+     * row and the sort buttons in it, so a sortable table passes its sort
+     * state and handler here and gets a column picker and direction toggle
+     * above the stacked rows instead. Hidden at full width, where the headers
+     * sort. Has no effect without `stackAt`.
+     */
+    stackedSort?: ITableStackedSort;
 }
 
 /**
@@ -72,15 +118,19 @@ interface TableProps extends TableHTMLAttributes<HTMLTableElement> {
  * @param props - Table component properties
  * @returns A styled table element with wrapper
  */
-export function Table({ variant = 'default', stickyHeader = false, flush = false, className, children, ...props }: TableProps) {
+export function Table({ variant = 'default', stickyHeader = false, flush = false, stackAt, stackedSort, className, children, ...props }: TableProps) {
     return (
         <div
             className={cn(
                 styles.table_wrapper,
                 stickyHeader && styles.table_wrapper_sticky,
-                flush && styles.table_wrapper_flush
+                flush && styles.table_wrapper_flush,
+                stackAt === 'tablet' && styles.table_wrapper_stack_tablet,
+                stackAt === 'mobile' && styles.table_wrapper_stack_mobile,
+                stackAt === 'phone' && styles.table_wrapper_stack_phone
             )}
         >
+            {stackAt && stackedSort && <TableStackedSort {...stackedSort} />}
             <table
                 className={cn(
                     styles.table,
@@ -228,17 +278,27 @@ interface TdProps extends TdHTMLAttributes<HTMLTableCellElement> {
      * @default false
      */
     numeric?: boolean;
+    /**
+     * The column name shown beside this cell's value while the table's rows
+     * are stacked (see `stackAt` on `Table`). Ignored at full width, where the
+     * header row already names the column. Omit it for a cell that should span
+     * the whole stacked entry, such as the row's identifying value or its
+     * action buttons.
+     */
+    label?: string;
 }
 
 /**
  * Td Component
  *
- * Table data cell with consistent padding and optional muted text.
+ * Table data cell with consistent padding and optional muted text. The `label`
+ * is written to `data-label`, which the stacked layout reads to draw the
+ * column name beside the value.
  *
  * @param props - Table data cell properties
  * @returns A styled td element
  */
-export function Td({ muted, numeric, className, children, ...props }: TdProps) {
+export function Td({ muted, numeric, label, className, children, ...props }: TdProps) {
     return (
         <td
             className={cn(
@@ -247,6 +307,7 @@ export function Td({ muted, numeric, className, children, ...props }: TdProps) {
                 numeric && styles.cell_numeric,
                 className
             )}
+            data-label={label}
             {...props}
         >
             {children}

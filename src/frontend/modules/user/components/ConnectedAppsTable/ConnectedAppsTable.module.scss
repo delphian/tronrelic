@@ -1,4 +1,5 @@
-@use '../../../../app/breakpoints' as *;
+/* Narrow-screen stacking comes from the shared Table's `stackAt`; nothing
+   here sizes against the container. */
 
 /* Empty state inside the card. */
 .empty {
@@ -35,36 +36,4 @@
     overflow: hidden;
     clip: rect(0 0 0 0);
     white-space: nowrap;
-}
-
-/* Narrow containers: stack each row as a card and surface every dropped
-   column header through the cell's data-label, reacting to the shared
-   Table's own container so it stays correct in slideouts and modals. */
-@container table (max-width: #{$breakpoint-mobile-lg}) {
-    .table thead {
-        display: none;
-    }
-
-    .table tr {
-        display: block;
-        padding: var(--padding-sm);
-        border-bottom: var(--border-width-thin) solid var(--color-border);
-    }
-
-    .table td {
-        display: block;
-        padding: var(--padding-2xs) 0;
-        border-bottom: none;
-    }
-
-    .table td::before {
-        content: attr(data-label);
-        display: block;
-        margin-bottom: var(--gap-2xs);
-        font-size: var(--font-size-caption);
-        font-weight: var(--font-weight-semibold);
-        letter-spacing: var(--letter-spacing-wide);
-        text-transform: uppercase;
-        color: var(--color-text-muted);
-    }
 }

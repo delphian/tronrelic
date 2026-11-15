@@ -103,7 +103,7 @@ export function SignupActivityPanel({ report, onReport }: ISignupActivityPanelPr
                 {report.domainActivity.length === 0 ? (
                     <p className="text-muted">No new accounts or refused sign-ups in the last 7 days.</p>
                 ) : (
-                    <Table variant="compact" flush>
+                    <Table variant="compact" flush stackAt="mobile">
                         <Thead>
                             <Tr>
                                 <Th>Domain</Th>
@@ -116,10 +116,12 @@ export function SignupActivityPanel({ report, onReport }: ISignupActivityPanelPr
                         <Tbody>
                             {report.domainActivity.map(row => (
                                 <Tr key={row.domain}>
+                                    {/* No label: the domain heads a stacked entry. */}
                                     <Td><code>{row.domain}</code></Td>
-                                    <Td numeric>{row.newAccounts.toLocaleString('en-US')}</Td>
-                                    <Td numeric>{row.refusals.toLocaleString('en-US')}</Td>
-                                    <Td>{row.ruleAction ? <DomainRuleBadge action={row.ruleAction} /> : <span className="text-muted">None</span>}</Td>
+                                    <Td label="New accounts" numeric>{row.newAccounts.toLocaleString('en-US')}</Td>
+                                    <Td label="Refused" numeric>{row.refusals.toLocaleString('en-US')}</Td>
+                                    <Td label="Rule">{row.ruleAction ? <DomainRuleBadge action={row.ruleAction} /> : <span className="text-muted">None</span>}</Td>
+                                    {/* No label: the Block button is self-describing. */}
                                     <Td>
                                         {row.ruleAction !== 'block' && (
                                             <Button size="xs" variant="ghost" onClick={() => handleBlock(row)} icon={<Ban size={14} />} aria-label={`Block ${row.domain}`}>

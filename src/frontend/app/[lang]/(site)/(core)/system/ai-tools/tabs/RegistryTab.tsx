@@ -234,43 +234,43 @@ export function RegistryTab({ onChanged }: { onChanged: () => void }) {
                             {filteredTools.length === 0
                                 ? <div className={styles.placeholder}>No tools match the current filters.</div>
                                 : (
-                                    <div className="table-scroll">
-                                        <Table>
-                                            <Thead>
-                                                <Tr>
-                                                    <Th width="shrink">Enabled</Th>
-                                                    <Th width="shrink">Risk</Th>
-                                                    <Th>Tool</Th>
-                                                    <Th width="expand">Description</Th>
+                                    /* Four columns fit a tablet; on a phone each tool stacks
+                                       into one triage line plus its teaser. */
+                                    <Table stackAt="mobile">
+                                        <Thead>
+                                            <Tr>
+                                                <Th width="shrink">Enabled</Th>
+                                                <Th width="shrink">Risk</Th>
+                                                <Th>Tool</Th>
+                                                <Th width="expand">Description</Th>
+                                            </Tr>
+                                        </Thead>
+                                        {providerGroups.map(group => (
+                                            <Tbody key={group.provider}>
+                                                <Tr className={styles.provider_group_row}>
+                                                    <Th scope="rowgroup" colSpan={4}>
+                                                        <div className={styles.provider_group_cell}>
+                                                            <span className={styles.provider_group_name}>{group.provider}</span>
+                                                            <span className={styles.provider_group_count}>
+                                                                {group.tools.length} tool{group.tools.length === 1 ? '' : 's'}
+                                                            </span>
+                                                        </div>
+                                                    </Th>
                                                 </Tr>
-                                            </Thead>
-                                            {providerGroups.map(group => (
-                                                <Tbody key={group.provider}>
-                                                    <Tr className={styles.provider_group_row}>
-                                                        <Th scope="rowgroup" colSpan={4}>
-                                                            <div className={styles.provider_group_cell}>
-                                                                <span className={styles.provider_group_name}>{group.provider}</span>
-                                                                <span className={styles.provider_group_count}>
-                                                                    {group.tools.length} tool{group.tools.length === 1 ? '' : 's'}
-                                                                </span>
-                                                            </div>
-                                                        </Th>
-                                                    </Tr>
-                                                    {group.tools.map(tool => (
-                                                        <RegistryToolRow
-                                                            key={tool.name}
-                                                            tool={tool}
-                                                            indented
-                                                            hasOverride={policy.overrides[tool.name] !== undefined}
-                                                            busy={busyName === tool.name}
-                                                            onToggle={handleToggle}
-                                                            onSelect={(selected) => setSelectedName(selected.name)}
-                                                        />
-                                                    ))}
-                                                </Tbody>
-                                            ))}
-                                        </Table>
-                                    </div>
+                                                {group.tools.map(tool => (
+                                                    <RegistryToolRow
+                                                        key={tool.name}
+                                                        tool={tool}
+                                                        indented
+                                                        hasOverride={policy.overrides[tool.name] !== undefined}
+                                                        busy={busyName === tool.name}
+                                                        onToggle={handleToggle}
+                                                        onSelect={(selected) => setSelectedName(selected.name)}
+                                                    />
+                                                ))}
+                                            </Tbody>
+                                        ))}
+                                    </Table>
                                 )}
                         </Stack>
                     )}

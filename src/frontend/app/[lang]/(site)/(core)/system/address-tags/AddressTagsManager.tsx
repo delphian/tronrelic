@@ -478,7 +478,9 @@ export function AddressTagsManager() {
                             {loading ? 'Loading address tags…' : 'No address tags found.'}
                         </div>
                     ) : (
-                        <Table className={styles.tags_table}>
+                        /* Three columns fit a tablet; on a phone each address
+                           stacks into an entry headed by the address itself. */
+                        <Table stackAt="mobile">
                             <Thead>
                                 <Tr>
                                     <Th>Address</Th>
@@ -489,15 +491,15 @@ export function AddressTagsManager() {
                             <Tbody>
                                 {groups.map((group) => (
                                     <Tr key={group.address}>
-                                        <Td data-label="Address">
+                                        <Td>
                                             <TronAddress address={group.address} />
                                         </Td>
-                                        <Td data-label="Tags">
+                                        <Td label="Tags">
                                             <div className={styles.tag_list}>
                                                 {group.tags.map((item) => renderTagChip(item))}
                                             </div>
                                         </Td>
-                                        <Td data-label="Updated">
+                                        <Td label="Updated">
                                             <ClientTime date={group.updatedAt} format="datetime" />
                                         </Td>
                                     </Tr>

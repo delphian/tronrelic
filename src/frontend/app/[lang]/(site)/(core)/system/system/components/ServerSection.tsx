@@ -272,8 +272,10 @@ function ContainerTable({ docker }: IContainerTableProps) {
         return <p className={styles.unavailable}>No containers reported.</p>;
     }
 
+    // Stacks on a phone: the container name heads each entry and the five
+    // figures become labelled lines, rather than six columns being squeezed.
     return (
-        <Table variant="compact">
+        <Table variant="compact" stackAt="mobile">
             <Thead>
                 <Tr>
                     <Th scope="col">Container</Th>
@@ -324,22 +326,22 @@ function ContainerRow({ container }: IContainerRowProps) {
                 {container.service ?? container.name}
                 {container.isSelf && <span className={styles.self_marker}> (this)</span>}
             </Th>
-            <Td>
+            <Td label="State">
                 <Badge tone={badgeTone(tone)}>
                     {container.health ? `${container.state} · ${container.health}` : container.state}
                 </Badge>
             </Td>
-            <Td numeric>
+            <Td label="CPU" numeric>
                 {container.cpuPercent !== null ? `${container.cpuPercent.toFixed(1)}%` : '—'}
             </Td>
-            <Td numeric className={memoryTone ? styles[`tone--${memoryTone}`] : undefined}>
+            <Td label="Memory" numeric className={memoryTone ? styles[`tone--${memoryTone}`] : undefined}>
                 {container.memoryUsage !== null ? formatBytes(container.memoryUsage) : '—'}
                 {container.memoryLimit !== null && (
                     <span className={styles.cell_detail}> of {formatBytes(container.memoryLimit)}</span>
                 )}
             </Td>
-            <Td numeric>{container.uptime !== null ? formatUptime(container.uptime) : '—'}</Td>
-            <Td numeric className={container.restartCount > 0 ? styles['tone--warning'] : undefined}>
+            <Td label="Uptime" numeric>{container.uptime !== null ? formatUptime(container.uptime) : '—'}</Td>
+            <Td label="Restarts" numeric className={container.restartCount > 0 ? styles['tone--warning'] : undefined}>
                 {container.restartCount}
             </Td>
         </Tr>

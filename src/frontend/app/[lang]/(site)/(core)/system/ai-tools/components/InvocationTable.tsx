@@ -7,6 +7,10 @@
  * behaviour. Keeping one table means a column added here appears on both feeds and
  * the two can never drift. The parent owns selection state and the detail
  * slide-over; this component only lists rows and reports a click.
+ *
+ * Seven columns do not fit a tablet, so the table uses the shared Table's
+ * `stackAt="tablet"`. Stacked, the time and the tool name share the entry's
+ * first line and the remaining five values are named beneath them.
  */
 
 import type { IToolInvocationRecord } from '@/types';
@@ -25,53 +29,53 @@ import styles from '../page.module.scss';
  * @param props.onSelect - Invoked with the clicked record so the caller can open
  *   its detail panel — selection lives in the parent so the same detail slide-over
  *   serves whatever surface hosts the table.
- * @returns The scrollable rows table.
+ * @returns The rows table, stacked into labelled entries at tablet width and below.
  */
 export function InvocationTable({ records, onSelect }: {
     records: IToolInvocationRecord[];
     onSelect: (record: IToolInvocationRecord) => void;
 }) {
     return (
-        <div className="table-scroll">
-            <Table>
-                <Thead>
-                    <Tr>
-                        <Th width="shrink" className={styles.col_time}>Time</Th>
-                        <Th>Tool</Th>
-                        <Th width="shrink">AI Provider</Th>
-                        <Th width="shrink">Actor</Th>
-                        <Th width="shrink">Trigger</Th>
-                        <Th width="shrink">Status</Th>
-                        <Th width="shrink">Duration</Th>
+        <Table stackAt="tablet">
+            <Thead>
+                <Tr>
+                    <Th width="shrink" className={styles.col_time}>Time</Th>
+                    <Th>Tool</Th>
+                    <Th width="shrink">AI Provider</Th>
+                    <Th width="shrink">Actor</Th>
+                    <Th width="shrink">Trigger</Th>
+                    <Th width="shrink">Status</Th>
+                    <Th width="shrink">Duration</Th>
+                </Tr>
+            </Thead>
+            <Tbody>
+                {records.map(record => (
+                    <Tr
+                        key={record.id}
+                        className={styles.tool_row}
+                        hasError={record.status === 'error'}
+                        onClick={() => onSelect(record)}
+                    >
+                        {/* Time and tool are unlabelled so, stacked, they share the
+                            entry's first line as its heading. */}
+                        <Td muted className={styles.col_time}><ClientTime date={record.createdAt} format="datetime" /></Td>
+                        <Td>
+                            <button
+                                type="button"
+                                className={styles.tool_name_button}
+                                onClick={(event) => { event.stopPropagation(); onSelect(record); }}
+                            >
+                                {record.toolName}
+                            </button>
+                        </Td>
+                        <Td muted label="AI Provider">{record.aiProviderId}</Td>
+                        <Td muted label="Actor">{record.actor.kind}{record.actor.id ? ` · ${record.actor.id}` : ''}</Td>
+                        <Td muted label="Trigger">{record.triggerPath}</Td>
+                        <Td label="Status"><Badge tone={statusTone(record.status)}>{record.status}</Badge></Td>
+                        <Td muted label="Duration">{record.durationMs}ms</Td>
                     </Tr>
-                </Thead>
-                <Tbody>
-                    {records.map(record => (
-                        <Tr
-                            key={record.id}
-                            className={styles.tool_row}
-                            hasError={record.status === 'error'}
-                            onClick={() => onSelect(record)}
-                        >
-                            <Td muted className={styles.col_time}><ClientTime date={record.createdAt} format="datetime" /></Td>
-                            <Td>
-                                <button
-                                    type="button"
-                                    className={styles.tool_name_button}
-                                    onClick={(event) => { event.stopPropagation(); onSelect(record); }}
-                                >
-                                    {record.toolName}
-                                </button>
-                            </Td>
-                            <Td muted>{record.aiProviderId}</Td>
-                            <Td muted>{record.actor.kind}{record.actor.id ? ` · ${record.actor.id}` : ''}</Td>
-                            <Td muted>{record.triggerPath}</Td>
-                            <Td><Badge tone={statusTone(record.status)}>{record.status}</Badge></Td>
-                            <Td muted>{record.durationMs}ms</Td>
-                        </Tr>
-                    ))}
-                </Tbody>
-            </Table>
-        </div>
+                ))}
+            </Tbody>
+        </Table>
     );
 }

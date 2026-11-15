@@ -55,7 +55,7 @@ export function PipelineErrors({ pipeline }: IPipelineErrorsProps) {
                 {errors.length === 0 ? (
                     <p className="text-muted">No pipeline errors since the backend started.</p>
                 ) : (
-                    <Table variant="compact" flush>
+                    <Table variant="compact" flush stackAt="mobile">
                         <Thead>
                             <Tr>
                                 <Th scope="col">When</Th>
@@ -68,11 +68,11 @@ export function PipelineErrors({ pipeline }: IPipelineErrorsProps) {
                         <Tbody>
                             {errors.map((error, index) => (
                                 <Tr key={`${error.at}-${index}`} hasError={error.stage === 'commit'}>
-                                    <Td><ClientTime date={error.at} format="relative" /></Td>
-                                    <Td>{STAGE_NAMES[error.stage]}</Td>
-                                    <Td numeric>{formatNumber(error.blockNumber)}</Td>
-                                    <Td><Badge tone={error.stage === 'commit' ? 'danger' : 'warning'} size="xs">{error.errorClass}</Badge></Td>
-                                    <Td muted>{error.message}</Td>
+                                    <Td label="When"><ClientTime date={error.at} format="relative" /></Td>
+                                    <Td label="Stage">{STAGE_NAMES[error.stage]}</Td>
+                                    <Td label="Block" numeric>{formatNumber(error.blockNumber)}</Td>
+                                    <Td label="Class"><Badge tone={error.stage === 'commit' ? 'danger' : 'warning'} size="xs">{error.errorClass}</Badge></Td>
+                                    <Td label="Message" muted>{error.message}</Td>
                                 </Tr>
                             ))}
                         </Tbody>

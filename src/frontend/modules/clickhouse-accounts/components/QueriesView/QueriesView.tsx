@@ -166,7 +166,9 @@ export function QueriesView({ accountId, accountLabel, canKill }: IQueriesViewPr
 
             {queries !== null && queries.length > 0 && (
                 <div className={styles.scroll}>
-                    <Table variant="compact">
+                    {/* Seven or eight columns with the SQL text do not fit a
+                        tablet, so each query stacks into an entry there. */}
+                    <Table variant="compact" stackAt="tablet">
                         <Thead>
                             <Tr>
                                 <Th>Started</Th>
@@ -182,13 +184,13 @@ export function QueriesView({ accountId, accountLabel, canKill }: IQueriesViewPr
                         <Tbody>
                             {queries.map(query => (
                                 <Tr key={query.queryId} hasError={query.status === 'failed'}>
-                                    <Td><ClientTime date={query.startedAt} format="relative" /></Td>
-                                    <Td numeric>{formatMilliseconds(query.durationMs)}</Td>
-                                    <Td numeric>{formatCount(query.readRows)}</Td>
-                                    <Td numeric>{formatBytes(query.readBytes)}</Td>
-                                    <Td numeric>{formatBytes(query.memoryBytes)}</Td>
-                                    <Td><QueryResult query={query} /></Td>
-                                    <Td>
+                                    <Td label="Started"><ClientTime date={query.startedAt} format="relative" /></Td>
+                                    <Td label={scope === 'running' ? 'Running for' : 'Took'} numeric>{formatMilliseconds(query.durationMs)}</Td>
+                                    <Td label="Rows scanned" numeric>{formatCount(query.readRows)}</Td>
+                                    <Td label="Data scanned" numeric>{formatBytes(query.readBytes)}</Td>
+                                    <Td label="Memory" numeric>{formatBytes(query.memoryBytes)}</Td>
+                                    <Td label="Result"><QueryResult query={query} /></Td>
+                                    <Td label="Query">
                                         <code className={styles.sql} title={query.sql}>{query.sql}</code>
                                         {query.error && <span className={styles.error}>{query.error}</span>}
                                     </Td>

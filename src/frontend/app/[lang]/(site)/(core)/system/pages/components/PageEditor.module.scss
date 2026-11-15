@@ -1,7 +1,9 @@
+@use '../../../../../../../app/breakpoints' as *;
+
 .editor {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-7);
+    gap: var(--gap-md);
     container-type: inline-size;
     container-name: page-editor;
 }
@@ -10,19 +12,20 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: var(--spacing-7);
+    gap: var(--gap-md);
 }
 
 .title {
     margin: 0;
-    font-size: var(--font-size-xl);
+    font-size: var(--font-size-heading-md);
     font-weight: var(--font-weight-semibold);
     color: var(--color-text);
 }
 
 .actions {
     display: flex;
-    gap: var(--spacing-4);
+    flex-wrap: wrap;
+    gap: var(--button-gap);
 }
 
 .error {
@@ -33,24 +36,26 @@
 .panes {
     display: grid;
     grid-template-columns: 1fr;
-    gap: var(--spacing-7);
+    gap: var(--gap-md);
     min-height: 500px;
 }
 
+/* minmax(0, …) so a long unbroken line in the preview cannot widen its track
+   past half the editor. */
 .panes:has(.pane:nth-child(2)) {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .pane {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-5);
+    gap: var(--gap-sm-md);
     height: 100%;
 }
 
 .pane_title {
     margin: 0;
-    font-size: var(--font-size-md);
+    font-size: var(--font-size-body-lg);
     font-weight: var(--font-weight-semibold);
     color: var(--color-text);
 }
@@ -62,12 +67,12 @@
 .textarea {
     flex: 1;
     min-height: 500px;
-    font-family: 'Monaco', 'Courier New', monospace;
+    font-family: var(--font-mono);
 }
 
 .preview {
     flex: 1;
-    padding: var(--spacing-7);
+    padding: var(--padding-md);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
     background: var(--color-background);
@@ -81,7 +86,7 @@
 .preview h4,
 .preview h5,
 .preview h6 {
-    margin: var(--spacing-10) 0 var(--spacing-5) 0;
+    margin: var(--gap-lg) 0 var(--gap-sm-md) 0;
     color: var(--color-text);
 }
 
@@ -92,26 +97,26 @@
 }
 
 .preview p {
-    margin: var(--spacing-5) 0;
+    margin: var(--gap-sm-md) 0;
     color: var(--color-text-muted);
 }
 
 .preview ul,
 .preview ol {
-    margin: var(--spacing-5) 0;
-    padding-left: var(--spacing-12);
+    margin: var(--gap-sm-md) 0;
+    padding-left: var(--padding-lg);
 }
 
 .preview code {
-    padding: var(--spacing-1) var(--spacing-2);
+    padding: var(--padding-2xs) var(--padding-xs);
     background: var(--color-surface-muted);
     border-radius: var(--radius-sm);
-    font-family: 'Monaco', 'Courier New', monospace;
+    font-family: var(--font-mono);
     font-size: 0.9em;
 }
 
 .preview pre {
-    padding: var(--spacing-7);
+    padding: var(--padding-md);
     background: var(--color-surface-muted);
     border-radius: var(--radius-md);
     overflow-x: auto;
@@ -130,26 +135,30 @@
 
 .help {
     margin: 0;
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-body-sm);
     color: var(--color-text-muted);
     line-height: 1.6;
 }
 
 .help code {
-    padding: var(--spacing-1) var(--spacing-2);
+    padding: var(--padding-2xs) var(--padding-xs);
     background: var(--color-surface-muted);
     border-radius: var(--radius-sm);
-    font-family: 'Monaco', 'Courier New', monospace;
+    font-family: var(--font-mono);
     font-size: 0.9em;
     color: var(--color-primary);
 }
 
-/* Responsive behavior with container queries */
-@container page-editor (max-width: 768px) {
+/* Tablet and below: the markdown and preview panes stack, since two panes
+   side by side leave each under 500px, too narrow to edit markdown in. */
+@container page-editor (max-width: #{$breakpoint-tablet}) {
     .panes:has(.pane:nth-child(2)) {
-        grid-template-columns: 1fr;
+        grid-template-columns: minmax(0, 1fr);
     }
+}
 
+/* Phone width: the title and the editor's buttons take separate rows. */
+@container page-editor (max-width: #{$breakpoint-mobile-lg}) {
     .header {
         flex-direction: column;
         align-items: stretch;

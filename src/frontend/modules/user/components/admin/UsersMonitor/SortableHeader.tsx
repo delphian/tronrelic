@@ -11,6 +11,7 @@
 
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 import type { AccountSortDirection, AccountSortField } from '@/types';
+import { Th } from '../../../../../components/ui/Table';
 import styles from './UsersMonitor.module.scss';
 
 /** Props for one sortable header. */
@@ -42,7 +43,7 @@ export function SortableHeader({ field, label, sortBy, sortDirection, onSort }: 
     const ariaSort = active ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none';
     const Icon = !active ? ArrowUpDown : sortDirection === 'asc' ? ArrowUp : ArrowDown;
     return (
-        <th aria-sort={ariaSort}>
+        <Th aria-sort={ariaSort}>
             <button
                 type="button"
                 className={active ? `${styles.sort_button} ${styles.sort_button__active}` : styles.sort_button}
@@ -51,6 +52,6 @@ export function SortableHeader({ field, label, sortBy, sortDirection, onSort }: 
                 {label}
                 <Icon size={14} aria-hidden="true" className={styles.sort_icon} />
             </button>
-        </th>
+        </Th>
     );
 }

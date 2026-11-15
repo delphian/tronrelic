@@ -5,12 +5,25 @@
  * and ellipsis indicators for collapsed page ranges.
  */
 
+/*
+ * With one sibling each side the bar holds up to nine 34px controls, about
+ * 395px in all, which is wider than a phone's content area once the page
+ * gutter is taken off. It therefore never grows past its parent and wraps onto
+ * a second line instead of running off the screen.
+ *
+ * The corner is --radius-lg rather than --radius-full. On one line the bar is
+ * about 42px tall, so a 24px radius still draws a full pill; when it wraps,
+ * the same radius gives a rounded rectangle instead of a 999px stadium.
+ */
 .pagination {
     display: inline-flex;
+    flex-wrap: wrap;
+    justify-content: center;
     align-items: center;
+    max-width: 100%;
     gap: var(--spacing-4);
     padding: var(--spacing-2) var(--spacing-5);
-    border-radius: var(--radius-full);
+    border-radius: var(--radius-lg);
     background: var(--color-surface-muted);
     border: var(--border-width-thin) solid var(--color-border);
 }

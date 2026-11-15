@@ -448,7 +448,9 @@ export function GscKeywords() {
                         empty={!pages || pages.length === 0}
                         emptyMessage="No page data in this window yet. Trigger a refresh in the Settings tab to backfill the current window."
                     >
-                        <Table variant="compact" flush className={styles.dense_table}>
+                        {/* Two-up in a band about 660px wide on a desktop, so it
+                            stacks only at phone width, headed by the page. */}
+                        <Table variant="compact" flush stackAt="phone" className={styles.dense_table}>
                             <Thead>
                                 <Tr>
                                     <Th scope="col" width="expand">Page</Th>
@@ -462,10 +464,10 @@ export function GscKeywords() {
                                 {(pages ?? []).map(pg => (
                                     <Tr key={pg.page}>
                                         <Td className={styles.wrap_cell}>{pg.page}</Td>
-                                        <Td numeric>{numberFormatter.format(pg.clicks)}</Td>
-                                        <Td numeric muted>{numberFormatter.format(pg.impressions)}</Td>
-                                        <Td numeric muted>{(pg.ctr * 100).toFixed(1)}%</Td>
-                                        <Td numeric muted>{pg.position.toFixed(1)}</Td>
+                                        <Td label="Clicks" numeric>{numberFormatter.format(pg.clicks)}</Td>
+                                        <Td label="Impressions" numeric muted>{numberFormatter.format(pg.impressions)}</Td>
+                                        <Td label="Click-through rate" numeric muted>{(pg.ctr * 100).toFixed(1)}%</Td>
+                                        <Td label="Average position" numeric muted>{pg.position.toFixed(1)}</Td>
                                     </Tr>
                                 ))}
                             </Tbody>
@@ -488,7 +490,8 @@ export function GscKeywords() {
                         empty={!pairs || pairs.length === 0}
                         emptyMessage="No keyword→page pairs in this window. Google omits anonymized low-volume queries, so a quiet window can be empty even when top pages shows clicks."
                     >
-                        <Table variant="compact" flush stickyHeader className={styles.dense_table}>
+                        {/* Stacks at phone width, headed by the keyword. */}
+                        <Table variant="compact" flush stickyHeader stackAt="phone" className={styles.dense_table}>
                             <Thead>
                                 <Tr>
                                     <Th scope="col">Keyword</Th>
@@ -503,11 +506,11 @@ export function GscKeywords() {
                                 {(pairs ?? []).map(pair => (
                                     <Tr key={`${pair.keyword} ${pair.page}`}>
                                         <Td className={styles.wrap_cell}>{pair.keyword}</Td>
-                                        <Td className={styles.wrap_cell} muted>{pair.page}</Td>
-                                        <Td numeric>{numberFormatter.format(pair.clicks)}</Td>
-                                        <Td numeric muted>{numberFormatter.format(pair.impressions)}</Td>
-                                        <Td numeric muted>{(pair.ctr * 100).toFixed(1)}%</Td>
-                                        <Td numeric muted>{pair.position.toFixed(1)}</Td>
+                                        <Td label="Page" className={styles.wrap_cell} muted>{pair.page}</Td>
+                                        <Td label="Clicks" numeric>{numberFormatter.format(pair.clicks)}</Td>
+                                        <Td label="Impressions" numeric muted>{numberFormatter.format(pair.impressions)}</Td>
+                                        <Td label="Click-through rate" numeric muted>{(pair.ctr * 100).toFixed(1)}%</Td>
+                                        <Td label="Average position" numeric muted>{pair.position.toFixed(1)}</Td>
                                     </Tr>
                                 ))}
                             </Tbody>

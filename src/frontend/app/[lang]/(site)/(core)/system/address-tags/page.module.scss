@@ -16,15 +16,17 @@
     min-width: 0;
 }
 
-/* Search row above the table. */
+/* Search row above the table. The tables on this page stack their rows
+   through the shared Table's `stackAt`, so no table rules live here. */
 .search_form {
     display: flex;
+    flex-wrap: wrap;
     gap: var(--gap-sm);
     align-items: center;
 }
 
 .search_input {
-    flex: 1 1 auto;
+    flex: 1 1 var(--max-width-xs);
     min-width: 0;
 }
 
@@ -247,6 +249,7 @@
 /* One settings switch with its label and any status badge beside it. */
 .switch_row {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--gap-sm);
 }
@@ -262,40 +265,4 @@
 .key_input {
     flex: 1 1 var(--max-width-xs);
     min-width: 0;
-}
-
-/* Mobile: collapse table rows into stacked cards, reacting to the shared
-   Table's own container width so the switch stays correct inside slideouts
-   and modals. Each cell surfaces its dropped column header via data-label. */
-@container table (max-width: #{$breakpoint-mobile-lg}) {
-    .tags_table thead,
-    .sources_table thead {
-        display: none;
-    }
-
-    .tags_table tr,
-    .sources_table tr {
-        display: block;
-        padding: var(--padding-sm);
-        border-bottom: var(--border-width-thin) solid var(--color-border);
-    }
-
-    .tags_table td,
-    .sources_table td {
-        display: block;
-        padding: var(--padding-2xs) 0;
-        border-bottom: none;
-    }
-
-    .tags_table td::before,
-    .sources_table td::before {
-        content: attr(data-label);
-        display: block;
-        margin-bottom: var(--gap-2xs);
-        font-size: var(--font-size-caption);
-        font-weight: var(--font-weight-semibold);
-        letter-spacing: var(--letter-spacing-wide);
-        text-transform: uppercase;
-        color: var(--color-text-muted);
-    }
 }

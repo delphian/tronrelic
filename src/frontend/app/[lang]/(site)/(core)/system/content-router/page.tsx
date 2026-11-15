@@ -21,6 +21,7 @@
 import { useEffect, useState } from 'react';
 import { Page, PageHeader, Stack } from '../../../../../../components/layout';
 import { Badge } from '../../../../../../components/ui/Badge';
+import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../../components/ui/Table';
 import styles from './page.module.scss';
 
 /**
@@ -122,37 +123,39 @@ export default function ContentRouterAdminPage() {
                     )}
 
                     {sinks.length > 0 && (
-                        <table className={styles.table}>
-                            <thead>
-                                <tr>
-                                    <th>Sink ID</th>
-                                    <th>Provider</th>
-                                    <th>Accepts</th>
-                                    <th>Reach</th>
-                                </tr>
-                            </thead>
-                            <tbody>
+                        /* Four columns fit a tablet; on a phone each sink
+                           stacks into an entry headed by its id. */
+                        <Table stackAt="mobile">
+                            <Thead>
+                                <Tr>
+                                    <Th>Sink ID</Th>
+                                    <Th>Provider</Th>
+                                    <Th>Accepts</Th>
+                                    <Th>Reach</Th>
+                                </Tr>
+                            </Thead>
+                            <Tbody>
                                 {sinks.map((s) => (
-                                    <tr key={s.id}>
-                                        <td><code className={styles.sink_id}>{s.id}</code></td>
-                                        <td><Badge tone="neutral">{s.providerId}</Badge></td>
-                                        <td>
+                                    <Tr key={s.id}>
+                                        <Td><code className={styles.sink_id}>{s.id}</code></Td>
+                                        <Td label="Provider"><Badge tone="neutral">{s.providerId}</Badge></Td>
+                                        <Td label="Accepts">
                                             <span className={styles.badge_row}>
                                                 {s.accepts.length > 0
                                                     ? s.accepts.map((f) => <Badge key={f} tone="info">{f}</Badge>)
                                                     : <span className="text-muted">—</span>}
                                             </span>
-                                        </td>
-                                        <td>
+                                        </Td>
+                                        <Td label="Reach">
                                             <span className={styles.badge_row}>
                                                 <Badge tone={egressTone(s.reach.egress)}>{s.reach.egress}</Badge>
                                                 <Badge tone={audienceTone(s.reach.audience)}>{s.reach.audience}</Badge>
                                             </span>
-                                        </td>
-                                    </tr>
+                                        </Td>
+                                    </Tr>
                                 ))}
-                            </tbody>
-                        </table>
+                            </Tbody>
+                        </Table>
                     )}
                 </Stack>
             </div>

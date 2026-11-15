@@ -29,6 +29,27 @@ import { requireAdmin } from '../../api/middleware/admin-auth.js';
 import { createAdminRateLimiter } from '../../api/middleware/rate-limit.js';
 import { registerPageAiTools } from './ai-tools.js';
 
+/**
+ * Menu namespace for the tab row on `/system/pages`. Kept out of `main` so
+ * the tabs never appear in the global navigation; only that page's own
+ * `MenuNavClient` reads this namespace (menu module's Submenu Pattern).
+ */
+export const PAGES_ADMIN_SUBMENU_NAMESPACE = 'pages';
+
+/**
+ * The `/system/pages` tab row, declared as menu nodes so the row inherits
+ * per-user gating, ordering, and live `menu:update` refresh, and so a plugin
+ * can add a tab. Database and Logs are the tabs every module with storage
+ * and an admin page carries; the module registers no scheduler jobs, so
+ * there is no Schedules tab.
+ */
+const PAGES_ADMIN_SUBMENU_TABS: ReadonlyArray<{ label: string; tab: string; icon: string; order: number }> = [
+    { label: 'Pages', tab: 'pages', icon: 'FileText', order: 0 },
+    { label: 'Settings', tab: 'settings', icon: 'Settings', order: 1 },
+    { label: 'Database', tab: 'database', icon: 'Database', order: 2 },
+    { label: 'Logs', tab: 'logs', icon: 'ScrollText', order: 3 }
+];
+
 export interface IPagesModuleDependencies {
     database: IDatabaseService;
     cacheService: ICacheService;
@@ -66,8 +87,8 @@ export interface IPagesModuleDependencies {
  *   `PageTranslationService` singletons, ensure the translation values index,
  *   and build the controllers.
  * - `run()` — register the `core:page` managed content type (which carries its
- *   translation side), register the `/system/pages` menu item, mount admin and
- *   public routers, and register the page AI tools.
+ *   translation side), register the `/system/pages` menu item and the page's
+ *   tab row, mount admin and public routers, and register the page AI tools.
  *
  * No file dependencies — uploads go through the Files module's
  * `/api/admin/files` admin surface, which is registered before Pages so
@@ -170,6 +191,25 @@ export class PagesModule implements IModule<IPagesModuleDependencies> {
             });
 
             this.logger.info('Pages menu item registered under the System container');
+
+            // Register the /system/pages tab row as a namespaced menu (Submenu
+            // Pattern). The nodes are memory-only and sit outside the System
+            // container, so the container's forced `requiresAdmin` does not
+            // reach them and each node sets it for itself.
+            for (const tab of PAGES_ADMIN_SUBMENU_TABS) {
+                await this.menuService.create({
+                    namespace: PAGES_ADMIN_SUBMENU_NAMESPACE,
+                    label: tab.label,
+                    url: `/system/pages?tab=${tab.tab}`,
+                    icon: tab.icon,
+                    order: tab.order,
+                    parent: null,
+                    enabled: true,
+                    requiresAdmin: true
+                });
+            }
+
+            this.logger.info('Pages admin tab row registered');
         } catch (error) {
             this.logger.error({ error }, 'Failed to register pages menu item');
             throw new Error(`Failed to register pages menu item: ${error instanceof Error ? error.message : 'Unknown error'}`);

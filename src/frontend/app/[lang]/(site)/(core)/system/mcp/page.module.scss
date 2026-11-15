@@ -185,33 +185,5 @@
     align-items: center;
 }
 
-/* Narrow containers: stack each tool row as a card, surfacing each dropped
-   column header through the cell's data-label. */
-@container table (max-width: #{$breakpoint-mobile-lg}) {
-    .tools_table thead {
-        display: none;
-    }
-
-    .tools_table tr {
-        display: block;
-        padding: var(--padding-sm);
-        border-bottom: var(--border-width-thin) solid var(--color-border);
-    }
-
-    .tools_table td {
-        display: block;
-        padding: var(--padding-2xs) 0;
-        border-bottom: none;
-    }
-
-    .tools_table td::before {
-        content: attr(data-label);
-        display: block;
-        margin-bottom: var(--gap-2xs);
-        font-size: var(--font-size-caption);
-        font-weight: var(--font-weight-semibold);
-        letter-spacing: var(--letter-spacing-wide);
-        text-transform: uppercase;
-        color: var(--color-text-muted);
-    }
-}
+/* The tools and usage tables stack through the shared Table's `stackAt`, so
+   no table layout rules live here. */

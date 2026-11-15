@@ -13,6 +13,10 @@
  * The first level arrives with the page (server rendered); the deeper levels
  * are fetched when the admin clicks, which is the user-triggered loading the
  * SSR rule allows.
+ *
+ * Each table has eight or nine columns, more than a tablet holds, so all three
+ * use the shared Table's `stackAt="tablet"`: at 1024px and below each row is an
+ * entry headed by its group, tool, or caller, with every figure named.
  */
 
 import { useCallback, useState } from 'react';
@@ -82,11 +86,11 @@ function poolBadge(row: IMcpUsageGroupRow) {
 function figureCells(figures: IMcpUsageFigures) {
     return (
         <>
-            <Td data-label="Calls" numeric>{count(figures.calls)}</Td>
-            <Td data-label="Refused" numeric muted={figures.refused === 0}>{count(figures.refused)}</Td>
-            <Td data-label="By a limit" numeric muted={figures.limited === 0}>{count(figures.limited)}</Td>
-            <Td data-label="Failed" numeric muted={figures.failed === 0}>{count(figures.failed)}</Td>
-            <Td data-label="p95" numeric muted>{figures.p95DurationMs === null ? '—' : `${count(figures.p95DurationMs)} ms`}</Td>
+            <Td label="Calls" numeric>{count(figures.calls)}</Td>
+            <Td label="Refused" numeric muted={figures.refused === 0}>{count(figures.refused)}</Td>
+            <Td label="By a limit" numeric muted={figures.limited === 0}>{count(figures.limited)}</Td>
+            <Td label="Failed" numeric muted={figures.failed === 0}>{count(figures.failed)}</Td>
+            <Td label="p95" numeric muted>{figures.p95DurationMs === null ? '—' : `${count(figures.p95DurationMs)} ms`}</Td>
         </>
     );
 }
@@ -193,7 +197,7 @@ export function McpUsagePanel({ initialUsage, groups }: IMcpUsagePanelProps) {
                             <StatTile size="sm" label="Failed" value={count(totals.failed)} tone={totals.failed > 0 ? 'danger' : 'neutral'} note="Tool ran and errored" />
                             <StatTile size="sm" label="Callers" value={count(totals.callers)} note="Accounts and anonymous networks" />
                         </StatGrid>
-                        <Table flush>
+                        <Table flush stackAt="tablet">
                             <Thead>
                                 <Tr>
                                     <Th>Group</Th>
@@ -206,14 +210,14 @@ export function McpUsagePanel({ initialUsage, groups }: IMcpUsagePanelProps) {
                             <Tbody>
                                 {usage.groups.map(row => (
                                     <Tr key={row.groupId} isExpanded={detail?.groupId === row.groupId}>
-                                        <Td data-label="Group">
+                                        <Td>
                                             <div className={styles.tool_name}>{names.get(row.groupId) ?? row.groupId}</div>
                                             {!row.enabled && <Badge tone="warning" size="xs">Switched off</Badge>}
                                         </Td>
                                         {figureCells(row)}
-                                        <Td data-label="Callers" numeric>{count(row.callers)}</Td>
-                                        <Td data-label="Pool, last 24h">{poolBadge(row)}</Td>
-                                        <Td data-label="Open">
+                                        <Td label="Callers" numeric>{count(row.callers)}</Td>
+                                        <Td label="Pool, last 24h">{poolBadge(row)}</Td>
+                                        <Td>
                                             <Button
                                                 size="xs"
                                                 variant="ghost"
@@ -252,7 +256,7 @@ export function McpUsagePanel({ initialUsage, groups }: IMcpUsagePanelProps) {
                     {detail.tools.length === 0 ? (
                         <p className={styles.intro}>No calls were charged to this group in the window.</p>
                     ) : (
-                        <Table flush>
+                        <Table flush stackAt="tablet">
                             <Thead>
                                 <Tr>
                                     <Th>Tool</Th>
@@ -264,10 +268,10 @@ export function McpUsagePanel({ initialUsage, groups }: IMcpUsagePanelProps) {
                             <Tbody>
                                 {detail.tools.map(row => (
                                     <Tr key={row.toolName} isExpanded={detail.toolName === row.toolName}>
-                                        <Td data-label="Tool"><span className={styles.tool_name}>{row.toolName}</span></Td>
+                                        <Td><span className={styles.tool_name}>{row.toolName}</span></Td>
                                         {figureCells(row)}
-                                        <Td data-label="Callers" numeric>{count(row.callers)}</Td>
-                                        <Td data-label="Callers list">
+                                        <Td label="Callers" numeric>{count(row.callers)}</Td>
+                                        <Td label="Callers list">
                                             <Button
                                                 size="xs"
                                                 variant="ghost"
@@ -297,7 +301,7 @@ export function McpUsagePanel({ initialUsage, groups }: IMcpUsagePanelProps) {
                     {detail.callers.length === 0 ? (
                         <p className={styles.intro}>No callers in the window.</p>
                     ) : (
-                        <Table flush>
+                        <Table flush stackAt="tablet">
                             <Thead>
                                 <Tr>
                                     <Th>Caller</Th>
@@ -309,7 +313,7 @@ export function McpUsagePanel({ initialUsage, groups }: IMcpUsagePanelProps) {
                             <Tbody>
                                 {detail.callers.map(row => (
                                     <Tr key={`${row.principalKind}:${row.principalId}`} isExpanded={caller?.principalId === row.principalId}>
-                                        <Td data-label="Caller">
+                                        <Td>
                                             <div className={styles.tool_name}>{row.label}</div>
                                             <div className={styles.tool_meta}>
                                                 {row.principalKind === 'anonymous' ? 'Anonymous' : 'Signed in'}
@@ -317,8 +321,8 @@ export function McpUsagePanel({ initialUsage, groups }: IMcpUsagePanelProps) {
                                             </div>
                                         </Td>
                                         {figureCells(row)}
-                                        <Td data-label="Last call"><ClientTime date={row.lastCallAt} format="relative" /></Td>
-                                        <Td data-label="Calls">
+                                        <Td label="Last call"><ClientTime date={row.lastCallAt} format="relative" /></Td>
+                                        <Td label="Calls">
                                             <Button
                                                 size="xs"
                                                 variant="ghost"

@@ -238,7 +238,7 @@ function SourceDetail({ details }: ISourceDetailProps) {
                         <Badge tone="info" size="xs">Search Console</Badge>
                     </h4>
                     <div className={styles.plain_table}>
-                        <Table variant="compact" className={styles.dense_table}>
+                        <Table variant="compact" stackAt="phone" className={styles.dense_table}>
                             <Thead>
                                 <Tr>
                                     <Th scope="col" width="expand">Keyword</Th>
@@ -251,11 +251,12 @@ function SourceDetail({ details }: ISourceDetailProps) {
                             <Tbody>
                                 {details.gscKeywords.map(kw => (
                                     <Tr key={kw.keyword}>
+                                        {/* No label: the keyword heads its entry at phone width. */}
                                         <Td className={styles.truncate} title={kw.keyword}>{kw.keyword}</Td>
-                                        <Td numeric>{kw.clicks.toLocaleString()}</Td>
-                                        <Td numeric muted>{kw.impressions.toLocaleString()}</Td>
-                                        <Td numeric muted>{(kw.ctr * 100).toFixed(1)}%</Td>
-                                        <Td numeric muted>{kw.position.toFixed(1)}</Td>
+                                        <Td label="Clicks" numeric>{kw.clicks.toLocaleString()}</Td>
+                                        <Td label="Impressions" numeric muted>{kw.impressions.toLocaleString()}</Td>
+                                        <Td label="Click-through rate" numeric muted>{(kw.ctr * 100).toFixed(1)}%</Td>
+                                        <Td label="Average position" numeric muted>{kw.position.toFixed(1)}</Td>
                                     </Tr>
                                 ))}
                             </Tbody>
@@ -530,7 +531,10 @@ export function AnalyticsDashboard({ period, customRange, includeBots, refreshSi
                             {trafficSources.length === 0 ? (
                                 <p className={styles.empty_state}>No traffic data for this period.</p>
                             ) : (
-                                <Table variant="compact" flush className={styles.dense_table}>
+                                /* Two-up in a band about 660px wide on a desktop, so it
+                                   stacks only at phone width; the chevron and source
+                                   share the heading line. */
+                                <Table variant="compact" flush stackAt="phone" className={styles.dense_table}>
                                     <Thead>
                                         <Tr>
                                             <Th scope="col" width="shrink" aria-label="Expand" />
@@ -566,15 +570,15 @@ export function AnalyticsDashboard({ period, customRange, includeBots, refreshSi
                                                                 : <ChevronRight size={14} aria-hidden="true" />}
                                                         </Td>
                                                         <Td className={styles.truncate} title={s.source}>{s.source}</Td>
-                                                        <Td>
+                                                        <Td label="Category">
                                                             <Badge size="xs" {...getCategoryBadgeProps(s.category)}>
                                                                 {s.category}
                                                             </Badge>
                                                         </Td>
-                                                        <Td numeric>
+                                                        <Td label="Visitors" numeric>
                                                             <ShareFigure value={s.visitors} max={maxSourceCount} />
                                                         </Td>
-                                                        <Td numeric muted>{s.percentage}%</Td>
+                                                        <Td label="Share" numeric muted>{s.percentage}%</Td>
                                                     </Tr>
                                                     {isExpanded && (
                                                         <Tr className={styles.detail_row}>
@@ -732,7 +736,9 @@ export function AnalyticsDashboard({ period, customRange, includeBots, refreshSi
 
                     {campaigns.length > 0 && (
                         <Panel title="Campaign performance" titleAs="h3" meta="UTM-tagged first touches">
-                            <Table variant="compact" flush className={styles.dense_table}>
+                            {/* Full width at every size, so it can stack at the phone
+                                threshold without stacking on a desktop. */}
+                            <Table variant="compact" flush stackAt="mobile" className={styles.dense_table}>
                                 <Thead>
                                     <Tr>
                                         <Th scope="col">Source</Th>
@@ -755,12 +761,13 @@ export function AnalyticsDashboard({ period, customRange, includeBots, refreshSi
                                 <Tbody>
                                     {campaigns.map(c => (
                                         <Tr key={`${c.source}|${c.medium}|${c.campaign}`}>
+                                            {/* No label: the source heads the stacked entry. */}
                                             <Td>{c.source}</Td>
-                                            <Td muted>{c.medium}</Td>
-                                            <Td>{c.campaign}</Td>
-                                            <Td numeric>{c.visitors.toLocaleString()}</Td>
-                                            <Td numeric>{c.conversions}</Td>
-                                            <Td numeric muted>{c.conversionRate}%</Td>
+                                            <Td label="Medium" muted>{c.medium}</Td>
+                                            <Td label="Campaign">{c.campaign}</Td>
+                                            <Td label="Visitors" numeric>{c.visitors.toLocaleString()}</Td>
+                                            <Td label="Logged in" numeric>{c.conversions}</Td>
+                                            <Td label="Login %" numeric muted>{c.conversionRate}%</Td>
                                         </Tr>
                                     ))}
                                 </Tbody>

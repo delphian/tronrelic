@@ -496,7 +496,7 @@ export function PriceHistoryAdminClient({ submenuTree, submenuGeneratedAt, initi
                         />
                     </StatGrid>
 
-                    <Stack direction="horizontal" gap="sm">
+                    <Stack direction="horizontal" gap="sm" wrap>
                         <Button variant="secondary" size="sm" icon={<RefreshCw size={18} aria-hidden />} loading={busy === 'backfill'} disabled={!!busy} onClick={() => runAction('backfill', 'Backfill started', runBackfill)}>
                             Run backfill
                         </Button>
@@ -506,7 +506,9 @@ export function PriceHistoryAdminClient({ submenuTree, submenuGeneratedAt, initi
                     </Stack>
 
                     <Card padding="md">
-                        <Table variant="compact" flush>
+                        {/* Eight columns do not fit a tablet, so each asset
+                            stacks into an entry headed by its name there. */}
+                        <Table variant="compact" flush stackAt="tablet">
                             <Thead>
                                 <Tr>
                                     <Th>Asset</Th>
@@ -528,20 +530,20 @@ export function PriceHistoryAdminClient({ submenuTree, submenuGeneratedAt, initi
                                     stats.assets.map((asset) => (
                                         <Tr key={asset.asset}>
                                             <Td>{renderAsset(asset.asset)}</Td>
-                                            <Td>
+                                            <Td label="Source">
                                                 {asset.source ?? '—'}
                                                 {asset.sourceRef && (
                                                     <>{' '}{renderSourceRef(asset.sourceRef)}</>
                                                 )}
                                             </Td>
-                                            <Td numeric>{asset.dayCount.toLocaleString()}</Td>
-                                            <Td>{asset.oldestDay ?? '—'}</Td>
-                                            <Td>{asset.newestDay ?? '—'}</Td>
-                                            <Td numeric>
+                                            <Td label="Days" numeric>{asset.dayCount.toLocaleString()}</Td>
+                                            <Td label="Oldest">{asset.oldestDay ?? '—'}</Td>
+                                            <Td label="Newest">{asset.newestDay ?? '—'}</Td>
+                                            <Td label="Days left" numeric>
                                                 {asset.estimatedDaysRemaining === null ? '—' : asset.estimatedDaysRemaining.toLocaleString()}
                                             </Td>
-                                            <Td>{statusBadge(asset)}</Td>
-                                            <Td>
+                                            <Td label="Status">{statusBadge(asset)}</Td>
+                                            <Td label="Reset cursor">
                                                 <IconButton
                                                     onClick={() => runAction(`reset:${asset.asset}`, `${asset.asset} reset; it re-seeds on the next tick`, () => resetAsset(asset.asset))}
                                                     disabled={!!busy}

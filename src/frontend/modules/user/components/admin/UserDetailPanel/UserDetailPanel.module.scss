@@ -13,12 +13,6 @@
     container-name: user-detail;
 }
 
-/* Tables with many columns (sessions, sign-in events) scroll sideways inside
-   their panel instead of widening the slide-over. */
-.table_scroll {
-    overflow-x: auto;
-}
-
 .mono {
     font-family: var(--font-mono);
     font-size: var(--font-size-body-sm);

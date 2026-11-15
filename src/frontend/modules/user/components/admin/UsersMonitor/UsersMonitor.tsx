@@ -1,5 +1,16 @@
 'use client';
 
+/**
+ * @fileoverview The Users tab of `/system/users`: the searchable, sortable
+ * account directory and the per-account actions.
+ *
+ * At full width the directory is a table whose column headers sort it. On a
+ * tablet or phone the shared table stacks each account into a labelled entry,
+ * with the email as the entry's heading and the actions as its last line, and
+ * the table's own sort picker (`stackedSort`) replaces the hidden headers.
+ * Both widths drive one sort state.
+ */
+
 import React, { useCallback, useEffect, useState } from 'react';
 import { CheckCircle2, PanelRightOpen, RotateCcw, Trash2, Users as UsersIcon } from 'lucide-react';
 import type { AccountSortDirection, AccountSortField } from '@/types';
@@ -7,6 +18,7 @@ import { Button } from '../../../../../components/ui/Button';
 import { Input } from '../../../../../components/ui/Input';
 import { Badge } from '../../../../../components/ui/Badge';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
+import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
 import { useModal } from '../../../../../components/ui/ModalProvider';
 import { useToast } from '../../../../../components/ui/ToastProvider';
 import { fetchAccounts as fetchAccountPage, type IAccountRow } from '../../../api/admin-accounts.api';
@@ -18,6 +30,24 @@ import styles from './UsersMonitor.module.scss';
 
 /** Page size for the account directory table. */
 const PAGE_SIZE = 20;
+
+/**
+ * The sortable columns in table order. One list feeds the column headers, the
+ * stacked-row sort picker, and each cell's stacked label, so the three never
+ * name a column differently.
+ */
+const SORT_COLUMNS: ReadonlyArray<{ key: AccountSortField; label: string }> = [
+    { key: 'email', label: 'Email' },
+    { key: 'name', label: 'Name' },
+    { key: 'status', label: 'Verified' },
+    { key: 'primaryWallet', label: 'Wallet' },
+    { key: 'groups', label: 'Groups' },
+    { key: 'createdAt', label: 'Created' },
+    { key: 'lastSeenAt', label: 'Last seen' }
+];
+
+/** Each sortable column's name keyed by field, for the stacked cell labels. */
+const COLUMN_LABEL = Object.fromEntries(SORT_COLUMNS.map(column => [column.key, column.label])) as Record<AccountSortField, string>;
 
 /**
  * The direction a column sorts in when first clicked: text columns start at
@@ -206,17 +236,25 @@ export function UsersMonitor() {
         });
     }, [openModal, closeModal, pushToast, fetchAccounts]);
 
+    /** Apply the typed search and return to the first page of results. */
     const handleSearch = () => {
         setPage(1);
         setSearch(searchInput);
     };
 
+    /** Drop the search so the full directory shows again from page one. */
     const handleClearSearch = () => {
         setSearchInput('');
         setSearch('');
         setPage(1);
     };
 
+    /**
+     * Run the search on Enter, so the field works like a search box without
+     * reaching for the button.
+     *
+     * @param e - The key event from the search field.
+     */
     const handleKeyDown = (e: React.KeyboardEvent) => {
         if (e.key === 'Enter') {
             handleSearch();
@@ -268,138 +306,144 @@ export function UsersMonitor() {
                 </div>
             ) : (
                 <>
-                    <div className={styles.table_wrapper}>
-                        <table className={styles.user_table}>
-                            <thead>
-                                <tr>
-                                    <SortableHeader field="email" label="Email" sortBy={sortBy} sortDirection={sortDirection} onSort={handleSort} />
-                                    <SortableHeader field="name" label="Name" sortBy={sortBy} sortDirection={sortDirection} onSort={handleSort} />
-                                    <SortableHeader field="status" label="Verified" sortBy={sortBy} sortDirection={sortDirection} onSort={handleSort} />
-                                    <SortableHeader field="primaryWallet" label="Wallet" sortBy={sortBy} sortDirection={sortDirection} onSort={handleSort} />
-                                    <SortableHeader field="groups" label="Groups" sortBy={sortBy} sortDirection={sortDirection} onSort={handleSort} />
-                                    <SortableHeader field="createdAt" label="Created" sortBy={sortBy} sortDirection={sortDirection} onSort={handleSort} />
-                                    <SortableHeader field="lastSeenAt" label="Last seen" sortBy={sortBy} sortDirection={sortDirection} onSort={handleSort} />
-                                    <th><span className="text-muted">Actions</span></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {accounts.map((account) => (
-                                    <tr key={account.id} className={styles.user_row}>
-                                        <td>
-                                            <button
-                                                type="button"
-                                                className={styles.email_button}
-                                                onClick={() => setSelectedUserId(account.id)}
-                                                aria-label={`Open details for ${account.email}`}
-                                            >
-                                                {account.email}
-                                            </button>
-                                        </td>
-                                        <td>{account.name || <span className="text-muted">—</span>}</td>
-                                        <td>
-                                            {account.deletedAt ? (
-                                                <Badge tone="danger">Deleted</Badge>
-                                            ) : account.emailVerified ? (
-                                                <Badge tone="success">Verified</Badge>
-                                            ) : (
-                                                <Badge tone="neutral">Unverified</Badge>
-                                            )}
-                                        </td>
-                                        <td>
-                                            {/* The address itself is in the detail panel; the
-                                                table only says whether one is set. */}
-                                            {account.primaryWallet ? (
-                                                <CheckCircle2
-                                                    size={16}
-                                                    className={styles.wallet_tick}
-                                                    role="img"
-                                                    aria-label="Primary wallet set"
-                                                />
-                                            ) : (
-                                                <span className="text-muted" aria-label="No primary wallet">—</span>
-                                            )}
-                                        </td>
-                                        <td>
-                                            {(account.groups ?? []).length === 0 ? (
-                                                <span className="text-muted">—</span>
-                                            ) : (
-                                                <div className={styles.group_chips}>
-                                                    {account.groups.map((groupId) => (
-                                                        <Badge key={groupId} tone="info">
-                                                            <code>{groupId}</code>
-                                                        </Badge>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </td>
-                                        <td><ClientTime date={account.createdAt} format="short" /></td>
-                                        <td>
-                                            {account.lastSeenAt ? (
-                                                <ClientTime date={account.lastSeenAt} format="relative" />
-                                            ) : (
-                                                <span className="text-muted">Never</span>
-                                            )}
-                                        </td>
-                                        <td>
-                                            {/* A deleted account holds no groups, so it offers no
-                                                membership editor. It keeps a revocation action because
-                                                a deletion whose session, group, or connected-app
-                                                revocation failed leaves the account marked while its
-                                                existing sessions and connected apps still work, and
-                                                repeating the request is how the service finishes it. */}
-                                            {account.deletedAt ? (
-                                                <div className={styles.row_actions}>
-                                                    <Button
-                                                        size="sm"
-                                                        variant="ghost"
-                                                        onClick={() => setSelectedUserId(account.id)}
-                                                        aria-label={`Open details for ${account.email}`}
-                                                    >
-                                                        <PanelRightOpen size={14} aria-hidden="true" /> Details
-                                                    </Button>
-                                                    <Button
-                                                        size="sm"
-                                                        variant="secondary"
-                                                        onClick={() => openDeleteModal(account)}
-                                                        aria-label={`Re-run revocation for ${account.email}`}
-                                                    >
-                                                        <RotateCcw size={14} aria-hidden="true" /> Revoke again
-                                                    </Button>
-                                                </div>
-                                            ) : (
-                                                <div className={styles.row_actions}>
-                                                    <Button
-                                                        size="sm"
-                                                        variant="ghost"
-                                                        onClick={() => setSelectedUserId(account.id)}
-                                                        aria-label={`Open details for ${account.email}`}
-                                                    >
-                                                        <PanelRightOpen size={14} aria-hidden="true" /> Details
-                                                    </Button>
-                                                    <Button
-                                                        size="sm"
-                                                        variant="secondary"
-                                                        onClick={() => openGroupsModal(account)}
-                                                        aria-label={`Manage groups for ${account.email}`}
-                                                    >
-                                                        <UsersIcon size={14} aria-hidden="true" /> Groups
-                                                    </Button>
-                                                    <Button
-                                                        size="sm"
-                                                        variant="danger"
-                                                        onClick={() => openDeleteModal(account)}
-                                                        aria-label={`Delete ${account.email}`}
-                                                    >
-                                                        <Trash2 size={14} aria-hidden="true" /> Delete
-                                                    </Button>
-                                                </div>
-                                            )}
-                                        </td>
-                                    </tr>
+                    <Table
+                        stackAt="tablet"
+                        stackedSort={{ columns: SORT_COLUMNS, active: sortBy, direction: sortDirection, onSort: handleSort }}
+                    >
+                        <Thead>
+                            <Tr>
+                                {SORT_COLUMNS.map(column => (
+                                    <SortableHeader
+                                        key={column.key}
+                                        field={column.key}
+                                        label={column.label}
+                                        sortBy={sortBy}
+                                        sortDirection={sortDirection}
+                                        onSort={handleSort}
+                                    />
                                 ))}
-                            </tbody>
-                        </table>
-                    </div>
+                                <Th>Actions</Th>
+                            </Tr>
+                        </Thead>
+                        <Tbody>
+                            {accounts.map((account) => (
+                                <Tr key={account.id}>
+                                    {/* No label: the email is the heading of a stacked entry. */}
+                                    <Td className={styles.email_cell}>
+                                        <button
+                                            type="button"
+                                            className={styles.email_button}
+                                            onClick={() => setSelectedUserId(account.id)}
+                                            aria-label={`Open details for ${account.email}`}
+                                        >
+                                            {account.email}
+                                        </button>
+                                    </Td>
+                                    <Td label={COLUMN_LABEL.name}>{account.name || <span className="text-muted">—</span>}</Td>
+                                    <Td label={COLUMN_LABEL.status}>
+                                        {account.deletedAt ? (
+                                            <Badge tone="danger">Deleted</Badge>
+                                        ) : account.emailVerified ? (
+                                            <Badge tone="success">Verified</Badge>
+                                        ) : (
+                                            <Badge tone="neutral">Unverified</Badge>
+                                        )}
+                                    </Td>
+                                    <Td label={COLUMN_LABEL.primaryWallet}>
+                                        {/* The address itself is in the detail panel; the
+                                            table only says whether one is set. */}
+                                        {account.primaryWallet ? (
+                                            <CheckCircle2
+                                                size={16}
+                                                className={styles.wallet_tick}
+                                                role="img"
+                                                aria-label="Primary wallet set"
+                                            />
+                                        ) : (
+                                            <span className="text-muted" aria-label="No primary wallet">—</span>
+                                        )}
+                                    </Td>
+                                    <Td label={COLUMN_LABEL.groups}>
+                                        {(account.groups ?? []).length === 0 ? (
+                                            <span className="text-muted">—</span>
+                                        ) : (
+                                            <div className={styles.group_chips}>
+                                                {account.groups.map((groupId) => (
+                                                    <Badge key={groupId} tone="info">
+                                                        <code>{groupId}</code>
+                                                    </Badge>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </Td>
+                                    <Td label={COLUMN_LABEL.createdAt}><ClientTime date={account.createdAt} format="short" /></Td>
+                                    <Td label={COLUMN_LABEL.lastSeenAt}>
+                                        {account.lastSeenAt ? (
+                                            <ClientTime date={account.lastSeenAt} format="relative" />
+                                        ) : (
+                                            <span className="text-muted">Never</span>
+                                        )}
+                                    </Td>
+                                    {/* No label: the actions take the full last line of a stacked entry. */}
+                                    <Td className={styles.actions_cell}>
+                                        {/* A deleted account holds no groups, so it offers no
+                                            membership editor. It keeps a revocation action because
+                                            a deletion whose session, group, or connected-app
+                                            revocation failed leaves the account marked while its
+                                            existing sessions and connected apps still work, and
+                                            repeating the request is how the service finishes it. */}
+                                        {account.deletedAt ? (
+                                            <div className={styles.row_actions}>
+                                                <Button
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    onClick={() => setSelectedUserId(account.id)}
+                                                    aria-label={`Open details for ${account.email}`}
+                                                >
+                                                    <PanelRightOpen size={14} aria-hidden="true" /> Details
+                                                </Button>
+                                                <Button
+                                                    size="sm"
+                                                    variant="secondary"
+                                                    onClick={() => openDeleteModal(account)}
+                                                    aria-label={`Re-run revocation for ${account.email}`}
+                                                >
+                                                    <RotateCcw size={14} aria-hidden="true" /> Revoke again
+                                                </Button>
+                                            </div>
+                                        ) : (
+                                            <div className={styles.row_actions}>
+                                                <Button
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    onClick={() => setSelectedUserId(account.id)}
+                                                    aria-label={`Open details for ${account.email}`}
+                                                >
+                                                    <PanelRightOpen size={14} aria-hidden="true" /> Details
+                                                </Button>
+                                                <Button
+                                                    size="sm"
+                                                    variant="secondary"
+                                                    onClick={() => openGroupsModal(account)}
+                                                    aria-label={`Manage groups for ${account.email}`}
+                                                >
+                                                    <UsersIcon size={14} aria-hidden="true" /> Groups
+                                                </Button>
+                                                <Button
+                                                    size="sm"
+                                                    variant="danger"
+                                                    onClick={() => openDeleteModal(account)}
+                                                    aria-label={`Delete ${account.email}`}
+                                                >
+                                                    <Trash2 size={14} aria-hidden="true" /> Delete
+                                                </Button>
+                                            </div>
+                                        )}
+                                    </Td>
+                                </Tr>
+                            ))}
+                        </Tbody>
+                    </Table>
 
                     <div className={styles.pagination}>
                         <Button

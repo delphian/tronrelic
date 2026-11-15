@@ -293,106 +293,107 @@ export function VariablesSection({ onChanged }: { onChanged: () => void }) {
                 {!loading && variables.length === 0
                     ? <div className={styles.placeholder}>No variables are registered.</div>
                     : (
-                        <div className="table-scroll">
-                            <Table>
-                                <Thead>
-                                    <Tr>
-                                        <Th>Variable</Th>
-                                        <Th width="shrink">Category</Th>
-                                        <Th width="shrink">Kind</Th>
-                                        <Th width="shrink">Sensitivity</Th>
-                                        <Th width="shrink">Actions</Th>
-                                    </Tr>
-                                </Thead>
-                                <Tbody>
-                                    {variables.map(variable => {
-                                        const reveal = revealed[variable.name];
-                                        const open = reveal !== undefined;
-                                        return (
+                        /* Five columns fit a tablet; on a phone each variable stacks,
+                           headed by its pattern. The revealed value is a row of one
+                           cell, so it stays a full-width block. */
+                        <Table stackAt="mobile">
+                            <Thead>
+                                <Tr>
+                                    <Th>Variable</Th>
+                                    <Th width="shrink">Category</Th>
+                                    <Th width="shrink">Kind</Th>
+                                    <Th width="shrink">Sensitivity</Th>
+                                    <Th width="shrink">Actions</Th>
+                                </Tr>
+                            </Thead>
+                            <Tbody>
+                                {variables.map(variable => {
+                                    const reveal = revealed[variable.name];
+                                    const open = reveal !== undefined;
+                                    return (
                                         <Fragment key={variable.name}>
-                                        <Tr>
-                                            <Td>
-                                                <button
-                                                    type="button"
-                                                    className={styles.reveal_toggle}
-                                                    onClick={() => void toggleReveal(variable.name)}
-                                                    aria-expanded={open}
-                                                    aria-label={`${open ? 'Hide' : 'Reveal'} current value of ${variable.name}`}
-                                                >
-                                                    {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                                                    <span className={styles.tool_name}>{variable.pattern}</span>
-                                                </button>
-                                                <div className={styles.tool_desc}>{variable.description}</div>
-                                            </Td>
-                                            <Td muted>{variable.category}</Td>
-                                            <Td>
-                                                <Badge tone={variable.kind === 'static' ? 'info' : 'neutral'}>
-                                                    {variable.kind === 'static' ? 'custom' : 'built-in'}
-                                                </Badge>
-                                            </Td>
-                                            <Td>
-                                                <Select
-                                                    value={variable.sensitivity}
-                                                    onChange={e => void handleClassify(variable.name, e.target.value as AiToolSensitivity)}
-                                                    disabled={busyName === variable.name}
-                                                    aria-label={`Classify ${variable.name}`}
-                                                >
-                                                    {SENSITIVITIES.map(s => <option key={s} value={s}>{s}</option>)}
-                                                </Select>
-                                            </Td>
-                                            <Td>
-                                                {variable.editable && (
-                                                    <Stack gap="sm" direction="horizontal">
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="xs"
-                                                            onClick={() => openEdit(variable)}
-                                                            disabled={busyName === variable.name}
-                                                            aria-label={`Edit ${variable.name}`}
-                                                        >
-                                                            <Pencil size={14} />
-                                                        </Button>
-                                                        <Button
-                                                            variant="danger"
-                                                            size="xs"
-                                                            onClick={() => void handleDelete(variable.name)}
-                                                            disabled={busyName === variable.name}
-                                                            aria-label={`Delete ${variable.name}`}
-                                                        >
-                                                            <Trash2 size={14} />
-                                                        </Button>
-                                                    </Stack>
-                                                )}
-                                            </Td>
-                                        </Tr>
-                                        {open && (
-                                            <Tr isExpanded>
-                                                <Td colSpan={5}>
-                                                    {reveal.loading
-                                                        ? <span className={styles.placeholder}>Resolving current value…</span>
-                                                        : reveal.error
-                                                            ? (
-                                                                <div className="alert" role="alert">
-                                                                    <AlertCircle size={16} style={{ color: 'var(--color-danger)', verticalAlign: 'text-bottom' }} /> {reveal.error}
-                                                                </div>
-                                                            )
-                                                            : (
-                                                                <div className={styles.reveal_panel}>
-                                                                    <div className={styles.detail_section_title}>
-                                                                        Current value · {reveal.sizeBytes ?? 0} bytes · {variable.sensitivity}
-                                                                    </div>
-                                                                    <pre className={styles.args_block}>{reveal.content ? reveal.content : '(empty)'}</pre>
-                                                                </div>
-                                                            )}
+                                            <Tr>
+                                                <Td>
+                                                    <button
+                                                        type="button"
+                                                        className={styles.reveal_toggle}
+                                                        onClick={() => void toggleReveal(variable.name)}
+                                                        aria-expanded={open}
+                                                        aria-label={`${open ? 'Hide' : 'Reveal'} current value of ${variable.name}`}
+                                                    >
+                                                        {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                                                        <span className={styles.tool_name}>{variable.pattern}</span>
+                                                    </button>
+                                                    <div className={styles.tool_desc}>{variable.description}</div>
+                                                </Td>
+                                                <Td muted label="Category">{variable.category}</Td>
+                                                <Td label="Kind">
+                                                    <Badge tone={variable.kind === 'static' ? 'info' : 'neutral'}>
+                                                        {variable.kind === 'static' ? 'custom' : 'built-in'}
+                                                    </Badge>
+                                                </Td>
+                                                <Td label="Sensitivity">
+                                                    <Select
+                                                        value={variable.sensitivity}
+                                                        onChange={e => void handleClassify(variable.name, e.target.value as AiToolSensitivity)}
+                                                        disabled={busyName === variable.name}
+                                                        aria-label={`Classify ${variable.name}`}
+                                                    >
+                                                        {SENSITIVITIES.map(s => <option key={s} value={s}>{s}</option>)}
+                                                    </Select>
+                                                </Td>
+                                                <Td>
+                                                    {variable.editable && (
+                                                        <Stack gap="sm" direction="horizontal">
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="xs"
+                                                                onClick={() => openEdit(variable)}
+                                                                disabled={busyName === variable.name}
+                                                                aria-label={`Edit ${variable.name}`}
+                                                            >
+                                                                <Pencil size={14} />
+                                                            </Button>
+                                                            <Button
+                                                                variant="danger"
+                                                                size="xs"
+                                                                onClick={() => void handleDelete(variable.name)}
+                                                                disabled={busyName === variable.name}
+                                                                aria-label={`Delete ${variable.name}`}
+                                                            >
+                                                                <Trash2 size={14} />
+                                                            </Button>
+                                                        </Stack>
+                                                    )}
                                                 </Td>
                                             </Tr>
-                                        )}
+                                            {open && (
+                                                <Tr isExpanded>
+                                                    <Td colSpan={5}>
+                                                        {reveal.loading
+                                                            ? <span className={styles.placeholder}>Resolving current value…</span>
+                                                            : reveal.error
+                                                                ? (
+                                                                    <div className="alert" role="alert">
+                                                                        <AlertCircle size={16} style={{ color: 'var(--color-danger)', verticalAlign: 'text-bottom' }} /> {reveal.error}
+                                                                    </div>
+                                                                )
+                                                                : (
+                                                                    <div className={styles.reveal_panel}>
+                                                                        <div className={styles.detail_section_title}>
+                                                                            Current value · {reveal.sizeBytes ?? 0} bytes · {variable.sensitivity}
+                                                                        </div>
+                                                                        <pre className={styles.args_block}>{reveal.content ? reveal.content : '(empty)'}</pre>
+                                                                    </div>
+                                                                )}
+                                                    </Td>
+                                                </Tr>
+                                            )}
                                         </Fragment>
-                                        );
-                                    })}
-                                </Tbody>
-                            </Table>
-                        </div>
+                                    );
+                                })}
+                            </Tbody>
+                        </Table>
                     )}
             </Stack>
         </CollapsibleSection>

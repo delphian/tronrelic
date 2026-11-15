@@ -392,70 +392,70 @@ export function SystemPromptsSection() {
                 {!loading && additional.length === 0
                     ? <div className={styles.placeholder}>No additional system prompts.</div>
                     : (
-                        <div className="table-scroll">
-                            <Table>
-                                <Thead>
-                                    <Tr>
-                                        <Th>Prompt</Th>
-                                        <Th>Audience</Th>
-                                        <Th width="shrink">Order</Th>
-                                        <Th width="shrink">Enabled</Th>
-                                        <Th width="shrink">Actions</Th>
-                                    </Tr>
-                                </Thead>
-                                <Tbody>
-                                    {additional.map(prompt => (
-                                        <Tr key={prompt.id}>
-                                            <Td>
-                                                <div className={styles.tool_name}>{prompt.name}</div>
-                                                <div className={styles.tool_desc}>{prompt.content}</div>
-                                            </Td>
-                                            <Td>
-                                                <div className={styles.audience_chips}>
-                                                    {prompt.userIds.map(id => (
-                                                        <Badge key={`u-${id}`} tone="neutral">{id}</Badge>
-                                                    ))}
-                                                    {prompt.groups.map(id => (
-                                                        <Badge key={`g-${id}`} tone="info">{groupLabel(id)}</Badge>
-                                                    ))}
-                                                </div>
-                                            </Td>
-                                            <Td muted>{prompt.order}</Td>
-                                            <Td>
-                                                <Switch
-                                                    on={prompt.enabled}
-                                                    onChange={(next) => handleToggleEnabled(prompt.id, next)}
+                        /* Five columns fit a tablet; on a phone each prompt stacks,
+                           headed by its name, with the edit and delete buttons last. */
+                        <Table stackAt="mobile">
+                            <Thead>
+                                <Tr>
+                                    <Th>Prompt</Th>
+                                    <Th>Audience</Th>
+                                    <Th width="shrink">Order</Th>
+                                    <Th width="shrink">Enabled</Th>
+                                    <Th width="shrink">Actions</Th>
+                                </Tr>
+                            </Thead>
+                            <Tbody>
+                                {additional.map(prompt => (
+                                    <Tr key={prompt.id}>
+                                        <Td>
+                                            <div className={styles.tool_name}>{prompt.name}</div>
+                                            <div className={styles.tool_desc}>{prompt.content}</div>
+                                        </Td>
+                                        <Td label="Audience">
+                                            <div className={styles.audience_chips}>
+                                                {prompt.userIds.map(id => (
+                                                    <Badge key={`u-${id}`} tone="neutral">{id}</Badge>
+                                                ))}
+                                                {prompt.groups.map(id => (
+                                                    <Badge key={`g-${id}`} tone="info">{groupLabel(id)}</Badge>
+                                                ))}
+                                            </div>
+                                        </Td>
+                                        <Td muted label="Order">{prompt.order}</Td>
+                                        <Td label="Enabled">
+                                            <Switch
+                                                on={prompt.enabled}
+                                                onChange={(next) => handleToggleEnabled(prompt.id, next)}
+                                                disabled={busyId === prompt.id}
+                                                aria-label={`${prompt.enabled ? 'Disable' : 'Enable'} ${prompt.name}`}
+                                            />
+                                        </Td>
+                                        <Td>
+                                            <Stack gap="sm" direction="horizontal">
+                                                <Button
+                                                    variant="ghost"
+                                                    size="xs"
+                                                    onClick={() => openEdit(prompt)}
                                                     disabled={busyId === prompt.id}
-                                                    aria-label={`${prompt.enabled ? 'Disable' : 'Enable'} ${prompt.name}`}
-                                                />
-                                            </Td>
-                                            <Td>
-                                                <Stack gap="sm" direction="horizontal">
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="xs"
-                                                        onClick={() => openEdit(prompt)}
-                                                        disabled={busyId === prompt.id}
-                                                        aria-label={`Edit ${prompt.name}`}
-                                                    >
-                                                        <Pencil size={14} />
-                                                    </Button>
-                                                    <Button
-                                                        variant="danger"
-                                                        size="xs"
-                                                        onClick={() => void handleDelete(prompt.id)}
-                                                        disabled={busyId === prompt.id}
-                                                        aria-label={`Delete ${prompt.name}`}
-                                                    >
-                                                        <Trash2 size={14} />
-                                                    </Button>
-                                                </Stack>
-                                            </Td>
-                                        </Tr>
-                                    ))}
-                                </Tbody>
-                            </Table>
-                        </div>
+                                                    aria-label={`Edit ${prompt.name}`}
+                                                >
+                                                    <Pencil size={14} />
+                                                </Button>
+                                                <Button
+                                                    variant="danger"
+                                                    size="xs"
+                                                    onClick={() => void handleDelete(prompt.id)}
+                                                    disabled={busyId === prompt.id}
+                                                    aria-label={`Delete ${prompt.name}`}
+                                                >
+                                                    <Trash2 size={14} />
+                                                </Button>
+                                            </Stack>
+                                        </Td>
+                                    </Tr>
+                                ))}
+                            </Tbody>
+                        </Table>
                     )}
             </Stack>
         </CollapsibleSection>

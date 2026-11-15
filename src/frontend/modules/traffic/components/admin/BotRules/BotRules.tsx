@@ -231,7 +231,7 @@ export function BotRules() {
                 ) : rules.length === 0 ? (
                     <p className={styles.empty}>No rules yet. Traffic is classified by the built-in checks alone.</p>
                 ) : (
-                    <Table variant="compact">
+                    <Table variant="compact" stackAt="mobile">
                         <Thead>
                             <Tr>
                                 <Th>Rule</Th>
@@ -249,6 +249,7 @@ export function BotRules() {
                                 const badge = statusBadge(rule);
                                 return (
                                     <Tr key={rule.id}>
+                                        {/* No label: the rule heads its entry when the table stacks on a phone. */}
                                         <Td className={styles.cell_wrap}>
                                             <span className={styles.rule_name}>{rule.name}</span>
                                             <span className={styles.rule_conditions}>
@@ -256,11 +257,11 @@ export function BotRules() {
                                             </span>
                                             {rule.note && <span className={styles.rule_note}>{rule.note}</span>}
                                         </Td>
-                                        <Td><Badge size="sm" tone={badge.tone}>{badge.text}</Badge></Td>
-                                        <Td numeric>{(ruleStats?.matches24h ?? 0).toLocaleString()}</Td>
-                                        <Td numeric>{(ruleStats?.matches7d ?? 0).toLocaleString()}</Td>
-                                        <Td muted>{ruleStats?.lastMatchedAt ? <ClientTime date={ruleStats.lastMatchedAt} format="relative" /> : '—'}</Td>
-                                        <Td>
+                                        <Td label="State"><Badge size="sm" tone={badge.tone}>{badge.text}</Badge></Td>
+                                        <Td label="Matches, 24h" numeric>{(ruleStats?.matches24h ?? 0).toLocaleString()}</Td>
+                                        <Td label="Matches, 7d" numeric>{(ruleStats?.matches7d ?? 0).toLocaleString()}</Td>
+                                        <Td label="Last match" muted>{ruleStats?.lastMatchedAt ? <ClientTime date={ruleStats.lastMatchedAt} format="relative" /> : '—'}</Td>
+                                        <Td label="On">
                                             <Switch
                                                 size="xs"
                                                 on={rule.enabled}

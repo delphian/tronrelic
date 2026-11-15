@@ -11,12 +11,18 @@
  * data fetching with loading states is appropriate here (not subject to SSR
  * pattern for public content).
  *
+ * The component is embedded as a tab on many admin pages and handed to plugins
+ * on `context.system`, so it renders a `Stack`, never a `<Page>`: the host page
+ * owns the single page wrapper. On a phone the table stacks each job into a
+ * labelled entry rather than hiding columns, because the Schedule column is the
+ * only place a cron schedule can be edited.
+ *
  * @module modules/scheduler/components/SchedulerMonitor
  */
 
 import { useEffect, useState } from 'react';
 import { ChevronDown, ChevronRight, AlertCircle, Play } from 'lucide-react';
-import { Page, Stack } from '../../../../components/layout';
+import { Stack } from '../../../../components/layout';
 import { Badge } from '../../../../components/ui/Badge';
 import { Button } from '../../../../components/ui/Button';
 import { Input } from '../../../../components/ui/Input';
@@ -78,7 +84,7 @@ function JobRow({ job, onToggleEnabled, onScheduleChange, onRunNow, isLoading, l
                         )}
                     </div>
                 </Td>
-                <Td className={styles.cell_schedule}>
+                <Td label="Schedule" className={styles.cell_schedule}>
                     <Input
                         type="text"
                         defaultValue={job.schedule}
@@ -98,19 +104,19 @@ function JobRow({ job, onToggleEnabled, onScheduleChange, onRunNow, isLoading, l
                         placeholder="0 * * * *"
                     />
                 </Td>
-                <Td className={styles.cell_status}>
+                <Td label="Status" className={styles.cell_status}>
                     <Badge tone={getStatusTone(job.status)}>
                         {job.status.replace('_', ' ')}
                     </Badge>
                 </Td>
-                <Td muted className={styles.cell_last_run}>
+                <Td label="Last run" muted className={styles.cell_last_run}>
                     {job.lastRun ? (
                         <ClientTime date={job.lastRun} format="relative" />
                     ) : (
                         <span className={styles.never_run}>Never</span>
                     )}
                 </Td>
-                <Td className={styles.cell_enabled}>
+                <Td label="Enabled" className={styles.cell_enabled}>
                     <Switch
                         on={job.enabled}
                         onChange={(next) => onToggleEnabled(job.name, next)}
@@ -118,7 +124,7 @@ function JobRow({ job, onToggleEnabled, onScheduleChange, onRunNow, isLoading, l
                         aria-label={`${job.enabled ? 'Disable' : 'Enable'} ${job.name}`}
                     />
                 </Td>
-                <Td className={styles.cell_actions}>
+                <Td label="Run now" className={styles.cell_actions}>
                     {/* Manual run is an out-of-schedule trigger — useful when a
                         low-frequency job (e.g. a 4-hourly snapshot) has not yet
                         reached its first boundary. Disabled while any update is in
@@ -369,99 +375,95 @@ export function SchedulerMonitor({ jobFilter, title = 'Scheduled Jobs', hideStat
 
     if (loading) {
         return (
-            <Page>
-                <div className={styles.empty_state}>
-                    Loading scheduler data...
-                </div>
-            </Page>
+            <div className={styles.empty_state}>
+                Loading scheduler data...
+            </div>
         );
     }
 
     return (
-        <Page>
-            <Stack gap="md">
-                {error && (
-                    <div className={styles.alert_error}>
-                        <AlertCircle size={16} />
-                        {error}
-                    </div>
-                )}
+        <Stack gap="md">
+            {error && (
+                <div className={styles.alert_error}>
+                    <AlertCircle size={16} />
+                    {error}
+                </div>
+            )}
 
-                {!hideStats && (
-                    <div className={styles.stats_bar}>
-                        <div className={styles.stat}>
-                            <span className={styles.stat_value}>{filteredJobs.length}</span>
-                            <span className={styles.stat_label}>Total</span>
-                        </div>
-                        <div className={styles.stat_divider} />
-                        <div className={styles.stat}>
-                            <span className={`${styles.stat_value} ${styles.stat_success}`}>{enabledCount}</span>
-                            <span className={styles.stat_label}>Enabled</span>
-                        </div>
-                        {runningCount > 0 && (
-                            <>
-                                <div className={styles.stat_divider} />
-                                <div className={styles.stat}>
-                                    <span className={`${styles.stat_value} ${styles.stat_primary}`}>{runningCount}</span>
-                                    <span className={styles.stat_label}>Running</span>
-                                </div>
-                            </>
-                        )}
-                        {failedCount > 0 && (
-                            <>
-                                <div className={styles.stat_divider} />
-                                <div className={styles.stat}>
-                                    <span className={`${styles.stat_value} ${styles.stat_danger}`}>{failedCount}</span>
-                                    <span className={styles.stat_label}>Failed</span>
-                                </div>
-                            </>
-                        )}
-                        {health && (
-                            <>
-                                <div className={styles.stat_divider} />
-                                <div className={styles.stat}>
-                                    <span className={styles.stat_value}>{health.successRate?.toFixed(0) ?? '--'}%</span>
-                                    <span className={styles.stat_label}>Success Rate</span>
-                                </div>
-                            </>
-                        )}
+            {!hideStats && (
+                <div className={styles.stats_bar}>
+                    <div className={styles.stat}>
+                        <span className={styles.stat_value}>{filteredJobs.length}</span>
+                        <span className={styles.stat_label}>Total</span>
                     </div>
-                )}
+                    <div className={styles.stat_divider} />
+                    <div className={styles.stat}>
+                        <span className={`${styles.stat_value} ${styles.stat_success}`}>{enabledCount}</span>
+                        <span className={styles.stat_label}>Enabled</span>
+                    </div>
+                    {runningCount > 0 && (
+                        <>
+                            <div className={styles.stat_divider} />
+                            <div className={styles.stat}>
+                                <span className={`${styles.stat_value} ${styles.stat_primary}`}>{runningCount}</span>
+                                <span className={styles.stat_label}>Running</span>
+                            </div>
+                        </>
+                    )}
+                    {failedCount > 0 && (
+                        <>
+                            <div className={styles.stat_divider} />
+                            <div className={styles.stat}>
+                                <span className={`${styles.stat_value} ${styles.stat_danger}`}>{failedCount}</span>
+                                <span className={styles.stat_label}>Failed</span>
+                            </div>
+                        </>
+                    )}
+                    {health && (
+                        <>
+                            <div className={styles.stat_divider} />
+                            <div className={styles.stat}>
+                                <span className={styles.stat_value}>{health.successRate?.toFixed(0) ?? '--'}%</span>
+                                <span className={styles.stat_label}>Success Rate</span>
+                            </div>
+                        </>
+                    )}
+                </div>
+            )}
 
-                {filteredJobs.length === 0 ? (
-                    <div className={styles.empty_state}>
-                        {jobFilter ? 'No jobs match the filter criteria.' : 'No scheduled jobs found.'}
-                    </div>
-                ) : (
-                    <Table>
-                        <Thead>
-                            <Tr>
-                                <Th width="shrink"></Th>
-                                <Th>Job</Th>
-                                <Th className={styles.th_schedule}>Schedule</Th>
-                                <Th width="shrink">Status</Th>
-                                <Th width="shrink" className={styles.th_last_run}>Last Run</Th>
-                                <Th width="shrink" className={styles.th_enabled}>Enabled</Th>
-                                <Th width="shrink" className={styles.th_actions}>Run</Th>
-                            </Tr>
-                        </Thead>
-                        <Tbody>
-                            {filteredJobs.map(job => (
-                                <JobRow
-                                    key={job.name}
-                                    job={job}
-                                    onToggleEnabled={handleToggleEnabled}
-                                    onScheduleChange={handleScheduleChange}
-                                    onRunNow={handleRunNow}
-                                    isLoading={!!loadingJobName}
-                                    loadingJobName={loadingJobName}
-                                    feedback={feedback}
-                                />
-                            ))}
-                        </Tbody>
-                    </Table>
-                )}
-            </Stack>
-        </Page>
+            {filteredJobs.length === 0 ? (
+                <div className={styles.empty_state}>
+                    {jobFilter ? 'No jobs match the filter criteria.' : 'No scheduled jobs found.'}
+                </div>
+            ) : (
+                <Table stackAt="mobile">
+                    <Thead>
+                        <Tr>
+                            <Th width="shrink"></Th>
+                            <Th>Job</Th>
+                            <Th className={styles.th_schedule}>Schedule</Th>
+                            <Th width="shrink">Status</Th>
+                            <Th width="shrink" className={styles.th_last_run}>Last Run</Th>
+                            <Th width="shrink" className={styles.th_enabled}>Enabled</Th>
+                            <Th width="shrink" className={styles.th_actions}>Run</Th>
+                        </Tr>
+                    </Thead>
+                    <Tbody>
+                        {filteredJobs.map(job => (
+                            <JobRow
+                                key={job.name}
+                                job={job}
+                                onToggleEnabled={handleToggleEnabled}
+                                onScheduleChange={handleScheduleChange}
+                                onRunNow={handleRunNow}
+                                isLoading={!!loadingJobName}
+                                loadingJobName={loadingJobName}
+                                feedback={feedback}
+                            />
+                        ))}
+                    </Tbody>
+                </Table>
+            )}
+        </Stack>
     );
 }

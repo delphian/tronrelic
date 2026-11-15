@@ -116,8 +116,10 @@ export function HistoryTab() {
         body = error ? null : <p className={styles.placeholder}>No decisions yet. Approved, rejected, and dismissed items are listed here.</p>;
     } else {
         body = (
-            <div className={`table-scroll ${styles.table_wrap}`}>
-                <Table>
+            <div className={styles.table_wrap}>
+                {/* Four columns fit a tablet; on a phone each decision stacks,
+                    with its badge and title sharing the entry's first line. */}
+                <Table stackAt="mobile">
                     <Thead>
                         <Tr>
                             <Th width="shrink">Decision</Th>
@@ -133,10 +135,10 @@ export function HistoryTab() {
                             const outcomes = countOutcomes(item.sinks);
                             return (
                                 <Tr key={item.id} className={styles.row} onClick={() => setSelectedId(item.id)}>
-                                    <Td data-label="Decision">
+                                    <Td>
                                         <Badge tone={decisionTone(item.status)} size="xs">{decisionLabel(item.status)}</Badge>
                                     </Td>
-                                    <Td data-label="Item">
+                                    <Td>
                                         <div className={styles.item}>
                                             {/* The button makes the row reachable by keyboard; the
                                                 row's own click handler covers the pointer. The button
@@ -153,7 +155,7 @@ export function HistoryTab() {
                                             {excerpt && <span className={styles.excerpt}>{excerpt}</span>}
                                         </div>
                                     </Td>
-                                    <Td data-label="Destinations">
+                                    <Td label="Destinations">
                                         {outcomes.length === 0 ? (
                                             <span className={styles.none}>None</span>
                                         ) : (
@@ -166,7 +168,7 @@ export function HistoryTab() {
                                             </span>
                                         )}
                                     </Td>
-                                    <Td muted data-label="Decided" className={styles.col_time}>
+                                    <Td muted label="Decided" className={styles.col_time}>
                                         <ClientTime date={item.decidedAt ?? item.createdAt} format="datetime" />
                                     </Td>
                                 </Tr>

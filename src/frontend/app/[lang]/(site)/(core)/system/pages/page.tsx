@@ -1,41 +1,66 @@
-'use client';
+/**
+ * @fileoverview /system/pages server entry.
+ *
+ * Fetches the page's in-page tab row from the menu service on the server and
+ * hands it to the client shell. The tab row is a namespaced menu (menu
+ * module's Submenu Pattern), not a hand-written button row, so it inherits
+ * per-user gating, ordering, and live `menu:update` refresh, and a plugin can
+ * add a tab. The admin's session cookie is forwarded so the nodes'
+ * `requiresAdmin` gating resolves. Admin-gated by the /system layout.
+ */
 
-import { useState } from 'react';
-import styles from './page.module.scss';
-import { PagesTab } from './tabs/PagesTab';
-import { SettingsTab } from './tabs/SettingsTab';
+import { cookies } from 'next/headers';
+import type { MenuNodeSerialized } from '@/shared';
+import { getServerSideApiUrl } from '../../../../../../lib/api-url';
+import { PagesAdminClient } from './PagesAdminClient';
+
+/** Namespace holding the page's tab nodes; registered by PagesModule. */
+const SUBMENU_NAMESPACE = 'pages';
 
 /**
- * Pages administration interface.
+ * Fetch the submenu namespace tree from the menu API, forwarding the visitor's
+ * cookies so the backend's per-user `requiresAdmin` gating resolves for the
+ * admin. On any failure it returns an empty tree, so the page still renders
+ * and the tab row appears once a live `menu:update` refetch repopulates it.
  *
- * Pages-only concerns: page CRUD, markdown editing, and the route
- * blacklist that protects core URLs from being shadowed by custom slugs.
- * File browsing and upload-policy settings live at /system/files.
+ * @returns The namespace root nodes and the tree snapshot timestamp.
  */
-export default function PagesAdminPage() {
-    const [activeTab, setActiveTab] = useState<'pages' | 'settings'>('pages');
+async function fetchSubmenu(): Promise<{ roots: MenuNodeSerialized[]; generatedAt: string }> {
+    let result = { roots: [] as MenuNodeSerialized[], generatedAt: new Date().toISOString() };
+    try {
+        const cookieHeader = (await cookies()).toString();
+        const response = await fetch(`${getServerSideApiUrl()}/api/menu?namespace=${SUBMENU_NAMESPACE}`, {
+            cache: 'no-store',
+            headers: cookieHeader ? { Cookie: cookieHeader } : undefined
+        });
+        if (response.ok) {
+            const data = await response.json() as { tree?: { roots?: MenuNodeSerialized[]; generatedAt?: string } };
+            result = {
+                roots: data.tree?.roots ?? [],
+                generatedAt: data.tree?.generatedAt ?? result.generatedAt
+            };
+        }
+    } catch {
+        // Keep the empty tree; the client refetches on the next menu update.
+    }
+    return result;
+}
 
-    return (
-        <div className={styles.container}>
-            <div className={styles.tabs}>
-                <button
-                    className={activeTab === 'pages' ? styles.tabActive : styles.tab}
-                    onClick={() => setActiveTab('pages')}
-                >
-                    Pages
-                </button>
-                <button
-                    className={activeTab === 'settings' ? styles.tabActive : styles.tab}
-                    onClick={() => setActiveTab('settings')}
-                >
-                    Settings
-                </button>
-            </div>
-
-            <div className={styles.content}>
-                {activeTab === 'pages' && <PagesTab />}
-                {activeTab === 'settings' && <SettingsTab />}
-            </div>
-        </div>
-    );
+/**
+ * Pages admin page (server entry).
+ *
+ * @param props - Next.js route props.
+ * @param props.searchParams - The `?tab=` deep link (a Promise in Next.js 15+),
+ *   read on the server so a refreshed, bookmarked, or shared link opens on the
+ *   selected tab.
+ * @returns The client shell seeded with the server-fetched submenu tree.
+ */
+export default async function SystemPagesPage({
+    searchParams
+}: {
+    searchParams: Promise<{ tab?: string }>;
+}) {
+    const { roots, generatedAt } = await fetchSubmenu();
+    const { tab } = await searchParams;
+    return <PagesAdminClient submenuTree={roots} submenuGeneratedAt={generatedAt} initialTab={tab} />;
 }

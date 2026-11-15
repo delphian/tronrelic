@@ -96,8 +96,12 @@
     gap: var(--spacing-5);
 }
 
+/* Wraps so a long value drops under its label on a phone instead of
+   squeezing it. */
 .setting_row {
     display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-xs) var(--gap-md);
     justify-content: space-between;
     align-items: center;
     padding: var(--spacing-4) 0;

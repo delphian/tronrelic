@@ -93,7 +93,7 @@ export function ChangesView({ accountId, refreshKey }: IChangesViewProps) {
             )}
             {entries !== null && entries.length > 0 && (
                 <div className={styles.scroll}>
-                    <Table variant="compact">
+                    <Table variant="compact" stackAt="mobile">
                         <Thead>
                             <Tr>
                                 <Th>When</Th>
@@ -106,15 +106,16 @@ export function ChangesView({ accountId, refreshKey }: IChangesViewProps) {
                         <Tbody>
                             {entries.map(entry => (
                                 <Tr key={`${entry.at}-${entry.action}`} hasError={!entry.succeeded}>
+                                    {/* No label: the time heads a stacked entry. */}
                                     <Td><ClientTime date={entry.at} format="datetime" /></Td>
-                                    <Td><code className={styles.actor}>{entry.actorId}</code></Td>
-                                    <Td>
+                                    <Td label="Admin"><code className={styles.actor}>{entry.actorId}</code></Td>
+                                    <Td label="What changed">
                                         <ul className={styles.lines}>
                                             {describe(entry).map(line => <li key={line}>{line}</li>)}
                                         </ul>
                                     </Td>
-                                    <Td>{entry.reason ?? <span className={styles.none}>None given</span>}</Td>
-                                    <Td>
+                                    <Td label="Reason">{entry.reason ?? <span className={styles.none}>None given</span>}</Td>
+                                    <Td label="Result">
                                         {entry.succeeded
                                             ? <Badge tone="success" size="xs">Done</Badge>
                                             : <Badge tone="danger" size="xs">Refused</Badge>}
