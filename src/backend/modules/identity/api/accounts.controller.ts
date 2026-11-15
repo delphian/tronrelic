@@ -183,7 +183,11 @@ export class AccountsController {
             try {
                 const account = await this.accountDirectory.getAccount(id);
                 if (account) {
-                    const saved = await this.accountNotes.set(id, checked.note, req.userId ?? null);
+                    // Key the note by the resolved account's canonical id, not the
+                    // path string. The id pattern and the ObjectId lookup both accept
+                    // mixed-case hex, but the note store matches `userId` as an exact
+                    // string, so a raw uppercase path would write a note no read finds.
+                    const saved = await this.accountNotes.set(account.id, checked.note, req.userId ?? null);
                     res.json({ adminNote: await this.accountDetails.toAdminNote(saved) });
                 } else {
                     res.status(404).json({ error: 'NotFound', message: `Account "${id}" not found` });
