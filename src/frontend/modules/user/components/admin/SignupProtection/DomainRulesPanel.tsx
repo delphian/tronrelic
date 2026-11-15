@@ -12,7 +12,7 @@
 
 import { useCallback, useState } from 'react';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
-import type { EmailDomainRuleAction, IEmailDomainRule, ISignupProtectionReport } from '@/types';
+import type { DomainBudgetWindow, EmailDomainRuleAction, IEmailDomainRule, ISignupProtectionReport } from '@/types';
 import { SIGNUP_PROTECTION_LIMITS, normalizeEmailDomain } from '@/types';
 import { Stack } from '../../../../../components/layout';
 import { Panel } from '../../../../../components/ui/Panel';
@@ -33,7 +33,13 @@ import styles from './SignupProtectionTab.module.scss';
 /** What each action does, shown as the action field's hint. */
 const ACTION_HINTS: Record<EmailDomainRuleAction, string> = {
     block: 'Block. No sign-in code is sent and no account is created for a new address on this domain, by any sign-in method.',
-    slow: 'Slow. Every new address on this domain shares one hourly budget of sign-in codes. Use it for a domain real people also use.'
+    slow: 'Slow. Every new address on this domain shares one budget of sign-in codes per hour or per day. Use it for a domain real people also use.'
+};
+
+/** What each budget window means, shown as the window field's hint. */
+const WINDOW_HINTS: Record<DomainBudgetWindow, string> = {
+    hour: 'Resets an hour after the first code.',
+    day: 'Resets 24 hours after the first code.'
 };
 
 /**
@@ -47,15 +53,15 @@ function domainError(value: string): string | undefined {
 }
 
 /**
- * Describe what is wrong with the typed hourly code budget.
+ * Describe what is wrong with the typed code budget.
  *
  * @param value - The budget field's text.
  * @returns A message, or undefined when it is valid.
  */
 function budgetError(value: string): string | undefined {
     const parsed = Number(value);
-    const valid = /^\d+$/.test(value.trim()) && parsed >= SIGNUP_PROTECTION_LIMITS.minCodesPerHour && parsed <= SIGNUP_PROTECTION_LIMITS.maxCodesPerHour;
-    return valid ? undefined : `Enter a whole number from ${SIGNUP_PROTECTION_LIMITS.minCodesPerHour} to ${SIGNUP_PROTECTION_LIMITS.maxCodesPerHour.toLocaleString('en-US')}.`;
+    const valid = /^\d+$/.test(value.trim()) && parsed >= SIGNUP_PROTECTION_LIMITS.minCodes && parsed <= SIGNUP_PROTECTION_LIMITS.maxCodes;
+    return valid ? undefined : `Enter a whole number from ${SIGNUP_PROTECTION_LIMITS.minCodes} to ${SIGNUP_PROTECTION_LIMITS.maxCodes.toLocaleString('en-US')}.`;
 }
 
 /** Props for the domain rules panel. */
@@ -76,7 +82,8 @@ interface IDomainRulesPanelProps {
 export function DomainRulesPanel({ report, onReport }: IDomainRulesPanelProps) {
     const [domain, setDomain] = useState('');
     const [action, setAction] = useState<EmailDomainRuleAction>('block');
-    const [budget, setBudget] = useState(String(SIGNUP_PROTECTION_LIMITS.defaultCodesPerHour));
+    const [budget, setBudget] = useState(String(SIGNUP_PROTECTION_LIMITS.defaultCodes));
+    const [budgetWindow, setBudgetWindow] = useState<DomainBudgetWindow>(SIGNUP_PROTECTION_LIMITS.defaultBudgetWindow);
     const [note, setNote] = useState('');
     const [saving, setSaving] = useState(false);
     const { open, close } = useModal();
@@ -87,7 +94,8 @@ export function DomainRulesPanel({ report, onReport }: IDomainRulesPanelProps) {
     const handleEdit = useCallback((rule: IEmailDomainRule) => {
         setDomain(rule.domain);
         setAction(rule.action);
-        setBudget(String(rule.maxCodesPerHour ?? SIGNUP_PROTECTION_LIMITS.defaultCodesPerHour));
+        setBudget(String(rule.maxCodes ?? SIGNUP_PROTECTION_LIMITS.defaultCodes));
+        setBudgetWindow(rule.budgetWindow ?? SIGNUP_PROTECTION_LIMITS.defaultBudgetWindow);
         setNote(rule.note);
     }, []);
 
@@ -97,7 +105,8 @@ export function DomainRulesPanel({ report, onReport }: IDomainRulesPanelProps) {
         try {
             onReport(await saveDomainRule(domain.trim(), {
                 action,
-                maxCodesPerHour: action === 'slow' ? Number(budget) : null,
+                maxCodes: action === 'slow' ? Number(budget) : null,
+                budgetWindow: action === 'slow' ? budgetWindow : null,
                 note: note.trim()
             }));
             push({ tone: 'success', title: `Rule saved for ${normalizeEmailDomain(domain) ?? domain}` });
@@ -108,7 +117,7 @@ export function DomainRulesPanel({ report, onReport }: IDomainRulesPanelProps) {
         } finally {
             setSaving(false);
         }
-    }, [action, budget, domain, note, onReport, push]);
+    }, [action, budget, budgetWindow, domain, note, onReport, push]);
 
     /** Ask for confirmation, then remove a stored rule. */
     const handleRemove = useCallback((rule: IEmailDomainRule) => {
@@ -163,7 +172,7 @@ export function DomainRulesPanel({ report, onReport }: IDomainRulesPanelProps) {
                                 <option value="slow">Slow</option>
                             </Select>
                         </Field>
-                        <Field label="Codes per hour" htmlFor="signup-rule-budget" error={typedBudgetError} hint="Shared by the whole domain.">
+                        <Field label="Codes" htmlFor="signup-rule-budget" error={typedBudgetError} hint="Shared by the whole domain.">
                             <Input
                                 id="signup-rule-budget"
                                 size="sm"
@@ -173,6 +182,18 @@ export function DomainRulesPanel({ report, onReport }: IDomainRulesPanelProps) {
                                 invalid={typedBudgetError !== undefined}
                                 onChange={event => setBudget(event.target.value)}
                             />
+                        </Field>
+                        <Field label="Per" htmlFor="signup-rule-window" hint={WINDOW_HINTS[budgetWindow]}>
+                            <Select
+                                id="signup-rule-window"
+                                size="sm"
+                                value={budgetWindow}
+                                disabled={action !== 'slow'}
+                                onChange={event => setBudgetWindow(event.target.value as DomainBudgetWindow)}
+                            >
+                                <option value="hour">Hour</option>
+                                <option value="day">Day (24 hours)</option>
+                            </Select>
                         </Field>
                         <Field
                             label="Note"
@@ -213,7 +234,7 @@ export function DomainRulesPanel({ report, onReport }: IDomainRulesPanelProps) {
                             {rules.map(rule => (
                                 <Tr key={rule.domain}>
                                     <Td><code>{rule.domain}</code></Td>
-                                    <Td><DomainRuleBadge action={rule.action} maxCodesPerHour={rule.maxCodesPerHour} /></Td>
+                                    <Td><DomainRuleBadge action={rule.action} maxCodes={rule.maxCodes} budgetWindow={rule.budgetWindow} /></Td>
                                     <Td>{rule.note || <span className="text-muted">—</span>}</Td>
                                     <Td><ClientTime date={rule.updatedAt} format="date" /></Td>
                                     <Td>

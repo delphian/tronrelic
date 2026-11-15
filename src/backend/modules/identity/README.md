@@ -11,13 +11,16 @@ Owns Better Auth and everything keyed by the Better Auth user id: the auth insta
 | Admin page | `/system/users` (menu item `Users`, order 25, registered in `run()`); tabs Users, Groups, Sign-ups, Database, Logs, registered as nodes in the `identity` menu namespace |
 | Log service name | `tronrelic:identity`, which the Logs tab is scoped to |
 | Service registry names | `'user-groups'`, `'wallets'`, `'accounts'`, `'user-settings'` |
-| Mounted routes | `/api/auth/*`, `/.well-known/oauth-authorization-server`, `/api/user/wallets/*`, `/api/user/settings`, `/api/user/connected-apps`, `/api/user/oauth/authorize-context`, `/api/admin/users/groups/*`, `/api/admin/users/sign-ups/*`, `/api/admin/users` (accounts), `/api/admin/accounts/search` |
-| Types package | `@delphian/tronrelic-types` → `IWalletService`, `IAccountDirectoryService`, `IUserGroupService`, `IUserSettingsService`, `IConnectedAppsService`, `IConnectedApp`, `IConnectedAppAdminRow`, `IOAuthConsentContext`, `IMcpAccessTokenVerifier`, `ISignupProtectionConfig`, `ISignupProtectionReport`, `IEmailDomainRule`, `SIGNUP_PROTECTION_LIMITS`, `SIGNUP_REFUSAL_REASONS`, `normalizeEmailDomain` |
+| Mounted routes | `/api/auth/*`, `/.well-known/oauth-authorization-server`, `/api/user/wallets/*`, `/api/user/settings`, `/api/user/connected-apps`, `/api/user/oauth/authorize-context`, `/api/admin/users/groups/*`, `/api/admin/users/sign-ups/*`, `/api/admin/users` (accounts, details, sign-in events, note), `/api/admin/accounts/search` |
+| Types package | `@delphian/tronrelic-types` → `IWalletService`, `IAccountDirectoryService`, `IAccountDetails`, `IAccountAdminNote`, `IAccountSession`, `IAccountSignInEvent`, `AccountSortField`, `ACCOUNT_SORT_FIELDS`, `ACCOUNT_NOTE_MAX_LENGTH`, `IUserGroupService`, `IUserSettingsService`, `IConnectedAppsService`, `IConnectedApp`, `IConnectedAppAdminRow`, `IOAuthConsentContext`, `IMcpAccessTokenVerifier`, `ISignupProtectionConfig`, `ISignupProtectionReport`, `IEmailDomainRule`, `DomainBudgetWindow`, `DOMAIN_BUDGET_WINDOW_SECONDS`, `SIGNUP_PROTECTION_LIMITS`, `SIGNUP_REFUSAL_REASONS`, `normalizeEmailDomain` |
 | Sign-up protections | Site-wide cap on new accounts per hour and email domain rules, stored in `_kv` under `identity:sign-up-protection`. See [Sign-up Protections](#sign-up-protections) |
 | Auth collections | `module_user_auth_users` / `_sessions` / `_accounts` / `_verifications` / `_passkeys` / `_jwks` / `_oauth_clients` / `_oauth_resources` / `_oauth_client_resources` / `_oauth_refresh_tokens` / `_oauth_access_tokens` / `_oauth_consents` / `_oauth_client_assertions` |
 | OAuth authorization server | Issuer = site origin; access tokens are JWTs bound to the MCP resource URL; consent page `/oauth/authorize`. See [OAuth Authorization Server](#oauth-authorization-server) |
 | Bootstrap getters | `getAccessTokenVerifier()`, `getConnectedAppsService()`, `getOAuthServerConfig()`, `getUserGroupService()`, `getAccountDirectoryService()` — consumed by the MCP module |
-| Owned collections | `module_user_wallets`, `module_user_groups`, `module_user_settings`, `module_user_connected_app_usage`, `module_user_sign_in_events` (90-day expiry) |
+| Owned collections | `module_user_wallets`, `module_user_groups`, `module_user_settings`, `module_user_connected_app_usage`, `module_user_sign_in_events` (90-day expiry), `module_user_admin_notes` |
+| Fields written onto the Better Auth user record | `deletedAt` (soft delete) and `lastSeenAt` (last signed-in request or MCP call). Neither is a Better Auth additional field |
+| User detail panel | Opened from the Users tab of `/system/users`; reads `GET /api/admin/users/:id/details`. See [User Detail Panel](#user-detail-panel) |
+| Migrations | `001_backfill_last_seen_at` — operator-run starting value for `lastSeenAt` |
 | AI tools | `identity-list-accounts`, `identity-get-account`, `identity-list-sign-in-events` — read-only, `secret`, admin-only. See [AI Tools](#ai-tools) |
 | Bootstrap order | Inits/runs after `TrafficModule` so traffic's `/api/admin/users/{traffic,analytics}` routers mount before the accounts `/api/admin/users` catch-all |
 
@@ -33,7 +36,7 @@ Better Auth is the sole identity layer — the legacy UUID identity system was r
 |------|----------------|
 | `IdentityModule.ts` | Two-phase lifecycle; constructs services + auth, mounts routers, registers services |
 | `auth.ts` | Better Auth factory (`createAuth`), `Auth` type; takes a raw Mongo `Db` (documented `IDatabaseService` exception) |
-| `services/auth-facade.ts` | Session resolution + `isLoggedIn`/`isAdmin`/`isInGroup` predicates over `req.authSession`; `setAuthInstance` |
+| `services/auth-facade.ts` | Session resolution + `isLoggedIn`/`isAdmin`/`isInGroup` predicates over `req.authSession`; `setAuthInstance`; `setActivityRecorder`, which reports every resolved session to the activity tracker |
 | `services/auth-constants.ts` | Physical BA collection names (`AUTH_USERS_COLLECTION`, `AUTH_COLLECTIONS`) |
 | `services/consumeRedisWindow.ts` | Atomic fixed-window counter in Redis (one Lua step for increment + expiry); shared by both limiters below |
 | `services/createRedisRateLimitStorage.ts` | Better Auth `rateLimit.customStorage` — moves BA's per-IP counters from process memory to Redis |
@@ -51,6 +54,13 @@ Better Auth is the sole identity layer — the legacy UUID identity system was r
 | `services/ISignInEventRecorder.ts` | The one storage operation the audit hook needs (`record`) |
 | `database/ISignInEventDocument.ts` | Sign-in event document, its kinds, the collection name, and the retention period |
 | `ai-tools.ts` | The three read-only identity AI tools and their registration on the core `'ai-tools'` registry |
+| `services/AccountDetailsService.ts` | Assembles one account's full admin view (`IAccountDetails`) for the detail panel and `identity-get-account` |
+| `services/AccountNoteStore.ts` | `module_user_admin_notes`: validate, read, save, and clear the admin note on an account |
+| `database/IAccountNoteDocument.ts` | Admin note document and its collection name |
+| `services/AccountActivityTracker.ts` | Throttled `$max` writer of `lastSeenAt` on the user record (`LAST_SEEN_WRITE_INTERVAL_MS`, five minutes) |
+| `services/IAccountActivityRecorder.ts` | The one operation the facade and the connected-apps service call (`recordSeen`) |
+| `services/toSignInEventView.ts` | Stored sign-in event → `IAccountSignInEvent`, shared by the detail panel and the AI tools |
+| `migrations/001_backfill_last_seen_at.ts` | Starting `lastSeenAt` from each account's newest session activity and successful sign-in |
 | `services/createMcpConsentGate.ts` | Better Auth plugin refusing `/oauth2/consent` approvals from users outside `mcp-users` (`enforceMcpConsentMembership`) |
 | `services/userGroups.ts` | `userGroups` — reads the loosely typed `groups` field off a Better Auth user; shared by the OAuth callbacks and the consent gate |
 | `services/IAuthRateLimitRedis.ts` | The one Redis command the limiters use (`eval`); the bootstrap ioredis client satisfies it |
@@ -67,7 +77,7 @@ Better Auth is the sole identity layer — the legacy UUID identity system was r
 | `database/IUserSettingDocument.ts` | `module_user_settings` document (`(userId, namespace, key)` → opaque value) |
 | `api/wallet.{controller,routes}.ts` | `/api/user/wallets/*` (BA-session-resolved, no `:id` on the wire) |
 | `api/user-group.{controller,routes}.ts` | `/api/admin/users/groups/*` admin CRUD + membership |
-| `api/accounts.{controller,routes}.ts` | `/api/admin/users` admin account directory (list, per-account group assignment, and soft delete) over the `'accounts'` service and `AccountDeletionService` |
+| `api/accounts.{controller,routes}.ts` | `/api/admin/users` admin account directory (sorted list, details, sign-in events, admin note, per-account group assignment, and soft delete) over the `'accounts'` service, `AccountDetailsService`, `AccountNoteStore`, and `AccountDeletionService` |
 | `database/IWalletDocument.ts` | `module_user_wallets` document + `ILinkedWallet` public shape |
 | `database/IUserGroupDocument.ts` | `module_user_groups` document |
 | `services/oauth-server-config.ts` | `resolveOAuthServerConfig` — issuer, MCP resource URL, metadata URL, public endpoint, Server Card (and its earlier alias) and AI Catalog URLs, and consent page path from one base URL |
@@ -140,13 +150,15 @@ The per-IP and per-email limits cannot see an account farm that uses a new rando
 |------------|----------|--------|
 | Site-wide cap | `mode` (`off`, `alert`, `enforce`) and `maxPerHour` (1–10,000) | Counts accounts created in the last 60 minutes, by every sign-in method. At or above the maximum: `alert` notifies admins and refuses nobody; `enforce` notifies admins and refuses new accounts with `429 SIGN_UPS_PAUSED`. Starts at `alert`, 10 per hour (`SIGNUP_PROTECTION_LIMITS.defaultCap`) |
 | Domain rule, `block` | `domain`, optional `note` | Refuses new addresses on the domain and its subdomains with `403 EMAIL_DOMAIN_BLOCKED`, by every sign-in method |
-| Domain rule, `slow` | `domain`, `maxCodesPerHour` (1–1,000), optional `note` | Every new address on the domain shares one hourly budget of sign-in codes, counted in Redis under `<REDIS_NAMESPACE>:auth:signup-domain:<rule domain>`. Over budget: `429 EMAIL_DOMAIN_SLOWED` |
+| Domain rule, `slow` | `domain`, `maxCodes` (1–1,000), `budgetWindow` (`hour` or `day`, default `hour`), optional `note` | Every new address on the domain shares one budget of sign-in codes per window, counted in Redis under `<REDIS_NAMESPACE>:auth:signup-domain:<window>:<rule domain>`. The window is fixed, not rolling: it starts with the first code and resets an hour or 24 hours later (`DOMAIN_BUDGET_WINDOW_SECONDS`). The window is part of the key, so switching a rule between hourly and daily starts a fresh count. Over budget: `429 EMAIL_DOMAIN_SLOWED` |
 
 **Where they run.** `SignupGuard.checkCodeRequest` runs first in the before-hook (`createAuthBeforeHook`), on `/email-otp/send-verification-otp`, so a refused visitor learns before waiting for an email and no Resend quota is spent. It checks block, then the enforced cap, then the domain budget, so a request refused for another reason does not spend the budget. `SignupGuard.checkAccountCreation` runs in `databaseHooks.user.create.before`, which every account creation passes through, including Google and GitHub sign-in, which never request a code; only `block` and the enforced cap apply there. `noteAccountCreated` runs in `user.create.after` and alerts when the new account brought the count up to the cap.
 
 **Matching.** A rule matches its domain and every subdomain (`example.com` covers `mail.example.com`, not `badexample.com`), and the longest matching domain wins, so a subdomain can be slowed under a blocked parent. Domains are normalized by `normalizeEmailDomain` in `@/types`, which the admin form uses too: lowercase, no leading `@` or trailing dot, two or more labels, internationalised domains in their `xn--` form. At most 500 rules.
 
 **The alert.** `SignupCapAlerter` writes a `warn` entry and sends a notification in category `identity.signup-cap-reached` (content type `identity:signup-cap-reached`, default audience the `admin` group, toast channel), at most once an hour. The hour is held by a Redis key set with `SET NX EX 3600` under `<REDIS_NAMESPACE>:auth:signup-cap-alert`, so concurrent sign-ups, a restart, and a second process all send one alert; the key's value is the alert time the report shows. The category is registered when the `'notifications'` service appears, because the notifications module runs after this one.
+
+**Rules stored before the budget window.** A `slow` rule saved before `budgetWindow` existed holds `maxCodesPerHour` and no window. `SignupProtectionConfigStore.normalize` reads it as that many codes per hour, which is what it meant, and the next save writes it in the new form. No migration is needed.
 
 **Limits of the design.**
 - The count is read, then compared, so a burst of simultaneous sign-ups can pass the cap by a few accounts. It is a brake, not a quota.
@@ -186,21 +198,39 @@ A deleted account cannot sign in again. `databaseHooks.session.create.before` in
 
 `IAccountSummary.deletedAt` is null for a live account. The Users tab shows a deleted account with a `Deleted` badge and one action, `Revoke again`, which opens the same confirmation modal and repeats the request. That action is there because a deletion that failed at the session, group, or connected-app step leaves the account marked while its existing sessions and connected apps still work; `deletedAt` is enforced only when a new session is created. Sign-in events for the account stay in `module_user_sign_in_events` until their normal 90-day expiry.
 
+## User Detail Panel
+
+The Users tab of `/system/users` lists accounts in a table that sorts on every column (`ACCOUNT_SORT_FIELDS`: email, name, status, primary wallet, groups, created, last seen). The Wallet column shows only a tick when a primary wallet is set; the address is in the detail panel. Clicking an email or **Details** opens the panel, a slide-over (`UserDetailPanel` in `src/frontend/modules/user/components/admin/`) showing the account, the admin note editor, wallets, live sessions, connected apps, and the sign-in events naming the account's email, with older events paged on request.
+
+| Piece | How it works |
+|-------|--------------|
+| Details | `GET /api/admin/users/:id/details` answers `IAccountDetails`, built by `AccountDetailsService`. `identity-get-account` reads through the same service, so the panel and the tool cannot disagree. At most 25 sessions and 20 events; session tokens never leave `IdentityModule.listAccountSessions` |
+| Older sign-in events | `GET /api/admin/users/:id/sign-in-events?limit=&offset=` (limit at most 100) |
+| Admin note | `PUT /api/admin/users/:id/note` with `{ note }`, at most `ACCOUNT_NOTE_MAX_LENGTH` (5,000) characters; an empty string clears it. Stored in `module_user_admin_notes` with `updatedAt` and `updatedBy` (null for the admin API token). The response names the editor by email |
+| Last seen | `lastSeenAt` on the user record. The auth facade calls `recordSeen` for every session it resolves, which covers every signed-in HTTP request and socket handshake, and `ConnectedAppsService.recordUse` calls it for every MCP request |
+| Sort | `GET /api/admin/users?sortBy=&sortDirection=`; an unknown value is answered with `400 InvalidSort`. Default `createdAt` `desc` |
+
+**Why notes are not on the user record.** Fields on the Better Auth user record can travel with the user's own session, and a note written about a person must never reach them. The note text is also kept out of the log; `Account admin note saved` records the account, the admin, and the length only.
+
+**Last seen accuracy.** `AccountActivityTracker` writes at most once per account every five minutes per process, with `$max` so a slower process cannot move the time backwards, and never makes a request wait for the write. A failed write is logged at `warn` and retried on the next request. An account shows as never seen until its first request after deployment, or until an operator runs the `001_backfill_last_seen_at` migration from `/system/database`, which takes the newest of each account's stored session `updatedAt` and its newest successful sign-in event.
+
+**How the sort works.** `AccountDirectoryService.listAccounts` computes each column's sort value in an aggregation (`SORT_KEYS`): status orders deleted, then unverified, then verified; the wallet column orders accounts without a primary wallet first; groups sorts by how many; a never-seen account sorts as the oldest. Text compares without regard to case, and the account id breaks ties so paging is stable. No index serves a computed value, so every matching account is read to order a page. That is fine for thousands of accounts; a much larger directory would need the computed columns stored and indexed.
+
 ## AI Tools
 
 Three read-only tools let an AI agent review accounts and sign-in activity. They register on the core `'ai-tools'` registry through `watch()` under provider id `identity`.
 
 | Tool | Input | Returns |
 |------|-------|---------|
-| `identity-list-accounts` | `search` (substring of email or name), `limit` (default 25, at most 100), `offset` | `total`, `offset`, `returned`, `nextOffset`, and `accounts[]` of `{ id, email, name, emailVerified, createdAt, groups, primaryWallet, deletedAt }`, newest first; `deletedAt` is null unless an admin deleted the account |
-| `identity-get-account` | Exactly one of `userId` and `email` (exact address) | `found`; when true, `account`, `sessions[]` (at most 25: `id`, `createdAt`, `updatedAt`, `expiresAt`, `ipAddress`, `userAgent`), `sessionsTruncated`, `wallets[]`, `connectedApps[]`, `recentSignInEvents[]` (at most 20, matched by the account's email), `signInEventsTotal` |
+| `identity-list-accounts` | `search` (substring of email or name), `sortBy` (one of `ACCOUNT_SORT_FIELDS`, default `createdAt`), `sortDirection` (`asc` or `desc`, default `desc`), `limit` (default 25, at most 100), `offset` | `total`, `offset`, `returned`, `nextOffset`, the sort as applied, and `accounts[]` of `{ id, email, name, emailVerified, createdAt, groups, primaryWallet, deletedAt, lastSeenAt }`; `deletedAt` is null unless an admin deleted the account, and `lastSeenAt` is null for an account not seen since recording began |
+| `identity-get-account` | Exactly one of `userId` and `email` (exact address) | `found`; when true, the `IAccountDetails` of the detail panel: `account` (with `lastSeenAt`), `adminNote` (`{ note, updatedAt, updatedBy, updatedByEmail }` or null), `sessions[]` (at most 25: `id`, `createdAt`, `updatedAt`, `expiresAt`, `ipAddress`, `userAgent`), `sessionsTruncated`, `wallets[]`, `connectedApps[]`, `recentSignInEvents[]` (at most 20, matched by the account's email), `signInEventsTotal` |
 | `identity-list-sign-in-events` | All optional: `email`, `userId`, `ip`, `method`, `kind`, `since`, `until` (ISO 8601), `limit` (default 50, at most 200), `offset` | `filters` as applied, `total`, `offset`, `returned`, `nextOffset`, and `events[]` newest first with every stored field except `path` |
 
 **Classification.** All three declare `read` / reversible / `secret` / `surfacesUntrustedContent`. `secret` because every result holds other users' email addresses and network addresses. As a result they fail the MCP safety floor, so an admin must clear a user group for restricted tools on `/system/mcp` before granting one, and they count as a private-data leg of the trifecta banner while enabled. Like every read tool they ship enabled; disable them on the Registry tab of `/system/ai-tools` if the deployment does not need them. `surfacesUntrustedContent` because names, addresses, and `userAgent` values are written by the people the records describe.
 
 **Admin check.** Each handler refuses a signed-in caller who is not in the `admin` group, using the principal the governor supplies, and logs the refusal at `warn`. A call with no principal comes from the server itself and is allowed. This is on top of the MCP grant, so a group granted a tool by mistake still cannot read other users' data.
 
-**What is never returned.** Session tokens (sessions are copied field by field in `IdentityModule.listAccountSessions`), one-time codes and their hashes, OAuth tokens, and passkey credentials. The tools change nothing: ending a session or changing a group stays on `/system/users`.
+**What is never returned.** Session tokens (sessions are copied field by field in `IdentityModule.listAccountSessions`), one-time codes and their hashes, OAuth tokens, and passkey credentials. The tools change nothing: ending a session, changing a group, or editing the admin note stays on `/system/users`.
 
 ## OAuth Authorization Server
 
@@ -270,7 +300,9 @@ Every method takes the resolved Better Auth user id first — the service never 
 | `getAccount(baUserId)` | One account summary, or null |
 | `getAccountByEmail(email)` | One account summary matched on the whole address, case-insensitively, or null. Use instead of searching `listAccounts` for an address, whose substring match plus page limit can hide the account |
 | `getAccountsByIds(baUserIds)` | Summaries for a page of ids in one `$in` query; ids with no account are left out, order not guaranteed |
-| `listAccounts(options?)` | Paginated/searched summaries + unpaginated total |
+| `listAccounts(options?)` | Paginated/searched summaries + unpaginated total, sorted by `sortBy`/`sortDirection` (default newest first). See [User Detail Panel](#user-detail-panel) for how each column sorts |
+
+Every summary carries `lastSeenAt`, the last signed-in request or MCP call, accurate to about five minutes and null for an account not yet seen.
 
 ### `'user-groups'` → `IUserGroupService`
 
@@ -315,9 +347,12 @@ First consumer: the notifications module persists per-user opt-outs here under t
 | GET | `/api/admin/users/groups/:id/members` | `requireAdmin` | Paginated member ids |
 | GET | `/api/admin/users/sign-ups` | `requireAdmin` | `ISignupProtectionReport`: the sign-up protection settings and the sign-up report |
 | PUT | `/api/admin/users/sign-ups/cap` | `requireAdmin` | Replace the cap; body `{ mode, maxPerHour }`. 400 names the field to fix |
-| PUT | `/api/admin/users/sign-ups/domains/:domain` | `requireAdmin` | Add or replace a domain rule; body `{ action, maxCodesPerHour?, note? }`. 400 for a bad field, 409 at 500 rules |
+| PUT | `/api/admin/users/sign-ups/domains/:domain` | `requireAdmin` | Add or replace a domain rule; body `{ action, maxCodes?, budgetWindow?, note? }`. 400 for a bad field, 409 at 500 rules |
 | DELETE | `/api/admin/users/sign-ups/domains/:domain` | `requireAdmin` | Remove a domain rule; 404 when none exists |
-| GET | `/api/admin/users` | `requireAdmin` | Paginated / searched account summaries (`IAccountSummary[]` + total) |
+| GET | `/api/admin/users` | `requireAdmin` | Paginated / searched / sorted account summaries (`IAccountSummary[]` + total); `sortBy`, `sortDirection` |
+| GET | `/api/admin/users/:id/details` | `requireAdmin` | `IAccountDetails` for the user detail panel; 400 bad id, 404 unknown account |
+| GET | `/api/admin/users/:id/sign-in-events` | `requireAdmin` | `{ events, total }`, a page of the sign-in events naming the account's email; `limit` (at most 100), `offset` |
+| PUT | `/api/admin/users/:id/note` | `requireAdmin` | Save or clear the admin note; body `{ note }`. Answers `{ adminNote }` |
 | GET | `/api/admin/users/:id` | `requireAdmin` | One account summary, or 404 |
 | PUT | `/api/admin/users/:id/groups` | `requireAdmin` | Set an account's group membership |
 | DELETE | `/api/admin/users/:id` | `requireAdmin` + `requireAdminUser`, rate-limited | Soft-delete an account; body `{ confirmEmail }`. See [Deleting an Account](#deleting-an-account) |
@@ -327,7 +362,7 @@ First consumer: the notifications module persists per-user opt-outs here under t
 
 ## Lifecycle
 
-**`init()`** constructs (in order) `GroupService` (with a membership listener that disconnects the user's sockets), `WalletService`, `UserGroupService` (seeds the `admin` group), `AccountDirectoryService`, `UserSettingsService`, the OAuth server config (from `BETTER_AUTH_URL`, falling back to `SITE_URL`, then to `http://localhost:3000` outside production; the same resolved URL becomes Better Auth's `baseURL`, so the auth server and the OAuth issuer cannot disagree), and the Better Auth instance (handed the injected `redis` client for its rate-limit counters, `socketDisconnector` for its session-delete hook, the OAuth config, and the injected `oauthClientAdmission` rule for which apps may register), then wires the auth facade, builds `ConnectedAppsService` (creating its last-use index), `OAuthAccessTokenVerifier`, and `AccountDeletionService`, and builds the wallet + group + user-settings + connected-apps controllers. **`run()`** registers the `Users` menu item under the System container, the `/system/users` tab row (the `identity` namespace, every node `requiresAdmin`), and the profile tab row (the `Connected apps` tab carries `requiresGroups: ['mcp-users']`), mounts `/api/auth/*`, `/.well-known/oauth-authorization-server`, the connected-apps and consent-context routers, the wallet router, the user-settings router, the admin group router, the admin accounts router (`/api/admin/users`, the `/:id` catch-all, last), and the admin account-search router (`/api/admin/accounts`, a dedicated literal prefix), then registers `'user-groups'`, `'wallets'`, `'accounts'`, `'user-settings'`, and watches `'ai-tools'` to register the three identity AI tools. `init()` also builds `SignInEventStore` and creates its indexes before the Better Auth instance, which receives it as the audit hook's recorder. It creates the `createdAt` index on the account collection the cap counts against, loads `SignupProtectionConfigStore`, and builds `SignupCapAlerter` and `SignupGuard` before the auth instance, which receives the guard. `run()` mounts `/api/admin/users/sign-ups` before the accounts catch-all and watches `'notifications'` to register the cap alert's category.
+**`init()`** constructs (in order) `GroupService` (with a membership listener that disconnects the user's sockets), `WalletService`, `UserGroupService` (seeds the `admin` group), `AccountDirectoryService`, `UserSettingsService`, the OAuth server config (from `BETTER_AUTH_URL`, falling back to `SITE_URL`, then to `http://localhost:3000` outside production; the same resolved URL becomes Better Auth's `baseURL`, so the auth server and the OAuth issuer cannot disagree), and the Better Auth instance (handed the injected `redis` client for its rate-limit counters, `socketDisconnector` for its session-delete hook, the OAuth config, and the injected `oauthClientAdmission` rule for which apps may register), then wires the auth facade, builds `ConnectedAppsService` (creating its last-use index), `OAuthAccessTokenVerifier`, and `AccountDeletionService`, and builds the wallet + group + user-settings + connected-apps controllers. **`run()`** registers the `Users` menu item under the System container, the `/system/users` tab row (the `identity` namespace, every node `requiresAdmin`), and the profile tab row (the `Connected apps` tab carries `requiresGroups: ['mcp-users']`), mounts `/api/auth/*`, `/.well-known/oauth-authorization-server`, the connected-apps and consent-context routers, the wallet router, the user-settings router, the admin group router, the admin accounts router (`/api/admin/users`, the `/:id` catch-all, last), and the admin account-search router (`/api/admin/accounts`, a dedicated literal prefix), then registers `'user-groups'`, `'wallets'`, `'accounts'`, `'user-settings'`, and watches `'ai-tools'` to register the three identity AI tools. `init()` also builds `AccountActivityTracker` (handed to the facade with `setActivityRecorder` and to `ConnectedAppsService`) and `AccountNoteStore` with its unique index right after the account directory, and builds `AccountDetailsService` after the connected-apps service, for the accounts controller and the AI tools. It builds `SignInEventStore` and creates its indexes before the Better Auth instance, which receives it as the audit hook's recorder. It creates the `createdAt` index on the account collection the cap counts against, loads `SignupProtectionConfigStore`, and builds `SignupCapAlerter` and `SignupGuard` before the auth instance, which receives the guard. `run()` mounts `/api/admin/users/sign-ups` before the accounts catch-all and watches `'notifications'` to register the cap alert's category.
 
 ## Related
 

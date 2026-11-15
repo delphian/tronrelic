@@ -172,6 +172,57 @@
     font-variant-numeric: tabular-nums;
 }
 
+/* Sortable column headers: the whole label is the click target, styled like
+   the static header text around it so the row reads as one header. */
+.sort_button {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
+    cursor: pointer;
+}
+
+.sort_button:hover,
+.sort_button__active {
+    color: var(--color-text);
+}
+
+.sort_icon {
+    opacity: var(--opacity-60);
+}
+
+.sort_button__active .sort_icon {
+    opacity: var(--opacity-100);
+    color: var(--color-primary);
+}
+
+/* The email opens the detail panel, so it is a button styled as a link. */
+.email_button {
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--color-text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.email_button:hover {
+    color: var(--color-secondary);
+    text-decoration: underline;
+}
+
+.wallet_tick {
+    color: var(--color-success);
+    vertical-align: middle;
+}
+
 .user_row {
     cursor: pointer;
     transition: background-color var(--transition-fast);

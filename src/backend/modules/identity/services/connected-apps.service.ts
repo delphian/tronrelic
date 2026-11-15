@@ -32,6 +32,7 @@ import type {
 } from '@/types';
 import { CONNECTED_APP_USAGE_COLLECTION, type IConnectedAppUsageDocument } from '../database/IConnectedAppUsageDocument.js';
 import { hostOf, isLoopbackHost } from './hostOf.js';
+import type { IAccountActivityRecorder } from './IAccountActivityRecorder.js';
 
 /**
  * The subset of Better Auth's adapter this service calls. Declared
@@ -129,12 +130,15 @@ export class ConnectedAppsService implements IConnectedAppsService {
      *   grant on the admin list.
      * @param logger - Module logger, used to record revocations and failed
      *   last-use writes.
+     * @param activity - Told about every MCP call, so a user who only works
+     *   through a connected app still shows a current last-seen time.
      */
     private constructor(
         private readonly getAdapter: () => Promise<IOAuthStoreAdapter>,
         database: IDatabaseService,
         private readonly accounts: IAccountDirectoryService,
-        private readonly logger: ISystemLogService
+        private readonly logger: ISystemLogService,
+        private readonly activity: IAccountActivityRecorder
     ) {
         this.usage = database.getCollection<IConnectedAppUsageDocument>(CONNECTED_APP_USAGE_COLLECTION);
     }
@@ -147,15 +151,17 @@ export class ConnectedAppsService implements IConnectedAppsService {
      * @param database - Core database, for the last-use collection.
      * @param accounts - Account directory service.
      * @param logger - Module logger.
+     * @param activity - Recorder that keeps each account's last-seen time current.
      */
     static setDependencies(
         getAdapter: () => Promise<IOAuthStoreAdapter>,
         database: IDatabaseService,
         accounts: IAccountDirectoryService,
-        logger: ISystemLogService
+        logger: ISystemLogService,
+        activity: IAccountActivityRecorder
     ): void {
         if (!ConnectedAppsService.instance) {
-            ConnectedAppsService.instance = new ConnectedAppsService(getAdapter, database, accounts, logger);
+            ConnectedAppsService.instance = new ConnectedAppsService(getAdapter, database, accounts, logger, activity);
         }
     }
 
@@ -299,6 +305,8 @@ export class ConnectedAppsService implements IConnectedAppsService {
 
     /** @inheritdoc */
     async recordUse(userId: string, clientId: string): Promise<void> {
+        // The account's own last-seen time has its own throttle.
+        this.activity.recordSeen(userId);
         const key = grantKey(userId, clientId);
         const now = Date.now();
         const lastWrite = this.usageWrittenAt.get(key);

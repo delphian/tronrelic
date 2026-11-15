@@ -3,6 +3,7 @@
  * shared so the admin form and the backend accept the same values.
  */
 
+import type { DomainBudgetWindow } from './DomainBudgetWindow.js';
 import type { ISignupCapConfig } from './ISignupCapConfig.js';
 
 /**
@@ -26,14 +27,17 @@ export const SIGNUP_PROTECTION_LIMITS = {
     /** Most domain rules that may be stored; keeps the per-request match cheap. */
     maxDomainRules: 500,
 
-    /** Smallest shared hourly code budget a `slow` rule may set. */
-    minCodesPerHour: 1,
+    /** Smallest shared code budget a `slow` rule may set, per hour or per day. */
+    minCodes: 1,
 
-    /** Largest shared hourly code budget a `slow` rule may set. */
-    maxCodesPerHour: 1_000,
+    /** Largest shared code budget a `slow` rule may set, per hour or per day. */
+    maxCodes: 1_000,
 
-    /** Hourly code budget the admin form suggests for a new `slow` rule. */
-    defaultCodesPerHour: 3,
+    /** Code budget the admin form suggests for a new `slow` rule. */
+    defaultCodes: 3,
+
+    /** Budget window the admin form suggests for a new `slow` rule. */
+    defaultBudgetWindow: 'hour' as DomainBudgetWindow,
 
     /** Longest note an admin may store on a rule. */
     maxNoteLength: 200

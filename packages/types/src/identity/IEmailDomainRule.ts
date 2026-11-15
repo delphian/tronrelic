@@ -3,6 +3,7 @@
  * domain, such as a disposable-address service used by an account farm.
  */
 
+import type { DomainBudgetWindow } from './DomainBudgetWindow.js';
 import type { EmailDomainRuleAction } from './EmailDomainRuleAction.js';
 
 /**
@@ -19,10 +20,17 @@ export interface IEmailDomainRule {
     action: EmailDomainRuleAction;
 
     /**
-     * Sign-in codes all new addresses on the domain may receive per hour,
-     * together. Set for a `slow` rule and null for a `block` rule.
+     * Sign-in codes all new addresses on the domain may receive per
+     * {@link budgetWindow}, together. Set for a `slow` rule and null for a
+     * `block` rule.
      */
-    maxCodesPerHour: number | null;
+    maxCodes: number | null;
+
+    /**
+     * The span {@link maxCodes} is counted over: an hour or a day (24 hours).
+     * Set for a `slow` rule and null for a `block` rule.
+     */
+    budgetWindow: DomainBudgetWindow | null;
 
     /** The admin's reason for the rule, shown beside it. May be empty. */
     note: string;

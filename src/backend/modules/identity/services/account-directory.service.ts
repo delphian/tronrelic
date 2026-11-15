@@ -14,6 +14,7 @@
 
 import type { Collection, ObjectId } from 'mongodb';
 import type {
+    AccountSortField,
     IAccountDirectoryService,
     IAccountSummary,
     IListAccountsOptions,
@@ -21,6 +22,7 @@ import type {
     IDatabaseService,
     ISystemLogService
 } from '@/types';
+import { ACCOUNT_SORT_FIELDS } from '@/types';
 import { AUTH_USERS_COLLECTION } from './auth-constants.js';
 import { toUserKey, userIdFromKey } from './user-id.js';
 
@@ -49,7 +51,36 @@ interface IAuthUserDocument {
     primaryWallet?: string | null;
     /** Set by `AccountDeletionService` when an admin deletes the account. */
     deletedAt?: Date | null;
+    /** Kept current by `AccountActivityTracker`; absent until the account is first seen. */
+    lastSeenAt?: Date | null;
 }
+
+/**
+ * The value each sortable column is ordered by, as an aggregation expression
+ * computed per account. Columns shown as a badge or a tick sort by what the
+ * badge means rather than by raw text, and each expression tolerates a
+ * missing or malformed field, because Better Auth rows written before a field
+ * existed do not have it.
+ */
+const SORT_KEYS: Record<AccountSortField, unknown> = {
+    email: '$email',
+    name: { $ifNull: ['$name', ''] },
+    // Deleted (0), then unverified (1), then verified (2).
+    status: { $cond: [{ $ifNull: ['$deletedAt', false] }, 0, { $cond: [{ $eq: ['$emailVerified', true] }, 2, 1] }] },
+    primaryWallet: {
+        $cond: [{ $and: [{ $eq: [{ $type: '$primaryWallet' }, 'string'] }, { $ne: ['$primaryWallet', ''] }] }, 1, 0]
+    },
+    groups: { $cond: [{ $isArray: '$groups' }, { $size: '$groups' }, 0] },
+    createdAt: '$createdAt',
+    // An account never seen sorts as the oldest.
+    lastSeenAt: { $ifNull: ['$lastSeenAt', new Date(0)] }
+};
+
+/**
+ * Compare strings without regard to case, so `alice@` and `Bob@` sort
+ * alphabetically rather than by character code.
+ */
+const SORT_COLLATION = { locale: 'en', strength: 2 };
 
 /**
  * Read-only directory over `module_user_auth_users`.
@@ -213,14 +244,24 @@ export class AccountDirectoryService implements IAccountDirectoryService {
     }
 
     /**
-     * List accounts with optional pagination and case-insensitive search.
+     * List accounts with optional pagination, case-insensitive search, and a
+     * sort on any column of the Users tab.
      *
-     * @param options - Pagination and filter options.
+     * The sort value is computed per account in an aggregation, so no index
+     * serves it and every matching account is read to order the page. That is
+     * acceptable for an account directory of thousands; a much larger one
+     * would need the computed columns stored and indexed instead. The account
+     * id breaks ties, so paging through equal values never repeats or skips a row.
+     *
+     * @param options - Pagination, filter, and sort options. An unknown sort
+     *   field falls back to `createdAt`, and the direction to `desc`.
      * @returns The matching page plus the unpaginated total.
      */
     public async listAccounts(options: IListAccountsOptions = {}): Promise<IListAccountsResult> {
         const limit = Math.min(Math.max(1, options.limit ?? DEFAULT_LIMIT), MAX_LIMIT);
         const skip = Math.max(0, options.skip ?? 0);
+        const sortBy: AccountSortField = ACCOUNT_SORT_FIELDS.find(field => field === options.sortBy) ?? 'createdAt';
+        const direction = options.sortDirection === 'asc' ? 1 : -1;
 
         const search = options.search ? AccountDirectoryService.escapeRegex(options.search) : null;
         const filter = search
@@ -232,8 +273,16 @@ export class AccountDirectoryService implements IAccountDirectoryService {
               }
             : {};
 
+        const pipeline = [
+            { $match: filter },
+            { $addFields: { _sortKey: SORT_KEYS[sortBy] } },
+            { $sort: { _sortKey: direction, _id: direction } },
+            { $skip: skip },
+            { $limit: limit },
+            { $project: { _sortKey: 0 } }
+        ];
         const [docs, total] = await Promise.all([
-            this.authUsers.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).toArray(),
+            this.authUsers.aggregate<IAuthUserDocument>(pipeline, { collation: SORT_COLLATION }).toArray(),
             this.authUsers.countDocuments(filter)
         ]);
 
@@ -271,7 +320,8 @@ export class AccountDirectoryService implements IAccountDirectoryService {
             createdAt: doc.createdAt,
             groups: doc.groups ?? [],
             primaryWallet: doc.primaryWallet ?? null,
-            deletedAt: doc.deletedAt ?? null
+            deletedAt: doc.deletedAt ?? null,
+            lastSeenAt: doc.lastSeenAt ?? null
         };
     }
 }

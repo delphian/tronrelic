@@ -15,6 +15,7 @@
  */
 
 import type {
+    DomainBudgetWindow,
     EmailDomainRuleAction,
     IDatabaseService,
     IEmailDomainRule,
@@ -23,7 +24,7 @@ import type {
     ISystemLogService,
     SignupCapMode
 } from '@/types';
-import { SIGNUP_PROTECTION_LIMITS, normalizeEmailDomain } from '@/types';
+import { DOMAIN_BUDGET_WINDOW_SECONDS, SIGNUP_PROTECTION_LIMITS, normalizeEmailDomain } from '@/types';
 
 /** Core `_kv` key holding the settings, namespaced by module. */
 const CONFIG_KEY = 'identity:sign-up-protection';
@@ -33,6 +34,16 @@ const CAP_MODES: ReadonlyArray<SignupCapMode> = ['off', 'alert', 'enforce'];
 
 /** The domain rule actions an admin may choose. */
 const RULE_ACTIONS: ReadonlyArray<EmailDomainRuleAction> = ['block', 'slow'];
+
+/** The spans a slow rule's code budget may be counted over. */
+const BUDGET_WINDOWS = Object.keys(DOMAIN_BUDGET_WINDOW_SECONDS) as DomainBudgetWindow[];
+
+/**
+ * A rule as it may be stored. Rules saved before the budget window existed
+ * hold `maxCodesPerHour` and no `budgetWindow`; {@link SignupProtectionConfigStore.normalize}
+ * reads them as an hourly budget.
+ */
+type IStoredEmailDomainRule = IEmailDomainRuleInput & { maxCodesPerHour?: unknown; updatedAt?: unknown; updatedBy?: unknown };
 
 /**
  * A domain rule as an admin submits it, before it is checked and stamped.
@@ -44,8 +55,11 @@ export interface IEmailDomainRuleInput {
     /** `block` or `slow`. */
     action: unknown;
 
-    /** Shared hourly code budget; required for `slow`, ignored for `block`. */
-    maxCodesPerHour?: unknown;
+    /** Shared code budget per window; required for `slow`, ignored for `block`. */
+    maxCodes?: unknown;
+
+    /** `hour` or `day`; for `slow`, defaults to `hour` when absent. Ignored for `block`. */
+    budgetWindow?: unknown;
 
     /** Optional reason for the rule. */
     note?: unknown;
@@ -145,15 +159,21 @@ export class SignupProtectionConfigStore {
     static validateDomainRule(input: IEmailDomainRuleInput, actorUserId: string | null): SignupProtectionInputResult<IEmailDomainRule> {
         const domain = normalizeEmailDomain(input.domain);
         const action = RULE_ACTIONS.find(candidate => candidate === input.action);
-        const maxCodesPerHour = boundedInteger(input.maxCodesPerHour, SIGNUP_PROTECTION_LIMITS.minCodesPerHour, SIGNUP_PROTECTION_LIMITS.maxCodesPerHour);
+        const maxCodes = boundedInteger(input.maxCodes, SIGNUP_PROTECTION_LIMITS.minCodes, SIGNUP_PROTECTION_LIMITS.maxCodes);
+        const windowGiven = input.budgetWindow !== undefined && input.budgetWindow !== null;
+        const budgetWindow = windowGiven
+            ? BUDGET_WINDOWS.find(candidate => candidate === input.budgetWindow)
+            : SIGNUP_PROTECTION_LIMITS.defaultBudgetWindow;
         const note = input.note === undefined || input.note === null ? '' : input.note;
         let result: SignupProtectionInputResult<IEmailDomainRule>;
         if (!domain) {
             result = { ok: false, message: 'domain must be a domain such as example.com' };
         } else if (!action) {
             result = { ok: false, message: `action must be one of ${RULE_ACTIONS.join(', ')}` };
-        } else if (action === 'slow' && maxCodesPerHour === null) {
-            result = { ok: false, message: `maxCodesPerHour must be a whole number from ${SIGNUP_PROTECTION_LIMITS.minCodesPerHour} to ${SIGNUP_PROTECTION_LIMITS.maxCodesPerHour} for a slow rule` };
+        } else if (action === 'slow' && maxCodes === null) {
+            result = { ok: false, message: `maxCodes must be a whole number from ${SIGNUP_PROTECTION_LIMITS.minCodes} to ${SIGNUP_PROTECTION_LIMITS.maxCodes} for a slow rule` };
+        } else if (action === 'slow' && !budgetWindow) {
+            result = { ok: false, message: `budgetWindow must be one of ${BUDGET_WINDOWS.join(', ')} for a slow rule` };
         } else if (typeof note !== 'string' || note.trim().length > SIGNUP_PROTECTION_LIMITS.maxNoteLength) {
             result = { ok: false, message: `note must be text of at most ${SIGNUP_PROTECTION_LIMITS.maxNoteLength} characters` };
         } else {
@@ -162,7 +182,8 @@ export class SignupProtectionConfigStore {
                 value: {
                     domain,
                     action,
-                    maxCodesPerHour: action === 'slow' ? maxCodesPerHour : null,
+                    maxCodes: action === 'slow' ? maxCodes : null,
+                    budgetWindow: action === 'slow' ? budgetWindow ?? null : null,
                     note: note.trim(),
                     updatedAt: new Date().toISOString(),
                     updatedBy: actorUserId
@@ -300,7 +321,9 @@ export class SignupProtectionConfigStore {
     /**
      * Turn any stored or merged value into valid settings. A malformed cap
      * falls back to the default cap, and a malformed or duplicate rule is
-     * dropped, so the guard always runs against a coherent policy.
+     * dropped, so the guard always runs against a coherent policy. A slow rule
+     * stored before the budget window existed carries `maxCodesPerHour` and no
+     * window, and is read as that many codes per hour, which is what it meant.
      *
      * @param raw - The stored value, or settings about to be saved.
      * @returns Complete, valid settings with rules sorted by domain.
@@ -309,8 +332,13 @@ export class SignupProtectionConfigStore {
         const cap = SignupProtectionConfigStore.validateCap(raw?.signupCap ?? {});
         const seen = new Set<string>();
         const rules: IEmailDomainRule[] = [];
-        for (const candidate of Array.isArray(raw?.domainRules) ? raw.domainRules : []) {
-            const checked = SignupProtectionConfigStore.validateDomainRule(candidate ?? {}, null);
+        const stored: IStoredEmailDomainRule[] = Array.isArray(raw?.domainRules) ? raw.domainRules : [];
+        for (const original of stored) {
+            const candidate: IStoredEmailDomainRule = original ?? { domain: undefined, action: undefined };
+            const checked = SignupProtectionConfigStore.validateDomainRule(
+                { ...candidate, maxCodes: candidate.maxCodes ?? candidate.maxCodesPerHour },
+                null
+            );
             if (checked.ok && !seen.has(checked.value.domain) && rules.length < SIGNUP_PROTECTION_LIMITS.maxDomainRules) {
                 seen.add(checked.value.domain);
                 rules.push({

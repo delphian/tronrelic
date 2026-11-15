@@ -22,8 +22,9 @@ import { requireAdminUser } from '../../../api/middleware/admin-auth.js';
  * Create the admin account-directory router.
  *
  * Routes are mounted under `/api/admin/users` with `requireAdmin` applied at
- * the parent. `/:id` is registered last so the literal `/groups` segment on
- * the membership route is matched as a sub-path, not captured as an id.
+ * the parent. `/:id` is registered last so the literal `/groups`, `/details`,
+ * `/sign-in-events`, and `/note` segments are matched as sub-paths, not
+ * captured as an id.
  *
  * Deleting an account is the one route here with extra gates. It refuses the
  * `ADMIN_API_TOKEN` service path through `requireAdminUser`, so every deletion
@@ -48,6 +49,11 @@ export function createAdminAccountsRouter(
 
     // Per-account membership editor. Reuses the identity group controller.
     router.put('/:id/groups', groupController.setUserGroups.bind(groupController));
+
+    // The user detail panel: full details, paged sign-in events, and the admin note.
+    router.get('/:id/details', controller.getAccountDetails.bind(controller));
+    router.get('/:id/sign-in-events', controller.listAccountSignInEvents.bind(controller));
+    router.put('/:id/note', controller.setAccountNote.bind(controller));
 
     // Registered last so the more specific `/:id/groups` path wins first.
     router.get('/:id', controller.getAccount.bind(controller));

@@ -20,6 +20,7 @@ import {
     isInGroup,
     isAdmin,
     setAuthInstance,
+    setActivityRecorder,
     resetAuthInstanceForTests
 } from '../services/auth-facade.js';
 import { GroupService, ADMIN_GROUP_ID } from '../services/group.service.js';
@@ -122,6 +123,20 @@ describe('auth facade', () => {
             const req = makeRequest();
             expect(await isLoggedIn(req)).toBe(true);
             expect(await isAnonymous(req)).toBe(false);
+        });
+
+        it('reports a resolved session as account activity, and an anonymous one not at all', async () => {
+            const recordSeen = vi.fn();
+            setActivityRecorder({ recordSeen });
+
+            setAuthInstance(makeStubAuth({ user: { id: USER_ABC, email: 'a@b.com' } }));
+            await isLoggedIn(makeRequest());
+            setAuthInstance(makeStubAuth(null));
+            await isLoggedIn(makeRequest());
+
+            expect(recordSeen).toHaveBeenCalledTimes(1);
+            expect(recordSeen).toHaveBeenCalledWith(USER_ABC);
+            setActivityRecorder(null);
         });
 
         it('caches the resolved session on the request object', async () => {

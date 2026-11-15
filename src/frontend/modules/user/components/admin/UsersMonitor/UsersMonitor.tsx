@@ -1,51 +1,50 @@
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { RotateCcw, Trash2, Users as UsersIcon } from 'lucide-react';
+import { CheckCircle2, PanelRightOpen, RotateCcw, Trash2, Users as UsersIcon } from 'lucide-react';
+import type { AccountSortDirection, AccountSortField } from '@/types';
 import { Button } from '../../../../../components/ui/Button';
 import { Input } from '../../../../../components/ui/Input';
 import { Badge } from '../../../../../components/ui/Badge';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { useModal } from '../../../../../components/ui/ModalProvider';
 import { useToast } from '../../../../../components/ui/ToastProvider';
+import { fetchAccounts as fetchAccountPage, type IAccountRow } from '../../../api/admin-accounts.api';
+import { UserDetailPanel } from '../UserDetailPanel';
 import { UserGroupsForm } from './UserGroupsForm';
 import { DeleteUserForm } from './DeleteUserForm';
+import { SortableHeader } from './SortableHeader';
 import styles from './UsersMonitor.module.scss';
 
 /** Page size for the account directory table. */
 const PAGE_SIZE = 20;
 
 /**
- * Wire shape of a Better Auth account row returned by `GET /admin/users`.
- *
- * Mirrors the backend `IAccountSummary` but types `createdAt` as the JSON
- * string the API actually sends (the domain type uses `Date`). `<ClientTime>`
- * consumes the string directly.
+ * The direction a column sorts in when first clicked: text columns start at
+ * A, while dates and the badge columns start with the most recent or most
+ * notable value, which is what an admin opening that column usually wants.
  */
-interface AccountRow {
-    id: string;
-    email: string;
-    name: string | null;
-    emailVerified: boolean;
-    createdAt: string;
-    groups: string[];
-    primaryWallet: string | null;
-    /** When an admin deleted the account, as an ISO string; null for a live account. */
-    deletedAt: string | null;
-}
+const FIRST_SORT_DIRECTION: Record<AccountSortField, AccountSortDirection> = {
+    email: 'asc',
+    name: 'asc',
+    status: 'asc',
+    primaryWallet: 'desc',
+    groups: 'desc',
+    createdAt: 'desc',
+    lastSeenAt: 'desc'
+};
 
-/** Response shape of the paginated account-directory endpoint. */
-interface AccountsResponse {
-    accounts: AccountRow[];
-    total: number;
-}
+/** One account row, as the list endpoint sends it. */
+type AccountRow = IAccountRow;
 
 /**
  * UsersMonitor
  *
  * Admin directory of Better Auth accounts. Lists accounts with search by
- * email/name, surfaces verification status, primary wallet, and group
- * membership, and opens the group-membership editor per account.
+ * email/name and a sort on every column, shows verification status, whether a
+ * primary wallet is set, group membership, and when each account was last
+ * seen, and opens the per-user detail panel, the group-membership editor, or
+ * the delete dialog per account.
  *
  * Account-count and wallet-adoption overviews live in the Analytics tab
  * (`AnalyticsDashboard`); first-touch and per-page traffic analytics moved to
@@ -65,37 +64,51 @@ export function UsersMonitor() {
     const [page, setPage] = useState(1);
     const [search, setSearch] = useState('');
     const [searchInput, setSearchInput] = useState('');
+    const [sortBy, setSortBy] = useState<AccountSortField>('createdAt');
+    const [sortDirection, setSortDirection] = useState<AccountSortDirection>('desc');
+    const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
 
     const { open: openModal, close: closeModal } = useModal();
     const { push: pushToast } = useToast();
 
+    /**
+     * Load the current page in the current sort. A failure is shown as a
+     * toast, so an admin is not left looking at a stale page that seems current.
+     */
     const fetchAccounts = useCallback(async () => {
         setLoading(true);
         try {
-            const params = new URLSearchParams();
-            params.set('limit', PAGE_SIZE.toString());
-            params.set('skip', ((page - 1) * PAGE_SIZE).toString());
-            if (search) {
-                params.set('search', search);
-            }
-
-            const response = await fetch(
-                `/api/admin/users?${params.toString()}`
-            );
-
-            if (!response.ok) {
-                throw new Error(`Failed to fetch accounts: ${response.status}`);
-            }
-
-            const data: AccountsResponse = await response.json();
+            const data = await fetchAccountPage({
+                limit: PAGE_SIZE,
+                skip: (page - 1) * PAGE_SIZE,
+                search: search || undefined,
+                sortBy,
+                sortDirection
+            });
             setAccounts(data.accounts);
             setTotal(data.total);
         } catch (error) {
-            console.error('Failed to fetch accounts:', error);
+            pushToast({ tone: 'danger', title: 'Could not load accounts', description: error instanceof Error ? error.message : String(error) });
         } finally {
             setLoading(false);
         }
-    }, [page, search]);
+    }, [page, search, sortBy, sortDirection, pushToast]);
+
+    /**
+     * Sort by a column. Clicking the active column flips the direction;
+     * clicking another starts it in that column's natural direction. Either
+     * way the table returns to the first page, since the old page number
+     * points at different accounts in the new order.
+     */
+    const handleSort = useCallback((field: AccountSortField) => {
+        if (field === sortBy) {
+            setSortDirection(previous => (previous === 'asc' ? 'desc' : 'asc'));
+        } else {
+            setSortBy(field);
+            setSortDirection(FIRST_SORT_DIRECTION[field]);
+        }
+        setPage(1);
+    }, [sortBy]);
 
     useEffect(() => {
         fetchAccounts();
@@ -218,7 +231,7 @@ export function UsersMonitor() {
                 {/* h2: the /system/users shell owns the page's single h1. */}
                 <h2 className={styles.title}>User Accounts</h2>
                 <p className={styles.subtitle}>
-                    Better Auth accounts — search by email or name and manage group membership
+                    Better Auth accounts — search by email or name, sort by any column, and open an account for its sessions, sign-in history, and admin note
                 </p>
             </header>
 
@@ -259,19 +272,29 @@ export function UsersMonitor() {
                         <table className={styles.user_table}>
                             <thead>
                                 <tr>
-                                    <th>Email</th>
-                                    <th>Name</th>
-                                    <th>Verified</th>
-                                    <th>Primary Wallet</th>
-                                    <th>Groups</th>
-                                    <th>Created</th>
+                                    <SortableHeader field="email" label="Email" sortBy={sortBy} sortDirection={sortDirection} onSort={handleSort} />
+                                    <SortableHeader field="name" label="Name" sortBy={sortBy} sortDirection={sortDirection} onSort={handleSort} />
+                                    <SortableHeader field="status" label="Verified" sortBy={sortBy} sortDirection={sortDirection} onSort={handleSort} />
+                                    <SortableHeader field="primaryWallet" label="Wallet" sortBy={sortBy} sortDirection={sortDirection} onSort={handleSort} />
+                                    <SortableHeader field="groups" label="Groups" sortBy={sortBy} sortDirection={sortDirection} onSort={handleSort} />
+                                    <SortableHeader field="createdAt" label="Created" sortBy={sortBy} sortDirection={sortDirection} onSort={handleSort} />
+                                    <SortableHeader field="lastSeenAt" label="Last seen" sortBy={sortBy} sortDirection={sortDirection} onSort={handleSort} />
                                     <th><span className="text-muted">Actions</span></th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {accounts.map((account) => (
                                     <tr key={account.id} className={styles.user_row}>
-                                        <td>{account.email}</td>
+                                        <td>
+                                            <button
+                                                type="button"
+                                                className={styles.email_button}
+                                                onClick={() => setSelectedUserId(account.id)}
+                                                aria-label={`Open details for ${account.email}`}
+                                            >
+                                                {account.email}
+                                            </button>
+                                        </td>
                                         <td>{account.name || <span className="text-muted">—</span>}</td>
                                         <td>
                                             {account.deletedAt ? (
@@ -283,10 +306,17 @@ export function UsersMonitor() {
                                             )}
                                         </td>
                                         <td>
+                                            {/* The address itself is in the detail panel; the
+                                                table only says whether one is set. */}
                                             {account.primaryWallet ? (
-                                                <code className={styles.user_id}>{account.primaryWallet}</code>
+                                                <CheckCircle2
+                                                    size={16}
+                                                    className={styles.wallet_tick}
+                                                    role="img"
+                                                    aria-label="Primary wallet set"
+                                                />
                                             ) : (
-                                                <span className="text-muted">—</span>
+                                                <span className="text-muted" aria-label="No primary wallet">—</span>
                                             )}
                                         </td>
                                         <td>
@@ -304,6 +334,13 @@ export function UsersMonitor() {
                                         </td>
                                         <td><ClientTime date={account.createdAt} format="short" /></td>
                                         <td>
+                                            {account.lastSeenAt ? (
+                                                <ClientTime date={account.lastSeenAt} format="relative" />
+                                            ) : (
+                                                <span className="text-muted">Never</span>
+                                            )}
+                                        </td>
+                                        <td>
                                             {/* A deleted account holds no groups, so it offers no
                                                 membership editor. It keeps a revocation action because
                                                 a deletion whose session, group, or connected-app
@@ -312,6 +349,14 @@ export function UsersMonitor() {
                                                 repeating the request is how the service finishes it. */}
                                             {account.deletedAt ? (
                                                 <div className={styles.row_actions}>
+                                                    <Button
+                                                        size="sm"
+                                                        variant="ghost"
+                                                        onClick={() => setSelectedUserId(account.id)}
+                                                        aria-label={`Open details for ${account.email}`}
+                                                    >
+                                                        <PanelRightOpen size={14} aria-hidden="true" /> Details
+                                                    </Button>
                                                     <Button
                                                         size="sm"
                                                         variant="secondary"
@@ -323,6 +368,14 @@ export function UsersMonitor() {
                                                 </div>
                                             ) : (
                                                 <div className={styles.row_actions}>
+                                                    <Button
+                                                        size="sm"
+                                                        variant="ghost"
+                                                        onClick={() => setSelectedUserId(account.id)}
+                                                        aria-label={`Open details for ${account.email}`}
+                                                    >
+                                                        <PanelRightOpen size={14} aria-hidden="true" /> Details
+                                                    </Button>
                                                     <Button
                                                         size="sm"
                                                         variant="secondary"
@@ -371,6 +424,8 @@ export function UsersMonitor() {
                     </div>
                 </>
             )}
+
+            <UserDetailPanel userId={selectedUserId} onClose={() => setSelectedUserId(null)} />
         </div>
     );
 }

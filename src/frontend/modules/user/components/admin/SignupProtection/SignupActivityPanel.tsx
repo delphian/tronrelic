@@ -26,7 +26,7 @@ import { DomainRuleBadge } from './DomainRuleBadge';
 /** Plain description of each refusal reason code. */
 const REASON_LABELS: Record<string, string> = {
     [SIGNUP_REFUSAL_REASONS.domainBlocked]: 'Email domain blocked',
-    [SIGNUP_REFUSAL_REASONS.domainSlowed]: 'Email domain over its hourly budget',
+    [SIGNUP_REFUSAL_REASONS.domainSlowed]: 'Email domain over its code budget',
     [SIGNUP_REFUSAL_REASONS.signupsPaused]: 'Sign-up cap enforced'
 };
 
@@ -61,7 +61,7 @@ export function SignupActivityPanel({ report, onReport }: ISignupActivityPanelPr
                     onConfirm={
                         async () => {
                             try {
-                                onReport(await saveDomainRule(row.domain, { action: 'block', maxCodesPerHour: null, note: 'Blocked from the recent sign-ups report' }));
+                                onReport(await saveDomainRule(row.domain, { action: 'block', maxCodes: null, budgetWindow: null, note: 'Blocked from the recent sign-ups report' }));
                                 push({ tone: 'success', title: `${row.domain} blocked` });
                             } catch (error) {
                                 push({ tone: 'danger', title: 'Could not block the domain', description: error instanceof Error ? error.message : String(error) });

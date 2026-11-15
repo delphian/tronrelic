@@ -7,7 +7,7 @@
  * session cookie authenticates each call.
  */
 
-import type { EmailDomainRuleAction, ISignupCapConfig, ISignupProtectionReport } from '@/types';
+import type { DomainBudgetWindow, EmailDomainRuleAction, ISignupCapConfig, ISignupProtectionReport } from '@/types';
 import { parseJsonResponse } from './http';
 
 /** Base path of the sign-up protection endpoints. */
@@ -20,8 +20,11 @@ export interface IDomainRuleSubmission {
     /** `block` or `slow`. */
     action: EmailDomainRuleAction;
 
-    /** Shared hourly code budget for a `slow` rule; ignored for `block`. */
-    maxCodesPerHour: number | null;
+    /** Shared code budget per window for a `slow` rule; ignored for `block`. */
+    maxCodes: number | null;
+
+    /** Whether the budget is counted per hour or per day, for a `slow` rule; ignored for `block`. */
+    budgetWindow: DomainBudgetWindow | null;
 
     /** The admin's reason for the rule. */
     note: string;

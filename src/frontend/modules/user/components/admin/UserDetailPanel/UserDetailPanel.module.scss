@@ -1,0 +1,67 @@
+/**
+ * UserDetailPanel Styles
+ *
+ * The per-user detail panel opened from the Users tab. It renders inside a
+ * slide-over, so every rule here sizes against the panel's own width through
+ * container queries rather than the window's.
+ */
+
+@use '../../../../../app/breakpoints' as *;
+
+.panel_body {
+    container-type: inline-size;
+    container-name: user-detail;
+}
+
+/* Tables with many columns (sessions, sign-in events) scroll sideways inside
+   their panel instead of widening the slide-over. */
+.table_scroll {
+    overflow-x: auto;
+}
+
+.mono {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-body-sm);
+    word-break: break-all;
+}
+
+/* User-Agent strings and redirect hosts are long and unbroken; wrap them so
+   one row cannot push the table far off to the side. */
+.user_agent {
+    display: inline-block;
+    max-width: var(--max-width-xs);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+    overflow-wrap: anywhere;
+}
+
+.chips {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: var(--badge-gap);
+}
+
+.note_input {
+    width: 100%;
+    resize: vertical;
+}
+
+.note_footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap-sm);
+    font-size: var(--font-size-body-sm);
+}
+
+.more {
+    display: flex;
+    justify-content: center;
+}
+
+@container user-detail (max-width: #{$breakpoint-mobile-md}) {
+    .note_footer {
+        flex-direction: column;
+        align-items: stretch;
+    }
+}
