@@ -76,6 +76,15 @@ export interface IManagedContentType<T extends IContent = IContent, TCreate = un
     reviewedFields: ReadonlyArray<Exclude<keyof T, keyof IContent> & string>;
 
     /**
+     * Readable labels for the reviewed fields, shown to a curator when core
+     * compares the version under review with the live one. A field left out
+     * takes the label of the translatable field with the same name, when the
+     * type has one, and otherwise its name split into words (`ogImage` reads
+     * as "Og image"), so set a label wherever that would read poorly.
+     */
+    reviewedFieldLabels?: Readonly<Partial<Record<Exclude<keyof T, keyof IContent> & string, string>>>;
+
+    /**
      * Makes the type's items translatable. Leave it out for a type that is
      * never translated. When present, core manages each item's translations
      * through `IContentService.translations()`: it keeps their state and runs

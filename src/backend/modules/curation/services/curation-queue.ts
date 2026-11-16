@@ -11,6 +11,7 @@
 
 import type {
     CurationItemStatus,
+    IContentChangeSet,
     ICurationSinkOutcome,
     ICurationItem,
     ICurationPreview,
@@ -20,6 +21,31 @@ import type {
 
 /** Physical collection name (modules prefix `module_<id>_` manually). */
 const COLLECTION = 'module_curation_curations';
+
+/**
+ * The optional parts of a decision, written in the same atomic update as the
+ * status change. Named rather than positional because most callers set only
+ * a few of them.
+ */
+export interface ICurationResolution {
+    /** Better Auth user id of the deciding curator. */
+    decidedBy?: string;
+
+    /** Decision-time preview to freeze into history; absent keeps the cached snapshot. */
+    preview?: ICurationPreview;
+
+    /** Decision-time comparison with the live version, frozen into history. */
+    changes?: IContentChangeSet;
+
+    /**
+     * Selected sinks, recorded `pending` so the publish intent commits with the
+     * decision and is never lost to a crash before the delivery relay runs.
+     */
+    sinks?: ICurationSinkOutcome[];
+
+    /** Why a `dismissed` item was closed, so history never shows a dismissal without its reason. */
+    dismissReason?: string;
+}
 
 /**
  * Persistent store of curation envelopes awaiting or carrying a decision.
@@ -131,27 +157,20 @@ export class CurationQueue {
      * The conditional update on `status: 'pending'` is the atomic gate: two
      * concurrent decisions serialize on the document, so only the first
      * transitions it and gets the envelope back, ensuring the owning type's
-     * callback runs exactly once.
+     * callback runs exactly once. Everything in `details` is written in that
+     * same update, so only the winning transition records it.
      *
      * @param id - The envelope id.
      * @param status - The terminal state.
-     * @param decidedBy - Better Auth user id of the deciding curator.
-     * @param preview - Decision-time preview to freeze into history.
-     * @param sinks - Selected sinks, recorded `pending` in the same atomic write
-     *        so the publish intent commits with the decision and is never lost to
-     *        a crash before the delivery relay runs.
-     * @param dismissReason - Why a `dismissed` item was closed, written in the same
-     *        atomic update so history never shows a dismissal without its reason.
+     * @param details - Who decided, and the decision-time record to freeze.
      * @returns The updated envelope, or null when no pending envelope matched.
      */
     async resolve(
         id: string,
         status: Exclude<CurationItemStatus, 'pending'>,
-        decidedBy?: string,
-        preview?: ICurationPreview,
-        sinks?: ICurationSinkOutcome[],
-        dismissReason?: string
+        details: ICurationResolution = {}
     ): Promise<ICurationItem | null> {
+        const { decidedBy, preview, changes, sinks, dismissReason } = details;
         const existing = await this.database.findOne<ICurationItem>(COLLECTION, { id, status: 'pending' });
         let resolved: ICurationItem | null = null;
         if (existing) {
@@ -166,6 +185,9 @@ export class CurationQueue {
             // it (the queue has no type registry); absent, the cached snapshot stands.
             if (preview !== undefined) {
                 setFields.preview = preview;
+            }
+            if (changes !== undefined) {
+                setFields.changes = changes;
             }
             // Persist the selected sinks (each `pending`) inside the same atomic
             // transition, so the publish intent and the decision commit together —
@@ -184,6 +206,7 @@ export class CurationQueue {
                     decidedAt,
                     decidedBy,
                     preview: preview ?? existing.preview,
+                    changes: changes ?? existing.changes,
                     sinks: sinks ?? existing.sinks,
                     dismissReason: dismissReason ?? existing.dismissReason
                 };

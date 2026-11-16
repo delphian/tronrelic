@@ -107,6 +107,19 @@ export class PageContentType implements IManagedContentType<IPageContent, IPageW
     readonly reviewedFields = ['content', 'title', 'description', 'keywords', 'slug', 'ogImage', 'published'] as const;
 
     /**
+     * Labels the curation queue shows when it compares an edit with the live
+     * page. `content` is the whole markdown file, frontmatter included, so a
+     * frontmatter change shows there as well as on its own field. Title,
+     * description, keywords, and the social image take their labels from the
+     * translation side.
+     */
+    readonly reviewedFieldLabels = {
+        content: 'Markdown source',
+        slug: 'Slug',
+        published: 'Published'
+    } as const;
+
+    /**
      * @param pages - The `pages` collection.
      * @param markdown - Parses frontmatter and owns the render caches.
      * @param slugPolicy - The page service's slug rules.

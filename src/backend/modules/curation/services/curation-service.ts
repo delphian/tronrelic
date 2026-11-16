@@ -19,6 +19,7 @@
 import { randomUUID } from 'node:crypto';
 import type {
     ContentTypeDisposer,
+    IContentChangeSet,
     IContentClassification,
     IContentRegistry,
     IContentRouter,
@@ -376,6 +377,44 @@ export class CurationService implements ICurationService {
     }
 
     /**
+     * Compare a pending item's content with its live version through the
+     * owning type. A failed comparison is logged and reported as null rather
+     * than thrown, because the comparison helps the curator but is not needed
+     * to decide: the review sheet still shows the full content.
+     *
+     * @param id - The envelope id.
+     * @returns The change set, or null when the item is missing or decided,
+     *          the owner is unregistered or cannot compare, or it failed.
+     */
+    async getChanges(id: string): Promise<IContentChangeSet | null> {
+        const item = await this.queue.get(id);
+        const entry = item && item.status === 'pending' ? this.types.get(item.typeId) : undefined;
+        return item && entry ? this.compareWithLive(entry.type, item) : null;
+    }
+
+    /**
+     * Ask the owning type to compare an item with its live version. Both the
+     * pending queue and the decision record use this, and neither needs the
+     * comparison to proceed, so a failure is logged and reported as null.
+     *
+     * @param type - The item's registered curation type.
+     * @param item - The envelope whose ref the type resolves.
+     * @returns The change set, or null when the type cannot compare or the
+     *          comparison failed.
+     */
+    private async compareWithLive(type: ICurationType, item: ICurationItem): Promise<IContentChangeSet | null> {
+        let changes: IContentChangeSet | null = null;
+        if (type.describeChanges) {
+            try {
+                changes = await type.describeChanges(item.ref);
+            } catch (error) {
+                this.logger.warn({ error, id: item.id, typeId: item.typeId }, 'Change comparison failed; continuing without it');
+            }
+        }
+        return changes;
+    }
+
+    /**
      * Resolve an item's preview live from its registered type so the queue never
      * shows a stale snapshot while the owner is present (the cached preview is the
      * disabled-owner fallback, per the curation design). Falls back to the cached
@@ -556,7 +595,7 @@ export class CurationService implements ICurationService {
                     'Curation dismissal refused — owning type is registered; approve or reject instead'
                 );
             } else {
-                result = await this.queue.resolve(id, 'dismissed', decidedBy, undefined, undefined, reason);
+                result = await this.queue.resolve(id, 'dismissed', { decidedBy, dismissReason: reason });
                 if (result) {
                     await this.notifyChanged();
                 }
@@ -737,6 +776,11 @@ export class CurationService implements ICurationService {
                 } catch (error) {
                     this.logger.warn({ error, id }, 'Decision-time preview resolution failed; recording cached snapshot in history');
                 }
+                // Freeze what the decision changes, for the same audit reason.
+                // This has to run before the commit below: approving managed
+                // content makes the edit the live version, so a comparison taken
+                // afterwards would find no difference.
+                const decisionChanges = await this.compareWithLive(entry.type, existing);
                 // Resolve and validate the selected sinks BEFORE recording the
                 // decision, so an empty or ineligible selection aborts the approval
                 // without leaving the item half-decided. Only an approval routes.
@@ -767,7 +811,12 @@ export class CurationService implements ICurationService {
                 const pendingOutcomes = selected.length > 0
                     ? selected.map((d): ICurationSinkOutcome => ({ sinkId: d.sink.id, status: 'pending' }))
                     : undefined;
-                const resolved = await this.queue.resolve(id, status, decidedBy, decisionPreview, pendingOutcomes);
+                const resolved = await this.queue.resolve(id, status, {
+                    decidedBy,
+                    preview: decisionPreview,
+                    changes: decisionChanges ?? undefined,
+                    sinks: pendingOutcomes
+                });
                 if (resolved) {
                     // The decision is recorded; broadcast it before committing or
                     // delivering so the queue badge updates regardless of outcome.

@@ -31,6 +31,7 @@ The split is deliberate: generic operate-on-own-record operations (`describe`, `
 | `IContentType.label` | Human-readable label for listing and headings |
 | `IContentType.describe(ref)` | Flatten the record into a generic `IContentDescriptor`; safe to call repeatedly, must not mutate |
 | `IContentType.applyEdit?(ref, patch)` | Optional content self-mutation — a curator `{ body }` edit or a pipeline-applied lifecycle `{ status }` transition; the type validates and owns the write |
+| `IContentType.describeChanges?(ref)` | Optional comparison of the record with its live version, as an `IContentChangeSet`; the curation queue shows it beside a held edit. A managed type leaves it out, because core supplies it — see [system-content.md](./system-content.md#showing-what-an-edit-changes) |
 | `IContentDescriptor` | `title` / `summary` / `body` / `canonicalUrl` / `media` / `details` (render shape) / `fields` (governed typed enrichment map) / `editable` |
 | `IContentRegistry` | `register(type, providerId)` → disposer, `get`, `has`, `list` |
 | `IContentTypeInfo` | `typeId` / `label` / `providerId` — the listing record |

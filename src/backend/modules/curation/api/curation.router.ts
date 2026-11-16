@@ -29,6 +29,7 @@ export function createCurationAdminRouter(controller: CurationController): Route
     router.get('/curations', asyncHandler(controller.listCurations));
     router.get('/curations/count', asyncHandler(controller.getCurationsCount));
     router.get('/curations/history', asyncHandler(controller.listCurationHistory));
+    router.get('/curations/:id/changes', asyncHandler(controller.getChanges));
     router.get('/curations/:id/sinks', asyncHandler(controller.listSinks));
     router.post('/curations/:id/sinks/defaults', asyncHandler(controller.setSinkDefaults));
     router.patch('/curations/:id', asyncHandler(controller.editCuration));

@@ -16,6 +16,7 @@ import type {
     ICurationEligibleSink
 } from './ICurationSink.js';
 import type { IContentTypeInfo } from '../content/IContentRegistry.js';
+import type { IContentChangeSet } from '../content/IContentChangeSet.js';
 
 /**
  * Summary of a registered curation type, for admin listing. Curation adds no
@@ -113,6 +114,22 @@ export interface ICurationService extends ICurationRegistry {
      * @returns The item, or null when absent.
      */
     get(id: string): Promise<ICurationItem | null>;
+
+    /**
+     * Compare a pending item's content with the version that is live now, so
+     * the curator sees what approving it would change. Asks the owning type's
+     * `describeChanges`, which every managed content type has; an older
+     * curation type without one gets null and the queue shows the content
+     * alone. Loaded for one item at a time, when the curator opens it, rather
+     * than with the whole queue, because a change set carries both versions of
+     * the text.
+     *
+     * @param id - The envelope id.
+     * @returns The change set, or null when the item is missing or decided,
+     *   its owning type is unregistered or cannot compare, or the comparison
+     *   failed.
+     */
+    getChanges(id: string): Promise<IContentChangeSet | null>;
 
     /**
      * Approve a pending item: record the decision, deliver to any selected sinks,

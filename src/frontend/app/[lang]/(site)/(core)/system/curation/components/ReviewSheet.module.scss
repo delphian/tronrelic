@@ -66,10 +66,30 @@
 }
 
 /* Grows so the decision area sits at the foot of the sheet even when the
- * sheet is stretched to the queue list's height. */
+ * sheet is stretched to the queue list's height. Stacks the comparison with
+ * the live version above the full proof. */
 .content {
     flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+    min-width: 0;
     padding: var(--card-padding-sm) var(--card-padding-md) var(--card-padding-md);
+}
+
+/* Loading and failure notes for the comparison: quiet, because the full proof
+ * below is still enough to decide on. */
+.comparison_note {
+    margin: 0;
+    font-size: var(--font-size-body-xs);
+    color: var(--color-text-muted);
+}
+
+/* Separates the full proof from the comparison above it, at the same weight
+ * as the comparison's own heading. */
+.section_title {
+    font-size: var(--font-size-heading-xs);
+    line-height: var(--line-height-tight);
 }
 
 @container review-sheet (max-width: #{$breakpoint-mobile-md}) {

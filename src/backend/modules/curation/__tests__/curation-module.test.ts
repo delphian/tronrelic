@@ -178,6 +178,88 @@ describe('CurationService', () => {
         expect(await service.countPending()).toBe(1);
     });
 
+    describe('getChanges', () => {
+        const changeSet = { baseline: 'approved' as const, changes: [], unchangedFields: ['Title'] };
+
+        it('asks the owning type to compare a pending item with its live version', async () => {
+            const service = makeService();
+            const describeChanges = vi.fn(async () => changeSet);
+            service.registerType(spyCurationType({ describeChanges }), 'x-poster');
+            const held = await service.hold({ typeId: 'x-poster:tweet', ref: { postId: 'p1' } });
+
+            expect(await service.getChanges(held.id)).toEqual(changeSet);
+            expect(describeChanges).toHaveBeenCalledWith({ postId: 'p1' });
+        });
+
+        it('returns null for a type that cannot compare versions', async () => {
+            const service = makeService();
+            service.registerType(spyCurationType(), 'x-poster');
+            const held = await service.hold({ typeId: 'x-poster:tweet', ref: { postId: 'p1' } });
+
+            expect(await service.getChanges(held.id)).toBeNull();
+        });
+
+        it('returns null for a decided item, whose history keeps its frozen snapshot', async () => {
+            const service = makeService();
+            const describeChanges = vi.fn(async () => changeSet);
+            service.registerType(spyCurationType({ describeChanges }), 'x-poster');
+            const held = await service.hold({ typeId: 'x-poster:tweet', ref: { postId: 'p1' } });
+            await service.reject(held.id, 'admin-1');
+            // The rejection itself compares once, to freeze the record.
+            const callsAfterDecision = describeChanges.mock.calls.length;
+
+            expect(await service.getChanges(held.id)).toBeNull();
+            expect(describeChanges.mock.calls.length).toBe(callsAfterDecision);
+        });
+
+        it('freezes the comparison into the decision record, taken before the commit', async () => {
+            // Approving managed content makes the edit the live version, so a
+            // comparison taken after the commit would always be empty.
+            const service = makeService();
+            const order: string[] = [];
+            const describeChanges = vi.fn(async () => { order.push('compare'); return changeSet; });
+            const applyEdit = vi.fn(async () => { order.push('commit'); });
+            service.registerType(spyCurationType({ describeChanges, applyEdit }), 'x-poster');
+            const held = await service.hold({ typeId: 'x-poster:tweet', ref: { postId: 'p1' } });
+
+            const decided = await service.approve(held.id, 'admin-1');
+
+            expect(decided?.changes).toEqual(changeSet);
+            expect(order).toEqual(['compare', 'commit']);
+            const [record] = await service.listHistory();
+            expect(record.changes).toEqual(changeSet);
+        });
+
+        it('records a rejection\'s comparison too, so history shows what was turned down', async () => {
+            const service = makeService();
+            service.registerType(spyCurationType({ describeChanges: vi.fn(async () => changeSet) }), 'x-poster');
+            const held = await service.hold({ typeId: 'x-poster:tweet', ref: { postId: 'p1' } });
+
+            const decided = await service.reject(held.id, 'admin-1');
+
+            expect(decided?.changes).toEqual(changeSet);
+        });
+
+        it('still records the decision when the decision-time comparison fails', async () => {
+            const service = makeService();
+            service.registerType(spyCurationType({ describeChanges: vi.fn(async () => { throw new Error('boom'); }) }), 'x-poster');
+            const held = await service.hold({ typeId: 'x-poster:tweet', ref: { postId: 'p1' } });
+
+            const decided = await service.approve(held.id, 'admin-1');
+
+            expect(decided?.status).toBe('approved');
+            expect(decided?.changes).toBeUndefined();
+        });
+
+        it('returns null instead of failing when the comparison throws', async () => {
+            const service = makeService();
+            service.registerType(spyCurationType({ describeChanges: vi.fn(async () => { throw new Error('boom'); }) }), 'x-poster');
+            const held = await service.hold({ typeId: 'x-poster:tweet', ref: { postId: 'p1' } });
+
+            expect(await service.getChanges(held.id)).toBeNull();
+        });
+    });
+
     it('throws when holding for an unregistered type', async () => {
         const service = makeService();
         await expect(service.hold({ typeId: 'nope:thing', ref: {} })).rejects.toThrow(/nope:thing/);
