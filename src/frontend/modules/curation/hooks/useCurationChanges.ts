@@ -14,7 +14,7 @@ import { getCurationChanges } from '../api/client';
 
 /** What the review sheet needs to show the comparison or explain its absence. */
 export interface ICurationChangesState {
-    /** The change set, or null when the type cannot compare or nothing has loaded yet. */
+    /** The change set, or null when the type cannot compare, nothing has loaded yet, or a reload is in flight. */
     changes: IContentChangeSet | null;
 
     /** True while a request is in flight. */
@@ -37,10 +37,16 @@ export interface ICurationChangesState {
 export function useCurationChanges(itemId: string, revision: number): ICurationChangesState {
     const [state, setState] = useState<ICurationChangesState>({ changes: null, loading: true, error: null });
 
-    /** Fetch the comparison for the current item and revision, ignoring a superseded response. */
+    /**
+     * Fetch the comparison for the current item and revision, ignoring a
+     * superseded response. The previous change set is dropped before the
+     * request starts, because the review sheet leaves approval enabled while a
+     * comparison loads, and an earlier revision's differences must never be
+     * read as a description of the content about to be approved.
+     */
     useEffect(() => {
         let current = true;
-        setState((previous) => ({ ...previous, loading: true, error: null }));
+        setState({ changes: null, loading: true, error: null });
         getCurationChanges(itemId)
             .then((changes) => {
                 if (current) {
