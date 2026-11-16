@@ -96,7 +96,7 @@ Declare the intent in a comment so the next audit reads it as deliberate, not as
 
 ## Size-Variant Convention
 
-Component-scoped semantic tokens that vary by density use the `xs | sm | md | lg` suffix uniformly. Buttons expose `--button-padding-xs/sm/md/lg`, `--button-font-size-xs/sm/md/lg`, `--button-height-xs/sm/md/lg`. Cards expose `--card-padding-xs/sm/md/lg`. Inputs expose `--input-padding-xs/sm/md/lg` and `--input-font-size-xs/sm/md/lg`, both shared by `<Input>`, `<Textarea>`, and `<Select>`. Badges expose `--badge-padding-xs/sm/md/lg`. In each of those three families the unsuffixed name (`--input-padding`, `--input-font-size`, `--badge-padding`) survives as a deprecated alias for `-md`, because call sites still style their own controls with it; prefer the component's `size` prop. When adding a new component-scoped density, extend the same four-step ladder rather than inventing a parallel scale — callers then pick the step that matches the visual weight they need, and responsive rules swap tokens instead of redefining them.
+Component-scoped semantic tokens that vary by density use the `xs | sm | md | lg` suffix uniformly. Buttons expose `--button-padding-xs/sm/md/lg`, `--button-font-size-xs/sm/md/lg`, `--button-height-xs/sm/md/lg`. Cards expose `--card-padding-xs/sm/md/lg`. Inputs expose `--input-padding-xs/sm/md/lg` and `--input-font-size-xs/sm/md/lg`, both shared by `<Input>`, `<Textarea>`, and `<Select>`. Badges expose `--badge-padding-xs/sm/md/lg`. The unsuffixed button and input names (`--button-height`, `--button-padding`, `--button-font-size`, `--input-padding`, `--input-font-size`) are not aliases: each names the step a control takes when its caller passes no `size`, which the density setting selects, as described under [Density](#density). `--badge-padding` alone survives as a deprecated alias for `-md`; prefer the `<Badge>` `size` prop. When adding a new component-scoped density, extend the same four-step ladder rather than inventing a parallel scale — callers then pick the step that matches the visual weight they need, and responsive rules swap tokens instead of redefining them.
 
 `xs` derives from `sm` at half scale, expressed as `calc(… * 0.5)` off the same primitive so the relationship survives a change to the scale underneath. Halving stops where a value has a functional floor rather than an aesthetic one: `--button-height-xs` holds at 24px because half of `sm` is a 17px target, under the WCAG 2.2 SC 2.5.8 minimum, and `--button-font-size-xs` and `--input-font-size-xs` both hold at 0.72rem because half of `sm` is unreadable. A ladder step is a design decision, not arithmetic.
 
@@ -104,7 +104,7 @@ Component-scoped semantic tokens that vary by density use the `xs | sm | md | lg
 
 ## Token Immutability — Components Select, Tokens Don't Redefine
 
-A token's value never changes based on breakpoint or context. Rules switch *which token they reference* instead of redefining what tokens mean.
+A token's value never changes based on breakpoint or context. Rules switch *which token they reference* instead of redefining what tokens mean. The density-relative tokens described under [Density](#density) are the one exception.
 
 ```scss
 /* CORRECT — the rule selects a different token at the narrow breakpoint */
@@ -138,6 +138,26 @@ Why this matters: when `--table-cell-padding` always means the same value, the n
 **Reference implementation:** `src/frontend/app/globals.scss` — the mobile block selects `--table-cell-padding-compact` rather than redefining `--table-cell-padding`.
 
 Immutability governs how a rule *picks* a token; it does not oblige a component to pick by breakpoint at all. Where density is a `size` or `padding` prop, the caller owns the choice and the component holds it at every width — `<Card>` works this way deliberately, so a surface that wants a tighter card asks for `padding="xs"` instead of inheriting a step-down it cannot see. Reach for a responsive rule when the *component* must adapt to its own space, and prefer `@container` over `@media` when you do (see [ui-responsive-design.md](./ui-responsive-design.md)).
+
+## Density
+
+Density is how tightly a region of the interface is packed. A public page and an admin form want different answers, and without a setting each admin page has to shrink its own gaps, cards, and controls by hand. Set it by putting `data-density` on an element: `compact` (0.75), `cozy` (0.875), `default` (1), or `roomy` (1.125). The root layout stamps the site default on `<html>`, and `<RouteDensity>` stamps `compact` on the content of every page under `/system`, so every admin page, core or plugin, is compact without asking for it. Dialogs and slide-over panels render outside the page, so they read the same rule through `useRouteDensity()`.
+
+Density does two things, and both live in the density block of `semantic-tokens.scss`.
+
+**It scales layout spacing.** The generic gaps and padding, card padding, stack, grid, section and page gaps, table cell padding, and the `--radius-*` scale are each multiplied by the step's number. This is the one deliberate exception to token immutability: these tokens are density-relative by design.
+
+**It selects the default control size.** A control's padding is never scaled, because its height and touch target are fixed pixel values. Instead `<Button>`, `<Input>`, `<Textarea>`, and `<Select>` read the unsuffixed tokens named above when their caller passes no `size`, and a density step chooses what those point at. Normally that is the `md` step. Under `compact` a button takes its `sm` step, and a form control takes `--input-padding-compact` (8px by 12px) with the `sm` type size, which puts a one-line field at about the button's 34px height so the two line up. `--input-padding-compact` sits between `sm` and `md` because `sm` leaves only 4px beside the text, which suits an inline filter and is too tight for a labelled form field. It is not a fifth `size` step: no caller can ask for it by name, and the ladder stays `xs | sm | md | lg`. Every named token keeps one value at every density, so a `size="md"` control never changes. Only the selection moves.
+
+`compact` selects one more thing the same way: the `<PageHeader>` title drops from the large heading range to `--font-size-heading-md`, because an admin page title only names the tool the operator already chose.
+
+Three rules follow for anything rendered on an admin page:
+
+- Leave `size` off a button or form control unless it must hold one size everywhere, such as an `xs` filter in a table row. An explicit `size="md"` or `size="lg"` opts the control out of the page's density.
+- A stylesheet that draws its own control uses the unsuffixed tokens, as in `padding: var(--input-padding)`, so the control follows the page.
+- Spacing written with a Layer 1 primitive or a literal `px` or `rem` value does not scale. That is one more reason to use Layer 2 tokens.
+
+A token that should scale must be declared in the density block rather than the main one. A custom property is substituted where it is declared, so a scaled token declared only on `:root` keeps the default density inside a `data-density` region.
 
 ## Breakpoints
 

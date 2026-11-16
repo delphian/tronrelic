@@ -89,7 +89,7 @@ export function SettingsTab() {
 
     if (loading) {
         return (
-            <Card padding="lg">
+            <Card>
                 <p>Loading settings...</p>
             </Card>
         );
@@ -109,7 +109,7 @@ export function SettingsTab() {
                 </Card>
             )}
 
-            <Card padding="lg">
+            <Card>
                 <div className={styles.form}>
                     <div className={styles.field}>
                         <label htmlFor="blacklisted-routes" className={styles.label}>
@@ -132,7 +132,6 @@ export function SettingsTab() {
                     <div className={styles.actions}>
                         <Button
                             variant="primary"
-                            size="lg"
                             icon={<Save size={18} />}
                             onClick={() => void saveSettings()}
                             loading={saving}

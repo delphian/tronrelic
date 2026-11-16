@@ -436,10 +436,10 @@ export function TronGridProviderSection() {
                 </div>
 
                 <div className={styles.actions}>
-                    <Button variant="primary" size="md" onClick={handleSave} loading={saving} disabled={busy}>
+                    <Button variant="primary" onClick={handleSave} loading={saving} disabled={busy}>
                         Save
                     </Button>
-                    <Button variant="secondary" size="md" onClick={handleTest} loading={testing} disabled={busy}>
+                    <Button variant="secondary" onClick={handleTest} loading={testing} disabled={busy}>
                         Test connection
                     </Button>
                     <span className={styles.hint}>

@@ -24,9 +24,11 @@ export interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement
      */
     variant?: 'default' | 'ghost';
     /**
-     * Density of the control's padding, sharing the Input ladder so a dropdown
-     * sits at the same visual weight as the field beside it.
-     * @default 'md'
+     * Density of the control's padding and type, sharing the Input ladder so a
+     * dropdown sits at the same visual weight as the field beside it. Leave it
+     * unset in a form so the dropdown takes the default size of the region it
+     * sits in: `md` normally, and a compact size between `sm` and `md` inside
+     * a `data-density="compact"` region such as an admin page.
      */
     size?: InputSize;
     /**
@@ -82,13 +84,13 @@ const sizeClass: Record<InputSize, string> = {
  * @param props - Select properties including variant, size, and standard select attributes.
  * @returns A styled select element wrapped with a chevron affordance.
  */
-export function Select({ className, variant = 'default', size = 'md', invalid = false, children, ...props }: SelectProps) {
+export function Select({ className, variant = 'default', size, invalid = false, children, ...props }: SelectProps) {
     return (
         <span className={cn(styles.wrapper, className)}>
             <select
                 className={cn(
                     styles.select,
-                    sizeClass[size],
+                    size && sizeClass[size],
                     variant === 'ghost' && styles['select--ghost'],
                     invalid && styles['select--invalid']
                 )}

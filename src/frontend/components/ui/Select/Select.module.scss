@@ -30,8 +30,13 @@
      * --select-padding rather than the padding shorthand, so the chevron's
      * right-hand clearance survives every density step. The chevron sits at a
      * fixed offset, so that clearance stays constant across sizes.
+     *
+     * With no size class the padding and type fall back to the default size,
+     * which the density of the surrounding region selects: md normally, and a
+     * compact size between sm and md inside a compact region. See DEFAULT
+     * CONTROL STEP in semantic-tokens.scss.
      */
-    padding: var(--select-padding, var(--input-padding-md));
+    padding: var(--select-padding, var(--input-padding));
     padding-right: var(--padding-xl);
     font-size: var(--input-font-size);
     line-height: var(--line-height-normal);

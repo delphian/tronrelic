@@ -154,7 +154,6 @@ export function PageEditor({ page, onSave, onCancel }: PageEditorProps) {
                     <div className={styles.actions}>
                         <Button
                             variant="ghost"
-                            size="md"
                             icon={<Eye size={18} />}
                             onClick={() => setShowPreview(!showPreview)}
                         >
@@ -162,7 +161,6 @@ export function PageEditor({ page, onSave, onCancel }: PageEditorProps) {
                         </Button>
                         <Button
                             variant="secondary"
-                            size="md"
                             icon={<X size={18} />}
                             onClick={onCancel}
                             disabled={saving}
@@ -171,7 +169,6 @@ export function PageEditor({ page, onSave, onCancel }: PageEditorProps) {
                         </Button>
                         <Button
                             variant="primary"
-                            size="md"
                             icon={<Save size={18} />}
                             onClick={() => void savePage()}
                             loading={saving}

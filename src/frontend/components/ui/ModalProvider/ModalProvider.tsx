@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '../../../lib/cn';
+import { useRouteDensity } from '../../layout/RouteDensity';
 import { useAppDispatch } from '../../../store/hooks';
 import {
     modalOpened,
@@ -180,11 +181,17 @@ export function ModalProvider({ children }: { children: ReactNode }) {
  * server-side rendering, and the server and the client must agree on the first
  * paint or hydration fails.
  *
+ * The layer carries the density of the page currently shown. The portal
+ * target is `document.body`, which is outside the wrapper that gives a page
+ * its density, so without this a dialog opened from a compact admin page
+ * would draw its form at the full public size.
+ *
  * @returns The portal holding the open dialogs, or null before mount
  */
 export function ModalViewport() {
     const { modals, close } = useModal();
     const [mounted, setMounted] = useState(false);
+    const density = useRouteDensity();
 
     useEffect(() => {
         setMounted(true);
@@ -192,7 +199,10 @@ export function ModalViewport() {
 
     return mounted
         ? createPortal(
-            <div className={cn(styles.layer, modals.length ? styles['layer--active'] : undefined)}>
+            <div
+                className={cn(styles.layer, modals.length ? styles['layer--active'] : undefined)}
+                data-density={density}
+            >
                 {modals.map(modal => (
                     <ModalRenderer key={modal.id} descriptor={modal} onClose={() => close(modal.id)} />
                 ))}

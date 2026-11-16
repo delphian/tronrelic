@@ -242,7 +242,7 @@ export function PagesTab() {
 
     if (loading) {
         return (
-            <Card padding="lg">
+            <Card>
                 <p>Loading pages...</p>
             </Card>
         );
@@ -299,7 +299,6 @@ export function PagesTab() {
                     </Select>
                     <Button
                         variant="primary"
-                        size="md"
                         icon={<Plus size={18} />}
                         onClick={() => setIsCreating(true)}
                     >
@@ -315,7 +314,6 @@ export function PagesTab() {
                         <p>No pages found</p>
                         <Button
                             variant="ghost"
-                            size="md"
                             icon={<Plus size={18} />}
                             onClick={() => setIsCreating(true)}
                         >

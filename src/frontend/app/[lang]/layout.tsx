@@ -7,6 +7,9 @@ import { buildMetadata, SITE_NAME } from '../../lib/seo';
 import '../globals.scss';
 import { Providers } from '../providers';
 import { MobileTabBarZone, WidgetZone, collectMenuNamespaces, fetchWidgetsForRoute } from '../../components/widgets';
+// Imported from its own folder rather than the layout barrel, so the server
+// layout pulls in only this one client component.
+import { RouteDensity, type DensityStep } from '../../components/layout/RouteDensity';
 import { fetchMenuNamespace } from '../../modules/menu/server';
 import type { IMenuSeed } from '../../modules/menu/types';
 import { getServerSession, type ISSRSession } from '../../modules/user/lib/session-server';
@@ -287,18 +290,6 @@ async function fetchSSRSession(): Promise<ISSRSession | null> {
 }
 
 /**
- * Valid interface density steps, mirroring the `[data-density="…"]` rules
- * in semantic-tokens.scss.
- *
- * TypeScript cannot read the stylesheet and JSX does not type-check
- * hyphenated attributes, so without this union a typo'd step would still
- * match the bare `[data-density]` selector, silently render at density 1,
- * and report nothing. Keep in lockstep with the DENSITY STEPS block in
- * semantic-tokens.scss.
- */
-type DensityStep = 'compact' | 'cozy' | 'default' | 'roomy';
-
-/**
  * Site-wide interface density, stamped onto <html> during SSR.
  *
  * Density scales layout spacing (gaps, generic and card padding, page gap)
@@ -307,6 +298,10 @@ type DensityStep = 'compact' | 'cozy' | 'default' | 'roomy';
  * HTML — stamping it after hydration would repaint every gap on the page and
  * produce a visible density snap on first load, the same reason data-theme is
  * resolved during SSR.
+ *
+ * This is the default for the whole site. A page can render at a density of
+ * its own: `<RouteDensity>` below wraps the page content and stamps `compact`
+ * on every admin page, leaving the header and footer at this value.
  *
  * Valid steps: 'compact' (0.75), 'cozy' (0.875), 'default' (1), 'roomy' (1.125).
  */
@@ -439,7 +434,13 @@ export default async function RootLayout({ children, params }: { children: React
           </header>
           <WidgetZone name="ticker-after" widgets={widgetBundle.widgets} layout={widgetBundle.zones['ticker-after']} route={pathname} params={{}} />
           <main>
-            {children}
+            {/* Stamps the density of the current path on the page content,
+                so every admin page under /system renders compact. It reads
+                the path in the browser as well as on the server, because
+                this layout does not render again on an in-page navigation. */}
+            <RouteDensity>
+              {children}
+            </RouteDensity>
           </main>
           <footer>
             <WidgetZone name="footer" widgets={widgetBundle.widgets} layout={widgetBundle.zones['footer']} route={pathname} params={{}} />

@@ -20,8 +20,10 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
      */
     variant?: ButtonVariant;
     /**
-     * Size variant
-     * @default 'md'
+     * Size variant. Leave it unset so the button takes the default step of
+     * the region it sits in: `md` normally, and `sm` inside a
+     * `data-density="compact"` region such as an admin page. Pass a step only
+     * to hold the button at that size everywhere.
      */
     size?: ButtonSize;
     /**
@@ -49,7 +51,9 @@ const variantClass: Record<ButtonVariant, string> = {
 
 /**
  * Maps size prop values to their corresponding CSS Module class names.
- * Controls the padding, height, and font size of the button.
+ * Controls the padding, height, and font size of the button. A button with no
+ * `size` takes none of these and keeps the base rule's density-selected
+ * default.
  */
 const sizeClass: Record<ButtonSize, string> = {
     xs: styles['btn--xs'],
@@ -97,7 +101,7 @@ export function Button({
     children,
     className,
     variant = 'primary',
-    size = 'md',
+    size,
     icon,
     loading = false,
     disabled,
@@ -116,7 +120,7 @@ export function Button({
         <button
             className={cn(
                 variantClass[variant],
-                sizeClass[size],
+                size && sizeClass[size],
                 loading && styles['btn--loading'],
                 className
             )}

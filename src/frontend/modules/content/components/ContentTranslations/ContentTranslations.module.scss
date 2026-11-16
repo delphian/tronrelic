@@ -87,9 +87,12 @@
     color: var(--color-text-muted);
 }
 
-/* English beside the translation for each field, stacked at tablet width and
- * below, where two Markdown panes side by side leave each too narrow to edit.
- * minmax(0, …) stops one long unbroken line from widening its pane. */
+/* English beside the translation for each field. A one-line or short field
+ * stays side by side down to large-phone width, because stacking it costs two
+ * full-width rows for two short lines of text. A Markdown field carries the
+ * --wide modifier and stacks from tablet width, where two Markdown panes side
+ * by side leave each too narrow to edit. minmax(0, …) stops one long unbroken
+ * line from widening its pane. */
 .field_row {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -129,12 +132,16 @@
 }
 
 @container content-translations (max-width: #{$breakpoint-tablet}) {
-    .field_row {
+    .field_row--wide {
         grid-template-columns: minmax(0, 1fr);
     }
 }
 
 @container content-translations (max-width: #{$breakpoint-mobile-lg}) {
+    .field_row {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
     .row {
         flex-direction: column;
     }

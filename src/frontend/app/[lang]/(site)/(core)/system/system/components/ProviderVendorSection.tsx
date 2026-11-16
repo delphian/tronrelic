@@ -299,10 +299,10 @@ export function ProviderVendorSection({ provider }: IProviderVendorSectionProps)
                 {provider.fields.map(renderField)}
 
                 <div className={styles.actions}>
-                    <Button variant="primary" size="md" onClick={handleSave} loading={saving} disabled={saving}>
+                    <Button variant="primary" onClick={handleSave} loading={saving} disabled={saving}>
                         Save
                     </Button>
-                    <Button variant="secondary" size="md" onClick={handleTest} loading={testing} disabled={saving || testing}>
+                    <Button variant="secondary" onClick={handleTest} loading={testing} disabled={saving || testing}>
                         Test connection
                     </Button>
                     <span className={styles.hint}>Test uses the saved config — save a new key before testing it.</span>

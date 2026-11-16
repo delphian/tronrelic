@@ -12,6 +12,12 @@
     gap: var(--button-gap);
     border-radius: var(--button-border-radius);
     border: var(--button-border-width) solid transparent;
+    /* The default step, used when the caller passes no `size`. The density of
+       the surrounding region selects it: md normally, sm inside a compact
+       region. See DEFAULT CONTROL STEP in semantic-tokens.scss. */
+    min-height: var(--button-height);
+    padding: var(--button-padding);
+    font-size: var(--button-font-size);
     font-weight: var(--button-font-weight);
     letter-spacing: var(--button-letter-spacing);
     cursor: pointer;
@@ -78,7 +84,8 @@
     box-shadow: var(--focus-shadow);
 }
 
-/* Size Variants */
+/* Size Variants — each holds one fixed step at every density, overriding the
+   default step set on .btn above. */
 .btn--xs {
     min-height: var(--button-height-xs);
     padding: var(--button-padding-xs);
