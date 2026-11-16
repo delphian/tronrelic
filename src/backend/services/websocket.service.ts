@@ -6,7 +6,9 @@ import type { TronRelicSocketEvent, SocketSubscriptions } from '@/shared';
 import { logger } from '../lib/logger.js';
 import { PluginWebSocketRegistry } from './plugin-websocket-registry.js';
 import { GENERIC_SUBSCRIPTION_ERROR_MESSAGE } from './plugin-websocket-manager.js';
-import { corsOriginCallback } from '../config/cors.js';
+import { corsOriginCallback, isAllowedOrigin } from '../config/cors.js';
+import { WindowedLogLimiter } from '../lib/WindowedLogLimiter.js';
+import { MAX_LOGGED_ORIGIN_LENGTH, RefusedSocketOriginLogger, type IEngineConnectionError } from './RefusedSocketOriginLogger.js';
 import type { IncomingHttpHeaders } from 'node:http';
 import { getSessionFromHeaders, type IAugmentedSession } from '../modules/identity/services/auth-facade.js';
 import type { IIdentitySocketDisconnector } from '../modules/identity/services/IIdentitySocketDisconnector.js';
@@ -52,6 +54,14 @@ export const SUBSCRIBE_RATE_MAX_EVENTS = 30;
  * names.
  */
 export const MAX_HTTP_BUFFER_SIZE_BYTES = 16 * 1024;
+
+/**
+ * Bounds on the log entries for handshakes the origin check refused: each
+ * refused origin is logged once an hour, and at most 50 distinct origins an
+ * hour. The Origin header is chosen by the caller and a refused client retries
+ * every few seconds, so without a bound anyone could fill the persisted log.
+ */
+const REFUSED_ORIGIN_LOG_LIMITS = { windowMs: 60 * 60 * 1000, maxKeys: 50, maxKeyLength: MAX_LOGGED_ORIGIN_LENGTH };
 
 /**
  * Test whether a value is a plain object that can be read as a subscription payload.
@@ -145,6 +155,23 @@ export class WebSocketService implements IWebSocketService, IIdentitySocketDisco
       pingTimeout: 20000,
       maxHttpBufferSize: MAX_HTTP_BUFFER_SIZE_BYTES
     });
+
+    // A handshake the origin check refuses is answered by engine.io itself and
+    // never reaches the Express error handler, which is where a refused HTTP
+    // origin is logged. Without this listener nothing records that another
+    // website tried to open a socket.
+    const refusedOrigins = new RefusedSocketOriginLogger(
+      logger,
+      new WindowedLogLimiter(REFUSED_ORIGIN_LOG_LIMITS),
+      isAllowedOrigin
+    );
+    /**
+     * Pass each refused handshake to the logger, which keeps only the ones the
+     * origin check refused.
+     *
+     * @param event - The engine's description of the refused request.
+     */
+    this.io.engine.on('connection_error', (event: IEngineConnectionError) => refusedOrigins.record(event));
 
     // Phase 2: resolve the Better Auth session during the handshake
     // and stash the augmented payload on `socket.data.authSession`

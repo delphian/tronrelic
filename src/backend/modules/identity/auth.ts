@@ -44,6 +44,7 @@ import type { IIdentitySocketDisconnector } from './services/IIdentitySocketDisc
 import type { IOAuthServerConfig } from './services/oauth-server-config.js';
 import type { ISignInEventRecorder } from './services/ISignInEventRecorder.js';
 import { createRedisRateLimitStorage } from './services/createRedisRateLimitStorage.js';
+import { buildAuthCookieOptions } from './services/buildAuthCookieOptions.js';
 import { createAuthBeforeHook } from './services/createAuthBeforeHook.js';
 import { createSignInAuditLog } from './services/createSignInAuditLog.js';
 import type { SignupGuard } from './services/SignupGuard.js';
@@ -209,6 +210,9 @@ export function createAuth(deps: ICreateAuthDependencies) {
         // Resolved once in IdentityModule, alongside the OAuth issuer, so the
         // two cannot drift apart.
         baseURL: deps.oauth.baseUrl,
+        // States `SameSite=Lax` for every cookie instead of relying on the
+        // library default, which the origin check depends on.
+        advanced: buildAuthCookieOptions(),
         emailAndPassword: { enabled: false },
         socialProviders: buildSocialProviders(),
         plugins: buildPlugins(log, deps.oauth, deps.clientAdmission),
