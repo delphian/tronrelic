@@ -238,7 +238,6 @@ export function AuthButtonImageSection() {
                     <div className={providerStyles.actions}>
                         <Button
                             variant="secondary"
-                            size="md"
                             onClick={() => void choose()}
                             disabled={!pickerAvailable || saving}
                             icon={<ImageIcon size={18} />}
@@ -247,7 +246,6 @@ export function AuthButtonImageSection() {
                         </Button>
                         <Button
                             variant="ghost"
-                            size="md"
                             onClick={remove}
                             disabled={!draft.authButtonImageUrl || saving}
                             icon={<Trash2 size={18} />}
@@ -256,7 +254,6 @@ export function AuthButtonImageSection() {
                         </Button>
                         <Button
                             variant="primary"
-                            size="md"
                             onClick={() => void handleSave()}
                             disabled={!dirty || saving}
                             loading={saving}

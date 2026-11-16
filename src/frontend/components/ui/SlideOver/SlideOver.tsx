@@ -18,6 +18,7 @@ import { useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNo
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { cn } from '../../../lib/cn';
+import { useRouteDensity } from '../../layout/RouteDensity';
 import styles from './SlideOver.module.scss';
 
 /** Width preset for the panel; falls back to a design-constant max-width. */
@@ -50,6 +51,7 @@ export function SlideOver({ open, onClose, title, label, width = 'md', children 
     children: ReactNode;
 }) {
     const [mounted, setMounted] = useState(false);
+    const density = useRouteDensity();
     const panelRef = useRef<HTMLElement | null>(null);
     const restoreFocusRef = useRef<HTMLElement | null>(null);
 
@@ -90,8 +92,12 @@ export function SlideOver({ open, onClose, title, label, width = 'md', children 
         }
     }, [onClose]);
 
+    // The portal target is document.body, outside the wrapper that gives a
+    // page its density, so the backdrop carries the page's density itself.
+    // Without it a panel opened from a compact admin page would draw its
+    // contents at the full public size.
     return (!mounted || !open) ? null : createPortal(
-        <div className={styles.backdrop} onClick={handleBackdropClick}>
+        <div className={styles.backdrop} data-density={density} onClick={handleBackdropClick}>
             <aside
                 ref={panelRef}
                 role="dialog"

@@ -119,7 +119,6 @@ export function KillSwitchCard({ status, onSettingsChange }: IKillSwitchCardProp
                 </div>
                 <Button
                     variant={enabled ? 'danger' : 'primary'}
-                    size="lg"
                     icon={enabled ? <PowerOff size={18} aria-hidden /> : <Power size={18} aria-hidden />}
                     loading={working}
                     disabled={status === null}

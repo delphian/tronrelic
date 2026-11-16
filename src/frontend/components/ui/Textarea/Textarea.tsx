@@ -31,9 +31,12 @@ export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElemen
      */
     variant?: 'default' | 'ghost';
     /**
-     * Density of the field's padding, sharing the Input ladder so a multiline
-     * field sits at the same visual weight as the single-line one beside it.
-     * @default 'md'
+     * Density of the field's padding and type, sharing the Input ladder so a
+     * multiline field sits at the same visual weight as the single-line one
+     * beside it. Leave it unset in a form so the field takes the default size
+     * of the region it sits in: `md` normally, and a compact size between
+     * `sm` and `md` inside a `data-density="compact"` region such as an admin
+     * page.
      */
     size?: InputSize;
     /**
@@ -82,13 +85,13 @@ export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElemen
  * @returns A styled textarea element with consistent focus behavior.
  */
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
-    function Textarea({ className, variant = 'default', size = 'md', invalid = false, ...props }, ref) {
+    function Textarea({ className, variant = 'default', size, invalid = false, ...props }, ref) {
         return (
             <textarea
                 ref={ref}
                 className={cn(
                     styles.textarea,
-                    sizeClass[size],
+                    size && sizeClass[size],
                     variant === 'ghost' && styles['textarea--ghost'],
                     invalid && styles['textarea--invalid'],
                     className

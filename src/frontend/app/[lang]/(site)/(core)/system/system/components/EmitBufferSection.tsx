@@ -357,7 +357,6 @@ export function EmitBufferSection() {
                 <div className={styles.actions}>
                     <Button
                         variant="primary"
-                        size="md"
                         onClick={() => void handleSave()}
                         disabled={!dirty || saving}
                         loading={saving}

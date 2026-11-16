@@ -29,9 +29,12 @@ export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 
      */
     variant?: 'default' | 'ghost';
     /**
-     * Density of the field's padding. Pick the step matching the surrounding
-     * visual weight — `xs` for dense inline filters, `md` for standard forms.
-     * @default 'md'
+     * Density of the field's padding and type. Leave it unset in a form so the
+     * field takes the default size of the region it sits in: `md` normally,
+     * and a compact size between `sm` and `md` inside a
+     * `data-density="compact"` region such as an admin page. Pass a step
+     * only to hold the field at that size everywhere, such as `xs` for an
+     * inline filter in a table row.
      */
     size?: InputSize;
     /**
@@ -63,7 +66,8 @@ const variantClass: Record<NonNullable<InputProps['variant']>, string> = {
 
 /**
  * Maps size prop values to their corresponding CSS Module class names.
- * Controls the padding density of the input field.
+ * Controls the padding density of the input field. An input with no `size`
+ * takes none of these and keeps the base rule's density-selected default.
  */
 const sizeClass: Record<InputSize, string> = {
     xs: styles['input--xs'],
@@ -114,11 +118,11 @@ const sizeClass: Record<InputSize, string> = {
  * @returns A styled input element with consistent focus behavior
  */
 export const Input = forwardRef<HTMLInputElement, InputProps>(
-    function Input({ className, variant = 'default', size = 'md', invalid = false, ...props }, ref) {
+    function Input({ className, variant = 'default', size, invalid = false, ...props }, ref) {
         return (
             <input
                 ref={ref}
-                className={cn(variantClass[variant], sizeClass[size], invalid && styles['input--invalid'], className)}
+                className={cn(variantClass[variant], size && sizeClass[size], invalid && styles['input--invalid'], className)}
                 {...props}
                 // Placed after the spread, and falling back rather than being
                 // overwritten by it. An explicit caller value still wins, but

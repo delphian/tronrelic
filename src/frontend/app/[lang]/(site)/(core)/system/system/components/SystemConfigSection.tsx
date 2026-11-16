@@ -119,7 +119,6 @@ export function SystemConfigSection() {
             <div className={styles.actions}>
                 <Button
                     variant="primary"
-                    size="md"
                     onClick={() => void handleSave()}
                     disabled={!dirty || loading || saving}
                     loading={saving}

@@ -527,9 +527,21 @@
     --input-padding-sm: var(--spacing-1) var(--spacing-2); /* 0.25rem 0.35rem — dense filter/search/inline inputs */
     --input-padding-md: var(--spacing-5) var(--spacing-7); /* 0.75rem 1rem — default */
     --input-padding-lg: var(--spacing-7) var(--spacing-9); /* 1rem 1.25rem */
-    /* Deprecated alias for --input-padding-md. Retained because ~20 call sites
-       still hardcode it; prefer the Input/Textarea/Select `size` prop. */
-    --input-padding: var(--input-padding-md);
+    /* The padding an unsized form control takes in a compact region, such as
+       an admin page. It sits between sm and md on purpose: sm leaves 4px
+       beside the text, which suits an inline filter and is too tight for a
+       labelled form field, and md is the public-page size. With the sm type
+       size it makes a one-line field about 34px tall, the height of a sm
+       button, so a field and the button beside it line up.
+
+       It is not a `size` step. The ladder stays xs | sm | md | lg, and this
+       token is selected by the compact density, in the same way a narrow
+       table selects --table-cell-padding-compact. */
+    --input-padding-compact: var(--spacing-3) var(--spacing-5); /* 0.5rem 0.75rem */
+    /* The unsuffixed --input-padding and --input-font-size are not declared
+       here. They name the step a control takes when its caller passes no
+       `size`, which the density setting selects, so they live with the other
+       default control steps in the density block below. */
 
     /* Type ladder, shared by <Input>, <Textarea>, and <Select>.
      *
@@ -546,9 +558,6 @@
     --input-font-size-sm: var(--font-size-sm);   /* 0.85rem */
     --input-font-size-md: 0.98rem;               /* the long-standing default */
     --input-font-size-lg: var(--font-size-lg);   /* 1.05rem */
-    /* Deprecated alias for --input-font-size-md, kept because several plugin
-       pages style their own controls with it; prefer the `size` prop. */
-    --input-font-size: var(--input-font-size-md);
     --input-transition: border-color var(--transition-base),
                         box-shadow var(--transition-base);
 
@@ -1095,6 +1104,12 @@
  * Overlay chrome (modal and toast padding, offsets) is likewise fixed — it is
  * positioned against the viewport, not against page content.
  *
+ * Density reaches controls a different way: it SELECTS which size a button
+ * or a form control takes when its caller passes no `size`. See DEFAULT
+ * CONTROL STEP at the end of this block. Every `xs | sm | md | lg` step keeps
+ * its own fixed values, so a `size="md"` control is the same size at every
+ * density, and only the unsized ones follow the setting.
+ *
  * The dividing line is what the value spaces, not which component owns it: a
  * token that separates content scales, a token that sizes a control does not.
  * --meter-margin-top scales while --meter-height holds; --table-cell-padding
@@ -1273,6 +1288,52 @@
     --alert-border-radius: var(--radius-md);
     --card-border-radius: var(--radius-lg);
     --modal-dialog-border-radius: var(--radius-lg);
+
+    /* ------------------------------------------------------------------
+     * DEFAULT CONTROL STEP
+     *
+     * The size a button or a form control takes when its caller passes no
+     * `size`. <Button>, <Input>, <Textarea> and <Select> read these in their
+     * base rule, and a `size` prop overrides them with one fixed step.
+     *
+     * They point at `md` here. A density step below may point them at other
+     * tokens, and `compact` points the button at its `sm` step and the form
+     * controls at --input-padding-compact with the `sm` type size. This is
+     * how a dense region gets smaller controls without scaling a control's
+     * padding against its fixed height, and without redefining what `md`
+     * means: every named token keeps its value and only the selection moves.
+     *
+     * A stylesheet that draws its own control, such as a raw <input> on a
+     * plugin settings page, uses these same names so the control follows the
+     * density of the page it sits on. Prefer the component where one fits.
+     *
+     * They are declared in this block, not the main one, for the reason given
+     * at the top of the block: a token is substituted where it is declared,
+     * and a density step can only reselect a token that this selector list
+     * also declares.
+     * ------------------------------------------------------------------ */
+    --button-height: var(--button-height-md);
+    --button-padding: var(--button-padding-md);
+    --button-font-size: var(--button-font-size-md);
+    --input-padding: var(--input-padding-md);
+    --input-font-size: var(--input-font-size-md);
+
+    /* ------------------------------------------------------------------
+     * PAGE TITLE SIZE
+     *
+     * The smallest and largest size of the <PageHeader> title, which grows
+     * with the window between them. A public page uses the large heading
+     * range, because its title is the first thing a visitor reads. `compact`
+     * below sets both bounds to one smaller heading, because an admin page
+     * title only names the tool the operator already chose, and a large one
+     * pushes the tool itself down the screen.
+     *
+     * Declared in this block for the same reason as the default control
+     * step above: a density step can only reselect a token that this
+     * selector list also declares.
+     * ------------------------------------------------------------------ */
+    --page-header-title-font-size-min: var(--font-size-heading-lg);
+    --page-header-title-font-size-max: var(--font-size-heading-xl);
 }
 
 /* ============================================================================
@@ -1289,9 +1350,26 @@
  * Steps are multipliers rather than discrete token swaps, so values come off
  * the 4px grid between steps (0.75 x 8px = 6px). Accept that, or add a step
  * whose products land on-grid.
+ *
+ * `compact` also selects a smaller default control size (see DEFAULT CONTROL
+ * STEP above), because spacing alone leaves a dense page full of full-size
+ * buttons and fields. An unsized button takes its `sm` step, and an unsized
+ * form control takes --input-padding-compact with the `sm` type size, which
+ * puts a one-line field at about the button's 34px height. It also sets the
+ * page title to one smaller heading (see PAGE TITLE SIZE above). The other
+ * steps keep the defaults.
  * ========================================================================== */
 
-[data-density="compact"] { --density: 0.75; }
+[data-density="compact"] {
+    --density: 0.75;
+    --button-height: var(--button-height-sm);
+    --button-padding: var(--button-padding-sm);
+    --button-font-size: var(--button-font-size-sm);
+    --input-padding: var(--input-padding-compact);
+    --input-font-size: var(--input-font-size-sm);
+    --page-header-title-font-size-min: var(--font-size-heading-md);
+    --page-header-title-font-size-max: var(--font-size-heading-md);
+}
 [data-density="cozy"]    { --density: 0.875; }
 [data-density="default"] { --density: 1; }
 [data-density="roomy"]   { --density: 1.125; }

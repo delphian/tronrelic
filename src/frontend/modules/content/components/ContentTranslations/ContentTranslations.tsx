@@ -26,6 +26,7 @@ import type {
     TranslationValues
 } from '@/types';
 import { localizePath } from '@/types';
+import { cn } from '../../../../lib/cn';
 import { Stack } from '../../../../components/layout';
 import { Badge } from '../../../../components/ui/Badge';
 import { Button } from '../../../../components/ui/Button';
@@ -415,7 +416,6 @@ export function ContentTranslations({ typeId, contentId, title, publicPath, rend
                             </span>
                             <Button
                                 variant="ghost"
-                                size="md"
                                 icon={<Sparkles size={18} />}
                                 onClick={() => void suggestDraft()}
                                 loading={suggesting}
@@ -426,7 +426,6 @@ export function ContentTranslations({ typeId, contentId, title, publicPath, rend
                             {markdownField && renderPreview && (
                                 <Button
                                     variant="ghost"
-                                    size="md"
                                     icon={<Eye size={18} />}
                                     onClick={() => setShowPreview(!showPreview)}
                                 >
@@ -435,7 +434,6 @@ export function ContentTranslations({ typeId, contentId, title, publicPath, rend
                             )}
                             <Button
                                 variant="secondary"
-                                size="md"
                                 icon={<X size={18} />}
                                 onClick={() => setDraft(null)}
                                 disabled={saving}
@@ -444,7 +442,6 @@ export function ContentTranslations({ typeId, contentId, title, publicPath, rend
                             </Button>
                             <Button
                                 variant="primary"
-                                size="md"
                                 icon={<Save size={18} />}
                                 onClick={() => void saveDraft()}
                                 loading={saving}
@@ -482,9 +479,15 @@ export function ContentTranslations({ typeId, contentId, title, publicPath, rend
                 )}
 
                 <Card padding="md">
-                    <Stack gap="lg">
+                    <Stack gap="md">
                         {source.fields.map((field) => (
-                            <div key={field.name} className={styles.field_row}>
+                            <div
+                                key={field.name}
+                                // A Markdown field needs the full width sooner
+                                // than a one-line field does, so it stacks at
+                                // a wider breakpoint. See the module's rules.
+                                className={cn(styles.field_row, field.kind === 'markdown' && styles['field_row--wide'])}
+                            >
                                 <div className={styles.field_side}>
                                     <span className={styles.side_label}>
                                         {showPreview && field.kind === 'markdown' ? 'Preview' : 'English'}
@@ -516,7 +519,7 @@ export function ContentTranslations({ typeId, contentId, title, publicPath, rend
                 <div className={styles.header}>
                     <h2 className={styles.title}>Translations: {title}</h2>
                     <div className={styles.actions}>
-                        <Button variant="secondary" size="md" icon={<ArrowLeft size={18} />} onClick={onClose}>
+                        <Button variant="secondary" icon={<ArrowLeft size={18} />} onClick={onClose}>
                             Back
                         </Button>
                     </div>

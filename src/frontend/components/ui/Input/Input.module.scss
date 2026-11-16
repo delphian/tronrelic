@@ -11,11 +11,17 @@
     background: var(--input-background);
     border: var(--input-border);
     color: inherit;
+    /* The default size, used when the caller passes no `size`. The density of
+       the surrounding region selects it: md normally, and a compact size
+       between sm and md inside a compact region. See DEFAULT CONTROL STEP in
+       semantic-tokens.scss. */
+    padding: var(--input-padding);
     font-size: var(--input-font-size);
     transition: var(--input-transition);
 }
 
-/* Size Variants — padding and type move together, so a dense control reads as
+/* Size Variants — each holds one fixed step at every density, overriding the
+   default above. Padding and type move together, so a dense control reads as
    one step down rather than as a full-size field squeezed into less room. The
    xs step holds its type at the 0.72rem legibility floor instead of continuing
    the descent; see the ladder in semantic-tokens.scss. */

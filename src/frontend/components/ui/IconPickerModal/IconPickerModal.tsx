@@ -199,7 +199,6 @@ export function IconPickerModal({ selectedIcon, onSelect, onClose }: IconPickerM
             <div className={styles.action_bar}>
                 <Button
                     variant="ghost"
-                    size="md"
                     icon={<X />}
                     onClick={onClose}
                 >

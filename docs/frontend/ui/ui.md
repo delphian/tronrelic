@@ -18,6 +18,8 @@ Hardcoded values make theming impossible, because there is no single place to ch
 
 **Container queries, not viewport media queries.** A component sizes itself against the container it was placed in, so it works anywhere. See [ui-responsive-design.md](./ui-responsive-design.md).
 
+**Admin pages render compact.** Every page under `/system` is wrapped in `data-density="compact"`, which tightens spacing and makes a button or form control with no `size` render at a smaller default size. Leave `size` off controls on an admin page so they follow it. See [ui-design-token-layers.md](./ui-design-token-layers.md#density).
+
 **Render on the server first.** The server produces the page with real data, then the browser attaches to that markup and subscribes for live updates. See [react.md](../react/react.md#ssr--live-updates-pattern) and [ui-ssr-hydration.md](./ui-ssr-hydration.md).
 
 ## Quick Reference
@@ -68,7 +70,7 @@ Buttons and badges are React components backed by scoped SCSS Modules, so use `<
 
 | Pattern | Use |
 |---------|-----|
-| Button | `<Button>` from `components/ui/Button` (variants `primary/secondary/ghost/danger/warning`; sizes `xs/sm/md/lg`) |
+| Button | `<Button>` from `components/ui/Button` (variants `primary/secondary/ghost/danger/warning`; sizes `xs/sm/md/lg`, or no `size` to take the page density's default step) |
 | Badge | `<Badge>` from `components/ui/Badge` (tones `neutral/info/success/warning/danger`; sizes `xs/sm/md/lg`, which step the pill's padding only — the label already sits at the type floor) |
 | Headline statistic | `<StatGrid>` with `<StatTile>` from `components/ui/StatTile`, using `size="md"` for a page band and `size="sm"` for an admin strip. Never hand-write label and value markup, and do not use the legacy `.stat-grid` or `.stat-card__*` global classes. |
 | Many figures in one section | `<FigureList>` from `components/ui/FigureList`, as label-and-value rows. Use it where a band of tiles would spend more space on borders than on numbers |
@@ -87,6 +89,7 @@ Take every icon from `lucide-react`. Use 14px inline, 16px in headings, 18px in 
 - [ ] Every color, spacing value, font, and size comes from a CSS variable
 - [ ] Component styles live in a colocated `.module.scss` file using underscore naming
 - [ ] Responsive behaviour uses container queries rather than viewport media queries
+- [ ] On an admin page, buttons and form controls pass no `size="md"` or `size="lg"`, so they follow the compact density
 - [ ] Icons come from `lucide-react` and take their color from design tokens
 - [ ] State changes give visual feedback for loading, error, and success
 - [ ] Markup is semantic, and icon-only buttons carry an ARIA label so screen readers can announce them
