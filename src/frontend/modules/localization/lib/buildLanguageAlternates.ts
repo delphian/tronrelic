@@ -5,13 +5,16 @@
  * every version lists every other one, itself included, and names a fallback
  * with `x-default`. Building the list in one place from the public snapshot
  * guarantees each version of a page emits the same set, which is what makes
- * the links reciprocal.
+ * the links reciprocal. Each URL is built with `absoluteUrl`, the helper the
+ * canonical link and the sitemap use, so the home page's English version is
+ * the bare origin in all three.
  *
  * @module modules/localization/lib/buildLanguageAlternates
  */
 
 import type { ILocalizationPublicConfig } from '@/types';
 import { DEFAULT_LANGUAGE, findPublishedLanguages, localizePath } from '@/types';
+import { absoluteUrl } from '../../../lib/seo';
 
 /** One `<link rel="alternate" hreflang>` entry. */
 export interface ILanguageAlternate {
@@ -36,10 +39,10 @@ export function buildLanguageAlternates(config: ILocalizationPublicConfig, path:
     const published = findPublishedLanguages(config, path);
     let alternates: ILanguageAlternate[] = [];
     if (published.length > 0) {
-        const englishUrl = `${siteUrl}${localizePath(path, DEFAULT_LANGUAGE)}`;
+        const englishUrl = absoluteUrl(siteUrl, localizePath(path, DEFAULT_LANGUAGE));
         alternates = [
             { hrefLang: DEFAULT_LANGUAGE, href: englishUrl },
-            ...published.map(code => ({ hrefLang: code, href: `${siteUrl}${localizePath(path, code)}` })),
+            ...published.map(code => ({ hrefLang: code, href: absoluteUrl(siteUrl, localizePath(path, code)) })),
             { hrefLang: 'x-default', href: englishUrl }
         ];
     }

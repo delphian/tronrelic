@@ -15,7 +15,7 @@ vi.mock('../observationReporter', () => ({
 import { reportTranslationObservation } from '../observationReporter';
 import { createTranslator } from '../createTranslator';
 import { buildLanguageAlternates } from '../buildLanguageAlternates';
-import { localizedAbsoluteUrl, toOpenGraphLocale } from '../../../../lib/seo';
+import { absoluteUrl, localizedAbsoluteUrl, toOpenGraphLocale } from '../../../../lib/seo';
 import { withLanguageVersions } from '../withLanguageVersions';
 import type { ILocalizationSeed } from '../../types';
 
@@ -77,6 +77,29 @@ describe('buildLanguageAlternates', () => {
 
     it('emits nothing for an English-only page, so its head is unchanged', () => {
         expect(buildLanguageAlternates(CONFIG, '/about', SITE)).toEqual([]);
+    });
+
+    /**
+     * Next.js writes the home page's canonical link as the bare origin, so an
+     * hreflang link with a trailing slash would name a second address for it.
+     */
+    it('names the home page by the bare origin, matching its canonical link', () => {
+        const config = { ...CONFIG, routes: [{ pattern: '/', languages: ['zh'] }] };
+        expect(buildLanguageAlternates(config, '/', SITE)).toEqual([
+            { hrefLang: 'en', href: SITE },
+            { hrefLang: 'zh', href: `${SITE}/zh` },
+            { hrefLang: 'x-default', href: SITE }
+        ]);
+    });
+});
+
+describe('absoluteUrl', () => {
+    it('writes the home page as the bare origin and appends any other path', () => {
+        expect(absoluteUrl(SITE, '/')).toBe(SITE);
+        expect(absoluteUrl(SITE)).toBe(SITE);
+        expect(absoluteUrl(SITE, '/markets')).toBe(`${SITE}/markets`);
+        expect(absoluteUrl(SITE, 'markets')).toBe(`${SITE}/markets`);
+        expect(absoluteUrl(SITE, '/?ref=x')).toBe(`${SITE}/?ref=x`);
     });
 });
 
