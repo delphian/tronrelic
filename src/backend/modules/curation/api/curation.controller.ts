@@ -2,8 +2,8 @@
  * @file curation.controller.ts
  *
  * Admin HTTP handlers for the central curation queue: the pending review
- * inbox, the decided-item history, inline edits, and the approve/reject
- * decision. Mounted under `/api/admin/system/curation`. The `/system/curation`
+ * inbox, what a pending item changes, the decided-item history, inline edits,
+ * and the approve/reject decision. Mounted under `/api/admin/system/curation`. The `/system/curation`
  * dashboard renders these; the endpoints are the provider-neutral source of
  * truth for every reviewable content type held across the platform.
  */
@@ -30,6 +30,7 @@ function serializeCurationItem(item: ICurationItem, ownerAvailable?: boolean): R
         providerId: item.providerId,
         ref: item.ref,
         preview: item.preview,
+        changes: item.changes,
         status: item.status,
         source: item.source,
         createdAt: item.createdAt instanceof Date ? item.createdAt.toISOString() : item.createdAt,
@@ -112,6 +113,22 @@ export class CurationController {
     listCurationHistory = async (_req: Request, res: Response): Promise<void> => {
         const items = await this.curation.listHistory();
         res.json({ curations: items.map((item) => serializeCurationItem(item)) });
+    };
+
+    /**
+     * GET /curations/:id/changes — what a pending item changes compared with
+     * the live version. Answers `{ changes: null }` for a type that cannot
+     * compare, so the dashboard shows the content alone, and 404 when the item
+     * does not exist.
+     */
+    getChanges = async (req: Request, res: Response): Promise<void> => {
+        const id = req.params.id;
+        const item = await this.curation.get(id);
+        if (!item) {
+            res.status(404).json({ error: 'No curation item matched that id.' });
+            return;
+        }
+        res.json({ changes: await this.curation.getChanges(id) });
     };
 
     /** GET /curations/:id/sinks — the eligible publish sinks for a pending item. */

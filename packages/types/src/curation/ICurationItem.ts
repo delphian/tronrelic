@@ -8,6 +8,7 @@
  * fallback), never the content itself.
  */
 
+import type { IContentChangeSet } from '../content/IContentChangeSet.js';
 import type { ICurationPreview } from './ICurationPreview.js';
 import type { ICurationSinkOutcome } from './ICurationSink.js';
 
@@ -56,6 +57,18 @@ export interface ICurationItem {
      * this snapshot when the owning plugin is disabled.
      */
     preview: ICurationPreview;
+
+    /**
+     * What the item changed compared with the version live at the moment it
+     * was decided, frozen into the record alongside `preview` so the audit
+     * trail shows what was approved or rejected against what visitors saw.
+     * Captured before the decision commits, because an approval makes the
+     * edit the live version and a later comparison would find no difference.
+     * Absent while pending (the queue compares live), on a dismissed item, on
+     * an item decided before this was recorded, and for a type that cannot
+     * compare versions.
+     */
+    changes?: IContentChangeSet;
 
     /** Current lifecycle status. */
     status: CurationItemStatus;

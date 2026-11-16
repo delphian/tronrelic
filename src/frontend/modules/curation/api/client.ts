@@ -8,6 +8,7 @@
  */
 
 import type {
+    IContentChangeSet,
     ICurationPreview,
     ICurationEligibleSink,
     ICurationSinkOutcome,
@@ -47,6 +48,12 @@ export interface ICurationItemView {
     providerId: string;
     ref: Record<string, unknown>;
     preview: ICurationPreview;
+    /**
+     * What a decided item changed compared with the version live when it was
+     * decided, frozen into the record. Absent on pending items, which load
+     * their comparison live with `getCurationChanges`.
+     */
+    changes?: IContentChangeSet;
     status: string;
     source?: string;
     createdAt: string;
@@ -129,6 +136,23 @@ export async function approveCuration(id: string, sinks?: ICurationSinkSelection
         ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sinks }) }
         : { method: 'POST' };
     await parse(await fetch(`${BASE}/curations/${encodeURIComponent(id)}/approve`, init), 'approve curation item');
+}
+
+/**
+ * Load what a pending item changes compared with the version that is live now.
+ * Fetched for the one item a curator opens rather than with the queue, because
+ * a change set carries both versions of the text.
+ *
+ * @param id - The pending curation envelope id.
+ * @returns The change set, or null when the item's type cannot compare
+ *   versions (an older curation type) or the comparison failed.
+ */
+export async function getCurationChanges(id: string): Promise<IContentChangeSet | null> {
+    const data = await parse<{ changes: IContentChangeSet | null }>(
+        await fetch(`${BASE}/curations/${encodeURIComponent(id)}/changes`),
+        'load curation changes'
+    );
+    return data.changes;
 }
 
 /**

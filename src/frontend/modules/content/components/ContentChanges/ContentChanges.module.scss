@@ -1,0 +1,221 @@
+/**
+ * Styles for the comparison of an item's edit with its live version.
+ *
+ * Lines are laid out in one unified column, as a code review shows them, so
+ * the view reads the same beside the curation queue list, stacked under it,
+ * or in a narrow panel. Text wraps rather than scrolling sideways because the
+ * content is mostly prose. Every change carries a mark that does not depend on
+ * colour: the +/− gutter on lines, strikethrough on removed words and entries,
+ * and underline on added ones.
+ */
+
+.changes {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+    min-width: 0;
+}
+
+.head {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+}
+
+.title {
+    font-size: var(--font-size-heading-xs);
+    line-height: var(--line-height-tight);
+}
+
+.summary {
+    margin: 0;
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+    overflow-wrap: anywhere;
+}
+
+.note {
+    margin: 0;
+    font-size: var(--font-size-body-xs);
+    color: var(--color-text-muted);
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-xs);
+    min-width: 0;
+}
+
+.field_label {
+    font-size: var(--font-size-body-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-muted);
+}
+
+/* ---------- Text diff ---------- */
+
+.diff {
+    display: flex;
+    flex-direction: column;
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-muted);
+    overflow: hidden;
+    font-size: var(--font-size-body-sm);
+    line-height: var(--line-height-relaxed);
+}
+
+.line {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    color: var(--color-text);
+}
+
+.line_added {
+    background: var(--color-success-alpha-18);
+}
+
+.line_removed {
+    background: var(--color-danger-alpha-18);
+}
+
+.gutter {
+    padding: 0 var(--padding-xs);
+    font-family: var(--font-mono);
+    color: var(--color-text-muted);
+    user-select: none;
+}
+
+.line_added .gutter {
+    color: var(--color-success-text);
+}
+
+.line_removed .gutter {
+    color: var(--color-danger-text);
+}
+
+.line_text {
+    padding-right: var(--padding-sm);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+/* Changed words inside a changed line sit on a stronger wash than the line
+ * itself, so they stand out from the words the two versions share. */
+.word_added {
+    background: var(--color-success-alpha-45);
+    color: var(--color-success-text);
+    text-decoration: underline;
+}
+
+.word_removed {
+    background: var(--color-danger-alpha-50);
+    color: var(--color-danger-text);
+    text-decoration: line-through;
+}
+
+.fold {
+    display: flex;
+    justify-content: center;
+    padding: var(--padding-2xs);
+    border-top: var(--border-width-thin) solid var(--color-border);
+    border-bottom: var(--border-width-thin) solid var(--color-border);
+}
+
+/* ---------- List diff ---------- */
+
+.list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--chip-gap);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: var(--font-size-body-xs);
+}
+
+.entry {
+    padding: var(--pill-padding);
+    border: var(--chip-border);
+    border-radius: var(--radius-full);
+    color: var(--color-text-muted);
+    overflow-wrap: anywhere;
+}
+
+.entry_added {
+    color: var(--color-success-text);
+    text-decoration: underline;
+}
+
+.entry_removed {
+    color: var(--color-danger-text);
+    text-decoration: line-through;
+}
+
+.entry:has(.entry_added) {
+    border-color: var(--color-success-alpha-45);
+    background: var(--color-success-alpha-18);
+}
+
+.entry:has(.entry_removed) {
+    border-color: var(--color-danger-alpha-50);
+    background: var(--color-danger-alpha-18);
+}
+
+/* ---------- Single value ---------- */
+
+.value {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-xs) var(--gap-sm);
+    margin: 0;
+    font-size: var(--font-size-body-sm);
+}
+
+.value_before,
+.value_after,
+.value_empty {
+    padding: var(--padding-2xs) var(--padding-xs);
+    border-radius: var(--radius-xs);
+    overflow-wrap: anywhere;
+}
+
+.value_before {
+    background: var(--color-danger-alpha-18);
+    color: var(--color-danger-text);
+    text-decoration: line-through;
+}
+
+.value_after {
+    background: var(--color-success-alpha-18);
+    color: var(--color-success-text);
+    text-decoration: underline;
+}
+
+/* An empty side is named in words rather than left blank, so "cleared" and
+ * "set for the first time" are readable at a glance. */
+.value_empty {
+    color: var(--color-text-subtle);
+    font-style: italic;
+    text-decoration: none;
+}
+
+.value_arrow {
+    flex: none;
+    color: var(--color-text-muted);
+}
+
+/* ---------- Screen readers ---------- */
+
+/* Announces "Added" and "Removed" for marks a screen reader would otherwise
+ * read as plain text, since most do not announce <ins> and <del>. */
+.visually_hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+}

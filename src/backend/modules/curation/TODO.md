@@ -34,7 +34,8 @@ The design doc explicitly defers rich editing — today every item routes throug
 | Item | Why | Scope |
 |------|-----|-------|
 | Per-type editor registry | A tweet composer with a live char count, an image regen prompt, a label-evidence panel — richer than one neutral textarea | Frontend editor registry keyed by `typeId`; the write still flows through the type's `applyEdit` so the plugin keeps validation ownership |
-| Structured diff on edits | Show before/after for an edit-type hold so a curator sees exactly what changed | Extend `IContentDescriptor` / the edit path with a diff shape |
+
+Showing what a held edit changes is done for managed content: core compares the working and approved versions over the reviewed fields, the Pending tab renders the result, and each decision freezes it into History (see [system-content.md](../../../../docs/system/system-content.md#showing-what-an-edit-changes)). Older `ICurationType` types without `describeChanges` still show only the content.
 
 ## 4. Governance & routing
 

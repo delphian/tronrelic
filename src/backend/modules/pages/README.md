@@ -70,6 +70,7 @@ modules/pages/
 | Content type id | `core:page` (`PAGE_CONTENT_TYPE_ID`) |
 | Classification ceiling | `{ egress: 'user', audience: 'public' }` — public on this platform, never offered to an external sink |
 | Reviewed fields | `content`, `title`, `description`, `keywords`, `slug`, `ogImage`, `published` |
+| Labels in the curation comparison | `content` reads "Markdown source", `slug` "Slug", `published` "Published"; the rest take the translation side's labels ("Social image" for `ogImage`). `content` is the whole file, so a frontmatter change shows there as well as on its own field |
 | Page identifier | `contentId`, the core-issued UUID; admin routes take it as `:id`. The MongoDB `_id` is internal |
 | Who is approved on save | A signed-in admin (`req.adminVia === 'user'`). A write with the `ADMIN_API_TOKEN` service token is recorded as `system:service-token` and held for review |
 | Two versions | Top-level document fields hold the latest edit; the `approved` snapshot holds what visitors see |

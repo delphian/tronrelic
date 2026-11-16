@@ -680,6 +680,64 @@ describe('ContentService', () => {
         });
     });
 
+    describe('describeChanges', () => {
+        it('compares a held edit with the approved version over the reviewed fields', async () => {
+            const item = await service.create<IFakeContent>('test:item', { title: 'Live title', note: 'n' }, curator);
+            await service.update('test:item', item.id, { title: 'Proposed title', note: 'changed' }, automated);
+
+            const changeSet = await service.describeChanges('test:item', item.id);
+
+            expect(changeSet.baseline).toBe('approved');
+            expect(changeSet.unchangedFields).toEqual([]);
+            // `note` is not reviewed, so it is not compared even though it changed.
+            expect(changeSet.changes).toEqual([
+                expect.objectContaining({ kind: 'text', field: 'title', label: 'Title' })
+            ]);
+        });
+
+        it('lists a reviewed field that did not change as unchanged', async () => {
+            const item = await service.create<IFakeContent>('test:item', { title: 'Same', note: 'n' }, curator);
+            await service.update('test:item', item.id, { note: 'changed' }, automated);
+
+            const changeSet = await service.describeChanges('test:item', item.id);
+
+            expect(changeSet.changes).toEqual([]);
+            expect(changeSet.unchangedFields).toEqual(['Title']);
+        });
+
+        it('reports no baseline for an item that was never approved', async () => {
+            const item = await service.create<IFakeContent>('test:item', { title: 'Draft', note: 'n' }, automated);
+
+            const changeSet = await service.describeChanges('test:item', item.id);
+
+            expect(changeSet).toEqual({ baseline: 'none', changes: [], unchangedFields: [] });
+        });
+
+        it('uses the type\'s own label for a reviewed field', async () => {
+            const labelled = { ...createFakeType().type, typeId: 'test:labelled', reviewedFieldLabels: { title: 'Headline' } };
+            service.registerType(labelled, 'test');
+            const item = await service.create<IFakeContent>('test:labelled', { title: 'A', note: 'n' }, curator);
+
+            const changeSet = await service.describeChanges('test:labelled', item.id);
+
+            expect(changeSet.unchangedFields).toEqual(['Headline']);
+        });
+
+        it('refuses an item that does not exist', async () => {
+            await expect(service.describeChanges('test:item', 'missing')).rejects.toMatchObject({ code: 'not-found' });
+        });
+
+        it('answers the queue through the generated curation binding', async () => {
+            const item = await service.create<IFakeContent>('test:item', { title: 'Live', note: 'n' }, curator);
+            await service.update('test:item', item.id, { title: 'Proposed' }, automated);
+            const binding = curation.registerType.mock.calls[0][0] as { describeChanges: (ref: Record<string, unknown>) => Promise<unknown> };
+
+            const changeSet = await binding.describeChanges({ id: item.id, holdId: 'any' });
+
+            expect(changeSet).toMatchObject({ baseline: 'approved', changes: [expect.objectContaining({ field: 'title' })] });
+        });
+    });
+
     describe('list and count', () => {
         it('filters core rows by review state', async () => {
             await service.create('test:item', { title: 'A', note: 'n' }, curator);

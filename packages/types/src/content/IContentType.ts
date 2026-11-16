@@ -16,6 +16,7 @@
  * content-agnostic behind this interface.
  */
 
+import type { IContentChangeSet } from './IContentChangeSet.js';
 import type { IContentDescriptor } from './IContentDescriptor.js';
 
 /**
@@ -69,6 +70,21 @@ export interface IContentType {
      * @returns The descriptor, or a promise of it.
      */
     describe(ref: Record<string, unknown>): IContentDescriptor | Promise<IContentDescriptor>;
+
+    /**
+     * Describe what differs between the record identified by `ref` and the
+     * version of it that is live now, so a reviewer sees the change itself
+     * rather than only the finished text. Optional — a consumer shows no
+     * comparison for a type that omits it. Must not mutate the record.
+     *
+     * A managed content type leaves this out. Core builds it for every managed
+     * type from the working and approved versions the type already keeps, so
+     * no type writes its own comparison.
+     *
+     * @param ref - The same opaque pointer `describe()` receives.
+     * @returns The change set, or null when the record no longer exists.
+     */
+    describeChanges?(ref: Record<string, unknown>): Promise<IContentChangeSet | null>;
 
     /**
      * Apply a generic, payload-agnostic edit to the content's own record before

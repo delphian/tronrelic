@@ -31,6 +31,7 @@ import type {
     ContentTypeDisposer,
     IContent,
     IContentActor,
+    IContentChangeSet,
     IContentListQuery,
     IContentReadRequest,
     IAiProviderRegistry,
@@ -49,6 +50,8 @@ import type {
 } from '@/types';
 import { HOOKS } from '../hooks/registry.js';
 import { assertValidClassification } from './content-classification.js';
+import { buildContentChangeSet } from './buildContentChangeSet.js';
+import { resolveReviewedFieldLabels } from './resolveReviewedFieldLabels.js';
 import { createContentCurationType } from './content-curation-adapter.js';
 import { ContentError } from './content-error.js';
 import { ContentTranslationService } from './content-translation-service.js';
@@ -700,6 +703,44 @@ export class ContentService implements IContentService {
     }
 
     /**
+     * Compare an item's latest edit with the version visitors see now, over
+     * the type's reviewed fields. Both versions come from the type's own
+     * `read`, which every managed type already implements, so the comparison
+     * needs nothing extra from the type. An item never approved has nothing
+     * live to compare against and gets the `none` baseline.
+     *
+     * @param typeId - The managed content type.
+     * @param id - The content id.
+     * @returns The change set for the item.
+     * @throws ContentError `not-found` when there is no core row or no stored
+     *   record for the item.
+     */
+    async describeChanges(typeId: string, id: string): Promise<IContentChangeSet> {
+        const entry = this.requireType(typeId);
+        const row = await this.findRow(typeId, id);
+        if (!row) {
+            throw new ContentError('not-found', `No content with id ${id} for type '${typeId}'`);
+        }
+        // The type's `read` keys its result by id, so the two versions of one
+        // item have to be asked for in separate calls.
+        const [working, approved] = await Promise.all([
+            this.readPayload(entry, row.id, 'working'),
+            row.hasApprovedVersion ? this.readPayload(entry, row.id, 'approved') : Promise.resolve(undefined)
+        ]);
+        if (!working) {
+            throw new ContentError('not-found', `${entry.type.label} ${id} has no stored record`);
+        }
+
+        return approved
+            ? buildContentChangeSet(
+                resolveReviewedFieldLabels(entry.type),
+                approved as Record<string, unknown>,
+                working as Record<string, unknown>
+            )
+            : { baseline: 'none', changes: [], unchangedFields: [] };
+    }
+
+    /**
      * List core rows matching a review or deletion filter, newest first.
      * The `id` tie-breaker keeps the order fixed between calls, so a caller
      * paging with `skip` neither repeats nor misses rows that share a
@@ -823,7 +864,10 @@ export class ContentService implements IContentService {
             ref: Record<string, unknown>,
             decision: Exclude<ContentCurationState, 'pending'>
         ): Promise<void> => this.applyDecision(typeId, ref, decision);
-        curation.registerType(createContentCurationType(entry.type, onDecision), entry.providerId);
+        /** Compare the queue item's content with its live version, for the reviewer. */
+        const onDescribeChanges = (ref: Record<string, unknown>): Promise<IContentChangeSet> =>
+            this.describeChanges(typeId, String(ref.id ?? ''));
+        curation.registerType(createContentCurationType(entry.type, onDecision, onDescribeChanges), entry.providerId);
 
         return;
     }

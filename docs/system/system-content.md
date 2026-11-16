@@ -71,6 +71,16 @@ More than one queue item can end up open for the same content. Two saves can rac
 
 No content type implements `ICurationType` directly any more. Every content type is managed content.
 
+### Showing what an edit changes
+
+A curator approving an edit approves every difference between it and the live version, so the queue shows those differences rather than only the finished text. `IContentService.describeChanges(typeId, id)` reads the item's working and approved versions through the type's own `read`, compares the type's `reviewedFields`, and returns an `IContentChangeSet`. The generated curation binding forwards to it, so every managed type gets the comparison without writing any code for it. The queue loads it for the one item a curator opens, through `GET /api/admin/system/curation/curations/:id/changes`, and renders it with `ContentChanges` from `src/frontend/modules/content`, which a type's own admin page can reuse.
+
+Each changed field takes the layout that suits its value. Text, including Markdown, is compared as source in a unified line diff with the changed words marked inside each replaced line; source rather than rendered HTML, so a changed link target or heading level is visible. A list of short values is compared entry by entry. Anything else, such as a flag or a number, is shown as its old and new values. An object is compared as indented JSON. A comparison that runs past its time limit falls back to the whole old text removed and the whole new text added, and says so. The fields that did not change are named, so the curator knows they were checked, and an item never approved reports the `none` baseline because nothing is live to compare against.
+
+Only reviewed fields are compared, because those are the fields the type declared a curator must see. A field a type wants in the comparison must be in `reviewedFields`. Labels come from `reviewedFieldLabels`, then from the translatable field of the same name, then from the field name split into words; set a label wherever that last fallback reads poorly. The change set is computed on the server and sent as plain data, and the renderer places every piece of text as text, so content a non-curator wrote cannot inject markup into the admin page.
+
+The curation queue also freezes the comparison into the decision record, beside the frozen preview, so History shows what each approval or rejection changed against the version live at that moment. It is taken before the decision commits, because approval copies the edit over the approved version and a later comparison would find nothing.
+
 ### Publishing to destinations
 
 A type that sets `publishesToSinks: true` on its `IManagedContentType` gets the curation queue's sink picker. When a curator approves an item there, the queue offers the content router's publish sinks that the type's `classification` allows, such as X or Telegram, and the curator picks which ones fire. Core makes the item live first and hands it to the syndication outbox only after that succeeds, so an approval the content service refuses never publishes anywhere.
@@ -160,11 +170,12 @@ An error the author throws (a validation failure such as a slug conflict) passes
 | Moving records in | `importItem(typeId, input, state, actor)` — creates an item already `approved`, `pending`, or `rejected`; see [Adopting an Existing Type](#adopting-an-existing-type) |
 | Constructed | `bootstrapInit` (`src/backend/services/content-service.ts`), before module init |
 | Core collection | `content_items` |
-| Author contract | `IManagedContentType<T, TCreate, TUpdate>` — `classification`, `reviewedFields`, optional `publishesToSinks`, `describe`, `create`, `discardCreate`, `read`, `update`, `delete`, `restore`, `approve` |
+| Author contract | `IManagedContentType<T, TCreate, TUpdate>` — `classification`, `reviewedFields`, optional `reviewedFieldLabels` and `publishesToSinks`, `describe`, `create`, `discardCreate`, `read`, `update`, `delete`, `restore`, `approve` |
+| Comparing an edit | `describeChanges(typeId, id)` → `IContentChangeSet` over the reviewed fields; built by `src/backend/services/buildContentChangeSet.ts`, rendered by `ContentChanges` |
 | Actor for admin routes | `actorFromAdminRequest(req)` (`src/backend/services/content-actor.ts`): a signed-in admin is a curator; the service token is `system:service-token` and is not |
 | Hooks | `content.beforeCreate` / `beforeUpdate` / `beforeDelete` / `beforeRestore` (series); translation writes set `language` |
 | Translations | `IContentService.translations()` → `IContentTranslationService`; state in `content_translations`, values in the type's own collection; settings in `content_translation_settings`; admin routes at `/api/admin/content` |
-| Types | `@delphian/tronrelic-types` → `IContent`, `IManagedContentType`, `IContentService`, `IContentActor`, `IContentPayloadRecord`, `ContentCurationState`, `ContentVersion`, `ContentErrorCode`, `ITranslatableContentType`, `ITranslatableField`, `IContentTranslationService` |
+| Types | `@delphian/tronrelic-types` → `IContent`, `IManagedContentType`, `IContentService`, `IContentActor`, `IContentPayloadRecord`, `ContentCurationState`, `ContentVersion`, `ContentErrorCode`, `ITranslatableContentType`, `ITranslatableField`, `IContentTranslationService`, `IContentChangeSet`, `ContentFieldChange` |
 | Managed types today | `core:page` (Pages module), translatable; `blog:post` (`trp-blog` plugin), translatable and publishes to sinks; `relics:relic` (`trp-relics` plugin), publishes to sinks |
 
 ## Adopting an Existing Type

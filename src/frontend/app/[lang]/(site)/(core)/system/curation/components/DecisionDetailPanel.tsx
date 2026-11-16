@@ -4,10 +4,12 @@
  * @fileoverview The full record of one decided item, shown in the History
  * tab's slide-over. A decision is a permanent audit record, so this answers the
  * questions an operator brings to it in order: what was decided and by whom,
- * what the content said at that moment, where it was delivered and where it
- * failed, and the identifying details. The content comes from the frozen
- * snapshot taken at decision time, never a live re-read, so it shows exactly
- * what was approved. Read-only by design. A dismissed item, closed because its
+ * what the decision changed against the version live at the time, what the
+ * content said at that moment, where it was delivered and where it failed,
+ * and the identifying details. The changes and the content both come from
+ * snapshots frozen at decision time, never a live re-read, so they show
+ * exactly what was approved. Items decided before the changes were recorded
+ * show the content alone. Read-only by design. A dismissed item, closed because its
  * plugin was no longer installed, also shows the recorded reason.
  */
 
@@ -16,6 +18,7 @@ import { Badge } from '../../../../../../../components/ui/Badge';
 import { ClientTime } from '../../../../../../../components/ui/ClientTime';
 import { cn } from '../../../../../../../lib/cn';
 import type { ICurationItemView } from '../../../../../../../modules/curation';
+import { ContentChanges } from '../../../../../../../modules/content';
 import { CurationPreview } from './CurationPreview';
 import { decisionLabel, decisionTone, outcomeLabel, outcomeTone } from './curationStatus';
 import styles from './DecisionDetailPanel.module.scss';
@@ -41,6 +44,10 @@ export function DecisionDetailPanel({ item }: { item: ICurationItemView }) {
                     {item.decidedAt && <> on <ClientTime date={item.decidedAt} format="datetime" /></>}
                 </span>
             </div>
+
+            {item.changes && (
+                <ContentChanges changeSet={item.changes} title="Changes from the version live at decision time" />
+            )}
 
             <section className={styles.section} aria-labelledby={contentId}>
                 <h3 id={contentId} className={styles.section_title}>Content as decided</h3>

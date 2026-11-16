@@ -115,6 +115,9 @@ export function PendingTab({ onChanged }: { onChanged: () => void }) {
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState<IBusyDecision | null>(null);
     const [focusSheet, setFocusSheet] = useState(false);
+    // Counts applied refetches, so the open item's comparison with the live
+    // version reloads when an edit changes what it would approve.
+    const [revision, setRevision] = useState(0);
     // The list as last applied, read when working out which item to open next.
     const itemsRef = useRef<ICurationItemView[]>([]);
     const { push } = useToast();
@@ -131,6 +134,7 @@ export function PendingTab({ onChanged }: { onChanged: () => void }) {
         const previous = itemsRef.current;
         itemsRef.current = next;
         setItems(next);
+        setRevision(current => current + 1);
         setSelectedId(current => pickSelection(current, previous, next));
     }, []);
 
@@ -293,6 +297,7 @@ export function PendingTab({ onChanged }: { onChanged: () => void }) {
                     <ReviewSheet
                         key={selected.id}
                         item={selected}
+                        revision={revision}
                         busyAction={busy?.id === selected.id ? busy.action : null}
                         locked={busy !== null}
                         autoFocusHeading={focusSheet}

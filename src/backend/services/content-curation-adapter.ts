@@ -18,7 +18,7 @@
  * @module backend/services/content-curation-adapter
  */
 
-import type { ContentCurationState, IContent, ICurationType, IManagedContentType } from '@/types';
+import type { ContentCurationState, IContent, IContentChangeSet, ICurationType, IManagedContentType } from '@/types';
 
 /**
  * The decision callback the adapter forwards to — the content service's
@@ -30,6 +30,13 @@ type ContentDecisionFn = (
     ref: Record<string, unknown>,
     decision: Exclude<ContentCurationState, 'pending'>
 ) => Promise<void>;
+
+/**
+ * The comparison callback the adapter forwards to — the content service's
+ * `describeChanges`, bound to the type. It receives the queue item's ref and
+ * compares that item's latest edit with its live version.
+ */
+type ContentDescribeChangesFn = (ref: Record<string, unknown>) => Promise<IContentChangeSet>;
 
 /**
  * Build the curation binding for a managed content type.
@@ -47,13 +54,24 @@ type ContentDecisionFn = (
  *
  * @param type - The managed content type to make reviewable; supplies the id,
  *   label, classification ceiling, whether it publishes to sinks, and `describe`.
+ * The generated type also answers `describeChanges`, so the queue shows a
+ * curator what an edit changes compared with the live version. Every managed
+ * type gets this from core, because core reads both versions through the
+ * type's own `read`.
+ *
+ * @param type - The managed content type to make reviewable; supplies the id,
+ *   label, classification ceiling, whether it publishes to sinks, and `describe`.
  * @param onDecision - Where a curator's approve or reject is sent; core's
  *   content service records it and promotes the working version on approval.
+ * @param onDescribeChanges - Where a request to compare an item with its live
+ *   version is sent; core's content service reads both versions and compares
+ *   the type's reviewed fields.
  * @returns The curation type to register on the `'curation'` service.
  */
 export function createContentCurationType<T extends IContent, TCreate, TUpdate>(
     type: IManagedContentType<T, TCreate, TUpdate>,
-    onDecision: ContentDecisionFn
+    onDecision: ContentDecisionFn,
+    onDescribeChanges: ContentDescribeChangesFn
 ): ICurationType {
     const curationType: ICurationType = {
         typeId: type.typeId,
@@ -73,6 +91,16 @@ export function createContentCurationType<T extends IContent, TCreate, TUpdate>(
             const descriptor = await type.describe(ref);
 
             return { ...descriptor, editable: false };
+        },
+
+        /**
+         * Compare the queue item's content with the version visitors see now.
+         *
+         * @param ref - The curation ref, `{ id, holdId }` for managed content.
+         * @returns The change set for the item.
+         */
+        async describeChanges(ref) {
+            return onDescribeChanges(ref);
         },
 
         /**

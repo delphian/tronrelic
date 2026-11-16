@@ -20,6 +20,7 @@
 import type { ContentCurationState } from './ContentCurationState.js';
 import type { IContent } from './IContent.js';
 import type { IContentActor } from './IContentActor.js';
+import type { IContentChangeSet } from './IContentChangeSet.js';
 import type { IContentListQuery } from './IContentListQuery.js';
 import type { IContentTranslationService } from './IContentTranslationService.js';
 import type { IManagedContentType } from './IManagedContentType.js';
@@ -142,6 +143,21 @@ export interface IContentService {
      * @returns The core rows found, keyed by id.
      */
     getEntries(typeId: string, ids: ReadonlyArray<string>): Promise<Record<string, IContent>>;
+
+    /**
+     * Compare an item's latest edit with the version visitors see now, field
+     * by field over the type's reviewed fields. The curation queue shows this
+     * beside a held edit so the curator reads what changed, and a type's own
+     * admin page may show it for an item with an edit waiting. Works for any
+     * managed type, because every type keeps both versions.
+     *
+     * @param typeId - The managed content type.
+     * @param id - The content id.
+     * @returns The change set. Its `baseline` is `none` when the item has
+     *   never been approved, since nothing is live to compare against.
+     * @throws ContentError `not-found` when there is no such item.
+     */
+    describeChanges(typeId: string, id: string): Promise<IContentChangeSet>;
 
     /**
      * List core rows matching a review or deletion filter, newest first — the
