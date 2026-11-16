@@ -38,6 +38,7 @@ Better Auth is the sole identity layer — the legacy UUID identity system was r
 | `auth.ts` | Better Auth factory (`createAuth`), `Auth` type; takes a raw Mongo `Db` (documented `IDatabaseService` exception) |
 | `services/auth-facade.ts` | Session resolution + `isLoggedIn`/`isAdmin`/`isInGroup` predicates over `req.authSession`; `setAuthInstance`; `setActivityRecorder`, which reports every resolved session to the activity tracker |
 | `services/auth-constants.ts` | Physical BA collection names (`AUTH_USERS_COLLECTION`, `AUTH_COLLECTIONS`) |
+| `services/buildAuthCookieOptions.ts` | The `advanced` cookie options passed to Better Auth: `SameSite=Lax` stated for every cookie, because the origin check in `config/cors.ts` lets requests with no `Origin` header through and relies on it |
 | `services/consumeRedisWindow.ts` | Atomic fixed-window counter in Redis (one Lua step for increment + expiry); shared by both limiters below |
 | `services/createRedisRateLimitStorage.ts` | Better Auth `rateLimit.customStorage` — moves BA's per-IP counters from process memory to Redis |
 | `services/createAuthBeforeHook.ts` | The Better Auth `hooks.before` middleware: the sign-up protections, then the per-email code limits |

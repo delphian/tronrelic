@@ -52,13 +52,30 @@ export function getAllowedOrigins(
 const allowedOrigins = getAllowedOrigins();
 
 /**
+ * Report whether an Origin header value is on the allowed list.
+ *
+ * The WebSocket layer needs the same answer the origin callback gives, but
+ * outside a request: engine.io reports a refused handshake without saying
+ * which check refused it, so the code that logs the refusal asks again here.
+ * Keeping the comparison in one function stops the two from disagreeing.
+ *
+ * @param origin - The Origin header value a browser sent.
+ * @returns True when a request from that origin is allowed.
+ */
+export function isAllowedOrigin(origin: string): boolean {
+    return allowedOrigins.includes(origin);
+}
+
+/**
  * CORS origin callback compatible with both the `cors` npm package and
  * Socket.IO's `cors.origin` option.
  *
  * Allows requests with no Origin header (curl, Postman, server-to-server)
  * and rejects browser requests from origins not in the allowed list with a
  * `CorsOriginRejectedError`, which the Express error handler answers as a 403
- * and logs as a warning naming the refused origin.
+ * and logs as a warning naming the refused origin. A refused WebSocket
+ * handshake never reaches that handler and is logged by
+ * `RefusedSocketOriginLogger`.
  *
  * @param origin - The Origin header value (undefined when absent)
  * @param callback - Node-style callback: (error, allow)
@@ -73,7 +90,7 @@ export function corsOriginCallback(
         return;
     }
 
-    if (allowedOrigins.includes(origin)) {
+    if (isAllowedOrigin(origin)) {
         callback(null, true);
     } else {
         callback(new CorsOriginRejectedError(origin));

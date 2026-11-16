@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { getAllowedOrigins, corsOriginCallback } from '../cors.js';
+import { getAllowedOrigins, corsOriginCallback, isAllowedOrigin } from '../cors.js';
 import { CorsOriginRejectedError } from '../CorsOriginRejectedError.js';
 
 describe('getAllowedOrigins', () => {
@@ -25,6 +25,13 @@ describe('getAllowedOrigins', () => {
         const origins = getAllowedOrigins({ SITE_URL: 'https://tronrelic.com', ...flags });
 
         expect(origins).toEqual(['https://tronrelic.com', 'https://www.tronrelic.com']);
+    });
+});
+
+describe('isAllowedOrigin', () => {
+    it('accepts every origin on the allowed list and refuses any other', () => {
+        expect(getAllowedOrigins().every(isAllowedOrigin)).toBe(true);
+        expect(isAllowedOrigin('https://not-allowed.example')).toBe(false);
     });
 });
 

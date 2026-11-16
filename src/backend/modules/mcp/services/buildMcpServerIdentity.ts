@@ -9,7 +9,7 @@
 import type { IMcpServerIdentity } from './IMcpServerIdentity.js';
 
 /** Version reported to clients and in the Server Card; bump when the served surface changes shape. */
-export const MCP_SERVER_VERSION = '1.2.0';
+export const MCP_SERVER_VERSION = '1.2.1';
 
 /** Longest description the Server Card schema accepts. */
 const MAX_DESCRIPTION_LENGTH = 100;

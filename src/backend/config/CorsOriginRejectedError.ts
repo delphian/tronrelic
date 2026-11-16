@@ -19,8 +19,9 @@
  * repeats the caller's header back to it.
  *
  * Socket.IO uses the same origin callback, but its engine answers a failed
- * middleware with its own 400 and never passes the error to Express, so only
- * HTTP requests are logged.
+ * middleware with its own 400 and never passes the error to Express, so the
+ * error handler logs HTTP requests only. `RefusedSocketOriginLogger` logs the
+ * refused socket handshakes from the engine's `connection_error` event.
  */
 export class CorsOriginRejectedError extends Error {
     /** HTTP status the error handler answers with. */
