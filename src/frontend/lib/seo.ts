@@ -1,3 +1,12 @@
+/**
+ * @fileoverview Search engine metadata helpers for server-rendered pages.
+ *
+ * Builds the absolute URLs, canonical links, Open Graph and Twitter tags, and
+ * Schema.org structured data that pages put in their `<head>`. Keeping URL
+ * construction here means the canonical link, the hreflang links, and the
+ * sitemap all write a page's address the same way.
+ */
+
 import type { Metadata } from 'next';
 import { DEFAULT_LANGUAGE, localizePath } from '@/types';
 
@@ -21,21 +30,28 @@ export const DEFAULT_OG_IMAGE_HEIGHT = 630;
 /**
  * Constructs an absolute URL from a path using the provided site URL.
  *
- * Why siteUrl parameter:
- * Build-time config leaks Docker internal hostnames (e.g., "http://backend:3000")
- * into canonical URLs, so the public siteUrl comes from runtime config.
+ * Every address a search engine reads for one page — the canonical link, the
+ * hreflang links, and the sitemap entry — must be written identically, or the
+ * page appears to name two different URLs for itself. Next.js writes the home
+ * page's canonical link as the bare origin (`https://tronrelic.com`, no
+ * trailing slash) and offers no option to change that, so the home page
+ * resolves to the bare origin here too. Every other path is appended as given.
+ *
+ * The site URL is passed in rather than read from build-time config, because
+ * build-time config leaks Docker internal hostnames (e.g., "http://backend:3000")
+ * into canonical URLs.
  *
  * @param siteUrl - Public site URL from runtime config (e.g., "https://tronrelic.com")
  * @param path - Relative path or absolute URL
- * @returns Absolute URL
+ * @returns Absolute URL, with the home page as the bare origin
  */
 export function absoluteUrl(siteUrl: string, path: string = '/'): string {
-  if (/^https?:\/\//i.test(path)) {
-    return path;
+  let url = path;
+  if (!/^https?:\/\//i.test(path)) {
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+    url = normalizedPath === '/' ? siteUrl : `${siteUrl}${normalizedPath}`;
   }
-
-  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-  return `${siteUrl}${normalizedPath}`;
+  return url;
 }
 
 /**
