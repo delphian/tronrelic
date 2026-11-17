@@ -72,12 +72,15 @@
     margin: 0;
 }
 
+/* No prose width cap: the grid's description column already bounds the
+ * line, and a parameter note is short. Capped at 64ch, notes wrapped to four
+ * or five lines in a wide card while most of the column stood empty, and
+ * wrapped at a different width from the tool description above them. */
 .param_desc {
     margin: 0;
     font-size: var(--font-size-body-sm);
     line-height: var(--line-height-relaxed);
     color: var(--color-text-muted);
-    max-width: var(--max-width-prose);
 }
 
 .param_facts {

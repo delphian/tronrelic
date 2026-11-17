@@ -590,10 +590,13 @@
 }
 
 /* Activity table Caller column: the name on one line, the kind of caller
- * beneath it in a quieter tone. */
+ * beneath it in a quieter tone. An email address breaks after its `@`, where
+ * the table inserts a break opportunity; `overflow-wrap` breaks inside a
+ * word only when one half still cannot fit. `word-break: break-word` broke
+ * at any letter instead, splitting "gmail.com" across lines. */
 .caller_cell {
     display: block;
-    word-break: break-word;
+    overflow-wrap: break-word;
 }
 
 .caller_kind {
