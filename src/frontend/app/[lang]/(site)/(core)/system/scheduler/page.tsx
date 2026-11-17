@@ -1,31 +1,36 @@
-'use client';
-
 /**
- * @fileoverview /system/scheduler: every scheduled job on the deployment.
+ * @fileoverview /system/scheduler server entry.
  *
- * The page owns the single `<Page>` and the `<h1>`. `SchedulerMonitor` renders
- * only its content, because the same component is embedded as a tab on module
- * admin pages that already have a page wrapper of their own.
+ * Fetches the page's in-page tab row from the menu service and hands it to the
+ * client shell. The tab row is a namespaced menu (the menu module's Submenu
+ * Pattern), so it inherits per-user gating, ordering, and live `menu:update`
+ * refresh. The visitor's cookies are forwarded so the nodes' `requiresAdmin`
+ * gate resolves for the admin. Admin-gated by the /system layout.
  */
 
-import { Page, PageHeader } from '../../../../../../components/layout';
-import { SchedulerMonitor } from '../../../../../../modules/scheduler';
+import { cookies } from 'next/headers';
+import { fetchMenuNamespace } from '../../../../../../modules/menu/server';
+import { SchedulerAdminClient } from './SchedulerAdminClient';
+
+/** Namespace holding the page's tab nodes; registered by SchedulerModule. */
+const SUBMENU_NAMESPACE = 'scheduler';
 
 /**
- * Scheduler monitoring page.
+ * Scheduler admin page (server entry).
  *
- * Displays scheduled job status, execution history, and runtime configuration controls.
- * Provides detailed visibility into cron jobs for blockchain sync, market refresh,
- * cache cleanup, and alert dispatch. Allows runtime enable/disable of individual jobs
- * without backend restarts. Requires admin authentication.
- *
- * @returns The page with its header and the full job list.
+ * @param props - Next.js route props.
+ * @param props.searchParams - The `?tab=` deep link, read on the server so a
+ *   refreshed or shared link opens on the selected tab.
+ * @returns The client shell seeded with the tab row.
  */
-export default function SchedulerMonitorPage() {
-    return (
-        <Page>
-            <PageHeader title="Scheduler" subtitle="Every scheduled job, its cron schedule, and its last run." />
-            <SchedulerMonitor />
-        </Page>
-    );
+export default async function SchedulerAdminPage({
+    searchParams
+}: {
+    searchParams: Promise<{ tab?: string }>;
+}) {
+    const [{ roots, generatedAt }, { tab }] = await Promise.all([
+        fetchMenuNamespace(SUBMENU_NAMESPACE, (await cookies()).toString()),
+        searchParams
+    ]);
+    return <SchedulerAdminClient submenuTree={roots} submenuGeneratedAt={generatedAt} initialTab={tab} />;
 }

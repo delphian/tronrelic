@@ -3,23 +3,24 @@
 /**
  * @fileoverview Client shell for /system/address-tags.
  *
- * Holds the in-page tab row and its five tab panels: the tag management table,
+ * Holds the in-page tab row and its six tab panels: the tag management table,
  * the ingestion source status panel, the ingestion settings form, this
- * module's scheduler jobs, and this module's MongoDB storage. The tab row is
- * the menu module's Submenu Pattern — a namespaced menu rendered with
- * `MenuNavClient`, not a hand-rolled button array — so it inherits per-user
- * gating, ordering, and live `menu:update` refresh. The server entry
- * (`page.tsx`) fetches that namespace tree SSR-first and passes it in. Clicking
- * a tab drives local state via `onItemSelect` rather than navigating;
- * `activeUrl` highlights the active tab since the route is identical across
- * them.
+ * module's scheduler jobs, this module's MongoDB storage, and this module's
+ * log entries. The tab row is the menu module's Submenu Pattern — a namespaced
+ * menu rendered with `MenuNavClient`, not a hand-rolled button array — so it
+ * inherits per-user gating, ordering, and live `menu:update` refresh. The
+ * server entry (`page.tsx`) fetches that namespace tree SSR-first and passes it
+ * in. Clicking a tab drives local state via `onItemSelect` rather than
+ * navigating; `activeUrl` highlights the active tab since the route is
+ * identical across them.
  *
- * The Schedules and Database panels are core components filtered to this
- * module, not anything written for this page. Any component that owns a
- * scheduler job or a collection surfaces both on its own admin page, and
- * reusing the core browsers means the authority behind these two tabs is the
- * same one `/system/scheduler` and `/system/database` use — so a schedule
- * edited here and a schedule edited there can never disagree.
+ * The Schedules, Database, and Logs panels are core components filtered to
+ * this module, not anything written for this page. Any component that owns a
+ * scheduler job or a collection surfaces both on its own admin page, every
+ * component with an admin page surfaces its log entries, and reusing the core
+ * panels means the authority behind these tabs is the same one
+ * `/system/scheduler`, `/system/database`, and `/system/logs` use — so a
+ * schedule edited here and a schedule edited there can never disagree.
  */
 
 import { useCallback, useState } from 'react';
@@ -27,14 +28,15 @@ import type { MenuNodeSerialized } from '@/shared';
 import { AdminPage } from '../../../../../../components/layout';
 import { MenuNavClient } from '../../../../../../components/layout/MenuNav/MenuNavClient';
 import { CollectionBrowser } from '../../../../../../modules/database';
+import { SystemLogsMonitor } from '../../../../../../modules/logs';
 import { SchedulerMonitor, type SchedulerJob } from '../../../../../../modules/scheduler';
 import { AddressTagsManager } from './AddressTagsManager';
 import { SourcesTab } from './SourcesTab';
 import { SettingsTab } from './SettingsTab';
 import styles from './page.module.scss';
 
-/** The page's five tab ids; the `?tab=` value carried by each submenu node. */
-type TabId = 'tags' | 'sources' | 'settings' | 'schedules' | 'database';
+/** The page's six tab ids; the `?tab=` value carried by each submenu node. */
+type TabId = 'tags' | 'sources' | 'settings' | 'schedules' | 'database' | 'logs';
 
 /** The menu namespace the module registers the tab nodes under. */
 const SUBMENU_NAMESPACE = 'address-tags';
@@ -66,6 +68,16 @@ const JOB_PREFIX = 'address-tags:';
 const COLLECTION_PREFIX = 'module_address-tags_';
 
 /**
+ * Log service name the module's entries are stored under.
+ *
+ * `AddressTagsModule` logs through `logger.child({ module: 'address-tags' })`,
+ * which the log store files as `tronrelic:address-tags`, and it hands that
+ * logger to each scheduler job it registers so the scheduler's own failure
+ * entries land here too.
+ */
+const LOG_SERVICE = 'tronrelic:address-tags';
+
+/**
  * Type guard narrowing an arbitrary `?tab=` string to a known TabId, so the
  * deep-link seeding and click routing share one source of truth for valid tabs.
  *
@@ -77,7 +89,8 @@ function isTabId(tab: string | undefined): tab is TabId {
         || tab === 'sources'
         || tab === 'settings'
         || tab === 'schedules'
-        || tab === 'database';
+        || tab === 'database'
+        || tab === 'logs';
 }
 
 /**
@@ -183,6 +196,8 @@ export function AddressTagsAdminClient({ submenuTree, submenuGeneratedAt, initia
                     title="Address Tags Collections"
                 />
             )}
+
+            {activeTab === 'logs' && <SystemLogsMonitor service={LOG_SERVICE} title="Address Tags Logs" />}
         </AdminPage>
     );
 }

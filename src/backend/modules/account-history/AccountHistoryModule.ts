@@ -105,12 +105,21 @@ const SUBMENU_NAMESPACE = 'account-history';
  * array so the row inherits per-user gating, ordering, and live `menu:update`
  * refresh from the menu service. Each `url` carries a `?tab=` the client reads
  * to drive the active panel; the route is identical across tabs.
+ *
+ * Schedules, Database, and Logs are the obligation every component carries
+ * when it owns scheduler jobs, storage, and an admin page: this module owns
+ * three jobs, three MongoDB control collections, and four ClickHouse tables,
+ * and an operator looking into a stalled backfill should not have to leave for
+ * /system/scheduler, /system/database, or /system/logs and pick this module's
+ * rows back out of the whole deployment's inventory.
  */
 const SUBMENU_TABS: ReadonlyArray<{ label: string; tab: string; icon: string; order: number }> = [
     { label: 'Tracked Accounts', tab: 'accounts', icon: 'List', order: 0 },
     { label: 'Tick Activity', tab: 'activity', icon: 'Activity', order: 1 },
     { label: 'Ingestion Settings', tab: 'settings', icon: 'Settings', order: 2 },
-    { label: 'Schedules', tab: 'schedules', icon: 'CalendarClock', order: 3 }
+    { label: 'Schedules', tab: 'schedules', icon: 'CalendarClock', order: 3 },
+    { label: 'Database', tab: 'database', icon: 'Database', order: 4 },
+    { label: 'Logs', tab: 'logs', icon: 'ScrollText', order: 5 }
 ];
 
 /**

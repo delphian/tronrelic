@@ -224,6 +224,29 @@ describe('SchedulerService', () => {
                 'Scheduled Job Complete: owner:ok'
             );
         });
+
+        /**
+         * Guards the Logs tab of /system/scheduler: a job registered with no
+         * owner's logger has to be filed under the scheduler's own service
+         * name, not the unscoped root logger that no Logs tab reads.
+         */
+        it('logs a job registered without an owner through the scheduler logger', async () => {
+            const schedulerLogger = createOwnerLogger();
+            SchedulerService.resetInstance();
+            SchedulerService.setDependencies(mockDb, trigger, schedulerLogger as never);
+            const scheduler = SchedulerService.getInstance();
+            scheduler.register('unowned:flaky', '* * * * *', async () => {
+                throw new Error('cache store unavailable');
+            });
+
+            await scheduler.runNow('unowned:flaky');
+            await flush();
+
+            expect(schedulerLogger.error).toHaveBeenCalledWith(
+                expect.objectContaining({ job: 'unowned:flaky', status: 'failed', error: 'cache store unavailable' }),
+                'Scheduled Job Failed: unowned:flaky'
+            );
+        });
     });
 
     describe('scheduled slots', () => {

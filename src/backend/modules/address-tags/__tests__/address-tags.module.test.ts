@@ -127,13 +127,15 @@ describe('AddressTagsModule', () => {
         const tabCalls = deps.menuService.create.mock.calls
             .map((call: unknown[]) => call[0] as { namespace: string; url: string; requiresAdmin?: boolean })
             .filter((node: { namespace: string }) => node.namespace === 'address-tags');
-        // Schedules and Database are part of the row, not optional extras: a
-        // module owning scheduler jobs or a collection has to surface both on
-        // its own admin page, and dropping either node would silently send an
-        // operator back to /system to find this module's rows by hand.
+        // Schedules, Database, and Logs are part of the row, not optional
+        // extras: a module owning scheduler jobs or a collection has to surface
+        // both on its own admin page, every module with an admin page has to
+        // surface its log entries, and dropping any of those nodes would
+        // silently send an operator back to /system to find this module's rows
+        // by hand.
         //
         // The order is asserted, not just the membership. Settings must stay
-        // last, after the four tabs that report what the module is doing, so
+        // last, after the five tabs that report what the module is doing, so
         // moving it back between them is a visible failure rather than a silent
         // reshuffle of the row.
         expect(tabCalls.map((node: { url: string }) => node.url)).toEqual([
@@ -141,6 +143,7 @@ describe('AddressTagsModule', () => {
             '/system/address-tags?tab=sources',
             '/system/address-tags?tab=schedules',
             '/system/address-tags?tab=database',
+            '/system/address-tags?tab=logs',
             '/system/address-tags?tab=settings'
         ]);
         // Outside the System container the non-bypassable admin force does not

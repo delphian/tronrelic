@@ -84,12 +84,17 @@ const SUBMENU_NAMESPACE = 'curation';
  * reads to pick the active panel; the route itself is the same for every tab.
  * Pending comes first because it is the default panel. Database is the
  * obligation every component that owns collections carries: it shows this
- * module's `module_curation_*` collections on its own page.
+ * module's `module_curation_*` collections on its own page. Logs is the
+ * obligation every component with an admin page carries: each hold and
+ * decision, a failed sink delivery, and a syndication enqueue that failed
+ * after the commit are logged under `tronrelic:curation`, and an operator
+ * should read them beside the queue rather than on `/system/logs`.
  */
 const SUBMENU_TABS: ReadonlyArray<{ label: string; tab: string; icon: string; order: number }> = [
     { label: 'Pending', tab: 'pending', icon: 'Inbox', order: 0 },
     { label: 'History', tab: 'history', icon: 'History', order: 1 },
-    { label: 'Database', tab: 'database', icon: 'Database', order: 2 }
+    { label: 'Database', tab: 'database', icon: 'Database', order: 2 },
+    { label: 'Logs', tab: 'logs', icon: 'ScrollText', order: 3 }
 ];
 
 /**
@@ -326,7 +331,11 @@ export class CurationModule implements IModule<ICurationModuleDependencies> {
             });
         }
 
-        this.logger.info({ service: CURATION_SERVICE }, 'curation module running (admin router mounted, service registered)');
+        // The registry name travels as `registryName`, not `service`: the log
+        // store reads a `service` field as the entry's service name, which
+        // would file this line under `curation` instead of
+        // `tronrelic:curation` and keep it off the page's Logs tab.
+        this.logger.info({ registryName: CURATION_SERVICE }, 'curation module running (admin router mounted, service registered)');
     }
 
     /**

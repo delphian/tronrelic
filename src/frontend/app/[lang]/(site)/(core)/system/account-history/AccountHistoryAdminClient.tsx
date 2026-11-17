@@ -4,7 +4,11 @@
  * @fileoverview Client shell for /system/account-history.
  *
  * Holds the interactive surface: the live stats snapshot, the in-page tab row,
- * and the three tab panels (tracked accounts, ingestion settings, schedules).
+ * and the six tab panels (tracked accounts, tick activity, ingestion settings,
+ * schedules, storage, and logs). The Schedules, Database, and Logs panels are
+ * core components scoped to this module rather than panels written for this
+ * page, so the authority behind each is the one `/system/scheduler`,
+ * `/system/database`, and `/system/logs` use.
  * The tab row is the menu module's Submenu Pattern — a namespaced menu rendered
  * with `MenuNavClient`, not a hand-rolled button array — so it inherits per-user
  * gating, ordering, and live `menu:update` refresh. The server entry
@@ -22,11 +26,13 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import type { MenuNodeSerialized } from '@/shared';
-import { AdminPage } from '../../../../../../components/layout';
+import { AdminPage, Stack } from '../../../../../../components/layout';
 import { Badge } from '../../../../../../components/ui/Badge';
 import { ClientTime } from '../../../../../../components/ui/ClientTime';
 import { MenuNavClient } from '../../../../../../components/layout/MenuNav/MenuNavClient';
 import { getSocket } from '../../../../../../lib/socketClient';
+import { ClickHouseTableBrowser, CollectionBrowser } from '../../../../../../modules/database';
+import { SystemLogsMonitor } from '../../../../../../modules/logs';
 import { SchedulerMonitor, type SchedulerJob } from '../../../../../../modules/scheduler';
 import { getStats, type IAccountHistoryStatsView } from '../../../../../../modules/account-history';
 import { AccountsTab } from './AccountsTab';
@@ -34,19 +40,55 @@ import { ActivityTab } from './ActivityTab';
 import { SettingsTab } from './SettingsTab';
 import styles from './page.module.scss';
 
-/** The page's four tab ids; the `?tab=` value carried by each submenu node. */
-type TabId = 'accounts' | 'activity' | 'settings' | 'schedules';
+/** The page's six tab ids; the `?tab=` value carried by each submenu node. */
+type TabId = 'accounts' | 'activity' | 'settings' | 'schedules' | 'database' | 'logs';
 
 /**
  * Type guard narrowing an arbitrary `?tab=` string to a known TabId, so the
  * deep-link seeding and click routing share one source of truth for valid tabs.
  */
 function isTabId(tab: string | undefined): tab is TabId {
-    return tab === 'accounts' || tab === 'activity' || tab === 'settings' || tab === 'schedules';
+    return tab === 'accounts'
+        || tab === 'activity'
+        || tab === 'settings'
+        || tab === 'schedules'
+        || tab === 'database'
+        || tab === 'logs';
 }
 
 /** The menu namespace the module registers the tab nodes under. */
 const SUBMENU_NAMESPACE = 'account-history';
+
+/**
+ * Physical MongoDB collection prefix covering the module's three control
+ * collections: the tracked set, per-account progress, and the pacing settings.
+ * The module names them `module_account-history_*` by hand, so scoping the
+ * browser to this prefix shows exactly that storage and nothing else.
+ */
+const COLLECTION_PREFIX = 'module_account-history_';
+
+/**
+ * The module's ClickHouse tables: the transaction record, the value ledger,
+ * and the two balance snapshot tables. Module tables share no naming prefix,
+ * so the browser is scoped by exact name. The names repeat the constants in
+ * the module's `database/index.ts`, because frontend code cannot import
+ * backend code.
+ */
+const CLICKHOUSE_TABLES = [
+    'account_transactions',
+    'account_value_transfers',
+    'account_balance_snapshots',
+    'account_token_balances'
+];
+
+/**
+ * Log service name the module's entries are stored under.
+ *
+ * `AccountHistoryModule` logs through `logger.child({ module: 'account-history' })`,
+ * which the log store files as `tronrelic:account-history`, and it passes that
+ * logger to each scheduler job so a failed tick is filed here too.
+ */
+const LOG_SERVICE = 'tronrelic:account-history';
 
 /**
  * Props for the client shell.
@@ -177,6 +219,22 @@ export function AccountHistoryAdminClient({ submenuTree, submenuGeneratedAt, ini
             {activeTab === 'activity' && <ActivityTab stats={stats} />}
             {activeTab === 'settings' && <SettingsTab />}
             {activeTab === 'schedules' && <SchedulerMonitor jobFilter={isAccountHistoryJob} title="Account History Schedules" />}
+
+            {/* Editing and deletion stay enabled on the MongoDB browser, as on
+              * every Database tab, but prefer the Tracked Accounts tab: pausing
+              * an account there writes the `paused` flag to both the tracked
+              * and the progress document, which an edit to one document here
+              * would not. Treat this browser as the escape hatch for a cursor
+              * that surface cannot reach. The ClickHouse browser is read-only
+              * by design. */}
+            {activeTab === 'database' && (
+                <Stack gap="lg">
+                    <CollectionBrowser prefix={COLLECTION_PREFIX} title="Account History Collections" />
+                    <ClickHouseTableBrowser tables={CLICKHOUSE_TABLES} title="Account History Tables" />
+                </Stack>
+            )}
+
+            {activeTab === 'logs' && <SystemLogsMonitor service={LOG_SERVICE} title="Account History Logs" />}
         </AdminPage>
     );
 }

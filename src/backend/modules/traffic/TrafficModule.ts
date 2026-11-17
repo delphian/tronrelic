@@ -122,8 +122,32 @@ const TRAFFIC_SUBMENU_TABS: ReadonlyArray<{ label: string; tab: string; icon: st
     { label: 'SEO', tab: 'seo', icon: 'Search', order: 3 },
     { label: 'Redirects', tab: 'redirects', icon: 'CornerUpRight', order: 4 },
     { label: 'AI', tab: 'ai', icon: 'Sparkles', order: 5 },
-    { label: 'Settings', tab: 'settings', icon: 'Settings', order: 6 }
+    // Schedules, Database, and Logs put this module's job, its MongoDB
+    // collections and ClickHouse tables, and its log entries on its own page,
+    // so an operator looking into a stale Search Console fetch or a missing
+    // bot label does not leave for /system/scheduler, /system/database, or
+    // /system/logs and pick this module's rows out of the whole deployment's.
+    // Each panel is a core component scoped to this module.
+    { label: 'Schedules', tab: 'schedules', icon: 'Clock', order: 6 },
+    { label: 'Database', tab: 'database', icon: 'Database', order: 7 },
+    { label: 'Logs', tab: 'logs', icon: 'ScrollText', order: 8 },
+    // Settings sits last, after every tab that reports what the module is
+    // doing, because it changes that state and is opened far less often.
+    { label: 'Settings', tab: 'settings', icon: 'Settings', order: 9 }
 ];
+
+/**
+ * Name of the daily Search Console fetch job.
+ *
+ * It keeps the `gsc:` prefix rather than taking the module id, because the
+ * scheduler stores an operator's schedule and enabled switch in
+ * `scheduler_configs` under the job name, and a rename would silently drop
+ * both. The Schedules tab on `/system/traffic` filters on this `gsc:` prefix
+ * (and on `traffic:`, for any job added later under the module id), and keeps
+ * its own copy of both literals because frontend code cannot import backend
+ * code.
+ */
+const GSC_FETCH_JOB = 'gsc:fetch';
 
 /**
  * Cookieless traffic analytics module.
@@ -387,9 +411,10 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
 
         // Daily GSC fetch (3 AM). SchedulerService supports late registration.
         // Skipped without ClickHouse, where the fetch has nowhere to go, or
-        // without credentials.
+        // without credentials. The module's logger goes with the job so the
+        // scheduler's own failure entry lands on this module's Logs tab.
         if (this.scheduler) {
-            this.scheduler.register('gsc:fetch', '0 3 * * *', async () => {
+            this.scheduler.register(GSC_FETCH_JOB, '0 3 * * *', async () => {
                 if (this.gscService.canStore() && await this.gscService.isConfigured()) {
                     await this.gscService.fetchAndStore();
                 }

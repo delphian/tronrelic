@@ -7,7 +7,7 @@ Owns every concern of the widget subsystem behind a single public surface: `IWid
 | | |
 |---|---|
 | Module id | `widgets` |
-| Admin UI | `/system/widgets` — Placements tab (the editor, `src/frontend/modules/widgets/`) and Database tab (`CollectionBrowser` scoped to `module_widgets_`) |
+| Admin UI | `/system/widgets` — Placements tab (the editor, `src/frontend/modules/widgets/`), Database tab (`CollectionBrowser` scoped to `module_widgets_`), and Logs tab (`SystemLogsMonitor` scoped to `tronrelic:widgets`, where failed widget data fetches and failed placement writes are logged) |
 | Public service | `'widgets'` on the service registry (`IWidgetsService`) |
 | Backend API base | `/api/admin/system/widgets/placements`, `/api/admin/system/widget-types`, `/api/admin/system/zones` (now also `PATCH /:zoneId/layout`), plus SSR fetch at `/api/widgets` |
 | WebSocket event | `widgets:placements-update` (also fired on zone-layout change — no separate event) |
@@ -15,7 +15,7 @@ Owns every concern of the widget subsystem behind a single public surface: `IWid
 | Storage | `module_widgets_placements`, `module_widgets_zone_layouts` (MongoDB) |
 | Migration | `module:widgets:001_create_widget_placements` (placements collection + 4 indexes); `module:widgets:002_seed_block_ticker_placement` (idempotent seed of one operator-source `core:block-ticker` placement in `ticker-after`, guarded on absence so it runs once and never fights an operator edit); `module:widgets:003_add_parent_id_index` (sparse `parentId` index for child grouping); `module:widgets:004_repair_plugin_placement_index` (drops the mis-scoped sparse unique `(typeId, pluginId)` index and recreates it partial — `partialFilterExpression: { pluginId: { $exists: true } }` — so operators can place a widget type more than once). The zone-layouts collection needs no migration — `ZoneLayoutService.load()` creates its unique index idempotently at boot. |
 | System menu node | "Widgets" under the System container — seeded by `WidgetsModule.run()` |
-| Submenu namespace | `widgets` — memory-only tab nodes (`?tab=placements`, `?tab=database`) seeded by `WidgetsModule.run()`; the page renders them with `MenuNavClient` (menu module's Submenu Pattern) |
+| Submenu namespace | `widgets` — memory-only tab nodes (`?tab=placements`, `?tab=database`, `?tab=logs`) seeded by `WidgetsModule.run()`; the page renders them with `MenuNavClient` (menu module's Submenu Pattern) |
 
 ## Source Map
 

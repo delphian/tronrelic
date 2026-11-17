@@ -8,7 +8,7 @@ Category-based notification dispatch: any source declares a category and fires; 
 |---------|-------|
 | Module id | `notifications` |
 | Module class | `src/backend/modules/notifications/NotificationsModule.ts` |
-| Admin page | `/system/notifications` (menu item `Notifications`, order 37, registered in `run()`) |
+| Admin page | `/system/notifications` (menu item `Notifications`, order 37, registered in `run()`). Submenu Pattern tab row in the `notifications` namespace, in this order: **Categories**, **Channels**, **History**, **My Preferences**, **Database** (core `CollectionBrowser` scoped to `module_notifications_`, read-only), **Logs** (core `SystemLogsMonitor` scoped to `tronrelic:notifications`). Opens on Categories; `?tab=` deep-links. Server entry `page.tsx`, client shell `NotificationsAdminClient.tsx` |
 | User page | `/profile` (per-user opt-outs surface as a section; any logged-in user, shown only the categories whose `defaultAudience` includes them) |
 | Service registry name | `'notifications'` → `INotificationService` |
 | Content-router sinks | Each channel registers `notifications:<channelId>` on `'content-router'` in `run()` (`accepts: []` floor, `reach` per channel; toast `{ user, user }`). Dispatch matches candidates through the router (`DispatchService.candidateChannelIds`); delivery + recipient resolution stay in dispatch |
@@ -29,7 +29,7 @@ It is a **module** (not a plugin) because it is essential cross-cutting infrastr
 
 | Path | Responsibility |
 |------|----------------|
-| `NotificationsModule.ts` | Two-phase lifecycle; constructs services, ensures indexes, mounts routers, publishes the service |
+| `NotificationsModule.ts` | Two-phase lifecycle; constructs services, ensures indexes, mounts routers, registers the admin menu item and the page's tab row, publishes the service |
 | `config.ts` | Collection names, service name, toast channel id, audit retention window |
 | `services/notification.service.ts` | `NotificationService` singleton — the published `INotificationService` facade |
 | `services/dispatch.service.ts` | The resolution pipeline: audience → gates → channels → audit |
@@ -123,6 +123,10 @@ The policy and audit indexes are created in `init()`. Categories and channels ar
 ## Admin and User Surfaces
 
 `/system/notifications` has three admin tabs: **Categories** (enable/disable each, see its source and per-channel defaults), **Channels** (globally enable/disable a transport), and **History** (the audit feed, filterable by category, source, time). A fourth tab, **My Preferences**, and the `/profile` preferences panel are the same `PreferencesPanel` component — every user-configurable category that can reach the user, with a per-channel toggle plus a global mute, writing identity's `module_user_settings` store; the pipeline reads it at dispatch.
+
+The tab row is the menu module's Submenu Pattern: `run()` registers one memory-only node per tab in the `notifications` namespace, each with `requiresAdmin: true` and a `/system/notifications?tab=<id>` URL, and the page renders that namespace with `MenuNavClient`. The admin tabs come first because they are what an operator opens the page for, so the page opens on Categories, and My Preferences follows them because the same panel is also on `/profile`.
+
+Two more tabs close the row. **Database** is the core `CollectionBrowser` scoped to `module_notifications_`, which covers the policy and audit collections and nothing else; per-user opt-outs live in `module_user_settings`, outside that prefix. It is read-only, because an edited or deleted audit row would falsify the history the History tab reports, and the policy document is changed through the Categories and Channels tabs. **Logs** is the core `SystemLogsMonitor` scoped to `tronrelic:notifications`, the service name of the module's `logger.child({ module: 'notifications' })`, which every service in the module receives, so dispatch, policy, and preference entries all appear there. The module registers no scheduler jobs, so there is no Schedules tab.
 
 A category appears only when its `defaultAudience` includes the user, either by explicit user id or by membership in one of its groups, checked through `RecipientResolver.audienceTest`, which reads the user's groups once per request — the same resolver dispatch uses. An ordinary user therefore does not see the admin-only `ai-tools.scheduled-prompt-run` and `curation.held` categories, since a toggle for a notification that can never reach them would do nothing. A `notify()` call that passes `audienceOverride` can still reach someone outside the default audience for that one blast; that user has no toggle for it, so register a category whose `defaultAudience` covers everyone a source intends to reach.
 

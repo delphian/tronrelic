@@ -296,7 +296,17 @@ const SUBMENU_TABS: ReadonlyArray<{ label: string; tab: string; icon: string; or
     { label: 'Query', tab: 'query', icon: 'MessageSquare', order: 0 },
     { label: 'Registry', tab: 'registry', icon: 'Boxes', order: 1 },
     { label: 'Activity', tab: 'activity', icon: 'Activity', order: 2 },
-    { label: 'Approvals', tab: 'approvals', icon: 'ShieldCheck', order: 3 }
+    { label: 'Approvals', tab: 'approvals', icon: 'ShieldCheck', order: 3 },
+    // Schedules, Database, and Logs put this module's two jobs, its six
+    // collections, and its log entries on its own page, so an operator
+    // checking why a saved prompt did not fire, or how large the audit trail
+    // has grown, does not leave for /system/scheduler, /system/database, or
+    // /system/logs and pick this module's rows out of the whole deployment's.
+    // Each panel is a core component scoped to this module; the Schedules tab
+    // filters on the `ai-tools:` prefix every job name below starts with.
+    { label: 'Schedules', tab: 'schedules', icon: 'Clock', order: 4 },
+    { label: 'Database', tab: 'database', icon: 'Database', order: 5 },
+    { label: 'Logs', tab: 'logs', icon: 'ScrollText', order: 6 }
 ];
 
 /**

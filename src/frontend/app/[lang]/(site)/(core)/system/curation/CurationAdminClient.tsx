@@ -5,10 +5,12 @@
  *
  * Holds the page's interactive frame: a visually hidden page heading, the live
  * count of items waiting for review, the in-page tab row, and the active panel
- * (Pending, History, or Database). The Database panel is the core collection
- * browser scoped to this module's collections, the same one `/system/database`
- * uses, so an operator never has to leave the page to inspect curation storage.
- * The tab row is the menu module's Submenu Pattern — a
+ * (Pending, History, Database, or Logs). The Database panel is the core
+ * collection browser scoped to this module's collections, the same one
+ * `/system/database` uses, and the Logs panel is the core log viewer scoped to
+ * this module's entries, the same one `/system/logs` uses, so an operator never
+ * has to leave the page to inspect curation storage or find out why a decision
+ * or a delivery failed. The tab row is the menu module's Submenu Pattern — a
  * namespaced menu rendered with `MenuNavClient`, not a hand-rolled button pair —
  * so it inherits per-user gating, ordering, and live `menu:update` refresh. The
  * server entry (`page.tsx`) fetches that tree and passes it in.
@@ -28,12 +30,13 @@ import { MenuNavClient } from '../../../../../../components/layout/MenuNav/MenuN
 import { getSocket } from '../../../../../../lib/socketClient';
 import { getCurationsCount } from '../../../../../../modules/curation';
 import { CollectionBrowser } from '../../../../../../modules/database';
+import { SystemLogsMonitor } from '../../../../../../modules/logs';
 import { PendingTab } from './tabs/PendingTab';
 import { HistoryTab } from './tabs/HistoryTab';
 import styles from './page.module.scss';
 
 /** The page's tabs; the `?tab=` value carried by each submenu node. */
-type TabId = 'pending' | 'history' | 'database';
+type TabId = 'pending' | 'history' | 'database' | 'logs';
 
 /** The menu namespace CurationModule registers the tab nodes under. */
 const SUBMENU_NAMESPACE = 'curation';
@@ -48,11 +51,18 @@ const SUBMENU_NAMESPACE = 'curation';
 const COLLECTION_PREFIX = 'module_curation_';
 
 /**
+ * Log service name the module's entries are stored under. `CurationModule`
+ * logs through `logger.child({ module: 'curation' })`, which the log store
+ * files as `tronrelic:curation`, and its services log through that same child.
+ */
+const LOG_SERVICE = 'tronrelic:curation';
+
+/**
  * Narrow an arbitrary `?tab=` string to a known tab, so the deep-link seed and
  * the click handler share one definition of what a valid tab is.
  */
 function isTabId(tab: string | undefined): tab is TabId {
-    return tab === 'pending' || tab === 'history' || tab === 'database';
+    return tab === 'pending' || tab === 'history' || tab === 'database' || tab === 'logs';
 }
 
 /**
@@ -171,6 +181,8 @@ export function CurationAdminClient({ submenuTree, submenuGeneratedAt, initialTa
                     {activeTab === 'database' && (
                         <CollectionBrowser prefix={COLLECTION_PREFIX} allowEdit={false} allowDelete={false} />
                     )}
+
+                    {activeTab === 'logs' && <SystemLogsMonitor service={LOG_SERVICE} title="Curation Logs" />}
                 </div>
             </Section>
         </Page>

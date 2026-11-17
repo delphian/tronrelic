@@ -71,10 +71,17 @@ export const WIDGETS_SUBMENU_NAMESPACE = 'widgets';
  * `module_widgets_zone_layouts`, and an operator diagnosing a placement
  * should not have to leave for `/system/database` and pick this module's
  * rows back out of the whole deployment's inventory.
+ *
+ * Logs is the obligation every component with an admin page carries. A
+ * widget data fetcher that failed or timed out is logged under
+ * `tronrelic:widgets`, along with custom CSS that failed to parse and failed
+ * placement writes, and those entries explain a widget missing from a page
+ * better than the placement row does.
  */
 const SUBMENU_TABS: ReadonlyArray<{ label: string; tab: string; icon: string; order: number }> = [
     { label: 'Placements', tab: 'placements', icon: 'LayoutGrid', order: 0 },
-    { label: 'Database', tab: 'database', icon: 'Database', order: 1 }
+    { label: 'Database', tab: 'database', icon: 'Database', order: 1 },
+    { label: 'Logs', tab: 'logs', icon: 'ScrollText', order: 2 }
 ];
 
 /**

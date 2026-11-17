@@ -9,7 +9,8 @@ Owns hierarchical navigation: multiple independent menu trees (namespaces), even
 | Module id | `menu` |
 | Module class | `src/backend/modules/menu/MenuModule.ts` |
 | Service registry name | `'menu'` → `IMenuService` (also direct DI: `menuService` on module deps, `context.menuService` on plugins) |
-| Admin page | `/system/menu` (menu item `Menu`, order 50, under the System container) |
+| Admin page | `/system/menu` (menu item `Menu`, order 50, under the System container). Submenu Pattern tab row in the `menu` namespace, in this order: **Items** and **Configuration** (both edit the namespace picked in the toolbar above them), **Database** (core `CollectionBrowser` scoped to `menu_`, edits off), **Logs** (core `SystemLogsMonitor` scoped to `tronrelic:menu`). Server entry `page.tsx`, client shell `MenuAdminClient.tsx` |
+| Log service | `tronrelic:menu` — `MenuModule` logs through `logger.child({ module: 'menu' })` and passes that logger to `MenuService.setDependencies`, so node and namespace-config changes land on the Logs tab |
 | Mounted routes | `/api/menu/*` (public reads + `requireAdmin` mutations) |
 | Types package | `@delphian/tronrelic-types` → `IMenuService`, `IMenuNode`, `IMenuTree`, `IMenuNodeAdminView`, `IMenuEvent`, `IMenuNamespaceConfig`, `IMenuViewer` |
 | Collections | `menu_nodes`, `menu_node_overrides`, `menu_namespace_config` (legacy-unprefixed; predate the `module_*` convention) |
@@ -21,7 +22,7 @@ Owns hierarchical navigation: multiple independent menu trees (namespaces), even
 
 | Path | Responsibility |
 |------|----------------|
-| `MenuModule.ts` | Two-phase lifecycle; seeds System container, registers `'menu'`, mounts `/api/menu` |
+| `MenuModule.ts` | Two-phase lifecycle; seeds System container, registers `'menu'`, registers the `/system/menu` tab row, mounts `/api/menu` |
 | `services/menu.service.ts` | `MenuService` singleton (`setDependencies`/`getInstance`); tree cache, events, gating, overrides, WS broadcasts |
 | `api/menu.controller.ts` | Zod-validated request handlers; resolves `IMenuViewer` from `req.authSession` for gated reads |
 | `constants.ts` | `MAIN_SYSTEM_CONTAINER_ID`; `ADMIN_NAMESPACES` (empty typed extension point for namespace-level suppression) |
@@ -104,6 +105,8 @@ Reads are public — the frontend chrome fetches without a token; per-user gatin
 | `menu_node_overrides` | `(namespace, url)` | Admin customizations of memory-only nodes: `order`, `label`, `description`, `icon`, `enabled`, `hidden`. Applied over plugin defaults on every re-registration, so customizations survive restarts without plugin code changes. URL is the stable identity — URL-less nodes are ineligible; a URL change on a memory-only node does not survive restart |
 | `menu_namespace_config` | `namespace` | Per-namespace rendering config (`overflow`, `icons`, `layout`, `styling`) |
 
+The Database tab of `/system/menu` browses all three through the core `CollectionBrowser` with the `menu_` prefix, which nothing else uses. Editing is off there: the service loads these collections into memory at startup and serves every read from memory, so an edited document would not reach the live menu until the next restart, and the next save from the Items or Configuration tab would overwrite it. Deleting stays on, because the browser is the only place to remove an override row that a removed plugin left behind; the deletion takes effect at the next restart.
+
 ## Node Semantics
 
 **Dual persistence.** `persist=false` (default) creates a memory-only node — plugins and modules use this for runtime pages, re-registering on every boot. `persist=true` writes to `menu_nodes` — the admin API's mode for manual entries.
@@ -180,7 +183,7 @@ menuService.subscribe('ready', async () => {
 
 An admin page's submenu — the in-page tab row on a surface like `/system/account-history` — is just a menu, and backing it with the menu service is **the only authorized pattern for core and module admin pages.** Hand-rolled `<button>` arrays, `.segmented-control` strips, and per-page `styles.tab` rows are **not permitted**: they duplicate code and forfeit per-user gating, ordering, live `menu:update` refresh, and runtime extensibility — a *different* plugin can contribute a tab by registering a node, which a hand-rolled array cannot.
 
-**Reference implementation:** `/system/account-history`. `AccountHistoryModule.run()` registers the `account-history` namespace nodes; `AccountHistoryAdminClient.tsx` renders them with `MenuNavClient`. Copy that surface.
+**Reference implementation:** `/system/account-history`. `AccountHistoryModule.run()` registers the `account-history` namespace nodes; `AccountHistoryAdminClient.tsx` renders them with `MenuNavClient`. Copy that surface. This module's own page follows it too: `MenuModule.run()` registers the `menu` namespace, and `MenuAdminClient.tsx` renders it.
 
 Register each tab as a memory-only leaf in a dedicated namespace (not `main`) — keeping it out of `main` keeps tabs out of the global nav chrome. The namespace sits outside the System container, so the non-bypassable `requiresAdmin` force does **not** apply: the caller owns security and sets `requiresAdmin` per node explicitly (see [The System Container](#the-system-container)).
 
@@ -222,7 +225,7 @@ await menuService.create({
 
 ## Lifecycle
 
-**`init()`** (deps: `database`, `serviceRegistry`, `app`) wires the `MenuService` singleton (`setDependencies` → `getInstance`), awaits `initialize()` (loads `menu_nodes`, builds the tree, emits `init`/`ready`/`loaded`), and constructs the controller. **`run()`** publishes `'menu'` on the service registry, seeds the System container (memory-only, order 9999) and the `/system/menu` admin item, then mounts `/api/menu`. Runs before every other feature module so their `run()` registrations find the service ready.
+**`init()`** (deps: `database`, `serviceRegistry`, `app`) wires the `MenuService` singleton (`setDependencies(database, logger)` → `getInstance`, passing the module's child logger), awaits `initialize()` (loads `menu_nodes`, builds the tree, emits `init`/`ready`/`loaded`), and constructs the controller. **`run()`** publishes `'menu'` on the service registry, seeds the System container (memory-only, order 9999) and the `/system/menu` admin item, registers that page's four tab nodes in the `menu` namespace (memory-only, `requiresAdmin: true` on each), then mounts `/api/menu`. Runs before every other feature module so their `run()` registrations find the service ready.
 
 ## Related
 

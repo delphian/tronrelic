@@ -133,9 +133,12 @@ describe('AccountHistoryModule', () => {
         expect(scheduler.register).toHaveBeenCalledWith('account-history:forward-sync', expect.any(String), expect.any(Function), withModuleLogger);
         expect(serviceRegistry.has('account-history')).toBe(true);
 
-        // The System-container entry plus the four in-page tab nodes (the
+        // The System-container entry plus the six in-page tab nodes (the
         // Submenu Pattern): tabs live in their own namespace, outside the System
         // container, so the module sets `requiresAdmin` on them explicitly.
+        // Database and Logs are asserted by name because the module owns
+        // storage and has an admin page, so dropping either node would send an
+        // operator back to /system to find this module's rows by hand.
         expect(menuService.create).toHaveBeenCalledWith(expect.objectContaining({ namespace: 'main', label: 'Account History' }));
         expect(menuService.create).toHaveBeenCalledWith(expect.objectContaining({
             namespace: 'account-history',
@@ -147,7 +150,17 @@ describe('AccountHistoryModule', () => {
             url: '/system/account-history?tab=activity',
             requiresAdmin: true
         }));
-        expect(menuService.create).toHaveBeenCalledTimes(5);
+        expect(menuService.create).toHaveBeenCalledWith(expect.objectContaining({
+            namespace: 'account-history',
+            url: '/system/account-history?tab=database',
+            requiresAdmin: true
+        }));
+        expect(menuService.create).toHaveBeenCalledWith(expect.objectContaining({
+            namespace: 'account-history',
+            url: '/system/account-history?tab=logs',
+            requiresAdmin: true
+        }));
+        expect(menuService.create).toHaveBeenCalledTimes(7);
         expect(hookRegistry.register).toHaveBeenCalledWith(
             'core',
             expect.objectContaining({ id: 'http.walletLinked' }),
