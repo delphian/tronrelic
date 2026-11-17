@@ -12,10 +12,12 @@
  * column name through `label` so the entry can still say what each value is
  * after the header row is hidden. An entry lays its labelled values side by
  * side, as many to a line as fit, so it stays short on a tablet; a `Td` with a
- * long value asks for more of the line through `stackSpan`.
+ * long value asks for more of the line through `stackSpan`. A `Tr` given an
+ * `onClick` also answers the keyboard, so a row that opens or expands
+ * something is not a mouse-only control.
  */
 
-import type { HTMLAttributes, TableHTMLAttributes, TdHTMLAttributes, ThHTMLAttributes } from 'react';
+import type { HTMLAttributes, KeyboardEvent, TableHTMLAttributes, TdHTMLAttributes, ThHTMLAttributes } from 'react';
 import { cn } from '../../../lib/cn';
 import { TableStackedSort, type ITableStackedSort } from './TableStackedSort';
 import styles from './Table.module.scss';
@@ -48,8 +50,11 @@ interface TableProps extends TableHTMLAttributes<HTMLTableElement> {
      */
     variant?: TableVariant;
     /**
-     * Pin the header row while the body scrolls. Bounds the wrapper height and
-     * makes it the scroll container so the header stays visible on long tables.
+     * Pin the header row while the body scrolls. Puts the table in a scroll
+     * box bounded to `--table-sticky-max-height` (70vh by default) so the
+     * header stays visible on long tables. While the rows are stacked (see
+     * `stackAt`) the header is hidden and the box lets go, so the entries
+     * scroll with the page rather than inside the box.
      * @default false
      */
     stickyHeader?: boolean;
@@ -100,7 +105,8 @@ interface TableProps extends TableHTMLAttributes<HTMLTableElement> {
  *
  * A styled table wrapper that provides consistent styling, responsive behavior
  * via container queries, and accessibility attributes. Wraps content in a
- * scrollable container for horizontal overflow handling.
+ * scrollable container for horizontal overflow handling, and a sticky table in
+ * a bounded inner scroll box as well.
  *
  * @example
  * ```tsx
@@ -124,6 +130,23 @@ interface TableProps extends TableHTMLAttributes<HTMLTableElement> {
  * @returns A styled table element with wrapper
  */
 export function Table({ variant = 'default', stickyHeader = false, flush = false, stackAt, stackedSort, className, children, ...props }: TableProps) {
+    const table = (
+        <table
+            className={cn(
+                styles.table,
+                variant === 'compact' && styles.table_compact,
+                className
+            )}
+            {...props}
+        >
+            {children}
+        </table>
+    );
+
+    // A sticky header needs a bounded scroll box to stick to. The box is an
+    // inner element rather than the wrapper, because the wrapper is the size
+    // container the stacked-row rules query, and those rules can release only
+    // what is inside it.
     return (
         <div
             className={cn(
@@ -136,16 +159,7 @@ export function Table({ variant = 'default', stickyHeader = false, flush = false
             )}
         >
             {stackAt && stackedSort && <TableStackedSort {...stackedSort} />}
-            <table
-                className={cn(
-                    styles.table,
-                    variant === 'compact' && styles.table_compact,
-                    className
-                )}
-                {...props}
-            >
-                {children}
-            </table>
+            {stickyHeader ? <div className={styles.table_scroll}>{table}</div> : table}
         </div>
     );
 }
@@ -192,8 +206,14 @@ interface TrProps extends HTMLAttributes<HTMLTableRowElement> {
      */
     hasError?: boolean;
     /**
-     * Whether this row is expandable (details row)
-     * @default false
+     * Marks the row as open, which gives it the muted background: set it on a
+     * details row, or on a clickable row whose details are showing.
+     *
+     * On a row with `onClick`, it also tells assistive technology what the
+     * click does. `true` or `false` marks the row as a toggle for details it
+     * shows or hides, and renders `aria-expanded`. Leaving it unset marks a
+     * row whose click does something else, such as opening a side panel, and
+     * renders no `aria-expanded`.
      */
     isExpanded?: boolean;
 }
@@ -203,18 +223,55 @@ interface TrProps extends HTMLAttributes<HTMLTableRowElement> {
  *
  * Table row with hover states and optional error/expanded styling.
  *
+ * A row given an `onClick` becomes a keyboard control as well, because a
+ * clickable row is otherwise reachable only by mouse. It joins the tab order,
+ * Enter or Space on the focused row runs the click, it draws a focus ring, and
+ * `isExpanded` becomes `aria-expanded`. The row keeps its native row role:
+ * `role="button"` would make every cell inside it presentational and cut the
+ * cells off from their column headers. A row whose cells already hold a
+ * button that does the same thing passes `tabIndex={-1}`, so the keyboard
+ * reaches that action once rather than twice. A `tabIndex`, `onKeyDown`, or
+ * `aria-expanded` the caller passes takes precedence.
+ *
  * @param props - Table row properties including error and expanded states
  * @returns A styled tr element
  */
-export function Tr({ hasError, isExpanded, className, children, ...props }: TrProps) {
+export function Tr({ hasError, isExpanded, className, children, onClick, onKeyDown, tabIndex, ...props }: TrProps) {
+    const isClickable = onClick !== undefined;
+
+    /**
+     * Run a clickable row's click from the keyboard, as a native button does.
+     *
+     * Only a key pressed while the row itself has focus counts. A key pressed
+     * in a control inside the row also bubbles here, and acting on it would
+     * run the row's click on top of that control's own action. The click is
+     * dispatched on the row so `onClick` receives a real click event.
+     *
+     * @param event - The key press, which runs the caller's own `onKeyDown`
+     * first so a caller that handles the key itself can cancel this one.
+     */
+    const handleKeyDown = (event: KeyboardEvent<HTMLTableRowElement>): void => {
+        onKeyDown?.(event);
+        const isActivationKey = event.key === 'Enter' || event.key === ' ';
+        if (isActivationKey && !event.defaultPrevented && !event.repeat && event.target === event.currentTarget) {
+            event.preventDefault();
+            event.currentTarget.click();
+        }
+    };
+
     return (
         <tr
             className={cn(
                 styles.tr,
+                isClickable && styles.tr_clickable,
                 hasError && styles.tr_error,
                 isExpanded && styles.tr_expanded,
                 className
             )}
+            onClick={onClick}
+            onKeyDown={isClickable ? handleKeyDown : onKeyDown}
+            tabIndex={isClickable ? (tabIndex ?? 0) : tabIndex}
+            aria-expanded={isClickable ? isExpanded : undefined}
             {...props}
         >
             {children}
@@ -227,7 +284,14 @@ export function Tr({ hasError, isExpanded, className, children, ...props }: TrPr
  */
 interface ThProps extends ThHTMLAttributes<HTMLTableCellElement> {
     /**
-     * Column width variant
+     * Column width variant. `shrink` sizes the column to its widest value on
+     * one line and gives the spare width to the other columns, for short
+     * values such as dates, status badges, and a row's action buttons. The
+     * column's body cells are kept on one line too, including content that
+     * would wrap by layout, such as a wrapping row of buttons, so leave
+     * `shrink` off a column whose text should wrap. `expand` makes the column
+     * take the remaining space. While rows are stacked, every field wraps
+     * whatever its column's width.
      */
     width?: 'auto' | 'shrink' | 'expand';
     /**
@@ -299,8 +363,10 @@ interface TdProps extends TdHTMLAttributes<HTMLTableCellElement> {
      * lines in one column. Leave it off for short values, and for a value that
      * only wraps to two lines: a wider field can push the entry's last field
      * onto a line of its own, which costs more height than the wrap did. Needs
-     * `label`, and has no effect at full width or at phone width, where every
-     * field already has its own line.
+     * `label`, and has no effect at full width. At phone width, where every
+     * field already has a line of its own, it puts the column name above the
+     * value so the value gets the whole line instead of what is left beside
+     * the name.
      */
     stackSpan?: 2 | 'full';
 }

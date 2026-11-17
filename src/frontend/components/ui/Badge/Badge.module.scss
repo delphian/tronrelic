@@ -14,6 +14,16 @@
     letter-spacing: var(--badge-letter-spacing);
     text-transform: uppercase;
     border: var(--badge-border-width) solid transparent;
+    /* A badge is a single pill sized to its label on one line. A table column
+       or flex row sized to its narrowest content would otherwise break a
+       two-word label such as "catching up" and turn the pill into a two-line
+       block; `max-content` makes the label's one-line width the least the
+       badge asks for. `max-width` lets a label longer than the space it is
+       given, such as a tool name in a narrow column on a phone, wrap inside
+       the pill instead. `white-space: nowrap` would push that label past the
+       edge of the page. */
+    width: max-content;
+    max-width: 100%;
 }
 
 /*

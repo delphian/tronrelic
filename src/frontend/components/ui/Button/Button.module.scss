@@ -20,6 +20,11 @@
     font-size: var(--button-font-size);
     font-weight: var(--button-font-weight);
     letter-spacing: var(--button-letter-spacing);
+    /* A button's label is one line. Without this, a button in a narrow space,
+       such as a table column sized to its content, breaks between its words or
+       between an icon passed as a child and the text after it, and the button
+       grows to two or three lines tall. Inherited by the label span. */
+    white-space: nowrap;
     cursor: pointer;
     transition: var(--button-transition);
 }

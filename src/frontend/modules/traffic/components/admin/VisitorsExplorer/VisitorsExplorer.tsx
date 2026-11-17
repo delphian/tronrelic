@@ -563,6 +563,10 @@ export function VisitorsExplorer({ period, customRange, includeBots }: IVisitors
                                             // orphan the cell/header relationships — so the keyboard
                                             // and screen-reader path is the disclosure button below.
                                             onClick={() => toggleExpand(row.id)}
+                                            // A clickable Tr joins the tab order by default. This one
+                                            // stays out, so the keyboard reaches the toggle once,
+                                            // through the disclosure button, rather than twice.
+                                            tabIndex={-1}
                                         >
                                             <Td className={styles.id_cell} title={row.id}>
                                                 <span className={styles.id_inner}>
