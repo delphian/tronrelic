@@ -221,8 +221,9 @@ function AssistantSegments({ segments, recordsById, onSelectRecord, pending }: {
                                             onSelectRecord(auditRecord);
                                         }}
                                         aria-label={`View the audit record for the ${segment.name || 'tool'} call`}
+                                        icon={<Info size={14} />}
                                     >
-                                        <Info size={14} /> Details
+                                        Details
                                     </Button>
                                 )}
                             </summary>

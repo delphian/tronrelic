@@ -18,9 +18,10 @@
  * group and signed-in caller links to the page that manages it (the group's
  * limits on the Tools tab, the account on /system/users).
  *
- * Each table has eight or nine columns, more than a tablet holds, so all three
- * use the shared Table's `stackAt="tablet"`: at 1024px and below each row is an
- * entry headed by its group, tool, or caller, with every figure named.
+ * Each table has eight or nine columns of short figures, which still fit the
+ * card at tablet width, so all three use the shared Table's `stackAt="mobile"`:
+ * only at 768px and below does each row become an entry headed by its group,
+ * tool, or caller, with every figure named.
  */
 
 import { useCallback, useState } from 'react';
@@ -242,7 +243,7 @@ export function McpUsagePanel({ initialUsage, groups }: IMcpUsagePanelProps) {
                             <StatTile size="sm" label="Failed" value={count(totals.failed)} tone={totals.failed > 0 ? 'danger' : 'neutral'} note="Tool ran and errored" />
                             <StatTile size="sm" label="Callers" value={count(totals.callers)} note="Accounts and anonymous networks" />
                         </StatGrid>
-                        <Table flush stackAt="tablet">
+                        <Table flush stackAt="mobile">
                             <Thead>
                                 <Tr>
                                     <Th>Group</Th>
@@ -305,7 +306,7 @@ export function McpUsagePanel({ initialUsage, groups }: IMcpUsagePanelProps) {
                     {detail.tools.length === 0 ? (
                         <p className={styles.intro}>No calls were charged to this group in the window.</p>
                     ) : (
-                        <Table flush stackAt="tablet">
+                        <Table flush stackAt="mobile">
                             <Thead>
                                 <Tr>
                                     <Th>Tool</Th>
@@ -350,7 +351,7 @@ export function McpUsagePanel({ initialUsage, groups }: IMcpUsagePanelProps) {
                     {detail.callers.length === 0 ? (
                         <p className={styles.intro}>No callers in the window.</p>
                     ) : (
-                        <Table flush stackAt="tablet">
+                        <Table flush stackAt="mobile">
                             <Thead>
                                 <Tr>
                                     <Th>Caller</Th>

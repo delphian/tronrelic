@@ -40,6 +40,8 @@ export type { IAccountDetails } from './IAccountDetails.js';
 
 export type { IConnectedApp } from './IConnectedApp.js';
 export type { IConnectedAppAdminRow } from './IConnectedAppAdminRow.js';
+export type { IConnectedAppListOptions } from './IConnectedAppListOptions.js';
+export type { IConnectedAppListPage } from './IConnectedAppListPage.js';
 export type { IConnectedAppsService } from './IConnectedAppsService.js';
 export type { IOAuthConsentContext } from './IOAuthConsentContext.js';
 

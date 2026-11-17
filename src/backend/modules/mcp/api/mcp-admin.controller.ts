@@ -35,6 +35,13 @@ import { McpUsageError, parseUsageWindow, type McpUsageService } from '../servic
 /** Largest page of connected apps one request may ask for. */
 const MAX_APPS_PAGE = 200;
 
+/**
+ * Longest connected-apps search accepted, in characters. It is the longest an
+ * email address can be (RFC 5321), so any address can be pasted whole, and
+ * it bounds the text the directory turns into a regular expression.
+ */
+const MAX_APPS_SEARCH_LENGTH = 254;
+
 /** What the overview needs to tell whether the server's description still matches the anonymous grants. */
 export interface IMcpServerDescriptionSource {
     /** The server identity the handshake and the Server Card report. */
@@ -265,15 +272,26 @@ export class McpAdminController {
 
     /**
      * `GET /apps` — connected apps across all users, newest first.
-     * Query: `limit` (1–200, default 50), `offset`.
+     * Query: `limit` (1–200, default 50), `offset`, and `search`, text to find
+     * in the user's email or name (at most 254 characters; blank lists every
+     * grant). The search is escaped before it reaches the database, so it
+     * always matches literally.
      *
-     * @param req - Carries the paging parameters.
-     * @param res - Answers with `{ apps, total }`.
+     * @param req - Carries the paging and search parameters.
+     * @param res - Answers with `{ apps, total, searchTruncated }`, or 400 for
+     *   an over-long search.
      */
     listApps = async (req: Request, res: Response): Promise<void> => {
         const limit = clampInt(req.query.limit, 50, 1, MAX_APPS_PAGE);
         const offset = clampInt(req.query.offset, 0, 0, Number.MAX_SAFE_INTEGER);
-        res.json(await this.connectedApps.listAll({ limit, offset }));
+        // A repeated `search` parameter arrives as an array; it is ignored
+        // rather than guessed at, which lists every grant.
+        const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+        if (search.length > MAX_APPS_SEARCH_LENGTH) {
+            res.status(400).json({ success: false, error: `search must be at most ${MAX_APPS_SEARCH_LENGTH} characters.` });
+        } else {
+            res.json(await this.connectedApps.listAll({ limit, offset, ...(search ? { search } : {}) }));
+        }
     };
 
     /**

@@ -1,14 +1,15 @@
-'use client';
-
 /**
  * @fileoverview Provider panel — lists the installed AI provider plugins that
  * have registered with core (`'ai-providers'`), which is active, and any
  * provider-hosted tools they report. Core-owned and provider-agnostic, so it
  * survives swapping `trp-ai-assistant` for a different provider plugin.
+ *
+ * Drawn as a core `Panel` so its heading matches the Registry sections below
+ * it, rather than a bold line written into a bare card.
  */
 
 import type { IAiProviderInfo } from '@/types';
-import { Card } from '../../../../../../../components/ui/Card';
+import { Panel } from '../../../../../../../components/ui/Panel';
 import { Badge } from '../../../../../../../components/ui/Badge';
 import { Stack } from '../../../../../../../components/layout';
 import styles from '../page.module.scss';
@@ -21,9 +22,8 @@ import styles from '../page.module.scss';
  */
 export function ProviderPanel({ providers }: { providers: IAiProviderInfo[] }) {
     return (
-        <Card padding="sm">
+        <Panel title="AI Providers">
             <Stack gap="sm">
-                <strong>AI Providers</strong>
                 {providers.length === 0
                     ? <span className="text-muted" style={{ fontSize: 'var(--font-size-body-sm)' }}>No AI provider plugin is installed — tools register but cannot be invoked until one is enabled.</span>
                     : providers.map(provider => (
@@ -44,6 +44,6 @@ export function ProviderPanel({ providers }: { providers: IAiProviderInfo[] }) {
                         </div>
                     ))}
             </Stack>
-        </Card>
+        </Panel>
     );
 }

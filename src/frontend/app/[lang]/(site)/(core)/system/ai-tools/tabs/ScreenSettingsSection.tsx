@@ -11,6 +11,11 @@
  * rejected value 400s in isolation, and the section reflects the server's full
  * effective config back into state on every save.
  *
+ * Each control sits in a core `Field`, which owns its label, its hint, and the
+ * association between them. The switch sits inline beside its label, and the
+ * dropdowns and the number field keep their own width rather than stretching
+ * across a column far wider than the values they hold.
+ *
  * Admin surface (behind `requireAdmin`), so it follows the sibling sections'
  * client-fetch pattern rather than SSR — a loading line on a user-opened section
  * is acceptable here.
@@ -24,6 +29,7 @@ import type {
     UntrustedScreenPostureMode
 } from '@/types';
 import { Stack } from '../../../../../../../components/layout';
+import { Field } from '../../../../../../../components/ui/Field';
 import { Input } from '../../../../../../../components/ui/Input';
 import { Select } from '../../../../../../../components/ui/Select';
 import { Switch } from '../../../../../../../components/ui/Switch';
@@ -92,7 +98,7 @@ export function ScreenSettingsSection() {
     return (
         <CollapsibleSection title="Screen Settings" summary={summary}>
             <Stack gap="md">
-                <p className={styles.tool_desc}>
+                <p className={styles.intro}>
                     The untrusted-content output screen inspects a tool result before it reaches the model — a
                     defense-in-depth pass against prompt injection riding in fetched content. These controls govern
                     the whole screen without a deploy.
@@ -107,79 +113,83 @@ export function ScreenSettingsSection() {
                 {!loading && config && (
                     <div className={screenStyles.controls}>
                         <div className={screenStyles.grid}>
-                        <div className={styles.policy_field}>
-                            <span className={styles.policy_field_label}>Enabled</span>
-                            <Switch
-                                on={config.enabled}
-                                onChange={next => void save({ enabled: next })}
-                                disabled={saving}
-                                aria-label={`${config.enabled ? 'Disable' : 'Enable'} the untrusted-content output screen`}
-                            />
-                            <span className={styles.policy_field_help}>
-                                Master switch. When off, the screen never runs and results flow exactly as before.
-                            </span>
-                        </div>
-
-                        <div className={styles.policy_field}>
-                            <span className={styles.policy_field_label}>Posture</span>
-                            <Select
-                                className={styles.cell_control}
-                                value={config.postureMode}
-                                onChange={e => void save({ postureMode: e.target.value as UntrustedScreenPostureMode })}
-                                disabled={saving}
-                                aria-label="Screen posture mode"
+                            <Field
+                                inline
+                                label="Enabled"
+                                hint="Master switch. When off, the screen never runs and results flow exactly as before."
                             >
-                                <option value="trifecta">Only when trifecta armed</option>
-                                <option value="always">Always</option>
-                            </Select>
-                            <span className={styles.policy_field_help}>
-                                <strong>Trifecta</strong> screens only when an external egress sink is enabled — zero
-                                cost until exfiltration is possible. <strong>Always</strong> screens every
-                                untrusted-content result.
-                            </span>
-                        </div>
+                                <Switch
+                                    on={config.enabled}
+                                    onChange={next => void save({ enabled: next })}
+                                    disabled={saving}
+                                    aria-label={`${config.enabled ? 'Disable' : 'Enable'} the untrusted-content output screen`}
+                                />
+                            </Field>
 
-                        <div className={styles.policy_field}>
-                            <span className={styles.policy_field_label}>On failure</span>
-                            <Select
-                                className={styles.cell_control}
-                                value={config.onFailure}
-                                onChange={e => void save({ onFailure: e.target.value as UntrustedScreenFailureMode })}
-                                disabled={saving}
-                                aria-label="Screen failure mode"
+                            <Field
+                                label="Posture"
+                                // One span rather than a fragment: Field lays its message out
+                                // as a column of lines, so loose text and <strong> pieces
+                                // would each take a line of their own.
+                                hint={
+                                    <span>
+                                        <strong>Trifecta</strong> screens only when an external egress sink is enabled — zero
+                                        cost until exfiltration is possible. <strong>Always</strong> screens every
+                                        untrusted-content result.
+                                    </span>
+                                }
                             >
-                                <option value="open">Fail open (forward result)</option>
-                                <option value="closed">Fail closed (withhold result)</option>
-                            </Select>
-                            <span className={styles.policy_field_help}>
-                                <strong>Fail open</strong>: if the screen can't run, forward the result anyway —
-                                defense-in-depth degrades gracefully. <strong>Fail closed</strong>: withhold it.
-                            </span>
-                        </div>
+                                <Select
+                                    className={screenStyles.intrinsic}
+                                    value={config.postureMode}
+                                    onChange={e => void save({ postureMode: e.target.value as UntrustedScreenPostureMode })}
+                                    disabled={saving}
+                                >
+                                    <option value="trifecta">Only when trifecta armed</option>
+                                    <option value="always">Always</option>
+                                </Select>
+                            </Field>
 
-                        <div className={styles.policy_field}>
-                            <span className={styles.policy_field_label}>Offender threshold</span>
-                            <Input
-                                className={styles.cell_control}
-                                type="number"
-                                min={0}
-                                step={1}
-                                value={config.offenderThreshold}
-                                onChange={e => setConfig(current => current && { ...current, offenderThreshold: Number(e.target.value) || 0 })}
-                                onBlur={e => {
-                                    // Persist on every blur: onChange has already written the
-                                    // typed value into `config`, so a draft-vs-config comparison
-                                    // here is always false and would silently drop the save.
-                                    void save({ offenderThreshold: Math.max(0, Math.trunc(Number(e.target.value) || 0)) });
-                                }}
-                                disabled={saving}
-                                aria-label="Offender throttle threshold"
-                            />
-                            <span className={styles.policy_field_help}>
-                                Flagged results from one tool within a window before it's throttled. 0 disables
-                                throttling.
-                            </span>
-                        </div>
+                            <Field
+                                label="On failure"
+                                hint={
+                                    <span>
+                                        <strong>Fail open</strong>: if the screen can&apos;t run, forward the result anyway —
+                                        defense-in-depth degrades gracefully. <strong>Fail closed</strong>: withhold it.
+                                    </span>
+                                }
+                            >
+                                <Select
+                                    className={screenStyles.intrinsic}
+                                    value={config.onFailure}
+                                    onChange={e => void save({ onFailure: e.target.value as UntrustedScreenFailureMode })}
+                                    disabled={saving}
+                                >
+                                    <option value="open">Fail open (forward result)</option>
+                                    <option value="closed">Fail closed (withhold result)</option>
+                                </Select>
+                            </Field>
+
+                            <Field
+                                label="Offender threshold"
+                                hint="Flagged results from one tool within a window before it's throttled. 0 disables throttling."
+                            >
+                                <Input
+                                    className={screenStyles.number_input}
+                                    type="number"
+                                    min={0}
+                                    step={1}
+                                    value={config.offenderThreshold}
+                                    onChange={e => setConfig(current => current && { ...current, offenderThreshold: Number(e.target.value) || 0 })}
+                                    onBlur={e => {
+                                        // Persist on every blur: onChange has already written the
+                                        // typed value into `config`, so a draft-vs-config comparison
+                                        // here is always false and would silently drop the save.
+                                        void save({ offenderThreshold: Math.max(0, Math.trunc(Number(e.target.value) || 0)) });
+                                    }}
+                                    disabled={saving}
+                                />
+                            </Field>
                         </div>
                     </div>
                 )}

@@ -82,6 +82,7 @@ describe('ConnectedAppsService', () => {
     let updateOne: ReturnType<typeof usageCollectionOver>['updateOne'];
     let service: ConnectedAppsService;
     let recordSeen: ReturnType<typeof vi.fn<(userId: string) => void>>;
+    let accounts: { getAccountsByIds: ReturnType<typeof vi.fn>; listAccounts: ReturnType<typeof vi.fn> };
 
     beforeEach(() => {
         (ConnectedAppsService as unknown as { instance?: ConnectedAppsService }).instance = undefined;
@@ -95,9 +96,12 @@ describe('ConnectedAppsService', () => {
         const usage = usageCollectionOver(usageRows);
         updateOne = usage.updateOne;
         const database = { getCollection: () => usage.collection } as any;
-        const accounts = { getAccountsByIds: vi.fn(async () => [{ id: 'u1', email: 'u1@example.com' }]) } as any;
+        accounts = {
+            getAccountsByIds: vi.fn(async () => [{ id: 'u1', email: 'u1@example.com' }]),
+            listAccounts: vi.fn(async () => ({ accounts: [], total: 0 }))
+        };
         recordSeen = vi.fn<(userId: string) => void>();
-        ConnectedAppsService.setDependencies(async () => adapterOver(store), database, accounts, logger, { recordSeen });
+        ConnectedAppsService.setDependencies(async () => adapterOver(store), database, accounts as any, logger, { recordSeen });
         service = ConnectedAppsService.getInstance();
     });
 
@@ -200,6 +204,66 @@ describe('ConnectedAppsService', () => {
     it('adds the user\'s email on the admin list', async () => {
         const page = await service.listAll({ limit: 10, offset: 0 });
         expect(page.total).toBe(1);
+        expect(page.searchTruncated).toBe(false);
         expect(page.apps[0]).toMatchObject({ userId: 'u1', userEmail: 'u1@example.com', clientName: 'Claude' });
+        expect(accounts.listAccounts).not.toHaveBeenCalled();
+    });
+
+    it('treats blank search text as no search', async () => {
+        const page = await service.listAll({ limit: 10, offset: 0, search: '   ' });
+        expect(page.total).toBe(1);
+        expect(accounts.listAccounts).not.toHaveBeenCalled();
+    });
+
+    describe('searching the admin list', () => {
+        beforeEach(() => {
+            store.oauthConsent.push(
+                { id: 'c2', userId: 'u2', clientId: 'https://claude.ai/meta', scopes: ['mcp:tools', 'offline_access'], createdAt: new Date('2026-09-03T00:00:00Z') },
+                { id: 'c3', userId: 'u3', clientId: 'https://claude.ai/meta', scopes: ['mcp:tools', 'offline_access'], createdAt: new Date('2026-09-02T00:00:00Z') }
+            );
+        });
+
+        it('lists only the grants of the accounts the directory matched, labelled from the search', async () => {
+            accounts.listAccounts.mockResolvedValueOnce({ accounts: [{ id: 'u2', email: 'alice@example.com' }], total: 1 });
+
+            const page = await service.listAll({ limit: 10, offset: 0, search: '  alice ' });
+
+            expect(accounts.listAccounts).toHaveBeenCalledWith(expect.objectContaining({ search: 'alice', sortBy: 'lastSeenAt', sortDirection: 'desc' }));
+            expect(page.total).toBe(1);
+            expect(page.apps).toEqual([expect.objectContaining({ userId: 'u2', userEmail: 'alice@example.com' })]);
+            expect(page.searchTruncated).toBe(false);
+            // The search already named the accounts, so no second directory read.
+            expect(accounts.getAccountsByIds).not.toHaveBeenCalled();
+        });
+
+        it('pages within the matched grants', async () => {
+            accounts.listAccounts.mockResolvedValueOnce({ accounts: [{ id: 'u1', email: 'u1@example.com' }, { id: 'u3', email: 'u3@example.com' }], total: 2 });
+
+            const page = await service.listAll({ limit: 1, offset: 1, search: 'example' });
+
+            expect(page.total).toBe(2);
+            expect(page.apps).toHaveLength(1);
+        });
+
+        it('answers an empty page without reading the grants when no account matches', async () => {
+            const getAdapter = vi.fn(async () => adapterOver(store));
+            (ConnectedAppsService as unknown as { instance?: ConnectedAppsService }).instance = undefined;
+            const database = { getCollection: () => usageCollectionOver([]).collection } as any;
+            ConnectedAppsService.setDependencies(getAdapter, database, accounts as any, logger, { recordSeen });
+
+            const page = await ConnectedAppsService.getInstance().listAll({ limit: 10, offset: 0, search: 'nobody' });
+
+            expect(page).toEqual({ apps: [], total: 0, searchTruncated: false });
+            expect(getAdapter).not.toHaveBeenCalled();
+        });
+
+        it('says so when more accounts matched than one search reads', async () => {
+            accounts.listAccounts.mockResolvedValueOnce({ accounts: [{ id: 'u2', email: 'a@example.com' }], total: 450 });
+
+            const page = await service.listAll({ limit: 10, offset: 0, search: 'example' });
+
+            expect(page.searchTruncated).toBe(true);
+            expect(page.apps).toHaveLength(1);
+        });
     });
 });

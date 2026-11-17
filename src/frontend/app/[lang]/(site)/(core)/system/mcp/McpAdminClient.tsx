@@ -3,10 +3,13 @@
 /**
  * @fileoverview Client shell for /system/mcp.
  *
- * The master kill switch sits above the tab row, so it is on screen whatever
- * tab is open: an operator responding to an incident never has to find the
- * right tab first. Below it, the tab row is the menu module's Submenu Pattern
- * (a namespaced menu rendered with `MenuNavClient`), and the panels are:
+ * The master kill switch is on screen whatever tab is open, so an operator
+ * responding to an incident never has to find the right tab first. While the
+ * endpoint is on it is a status badge and a "Turn off MCP" button beside the
+ * page title; while it is off, or its state cannot be read, it is a banner
+ * above the tab row, because those are the states that need attention. The
+ * tab row is the menu module's Submenu Pattern (a namespaced menu rendered
+ * with `MenuNavClient`), and the panels are:
  *
  * - Overview: both connection URLs, headline counts, and the usage view
  *   (totals by group, then by tool and caller, then individual calls).
@@ -27,7 +30,7 @@ import { MenuNavClient } from '../../../../../../components/layout/MenuNav/MenuN
 import { ClickHouseTableBrowser, CollectionBrowser } from '../../../../../../modules/database';
 import { SystemLogsMonitor } from '../../../../../../modules/logs';
 import { ActivityTab } from '../ai-tools/tabs/ActivityTab';
-import { KillSwitchCard } from './KillSwitchCard';
+import { KillSwitch } from './KillSwitch';
 import { OverviewTab } from './OverviewTab';
 import { ToolsTab } from './ToolsTab';
 import { AppsTab } from './AppsTab';
@@ -122,8 +125,9 @@ export function McpAdminClient({
 
     /**
      * Fold a tool change into the overview counts and the description check
-     * without a round trip, so the served and stale counts beside the kill
-     * switch, and the warning that the server description no longer matches
+     * without a round trip, so the served and stale counts on the overview,
+     * the count the turn-on confirmation names, and the warning that the
+     * server description no longer matches
      * the Anonymous grants, stay accurate. The check uses the same shared rule
      * the backend reports with, so the two cannot disagree.
      */
@@ -152,12 +156,15 @@ export function McpAdminClient({
         setStatus(current => current ? { ...current, settings } : current);
     }, []);
 
+    const endpointOn = status?.settings.enabled === true;
+
     return (
         <AdminPage
             title="MCP"
-            subtitle="Let members of the mcp-users group connect their own AI client to TronRelic and call the tools you grant to their user groups, and let anyone call the tools you grant to Anonymous without signing in."
+            subtitle="Choose which tools AI clients may call over MCP: anyone without signing in, or the members of each user group."
+            actions={endpointOn ? <KillSwitch status={status} onSettingsChange={handleSettingsChanged} compact /> : undefined}
         >
-            <KillSwitchCard status={status} onSettingsChange={handleSettingsChanged} />
+            {!endpointOn && <KillSwitch status={status} onSettingsChange={handleSettingsChanged} />}
 
             <MenuNavClient
                 namespace={SUBMENU_NAMESPACE}

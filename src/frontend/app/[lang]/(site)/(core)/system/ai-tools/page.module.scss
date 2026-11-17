@@ -6,35 +6,12 @@
 
 @use '../../../../../breakpoints' as *;
 
-/* Accessible-name-only page heading, so the document has an <h1> without a
- * visible title. The standard screen-reader-only pattern, kept scoped to this
- * page as /system/curation and the widgets admin keep their own copies. */
-.sr_only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
-}
-
-/* Summary strip above the tab row: carries the live pending-approval tally a
- * menu node cannot. Mirrors the account-history summary row. */
-.summary {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--gap-sm);
-}
-
 /* Active tab panel. Declares the `ai-tools-dashboard` container so the tables it
  * hosts (Activity feed, invocation table) can reflow their columns to the panel's
  * own width via `@container` — correct inside the slideout/modal contexts this
- * dashboard renders in. Spacing above it comes from the Section that groups it
- * with the tab row, so it carries no margin of its own. */
+ * dashboard renders in. Spacing above it comes from the AdminPage shell, which
+ * holds the header, the tab row, and this panel one stack gap apart, so it
+ * carries no margin of its own. */
 .content {
     display: flex;
     flex-direction: column;
@@ -49,8 +26,19 @@
     color: var(--color-text);
 }
 
+/* A description under a name inside a table cell. No width cap: the column
+ * already bounds it, and a cap left half of a wide column empty while the
+ * text wrapped onto a second line. */
 .tool_desc {
     margin-top: var(--gap-2xs);
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+}
+
+/* An explanatory paragraph that opens a Registry section. It stands on its
+ * own rather than in a column, so it keeps a readable line length. */
+.intro {
+    margin: 0;
     font-size: var(--font-size-body-sm);
     color: var(--color-text-muted);
     max-width: var(--max-width-prose);
@@ -74,7 +62,12 @@
 /* A control that stands in for one living in a table's header row, shown only
  * while that table is stacked on a phone and its header is hidden — such as
  * the Approvals select-all. The threshold matches the table's
- * `stackAt="mobile"`, and the panel and the table are the same width. */
+ * `stackAt="mobile"`, and the panel and the table are the same width.
+ *
+ * Put this class on a wrapper of its own. On an element that also carries a
+ * class setting `display`, such as `.check_label`, the two rules have equal
+ * specificity and the later one in this file wins, which showed the stand-in
+ * on desktop beside the header checkbox it replaces. */
 .stacked_only {
     display: none;
 }
@@ -225,45 +218,35 @@
     flex-wrap: wrap;
 }
 
-/* Collapsible Registry section (Tools / Variables): bordered surface whose
- * header is the toggle and whose body renders only while expanded. */
-.section {
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
-    background: var(--color-surface);
-    overflow: hidden;
-}
-
-.section_header {
-    display: flex;
+/* The disclosure button inside a collapsible Registry section's Panel heading.
+ * It takes the heading's own type, so the title reads the same open or
+ * closed, and the chevron sits on the same line as the words it opens. */
+.section_toggle {
+    display: inline-flex;
     align-items: center;
-    gap: var(--gap-sm);
-    width: 100%;
-    padding: var(--gap-sm) var(--gap-md);
+    gap: var(--gap-xs);
+    padding: 0;
     background: none;
     border: none;
-    cursor: pointer;
-    color: var(--color-text);
+    font: inherit;
+    color: inherit;
     text-align: left;
+    cursor: pointer;
 }
 
-.section_header:hover {
-    background: var(--color-surface-muted);
+.section_toggle:hover {
+    color: var(--color-primary);
 }
 
-.section_title {
-    font-weight: var(--font-weight-semibold);
-    font-size: var(--font-size-body-lg);
-}
-
-.section_summary {
-    margin-left: auto;
-    font-size: var(--font-size-body-sm);
+.section_toggle svg {
+    flex-shrink: 0;
     color: var(--color-text-muted);
 }
 
+/* An inline create or edit form inside a Registry section, set off from the
+ * content around it by a rule above rather than by a box of its own. */
 .section_body {
-    padding: var(--gap-md);
+    padding-top: var(--padding-md);
     border-top: var(--border-width-thin) solid var(--color-border);
 }
 
@@ -378,9 +361,11 @@
 }
 
 /* Slight indent on a tool row's leading cell so its tools nest visually under the
- * provider header above them. */
-.tool_indent {
-    padding-left: var(--gap-xl);
+ * provider header above them. Set as a margin on the cell's content rather than
+ * as cell padding, because the compact table's own cell padding rule is more
+ * specific than this class and would cancel it. */
+.tool_indent > * {
+    margin-left: var(--gap-md);
 }
 
 /* Tool name rendered as a bare button so it is keyboard-focusable and opens the
@@ -437,15 +422,35 @@
 
 /* One-line description teaser: clamp to a single line with an ellipsis so a long
  * model-facing description never blows the row height — the full text lives in
- * the slide-over. */
+ * the slide-over.
+ *
+ * The ellipsis falls at the column's own edge. `width: 0` stops the unbroken
+ * line from counting toward the table's narrowest width, which would otherwise
+ * push the table wider than its card, and `min-width: 100%` then stretches the
+ * teaser across whatever width the column was given. A fixed character cap did
+ * the first job but left half of a wide Description column empty. */
 .tool_teaser {
     display: block;
-    max-width: 52ch;
+    width: 0;
+    min-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: var(--font-size-body-sm);
     color: var(--color-text-muted);
+}
+
+/* Once the Registry table stacks its rows (its `stackAt="mobile"` step, which
+ * queries the Table component's own `table` container at the same width), the
+ * teaser's cell is a flex item sized by its content, and a zero-width teaser
+ * would leave it nothing. Its natural width moves the cell onto a line of its
+ * own, where the stacked cell's `max-width: 100%` caps it and the ellipsis
+ * falls at the entry's edge. */
+@container table (max-width: #{$breakpoint-mobile-lg}) {
+    .tool_teaser {
+        width: auto;
+        min-width: 0;
+    }
 }
 
 /* Provider dropdown in the filter bar: the leading control that scopes the tool

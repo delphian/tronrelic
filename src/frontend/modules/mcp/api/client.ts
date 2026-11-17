@@ -7,7 +7,7 @@
  */
 
 import type {
-    IConnectedAppAdminRow,
+    IConnectedAppListPage,
     IMcpGroupPolicy,
     IMcpGroupPolicyPatch,
     IMcpSettings,
@@ -21,11 +21,12 @@ import type {
 const BASE = '/api/admin/mcp';
 
 /**
- * Connected apps fetched per page on the admin page, both during server
- * rendering and for each "Show more" click. Matches the backend's largest
- * allowed page, so the fewest round trips reach every grant.
+ * Connected apps shown per page on the admin page, both during server
+ * rendering and for each page or search after it. Small enough that a page
+ * fits a few screens at phone width, where every grant is a stacked entry;
+ * an admin looking for one person's apps searches by email instead of paging.
  */
-export const MCP_APPS_PAGE_SIZE = 200;
+export const MCP_APPS_PAGE_SIZE = 25;
 
 /**
  * Unwrap a response or raise its error message.
@@ -143,14 +144,20 @@ export async function getMcpUsageGroupDetail(groupId: string, window: McpUsageWi
 }
 
 /**
- * List connected apps across all users.
+ * List connected apps across all users, one page at a time.
  *
  * @param limit - Page size.
  * @param offset - Rows to skip.
- * @returns One page of grants and the total.
+ * @param search - Text to find in the user's email or name; blank lists every grant.
+ * @returns One page of grants, the total for the pager, and whether a broad
+ *   search covered only some of the accounts it matched.
  */
-export async function listMcpApps(limit: number, offset: number): Promise<{ apps: IConnectedAppAdminRow[]; total: number }> {
-    return parse(await fetch(`${BASE}/apps?limit=${limit}&offset=${offset}`, { cache: 'no-store' }), 'load connected apps');
+export async function listMcpApps(limit: number, offset: number, search = ''): Promise<IConnectedAppListPage> {
+    const query = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    if (search.trim()) {
+        query.set('search', search.trim());
+    }
+    return parse(await fetch(`${BASE}/apps?${query.toString()}`, { cache: 'no-store' }), 'load connected apps');
 }
 
 /**

@@ -206,22 +206,6 @@ export function ConversationRail({
                                             <span className={styles.row_meta}>
                                                 <ClientTime date={group.lastAt} format="time" />
                                                 <span>· {group.turns} turn{group.turns === 1 ? '' : 's'}</span>
-                                                {/* Every badge in this row takes the dense step. The rail is
-                                                    17rem wide and each row already carries a time, a turn
-                                                    count and a cost, so a full-size pill pushed the rest of
-                                                    the line onto a wrap. */}
-                                                {group.mode === 'scheduled' && <Badge tone="info" size="sm">Scheduled</Badge>}
-                                                {group.status === 'failed' && (
-                                                    // The reason rides along as a tooltip so the common
-                                                    // case — reading why last night's scheduled run died —
-                                                    // costs a hover rather than an open.
-                                                    <Badge tone="danger" size="sm" title={group.errorMessage ?? undefined}>Failed</Badge>
-                                                )}
-                                                {group.status === 'incomplete' && (
-                                                    <Badge tone="warning" size="sm" title={group.errorMessage ?? undefined}>
-                                                        {INCOMPLETE_OUTCOME_LABELS[group.outcome ?? 'empty'] ?? 'No answer'}
-                                                    </Badge>
-                                                )}
                                                 <span
                                                     className={styles.row_cost}
                                                     title="Estimated cost across this conversation's loaded turns, at the provider's per-model rates."
@@ -229,6 +213,27 @@ export function ConversationRail({
                                                     {formatUsd(group.costUsd)}
                                                 </span>
                                             </span>
+                                            {/* The badges take a line of their own, under the time,
+                                                turns, and cost, which then always share one line. The
+                                                rail is 17rem wide, and mixed into that line two
+                                                badges wrapped it into three and left the cost alone
+                                                on the last. Every badge takes the smallest step. */}
+                                            {(group.mode === 'scheduled' || group.status === 'failed' || group.status === 'incomplete') && (
+                                                <span className={styles.row_flags}>
+                                                    {group.mode === 'scheduled' && <Badge tone="info" size="xs">Scheduled</Badge>}
+                                                    {group.status === 'failed' && (
+                                                        // The reason rides along as a tooltip so the common
+                                                        // case — reading why last night's scheduled run died —
+                                                        // costs a hover rather than an open.
+                                                        <Badge tone="danger" size="xs" title={group.errorMessage ?? undefined}>Failed</Badge>
+                                                    )}
+                                                    {group.status === 'incomplete' && (
+                                                        <Badge tone="warning" size="xs" title={group.errorMessage ?? undefined}>
+                                                            {INCOMPLETE_OUTCOME_LABELS[group.outcome ?? 'empty'] ?? 'No answer'}
+                                                        </Badge>
+                                                    )}
+                                                </span>
+                                            )}
                                         </button>
                                         <ConversationCopyMenu
                                             className={styles.row_copy}

@@ -1,9 +1,9 @@
 /**
- * Styles for the Screen Settings section of the Registry tab. The shared
- * page.module.scss already supplies the field/label/help tokens this section
- * reuses; this module only owns the section-local responsive grid so the four
- * controls reflow to the section's own width (it renders inside the dashboard's
- * slideout/modal contexts), not the viewport.
+ * Styles for the Screen Settings section of the Registry tab. The labels and
+ * hints come from the core Field component; this module owns the section-local
+ * responsive grid, so the four controls reflow to the section's own width (it
+ * renders inside the dashboard's slideout/modal contexts) rather than the
+ * viewport, and the widths of the controls inside it.
  */
 
 @use '../../../../../../breakpoints' as *;
@@ -12,8 +12,14 @@
  * container query (not a media query) so the layout answers to the section's
  * width — correct inside the constrained slideout/modal contexts this dashboard
  * renders in — and the container-type lives on a separate element from the grid
- * it sizes, since an element cannot query its own width. */
+ * it sizes, since an element cannot query its own width.
+ *
+ * --screen-number-input-width is a section-scoped sizing token, defined here
+ * rather than in core semantic-tokens.scss because only this field uses it:
+ * room for a threshold of a few digits and the browser's step arrows. */
 .controls {
+    --screen-number-input-width: 8rem;
+
     container-type: inline-size;
     container-name: screen-settings;
 }
@@ -30,4 +36,21 @@
     .grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+}
+
+/* A dropdown at the width of its longest option. Field stretches its control
+ * across the field, which drew each of these about 650px wide for a choice of
+ * two short phrases. Leaving the cross-axis alignment to the item keeps that
+ * decision here without changing Field. */
+.intrinsic {
+    align-self: flex-start;
+}
+
+/* The offender threshold holds a number of a few digits, so it takes a narrow
+ * fixed width instead of the full column. Two classes, so it wins over the
+ * Input component's own full-width rule whatever order the two stylesheets
+ * load in. */
+.controls .number_input {
+    align-self: flex-start;
+    width: var(--screen-number-input-width);
 }

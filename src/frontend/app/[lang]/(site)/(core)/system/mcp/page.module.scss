@@ -71,6 +71,18 @@
     }
 }
 
+/* The switch's form beside the page title while the endpoint is on: the
+   state badge and the off button, pushed to the end of the title row so the
+   button sits where page actions are looked for. The row wraps under the
+   title when the header is too narrow for both. */
+.kill_switch_compact {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-sm);
+    margin-inline-start: auto;
+}
+
 /* ---------------------------------------------------------------------------
  * Overview
  * ------------------------------------------------------------------------- */
@@ -126,21 +138,82 @@
 }
 
 /* ---------------------------------------------------------------------------
- * Group selector and protections card
+ * Tools tab filters: the group picker, the tool search, and the status filter
  * ------------------------------------------------------------------------- */
 
-/* The selector names a group, so it only needs to be as wide as a group name,
-   not the whole panel the Field would otherwise stretch it to. */
-.group_picker {
-    max-width: var(--max-width-xs);
+/* One row that wraps, each control on a line of its own at phone width. The
+   fields line up on their controls' bottom edge, so labels of different
+   lengths do not stagger the controls. */
+.tool_filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--gap-sm-md);
 }
 
-/* One setting: the switch beside its name and explanation. The text column
-   may shrink, so a long explanation wraps instead of pushing the switch off. */
-.policy_row {
+/* The picker and the status filter are as wide as their longest option, so a
+   group name is never cut and no box spans space it does not use. */
+.tool_filter_group,
+.tool_filter_status {
+    flex: 0 1 auto;
+}
+
+/* The search takes the room the other two leave, up to a width that still
+   reads as a search box rather than a form-wide field. */
+.tool_filter_search {
+    flex: 1 1 var(--max-width-xs);
+    max-width: var(--max-width-sm);
+}
+
+/* ---------------------------------------------------------------------------
+ * Protections card
+ *
+ * The host is a size container so the columns follow the card's width. Wide
+ * enough, the switches take one column and the limits and the address list the
+ * other, so the card is about half as tall as a single column. The limit fields
+ * have a container of their own, so they sit three across only when their
+ * column can hold that.
+ * ------------------------------------------------------------------------- */
+.policy_layout {
+    container-type: inline-size;
+    container-name: mcp-policy;
+}
+
+.policy_columns {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--gap-lg);
+}
+
+@container mcp-policy (min-width: #{$breakpoint-mobile-lg}) {
+    .policy_columns {
+        grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+    }
+}
+
+.limit_layout {
+    container-type: inline-size;
+    container-name: mcp-limits;
+}
+
+.limit_fields {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--grid-gap-sm);
+}
+
+@container mcp-limits (min-width: #{$breakpoint-mobile-md}) {
+    .limit_fields {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+/* The folded address list: what is saved, and the button that opens it. */
+.address_summary {
     display: flex;
+    flex-wrap: wrap;
+    align-items: center;
     gap: var(--gap-sm);
-    align-items: flex-start;
 }
 
 .policy_text {
@@ -166,14 +239,28 @@
 /* ---------------------------------------------------------------------------
  * Tools
  * ------------------------------------------------------------------------- */
+/* `break-word` rather than `anywhere`: both break a name too long for its
+   cell, but `anywhere` also lets the table measure the cell as one letter
+   wide, so a crowded table squeezed the Tool column until every name broke
+   mid-word. With `break-word` a name breaks after its hyphens first. */
 .tool_name {
     font-family: var(--font-mono);
     font-size: var(--font-size-body-sm);
     color: var(--color-text);
-    overflow-wrap: anywhere;
+    overflow-wrap: break-word;
 }
 
 .tool_meta {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+/* Why a tool cannot be granted to the managed group, under its name. The
+   Status column holds one badge on one line, so the sentence lives here, in
+   the column that has room for it. It is left uncapped so the table widens
+   the Tool column for it and the sentence takes one or two lines, not five. */
+.tool_note {
+    margin-top: var(--gap-2xs);
     font-size: var(--font-size-caption);
     color: var(--color-text-muted);
 }
@@ -208,6 +295,30 @@
 .related_link:hover {
     color: var(--color-secondary);
     text-decoration: underline;
+}
+
+/* ---------------------------------------------------------------------------
+ * Connected apps
+ * ------------------------------------------------------------------------- */
+
+/* The search in the panel header. `100cqi` is the panel's own width, so on a
+   phone the box narrows to fit the card instead of running past its edge. */
+.apps_search {
+    width: min(var(--max-width-xs), 100cqi);
+}
+
+/* The line under the list: which rows are shown, and the pager. */
+.apps_footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap-sm);
+}
+
+.apps_range {
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
 }
 
 /* The tools and usage tables stack through the shared Table's `stackAt`, so

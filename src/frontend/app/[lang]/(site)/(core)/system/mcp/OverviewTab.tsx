@@ -9,6 +9,7 @@ import type { IMcpGroup, IMcpStatus, IMcpUsageReport } from '@/types';
 import { Card } from '../../../../../../components/ui/Card';
 import { Stack } from '../../../../../../components/layout';
 import { StatGrid, StatTile } from '../../../../../../components/ui/StatTile';
+import { ClientTime } from '../../../../../../components/ui/ClientTime';
 import { CopyButton } from '../../../../../../components/ui/CopyButton';
 import { McpUsagePanel } from './McpUsagePanel';
 import styles from './page.module.scss';
@@ -76,6 +77,16 @@ export function OverviewTab({ status, initialUsage, groups }: IOverviewTabProps)
                         <CopyButton value={status.publicUrl} size="sm" variant="ghost" label="Copy anonymous-only URL" />
                     </div>
                     <dl className={styles.facts}>
+                        {/* The header shows only the switch's state, so when it
+                            last changed is kept here. */}
+                        <dt>Endpoint</dt>
+                        <dd>
+                            {status.settings.enabled ? 'On' : 'Off'}
+                            {status.settings.updatedAt && <>, last switched <ClientTime date={status.settings.updatedAt} format="datetime" /></>}.
+                            {' '}{status.settings.enabled
+                                ? 'Turning it off, beside the page title, refuses every request to /mcp and /mcp/public at once'
+                                : 'Every request to /mcp and /mcp/public is refused until it is turned on'}
+                        </dd>
                         <dt>Who can connect</dt>
                         <dd>
                             Anyone. Every account joins <code>{status.groupId}</code> automatically, and accounts are managed on{' '}

@@ -95,21 +95,21 @@ export function ApprovalDetailPanel({ approval, busy, onApprove, onReject }: {
             <div className={styles.detail_actions}>
                 <Button
                     variant="primary"
-                    size="md"
                     loading={busy}
                     onClick={() => onApprove(approval)}
                     aria-label={`Approve ${approval.toolName}`}
+                    icon={<Check size={18} />}
                 >
-                    <Check size={18} /> Approve
+                    Approve
                 </Button>
                 <Button
                     variant="danger"
-                    size="md"
                     disabled={busy}
                     onClick={() => onReject(approval)}
                     aria-label={`Reject ${approval.toolName}`}
+                    icon={<X size={18} />}
                 >
-                    <X size={18} /> Reject
+                    Reject
                 </Button>
             </div>
         </div>

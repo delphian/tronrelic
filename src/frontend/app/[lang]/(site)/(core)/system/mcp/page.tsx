@@ -12,7 +12,7 @@
 
 import { cookies } from 'next/headers';
 import type { MenuNodeSerialized } from '@/shared';
-import type { IConnectedAppAdminRow, IMcpGroup, IMcpStatus, IMcpToolExposure, IMcpUsageReport } from '@/types';
+import type { IConnectedAppListPage, IMcpGroup, IMcpStatus, IMcpToolExposure, IMcpUsageReport } from '@/types';
 import { getServerSideApiUrl } from '../../../../../../lib/api-url';
 import { MCP_APPS_PAGE_SIZE } from '../../../../../../modules/mcp';
 import { McpAdminClient } from './McpAdminClient';
@@ -62,7 +62,7 @@ export default async function McpAdminPage({
         fetchAdminJson<{ usage: IMcpUsageReport }>('/api/admin/mcp/usage?window=24h'),
         fetchAdminJson<{ tools: IMcpToolExposure[] }>('/api/admin/mcp/tools'),
         fetchAdminJson<{ groups: IMcpGroup[] }>('/api/admin/mcp/groups'),
-        fetchAdminJson<{ apps: IConnectedAppAdminRow[]; total: number }>(`/api/admin/mcp/apps?limit=${MCP_APPS_PAGE_SIZE}&offset=0`),
+        fetchAdminJson<IConnectedAppListPage>(`/api/admin/mcp/apps?limit=${MCP_APPS_PAGE_SIZE}&offset=0`),
         searchParams
     ]);
 
