@@ -25,7 +25,15 @@
  * drives local state (e.g. a `?tab=` query param) instead of route navigation,
  * and `activeUrl` overrides pathname-based highlighting because the route does
  * not change between tabs. Both default to undefined, leaving existing
- * navigation consumers untouched.
+ * navigation consumers untouched. Either prop also marks the nav as a tab row,
+ * which makes it a size container: its tabs no longer widen the page around
+ * it, and below 480px they take compact padding and hide their icons.
+ *
+ * The item that renders as active is handed to PriorityNav, which keeps it in
+ * the row when the row folds rather than hiding it in "More". A tab row also
+ * hands over its label, which the "More" button shows if the active tab still
+ * ends up inside it. The header menu does not, because its "More" button sits
+ * beside the logo and sign-in button and has to stay icon-sized.
  *
  * Every label, and every accessible name built from one, renders through the
  * localization module's `t()`, so a menu on a translated page shows the labels
@@ -330,6 +338,53 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel, onItem
     const submenuPanelLabel = (label: string): string => t('menu.nav.submenu', '{label} submenu', { label });
 
     /**
+     * Decide whether a link item is the page or tab being shown, so it is
+     * highlighted and kept visible when the row folds.
+     *
+     * When the caller supplies `activeUrl` (in-page tab mode) the active item
+     * is the one whose url matches it exactly — the route does not change
+     * between tabs, so pathname matching cannot tell them apart. Without it,
+     * the item is active when the pathname starts with its address; the home
+     * item `/` must match exactly, because every pathname starts with `/`.
+     * The stored url is unprefixed, and on a translated page the link and the
+     * pathname both carry the language prefix when the target is live in
+     * that language, so the comparison uses the localized link.
+     *
+     * @param item - The link item being rendered
+     * @returns True when the item should render as active
+     */
+    const isLinkActive = (item: MenuNodeSerialized): boolean => {
+        let isActive = false;
+        if (activeUrl !== undefined) {
+            isActive = item.url === activeUrl;
+        } else if (item.url) {
+            const href = localizeHref(item.url);
+            isActive = item.url === '/' ? pathname === href : pathname.startsWith(href);
+        }
+        return isActive;
+    };
+
+    /**
+     * Decide whether a category (an item with children) is the section being
+     * shown. A category matches its own address or anything beneath it, but
+     * not an address that only shares its first characters, such as
+     * `/tools-old` for `/tools`.
+     *
+     * @param item - The category item being rendered
+     * @returns True when the category should render as active
+     */
+    const isCategoryActive = (item: MenuNodeSerialized): boolean => {
+        let isActive = false;
+        if (item.url) {
+            const href = localizeHref(item.url);
+            isActive = item.url === '/'
+                ? pathname === href
+                : pathname === href || pathname.startsWith(`${href}/`);
+        }
+        return isActive;
+    };
+
+    /**
      * Renders a link menu item.
      *
      * For nested links (inside category dropdowns), dispatches a mousedown event
@@ -338,20 +393,8 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel, onItem
      * that overflowed into the "More" menu.
      */
     const renderLinkItem = (item: MenuNodeSerialized, isNested = false): JSX.Element => {
-        // The stored url is unprefixed; on a translated page the link and the
-        // pathname both carry the language prefix when the target is live in
-        // that language, so highlighting compares against the localized link.
         const href = item.url ? localizeHref(item.url) : item.url!;
-
-        // When the caller supplies `activeUrl` (in-page tab mode) the active
-        // item is the one whose url matches it exactly — the route does not
-        // change between tabs, so pathname matching cannot tell them apart.
-        // Without it, fall back to pathname matching for navigation links.
-        const isActive = activeUrl !== undefined
-            ? item.url === activeUrl
-            : item.url === '/'
-                ? pathname === href
-                : !!item.url && pathname.startsWith(href);
+        const isActive = isLinkActive(item);
 
         // Nested rows (inside category dropdowns) are vertical-list items
         // where icon-top and label-hiding both degrade readability. Force
@@ -371,8 +414,9 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel, onItem
             iconStackTop ? styles['tab--iconTop'] : ''
         ].filter(Boolean).join(' ');
 
+        // `tab_icon` lets a narrow tab row hide the icon and keep the label.
         const icon = rowIconEnabled
-            ? <MenuNodeIcon name={item.icon!} size={16} />
+            ? <MenuNodeIcon name={item.icon!} size={16} className={styles.tab_icon} />
             : null;
         const labelText = labelOf(item);
         const label = rowShowLabels
@@ -422,10 +466,7 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel, onItem
      */
     const renderCategoryToggle = (item: MenuNodeSerialized): JSX.Element => {
         const isExpanded = expandedCategoryId === item._id;
-        const href = item.url ? localizeHref(item.url) : undefined;
-        const isActive = href
-            ? (item.url === '/' ? pathname === href : pathname === href || pathname.startsWith(`${href}/`))
-            : false;
+        const isActive = isCategoryActive(item);
 
         const rowIconEnabled = iconsEnabled && !!item.icon;
         const iconStackTop = rowIconEnabled && iconPosition === 'top';
@@ -437,7 +478,7 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel, onItem
         ].filter(Boolean).join(' ');
 
         const icon = rowIconEnabled
-            ? <MenuNodeIcon name={item.icon!} size={16} />
+            ? <MenuNodeIcon name={item.icon!} size={16} className={styles.tab_icon} />
             : null;
         const labelText = labelOf(item);
         const label = showLabels
@@ -540,6 +581,22 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel, onItem
         node: renderMenuItem(item)
     }));
 
+    // A tab row is recognised by the props only a submenu passes; the header
+    // menu passes neither.
+    const isTabRow = activeUrl !== undefined || onItemSelect !== undefined;
+
+    // The top-level item that renders as active, which PriorityNav keeps in
+    // the row when it folds. Prefix matching can highlight more than one item,
+    // so the longest url, the closest match, is the one kept visible.
+    let activeItem: MenuNodeSerialized | undefined;
+    for (const item of visibleItems) {
+        const hasChildren = !!item.children && item.children.length > 0;
+        const isActive = hasChildren ? isCategoryActive(item) : isLinkActive(item);
+        if (isActive && (!activeItem || (item.url?.length ?? 0) > (activeItem.url?.length ?? 0))) {
+            activeItem = item;
+        }
+    }
+
     const navAriaLabel = ariaLabel || t('menu.nav.ariaLabel', '{namespace} navigation', { namespace });
 
     /**
@@ -567,10 +624,7 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel, onItem
         }
 
         const isSubExpanded = expandedSubcategoryId === child._id;
-        const childHref = child.url ? localizeHref(child.url) : undefined;
-        const isActive = childHref
-            ? (pathname === childHref || pathname.startsWith(`${childHref}/`))
-            : false;
+        const isActive = isCategoryActive(child);
         const childLabel = labelOf(child);
 
         return (
@@ -680,7 +734,8 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel, onItem
     const navClassName = [
         styles.nav,
         hasInitialized ? styles['nav--initialized'] : '',
-        isCompact ? styles['nav--compact'] : ''
+        isCompact ? styles['nav--compact'] : '',
+        isTabRow ? styles['nav--submenu'] : ''
     ].filter(Boolean).join(' ');
 
     // Always render PriorityNav to maintain consistent single-row layout.
@@ -696,6 +751,8 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel, onItem
                         collapseAtCount={menuConfig.overflow?.collapseAtCount}
                         moreButtonLabel={t('menu.nav.more', 'More {namespace} menu items', { namespace })}
                         onInitialized={handlePriorityNavInitialized}
+                        activeId={activeItem?._id}
+                        activeLabel={isTabRow && activeItem ? labelOf(activeItem) : undefined}
                     />
                 </nav>
                 {renderCategoryDropdown()}

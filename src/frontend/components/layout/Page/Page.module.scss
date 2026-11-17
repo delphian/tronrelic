@@ -7,8 +7,17 @@
 
 @use '../../../app/breakpoints' as *;
 
+/*
+ * The single column is `minmax(0, 1fr)` rather than the implicit `auto`
+ * track. An `auto` track grows to the widest child's min-content width, so
+ * one child that cannot shrink, such as a row of tabs that never wrap, made
+ * the whole page wider than a phone screen and every tab scroll sideways.
+ * With a zero minimum the column always matches the page's own width, and a
+ * child that is too wide has to fold, wrap, or scroll inside itself.
+ */
 .page {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--page-gap);
     position: relative;
 }

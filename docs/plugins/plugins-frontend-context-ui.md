@@ -45,6 +45,8 @@ This is the recommended way to build a plugin's internal navigation: the tab row
 
 The flow has three steps. **Register** each tab as a leaf node in the plugin's *own* menu namespace (not `main`) during a backend lifecycle hook, memory-only, setting `requiresAdmin` yourself — the namespace sits outside the System container, so nothing forces the gate for you. **Fetch** that namespace tree SSR-first in the page's `serverDataFetcher` so it arrives as a prop (no loading flash). **Render** the row with `SubMenu`, providing `onSelect` to drive `activeTab` and `activeUrl` to highlight the current tab. Omitting `onSelect` makes the tabs ordinary navigation links instead.
 
+Place the row where it is stretched across the page, directly in `layout.Page`, a `Stack`, or a `Section`. The row is a size container that takes its width from its host, so a wrapper that sizes to its content leaves it zero wide. On a narrow screen the tabs drop their icons, and when they still do not fit the row folds into "More" while keeping the tab named by `activeUrl` visible. See [Submenu Pattern](../../src/backend/modules/menu/README.md#submenu-pattern-namespaced-tab-rows).
+
 ```tsx
 // Backend (plugin init): register tabs in the plugin's own namespace.
 context.menuService.subscribe('ready', async () => {

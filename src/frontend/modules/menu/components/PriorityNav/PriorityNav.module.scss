@@ -114,6 +114,9 @@
     justify-content: center;
     gap: var(--gap-2xs);
     flex-shrink: 0;
+    /* Only reached when the button carries the active item's label, which
+       then shortens rather than pushing the button past the row's edge. */
+    max-width: 100%;
     padding: var(--padding-xs) var(--padding-xs);
     border: none;
     background: transparent;
@@ -136,6 +139,34 @@
 .more_button:focus-visible {
     outline: var(--focus-outline-width) solid var(--focus-outline-color);
     outline-offset: var(--focus-outline-offset);
+}
+
+/**
+ * "More" button while the active item is folded into it.
+ *
+ * Drawn with the same fill and outline as an active tab, so the row still
+ * shows where the current page or tab is. The outline is an inset shadow
+ * rather than a border, so the button keeps the width the measuring pass
+ * read.
+ */
+.more_button_active,
+.more_button_active:hover {
+    background: var(--color-nav-tab-active-background);
+    box-shadow: inset 0 0 0 var(--border-width-thin) var(--color-nav-tab-active-border);
+    color: var(--color-text);
+}
+
+/**
+ * Label of the folded active item, shown on the "More" button when the
+ * caller supplies one. It stays on one line and is cut short with an
+ * ellipsis when the button reaches the width of the row.
+ */
+.more_label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: var(--font-weight-medium);
 }
 
 /**
