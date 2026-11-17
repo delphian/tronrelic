@@ -790,11 +790,19 @@
      * Width of the column-name track when a <Table stackAt> lays a row out as
      * a labelled entry at phone width, where each value takes a line with its
      * name to the left. Wider containers put the name above the value and do
-     * not use this. Wide enough for the longest header in use, such as
-     * "Network address", on one line, and narrow enough to leave a 360px phone
-     * most of its width for the value. A column width rather than spacing, so
-     * it sits outside the density block and does not scale. */
-    --table-stack-label-width: 8.5rem;
+     * not use this. Column widths rather than spacing, so neither scales with
+     * --density.
+     *
+     * md is wide enough for the longest header in use, such as "Network
+     * address", on one line. compact is for admin pages, whose labels are
+     * mostly short words such as "Rows" or "Size": at md those labels took 40%
+     * of a phone's entry and squeezed the values beside them, so a long label
+     * wraps to a second line there instead. The unsuffixed
+     * --table-stack-label-width names the one the table uses, which the
+     * density setting selects; see STACKED TABLE LABEL COLUMN in the density
+     * block below. */
+    --table-stack-label-width-md: 8.5rem;
+    --table-stack-label-width-compact: 6rem;
 
     /* Table - Row Hover */
     --table-row-background-hover: var(--color-primary-alpha-10);
@@ -1334,6 +1342,21 @@
      * ------------------------------------------------------------------ */
     --page-header-title-font-size-min: var(--font-size-heading-lg);
     --page-header-title-font-size-max: var(--font-size-heading-xl);
+
+    /* ------------------------------------------------------------------
+     * STACKED TABLE LABEL COLUMN
+     *
+     * The width of the column-name track in a stacked <Table> row at phone
+     * width. It points at the md width here, and `compact` below points it
+     * at the narrower compact width, so an admin page gives more of a
+     * phone's line to the value. Neither named width changes; only the
+     * selection moves.
+     *
+     * Declared in this block for the same reason as the default control
+     * step above: a density step can only reselect a token that this
+     * selector list also declares.
+     * ------------------------------------------------------------------ */
+    --table-stack-label-width: var(--table-stack-label-width-md);
 }
 
 /* ============================================================================
@@ -1356,8 +1379,9 @@
  * buttons and fields. An unsized button takes its `sm` step, and an unsized
  * form control takes --input-padding-compact with the `sm` type size, which
  * puts a one-line field at about the button's 34px height. It also sets the
- * page title to one smaller heading (see PAGE TITLE SIZE above). The other
- * steps keep the defaults.
+ * page title to one smaller heading (see PAGE TITLE SIZE above) and narrows
+ * the column-name track of stacked table rows (see STACKED TABLE LABEL
+ * COLUMN above). The other steps keep the defaults.
  * ========================================================================== */
 
 [data-density="compact"] {
@@ -1369,6 +1393,7 @@
     --input-font-size: var(--input-font-size-sm);
     --page-header-title-font-size-min: var(--font-size-heading-md);
     --page-header-title-font-size-max: var(--font-size-heading-md);
+    --table-stack-label-width: var(--table-stack-label-width-compact);
 }
 [data-density="cozy"]    { --density: 0.875; }
 [data-density="default"] { --density: 1; }

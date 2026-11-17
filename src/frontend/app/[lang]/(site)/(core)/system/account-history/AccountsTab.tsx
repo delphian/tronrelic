@@ -15,6 +15,7 @@ import { useState, useCallback } from 'react';
 import { Plus, Play, Trash2, Pause, PlayCircle, RefreshCw, RotateCcw } from 'lucide-react';
 import { Stack } from '../../../../../../components/layout';
 import { Button } from '../../../../../../components/ui/Button';
+import { IconButton } from '../../../../../../components/ui/IconButton';
 import { Badge } from '../../../../../../components/ui/Badge';
 import { Input } from '../../../../../../components/ui/Input';
 import { AddressSelector } from '../../../../../../components/ui/AddressSelector';
@@ -289,32 +290,33 @@ export function AccountsTab({ stats, onChanged }: { stats: IAccountHistoryStatsV
                                             )}
                                         </Td>
                                         <Td>
+                                            {/* Icon-only actions, each named by its aria-label and
+                                                hover title, so the three fit on one line in the
+                                                row's shrink column instead of widening the table
+                                                past its card. */}
                                             <div className={styles.row_actions}>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="xs"
+                                                <IconButton
                                                     onClick={() => { void togglePause(account.address, !account.paused); }}
                                                     aria-label={account.paused ? 'Resume account' : 'Pause account'}
+                                                    title={account.paused ? 'Resume' : 'Pause'}
                                                 >
-                                                    {account.paused ? <PlayCircle size={14} /> : <Pause size={14} />}
-                                                    {account.paused ? 'Resume' : 'Pause'}
-                                                </Button>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="xs"
+                                                    {account.paused ? <PlayCircle size={16} /> : <Pause size={16} />}
+                                                </IconButton>
+                                                <IconButton
                                                     onClick={() => { void reset(account.address); }}
                                                     aria-label="Reset account history"
+                                                    title="Reset"
                                                 >
-                                                    <RotateCcw size={14} /> Reset
-                                                </Button>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="xs"
+                                                    <RotateCcw size={16} />
+                                                </IconButton>
+                                                <IconButton
+                                                    variant="danger"
                                                     onClick={() => { void remove(account.address); }}
                                                     aria-label="Remove account"
+                                                    title="Remove"
                                                 >
-                                                    <Trash2 size={14} /> Remove
-                                                </Button>
+                                                    <Trash2 size={16} />
+                                                </IconButton>
                                             </div>
                                         </Td>
                                     </Tr>

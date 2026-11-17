@@ -692,6 +692,9 @@ export function CollectionBrowser({
                                         isExpanded={isCollectionOpen}
                                         className={styles.collection_row}
                                         onClick={() => toggleCollection(collection.name)}
+                                        // The expand button in the first cell is the keyboard's
+                                        // way in, so the row stays out of the tab order.
+                                        tabIndex={-1}
                                     >
                                         <Td muted>
                                             {/* The row itself is clickable for pointer users; this button is

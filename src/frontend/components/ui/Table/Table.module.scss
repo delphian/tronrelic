@@ -2,7 +2,9 @@
  * Table Component Styles
  *
  * Provides consistent table styling with container query-based responsive
- * behavior, hover states, and variant options.
+ * behavior, hover states, and variant options: shrink columns that keep their
+ * cells on one line, a sticky header that lets go while rows are stacked, and
+ * clickable rows that take keyboard focus.
  * Uses semantic tokens from semantic-tokens.scss for consistency.
  */
 
@@ -60,11 +62,19 @@
 /*
  * Sticky-header variant. The base wrapper uses `overflow-x: auto` with no height
  * bound, so it scrolls horizontally but never vertically — a `position: sticky`
- * header has nothing to stick against. This modifier turns the wrapper into a
- * bounded vertical scroll container; the header then sticks to its top while the
- * body scrolls. Height is tunable via `--table-sticky-max-height`.
+ * header has nothing to stick against. A sticky table therefore puts its
+ * `<table>` inside `.table_scroll`, a bounded scroll box; the header sticks to
+ * its top while the body scrolls. Height is tunable via
+ * `--table-sticky-max-height`.
+ *
+ * The bound sits on an inner element rather than on the wrapper because the
+ * wrapper is the `table` size container. The stacked-row rules further down are
+ * container queries against it, and a container query can style only what is
+ * inside its container, never the container itself. Stacked rows hide the
+ * header, so there is nothing left to pin, and those rules release this box so
+ * a phone scrolls the page instead of a list inside a 70vh box.
  */
-.table_wrapper_sticky {
+.table_scroll {
     overflow: auto;
     max-height: var(--table-sticky-max-height, 70vh);
 }
@@ -145,6 +155,48 @@
     white-space: nowrap;
 }
 
+/*
+ * Body cells of a shrink column (`<Th width="shrink">`).
+ *
+ * `width: 1%` asks the table to give the column as little width as its content
+ * allows and to hand the rest to the other columns. The least a column's
+ * content allows is the narrowest it can wrap to, so unless the body cells
+ * refuse to wrap, a date breaks after its comma, a row of buttons stacks into
+ * a column, and every row grows two or three lines tall. These rules keep each
+ * body cell of a shrink column on one line: `nowrap` for text, and
+ * `min-width: max-content` on each child element for content that wraps by
+ * layout rather than by text, such as a wrapping flex row of buttons or a
+ * select that would otherwise be compressed until its value is cut off. A
+ * labelled cell's children sit in `.td_value`, which generates no box at full
+ * width, so the rule reaches through it.
+ *
+ * A `<td>` cannot see its column's header, so `:has()` matches the cells by
+ * position: column N of the body is a shrink column when header cell N is. A
+ * cell with `colspan`, such as a full-width details row, and every cell after
+ * one are skipped, because their position no longer names their column. A
+ * header cell with `colspan` would shift the count the same way, so a table
+ * with shrink columns keeps its header to one cell per column. Columns past
+ * `$shrink-max-columns` are not matched.
+ *
+ * Every selector is wrapped in `:where()`, so the rules carry no specificity.
+ * A class a call site puts on a cell or its content wins without a contest,
+ * and the stacked-row rules below, which give each field a line of its own to
+ * wrap in, undo both declarations.
+ */
+$shrink-max-columns: 16;
+
+@for $column from 1 through $shrink-max-columns {
+    $shrink-cell: '.table:has(> .thead > .tr > .th_shrink:nth-child(#{$column})) > .tbody > .tr > .td:nth-child(#{$column}):not([colspan], [colspan] ~ .td)';
+
+    :where(#{$shrink-cell}) {
+        white-space: nowrap;
+    }
+
+    :where(#{$shrink-cell} > :not(.td_value), #{$shrink-cell} > .td_value > *) {
+        min-width: max-content;
+    }
+}
+
 .th_expand {
     width: 100%;
 }
@@ -193,6 +245,21 @@
     background: var(--color-surface-muted);
 }
 
+/*
+ * A row with an `onClick` is a control. The pointer says so, and the row takes
+ * keyboard focus (see `Tr`). The focus ring is drawn just inside the row's
+ * edge, because the wrapper's overflow clips anything drawn outside it, which
+ * would cut the ring off along the first and last columns.
+ */
+.tr_clickable {
+    cursor: pointer;
+}
+
+.tr_clickable:focus-visible {
+    outline: var(--focus-outline-width) solid var(--focus-outline-color);
+    outline-offset: calc(-1 * var(--focus-outline-width));
+}
+
 /* Table Cell */
 .td {
     padding: var(--spacing-4) var(--spacing-5);
@@ -234,7 +301,12 @@
  * side by side in equal columns, as many as fit at `$stack-field-min` each,
  * with the column name above the value. A phone-width container has room for
  * one column only, and there each field is a single line with the name on the
- * left and the value on the right. Giving every field its own line at every
+ * left, in a track `--table-stack-label-width` wide, and the value on the
+ * right; a `stackSpan` field puts its name above its long value instead.
+ * Two fields never share a line at phone width, because sharing puts each
+ * name above its value, so a pair of short fields takes two text lines either
+ * way, and the 160px minimum that sets every wider step's column count would
+ * have to drop to fit. Giving every field its own line at every
  * width does not work: on a tablet it leaves most of each line empty and makes
  * a five-field entry six lines tall.
  *
@@ -297,7 +369,10 @@ $stack-max-columns: 6;
  * breakpoint per modifier inside one @container block.
  */
 @mixin stacked-rows($wrapper, $max-width) {
-    $table: '#{$wrapper} > .table';
+    /* A sticky table sits inside `.table_scroll`, so the table is the
+       wrapper's child or its grandchild. The `:where()` keeps that second
+       path from adding to the specificity of every rule built on it. */
+    $table: ':is(#{$wrapper}, :where(#{$wrapper}) > .table_scroll) > .table';
     $row: '#{$table} > .tbody > .tr';
     $cell: '#{$row} > .td';
 
@@ -309,6 +384,13 @@ $stack-max-columns: 6;
         /* The header row is gone, so the sort picker takes over its job. */
         #{$wrapper} > .stacked_sort {
             display: flex;
+        }
+
+        /* With the header hidden a sticky table has nothing left to pin, so
+           its scroll box lets go and the entries scroll with the page. */
+        #{$wrapper} > .table_scroll {
+            max-height: none;
+            overflow: visible;
         }
 
         #{$table},
@@ -369,6 +451,15 @@ $stack-max-columns: 6;
             justify-items: start;
         }
 
+        /* A field marked `stackSpan` holds a long value, such as an error
+           message or a description. Beside the name track it would get only
+           what is left of a phone's line and wrap into a tall, narrow block,
+           so it puts the name above the value and gives the value the whole
+           line. */
+        #{$cell}[data-label][data-stack-span] {
+            grid-template-columns: minmax(0, 1fr);
+        }
+
         #{$cell}[data-label]::before {
             content: attr(data-label);
             font-size: var(--font-size-caption);
@@ -387,6 +478,16 @@ $stack-max-columns: 6;
         #{$cell}[data-label] > .td_value {
             display: block;
             min-width: 0;
+        }
+
+        /* A shrink column holds its cells' content at its one-line width (see
+           the shrink-column rules above). A stacked field has a line of its
+           own to wrap in, so this releases that minimum, which would otherwise
+           push a long value past the edge of a phone. `white-space` is already
+           reset on the cell above. Zero specificity, like the rule it undoes,
+           so a width a call site sets on the content still applies. */
+        :where(#{$cell} > :not(.td_value), #{$cell} > .td_value > *) {
+            min-width: auto;
         }
 
         /* Unlabelled cells after the last field, such as the row's buttons,

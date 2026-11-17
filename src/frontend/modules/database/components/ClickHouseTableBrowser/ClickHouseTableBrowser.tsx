@@ -509,6 +509,9 @@ export function ClickHouseTableBrowser(props: IClickHouseTableBrowserProps) {
                                         isExpanded={isTableOpen}
                                         className={styles.table_row}
                                         onClick={() => toggleTable(table)}
+                                        // The expand button in the first cell is the keyboard's
+                                        // way in, so the row stays out of the tab order.
+                                        tabIndex={-1}
                                     >
                                         <Td muted>
                                             {/* The row itself is clickable for pointer users; this button is
