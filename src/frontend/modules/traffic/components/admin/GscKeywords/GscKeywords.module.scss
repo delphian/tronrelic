@@ -8,6 +8,8 @@
  * their own styles; this module only lays them out.
  */
 
+@use '../../../../../app/breakpoints' as *;
+
 .container {
     display: flex;
     flex-direction: column;
@@ -45,4 +47,14 @@
 /* Keywords and page URLs wrap rather than widen the table. */
 .wrap_cell {
     word-break: break-word;
+}
+
+/* A phone-width panel drops the top-pages click-through rate, which a reader
+   can work out from the clicks and impressions beside it. That leaves the
+   path enough of the line for the table to keep its rows on a phone instead
+   of stacking each page into a five-line entry. */
+@container panel (max-width: #{$breakpoint-mobile-sm}) {
+    .ctr_column {
+        display: none;
+    }
 }

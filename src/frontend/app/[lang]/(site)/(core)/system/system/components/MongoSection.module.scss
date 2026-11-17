@@ -1,65 +1,18 @@
 /**
  * MongoSection styles.
  *
- * Three blocks (Health, Collection Browser, Migrations), each standing in its
- * own card on the MongoDB tab. The card heading matches the Overview tab's
- * section titles, and the second-level captions (Pending, History) drop a tier
- * below it so the hierarchy stays legible inside a card. Each block declares
- * the container query context itself, because the card — not the tab — is now
- * the space its contents have to fit. ClickHouse lives in a sibling section
- * (see ClickHouseSection.module.scss).
+ * The panels, their headers, and the history table come from the shared
+ * `Panel` and `Table`. This styles what sits inside them: the pending
+ * migration list, the history filters, and a failed run's error.
  */
-
-@use '../../../../../../breakpoints' as *;
-
-.block {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-sm);
-    container-type: inline-size;
-    container-name: mongo-subsection;
-}
-
-.section_title {
-    margin: 0;
-    font-size: var(--font-size-body-sm);
-    font-weight: var(--font-weight-semibold);
-    text-transform: uppercase;
-    letter-spacing: var(--letter-spacing-wide);
-    color: var(--color-text);
-}
-
-.block_header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--gap-sm);
-    flex-wrap: wrap;
-}
-
-.subblock {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-xs);
-}
-
-.subblock_title {
-    margin: 0;
-    font-size: var(--font-size-caption);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text-subtle);
-}
-
-.actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--gap-xs);
-}
 
 .error_inline {
     display: inline-flex;
     align-items: center;
     gap: var(--gap-xs);
+    margin: 0;
+    color: var(--color-danger-text);
+    font-size: var(--font-size-body-sm);
 }
 
 .empty {
@@ -68,61 +21,27 @@
     gap: var(--gap-xs);
     margin: 0;
     color: var(--color-text-muted);
-    font-size: var(--font-size-caption);
+    font-size: var(--font-size-body-sm);
 }
 
-.pending_groups {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-xs);
-}
-
-.group {
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-sm);
-    background: var(--color-surface-muted);
-    overflow: hidden;
-}
-
-.group_summary {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--gap-sm);
-    padding: var(--padding-xs) var(--padding-sm);
-    cursor: pointer;
-    user-select: none;
-}
-
-.group_summary:hover {
-    background: var(--color-surface-elevated);
-}
-
-.group_source {
-    font-size: var(--font-size-caption);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text);
-    text-transform: uppercase;
-    letter-spacing: var(--letter-spacing-wide);
-}
-
+/* Pending migrations, one row each, divided by rules rather than boxed. */
 .migration_list {
     list-style: none;
     margin: 0;
     padding: 0;
-    border-top: var(--border-width-thin) solid var(--color-border);
 }
 
 .migration_row {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
-    gap: var(--gap-sm);
-    padding: var(--padding-xs) var(--padding-sm);
+    gap: var(--gap-xs) var(--gap-sm);
+    padding: var(--padding-xs) 0;
     border-bottom: var(--border-width-thin) solid var(--color-border);
 }
 
-.migration_row:last-child {
+.migration_list > :last-child {
     border-bottom: none;
 }
 
@@ -130,7 +49,7 @@
     display: flex;
     flex-direction: column;
     gap: var(--gap-2xs);
-    flex: 1;
+    flex: 1 1 var(--max-width-xs);
     min-width: 0;
 }
 
@@ -139,7 +58,7 @@
     font-size: var(--font-size-caption);
     font-weight: var(--font-weight-semibold);
     color: var(--color-text);
-    word-break: break-all;
+    overflow-wrap: anywhere;
 }
 
 .migration_description {
@@ -147,49 +66,49 @@
     color: var(--color-text-muted);
 }
 
+/* Dependencies are plain text that wraps, because a qualified migration id is
+   too long for a pill and was cut off at a phone's edge as one. */
 .migration_deps {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: var(--gap-2xs);
-}
-
-.deps_label {
     font-size: var(--font-size-caption);
     color: var(--color-text-subtle);
-    text-transform: uppercase;
-    letter-spacing: var(--letter-spacing-wide);
+    overflow-wrap: anywhere;
+
+    code {
+        font-family: var(--font-mono);
+        color: var(--color-text-muted);
+    }
 }
 
-.history_header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--gap-sm);
-    flex-wrap: wrap;
+/* A source with several pending migrations keeps a heading over them. */
+.group {
+    padding: var(--padding-xs) 0;
+    border-bottom: var(--border-width-thin) solid var(--color-border);
+}
+
+.group_source {
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-muted);
 }
 
 .filters {
     display: flex;
-    gap: var(--gap-xs);
     flex-wrap: wrap;
-}
-
-.history_table_wrap {
-    overflow-x: auto;
+    gap: var(--gap-xs);
 }
 
 .cell_id {
     font-family: var(--font-mono);
     font-size: var(--font-size-caption);
     color: var(--color-text-muted);
-    word-break: break-all;
+    overflow-wrap: anywhere;
 }
 
-.error_cell {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-2xs);
+/* The status badge and, on a failed run, the control that opens its error. */
+.status_cell {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-xs);
 }
 
 .error_details {
@@ -218,21 +137,4 @@
     word-break: break-all;
     max-height: var(--code-block-max-height);
     overflow-y: auto;
-}
-
-@container mongo-subsection (max-width: #{$breakpoint-mobile-md}) {
-    .migration_row {
-        flex-direction: column;
-        align-items: stretch;
-    }
-
-    .history_header {
-        flex-direction: column;
-        align-items: stretch;
-    }
-
-    .filters,
-    .select {
-        width: 100%;
-    }
 }

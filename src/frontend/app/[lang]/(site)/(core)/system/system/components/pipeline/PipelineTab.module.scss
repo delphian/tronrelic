@@ -1,9 +1,10 @@
 /**
- * Pipeline tab layout and the shared card header used by its table cards.
+ * Pipeline tab layout and the cell styles its table panels share.
  *
- * The four stage cards sit two across when the tab is wide and one per row
- * when it is not. The switch is a container query on the tab's own wrapper,
- * because the tab can be shown at any width inside the admin shell.
+ * The stage cards sit two across when the tab is wide and one per row when it
+ * is not. The switch is a container query on the tab's own wrapper, because
+ * the tab can be shown at any width inside the admin shell. The same wrapper
+ * decides when the recent blocks list shortens to its newest few blocks.
  */
 @use '../../../../../../../breakpoints' as *;
 
@@ -22,26 +23,13 @@
     .stages {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
-}
 
-.card_header {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: var(--gap-sm);
-}
-
-.card_title {
-    font-size: var(--font-size-body-sm);
-    font-weight: var(--font-weight-semibold);
-    letter-spacing: var(--letter-spacing-wide);
-    text-transform: uppercase;
-}
-
-.card_note {
-    font-size: var(--font-size-caption);
-    color: var(--color-text-muted);
+    /* Five stage cards cannot fill two columns. A card left alone in the last
+       row takes the whole row instead of leaving an empty slot beside it,
+       which also gives the Chain data figures room for one line. */
+    .stages > :last-child:nth-child(odd) {
+        grid-column: 1 / -1;
+    }
 }
 
 .row_meta {
@@ -59,7 +47,37 @@
     white-space: nowrap;
 }
 
-.refresh {
-    display: flex;
-    justify-content: flex-end;
+/*
+ * An error message in the Errors table. It may break inside a long unbroken
+ * token, such as the hash a duplicate key error quotes, because the shrink
+ * columns beside it keep their one-line width and the table would otherwise
+ * grow past its panel.
+ */
+.message {
+    overflow-wrap: anywhere;
+}
+
+/*
+ * Recent blocks on a narrow tab. Stacked, each block is an entry of eight
+ * lines, so twenty of them made the list several thousand pixels tall on a
+ * phone. There the list shows the newest blocks and a button opens the rest.
+ * At wider widths every block fits as one table row, so the button is hidden
+ * and every row shows.
+ *
+ * The row rule names four classes and the element: the shared Table's stacked
+ * layout sets `display: flex` on its rows with a four-class selector, and
+ * this rule has to outrank it to hide a row.
+ */
+.recent_toggle {
+    display: none;
+}
+
+@container pipeline-tab (max-width: #{$breakpoint-mobile-lg}) {
+    .recent_toggle {
+        display: contents;
+    }
+
+    .tab .recent_panel .recent_table tr.recent_extra {
+        display: none;
+    }
 }

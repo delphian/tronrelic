@@ -13,8 +13,7 @@
  */
 
 import type { IObserverStats } from '@/types';
-import { Card } from '../../../../../../../../components/ui/Card';
-import { Stack } from '../../../../../../../../components/layout';
+import { Panel } from '../../../../../../../../components/ui/Panel';
 import { Badge } from '../../../../../../../../components/ui/Badge';
 import { ClientTime } from '../../../../../../../../components/ui/ClientTime';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../../../../components/ui/Table';
@@ -120,91 +119,85 @@ function sortByAttention(observers: IObserverStats[]): IObserverStats[] {
  * Render the observer table.
  *
  * @param props - Observer statistics and the block period.
- * @returns The card.
+ * @returns The panel.
  */
 export function ObserverTable({ observers, blockIntervalSeconds }: IObserverTableProps) {
     const rows = sortByAttention(observers);
 
     return (
-        <Card padding="sm" noBackgroundImage>
-            <Stack gap="sm">
-                <header className={styles.card_header}>
-                    <h3 className={styles.card_title}>Observers</h3>
-                    <span className={styles.card_note}>
-                        Plugins and modules that receive each committed block. Time is work per block, judged against the
-                        {` ${formatNumber(blockIntervalSeconds)} s `}block period. Rows needing attention come first.
-                    </span>
-                </header>
-
-                {rows.length === 0 ? (
-                    <p className="text-muted">No observers are registered. Enable a plugin that follows transactions to see one here.</p>
-                ) : (
-                    <Table variant="compact" flush stackAt="mobile">
-                        <Thead>
-                            <Tr>
-                                <Th scope="col">Observer</Th>
-                                <Th scope="col">Subscribed to</Th>
-                                <Th scope="col" numeric>Time / block</Th>
-                                <Th scope="col" numeric>Queue</Th>
-                                <Th scope="col" numeric>Processed</Th>
-                                <Th scope="col" numeric>Errors</Th>
-                            </Tr>
-                        </Thead>
-                        <Tbody>
-                            {rows.map(observer => {
-                                const errors = errorTone(observer.errorRate);
-                                const unit = observer.kind ? PROCESSED_UNIT[observer.kind] : 'items';
-                                return (
-                                    <Tr key={observer.name} hasError={errors === 'danger'}>
-                                        <Td>
-                                            <strong>{observer.name}</strong>
+        <Panel
+            title="Observers"
+            titleAs="h3"
+            meta={`Plugins and modules that receive each committed block. Time is work per block, judged against the ${formatNumber(blockIntervalSeconds)} s block period. Rows needing attention come first.`}
+        >
+            {rows.length === 0 ? (
+                <p className="text-muted">No observers are registered. Enable a plugin that follows transactions to see one here.</p>
+            ) : (
+                <Table variant="compact" flush stackAt="mobile">
+                    <Thead>
+                        <Tr>
+                            <Th scope="col">Observer</Th>
+                            <Th scope="col">Subscribed to</Th>
+                            <Th scope="col" numeric>Time / block</Th>
+                            <Th scope="col" numeric>Queue</Th>
+                            <Th scope="col" numeric>Processed</Th>
+                            <Th scope="col" numeric>Errors</Th>
+                        </Tr>
+                    </Thead>
+                    <Tbody>
+                        {rows.map(observer => {
+                            const errors = errorTone(observer.errorRate);
+                            const unit = observer.kind ? PROCESSED_UNIT[observer.kind] : 'items';
+                            return (
+                                <Tr key={observer.name} hasError={errors === 'danger'}>
+                                    <Td>
+                                        <strong>{observer.name}</strong>
+                                        <span className={styles.row_meta}>
+                                            {observer.kind ? `${observer.kind} observer` : 'observer'}
+                                            {observer.lastProcessedAt && (
+                                                <> · last <ClientTime date={observer.lastProcessedAt} format="relative" /></>
+                                            )}
+                                        </span>
+                                    </Td>
+                                    <Td label="Subscribed to" stackSpan="full" muted>{observer.subscriptions?.join(', ') || '—'}</Td>
+                                    <Td label="Time / block" numeric>
+                                        <Badge tone={avgTimeTone(observer.avgProcessingTimeMs, blockIntervalSeconds)} size="xs" className={styles.nowrap}>
+                                            {`${observer.avgProcessingTimeMs.toFixed(1)} ms`}
+                                        </Badge>
+                                        <span className={`${styles.row_meta} ${styles.nowrap}`}>
+                                            {formatNumber(observer.minProcessingTimeMs)}–{formatNumber(observer.maxProcessingTimeMs)} ms
+                                        </span>
+                                    </Td>
+                                    <Td label="Queue" numeric>
+                                        <Badge tone={queueTone(observer)} size="xs" className={styles.nowrap}>
+                                            {observer.queueCapacity
+                                                ? `${formatNumber(observer.queueDepth)} / ${formatNumber(observer.queueCapacity)}`
+                                                : formatNumber(observer.queueDepth)}
+                                        </Badge>
+                                    </Td>
+                                    <Td label="Processed" numeric>
+                                        {formatNumber(observer.totalProcessed)}
+                                        <span className={styles.row_meta}>{unit}</span>
+                                    </Td>
+                                    <Td label="Errors" numeric>
+                                        <Badge tone={errors} size="xs" className={styles.nowrap}>
+                                            {`${formatNumber(observer.totalErrors)} (${(observer.errorRate * 100).toFixed(2)}%)`}
+                                        </Badge>
+                                        {observer.totalDropped > 0 && (
+                                            <Badge tone="danger" size="xs" className={styles.nowrap}>{`${formatNumber(observer.totalDropped)} dropped`}</Badge>
+                                        )}
+                                        {observer.lastErrorAt && (
                                             <span className={styles.row_meta}>
-                                                {observer.kind ? `${observer.kind} observer` : 'observer'}
-                                                {observer.lastProcessedAt && (
-                                                    <> · last <ClientTime date={observer.lastProcessedAt} format="relative" /></>
-                                                )}
+                                                last <ClientTime date={observer.lastErrorAt} format="relative" />
                                             </span>
-                                        </Td>
-                                        <Td label="Subscribed to" stackSpan="full" muted>{observer.subscriptions?.join(', ') || '—'}</Td>
-                                        <Td label="Time / block" numeric>
-                                            <Badge tone={avgTimeTone(observer.avgProcessingTimeMs, blockIntervalSeconds)} size="xs" className={styles.nowrap}>
-                                                {`${observer.avgProcessingTimeMs.toFixed(1)} ms`}
-                                            </Badge>
-                                            <span className={`${styles.row_meta} ${styles.nowrap}`}>
-                                                {formatNumber(observer.minProcessingTimeMs)}–{formatNumber(observer.maxProcessingTimeMs)} ms
-                                            </span>
-                                        </Td>
-                                        <Td label="Queue" numeric>
-                                            <Badge tone={queueTone(observer)} size="xs" className={styles.nowrap}>
-                                                {observer.queueCapacity
-                                                    ? `${formatNumber(observer.queueDepth)} / ${formatNumber(observer.queueCapacity)}`
-                                                    : formatNumber(observer.queueDepth)}
-                                            </Badge>
-                                        </Td>
-                                        <Td label="Processed" numeric>
-                                            {formatNumber(observer.totalProcessed)}
-                                            <span className={styles.row_meta}>{unit}</span>
-                                        </Td>
-                                        <Td label="Errors" numeric>
-                                            <Badge tone={errors} size="xs" className={styles.nowrap}>
-                                                {`${formatNumber(observer.totalErrors)} (${(observer.errorRate * 100).toFixed(2)}%)`}
-                                            </Badge>
-                                            {observer.totalDropped > 0 && (
-                                                <Badge tone="danger" size="xs" className={styles.nowrap}>{`${formatNumber(observer.totalDropped)} dropped`}</Badge>
-                                            )}
-                                            {observer.lastErrorAt && (
-                                                <span className={styles.row_meta}>
-                                                    last <ClientTime date={observer.lastErrorAt} format="relative" />
-                                                </span>
-                                            )}
-                                        </Td>
-                                    </Tr>
-                                );
-                            })}
-                        </Tbody>
-                    </Table>
-                )}
-            </Stack>
-        </Card>
+                                        )}
+                                    </Td>
+                                </Tr>
+                            );
+                        })}
+                    </Tbody>
+                </Table>
+            )}
+        </Panel>
     );
 }

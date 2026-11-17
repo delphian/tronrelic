@@ -112,11 +112,15 @@ const SUBMENU_NAMESPACE = 'account-history';
  * and an operator looking into a stalled backfill should not have to leave for
  * /system/scheduler, /system/database, or /system/logs and pick this module's
  * rows back out of the whole deployment's inventory.
+ *
+ * The labels are single words because the page title already names the
+ * subject. Two-word labels make the row too wide for a phone, which then
+ * folds tabs, including the selected one, behind the overflow button.
  */
 const SUBMENU_TABS: ReadonlyArray<{ label: string; tab: string; icon: string; order: number }> = [
-    { label: 'Tracked Accounts', tab: 'accounts', icon: 'List', order: 0 },
-    { label: 'Tick Activity', tab: 'activity', icon: 'Activity', order: 1 },
-    { label: 'Ingestion Settings', tab: 'settings', icon: 'Settings', order: 2 },
+    { label: 'Accounts', tab: 'accounts', icon: 'List', order: 0 },
+    { label: 'Activity', tab: 'activity', icon: 'Activity', order: 1 },
+    { label: 'Settings', tab: 'settings', icon: 'Settings', order: 2 },
     { label: 'Schedules', tab: 'schedules', icon: 'CalendarClock', order: 3 },
     { label: 'Database', tab: 'database', icon: 'Database', order: 4 },
     { label: 'Logs', tab: 'logs', icon: 'ScrollText', order: 5 }

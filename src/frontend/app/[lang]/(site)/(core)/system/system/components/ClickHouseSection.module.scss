@@ -1,40 +1,22 @@
 /**
  * ClickHouseSection styles.
  *
- * Two-block layout (Health + Table Browser) inside the ClickHouse console
- * row. Mirrors MongoSection's spacing so admins see one consistent
- * skeleton across both database engines.
+ * The health panel's header comes from the shared `Panel`, as on the MongoDB
+ * tab, so admins see one consistent skeleton across both database engines.
+ * This styles only the two lines the panel can show in place of figures.
  */
-
-.subsection {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-md);
-}
-
-.block {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-xs);
-}
-
-.block_title {
-    margin: 0;
-    font-size: var(--font-size-caption);
-    font-weight: var(--font-weight-semibold);
-    text-transform: uppercase;
-    letter-spacing: var(--letter-spacing-wide);
-    color: var(--color-text-muted);
-}
 
 .empty {
     margin: 0;
     color: var(--color-text-muted);
-    font-size: var(--font-size-caption);
+    font-size: var(--font-size-body-sm);
 }
 
 .error_inline {
     display: inline-flex;
     align-items: center;
     gap: var(--gap-xs);
+    margin: 0;
+    color: var(--color-danger-text);
+    font-size: var(--font-size-body-sm);
 }

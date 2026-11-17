@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { Stack } from '../../../../../../../components/layout';
 import { Card } from '../../../../../../../components/ui/Card';
+import { Panel } from '../../../../../../../components/ui/Panel';
 import { formatBytes } from '../../../../../../../lib/format';
 import { StatStrip } from './StatStrip';
 import { ClickHouseTableBrowser } from '../../../../../../../modules/database';
@@ -74,42 +75,34 @@ export function ClickHouseSection() {
 
     return (
         <Stack gap="lg">
-            <Card padding="sm" noBackgroundImage>
-                <div className={styles.subsection}>
-                    {error && (
-                        <div className="alert alert--danger" role="alert">
-                            <span className={styles.error_inline}>
-                                <AlertCircle size={14} aria-hidden="true" />
-                                {error}
-                            </span>
-                        </div>
-                    )}
-
-                    <div className={styles.block}>
-                        <h4 className={styles.block_title}>Health</h4>
-                        {clickhouse ? (
-                            <StatStrip
-                                items={[
-                                    {
-                                        label: 'Status',
-                                        value: clickhouse.connected ? 'Connected' : 'Disconnected',
-                                        tone: clickhouse.connected ? 'success' : 'danger'
-                                    },
-                                    ...(clickhouse.responseTime !== null
-                                        ? [{ label: 'Response', value: `${clickhouse.responseTime}ms` }]
-                                        : []),
-                                    { label: 'Tables', value: clickhouse.tableCount.toLocaleString() },
-                                    ...(clickhouse.databaseSize !== null
-                                        ? [{ label: 'Size', value: formatBytes(clickhouse.databaseSize) }]
-                                        : [])
-                                ]}
-                            />
-                        ) : (
-                            <p className={styles.empty}>ClickHouse is not configured.</p>
-                        )}
-                    </div>
-                </div>
-            </Card>
+            <Panel title="Health">
+                {error && (
+                    <p className={styles.error_inline} role="alert">
+                        <AlertCircle size={14} aria-hidden="true" />
+                        {error}
+                    </p>
+                )}
+                {clickhouse ? (
+                    <StatStrip
+                        items={[
+                            {
+                                label: 'Status',
+                                value: clickhouse.connected ? 'Connected' : 'Disconnected',
+                                tone: clickhouse.connected ? 'success' : 'danger'
+                            },
+                            ...(clickhouse.responseTime !== null
+                                ? [{ label: 'Response', value: `${clickhouse.responseTime}ms` }]
+                                : []),
+                            { label: 'Tables', value: clickhouse.tableCount.toLocaleString() },
+                            ...(clickhouse.databaseSize !== null
+                                ? [{ label: 'Size', value: formatBytes(clickhouse.databaseSize) }]
+                                : [])
+                        ]}
+                    />
+                ) : (
+                    <p className={styles.empty}>ClickHouse is not configured.</p>
+                )}
+            </Panel>
             {/* The browser draws its own panel, so it sits beside the health card
               * rather than inside it. It starts collapsed: unscoped, it lists every
               * table in every database, which would push the accounts panel below

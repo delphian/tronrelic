@@ -20,15 +20,18 @@
  * `/system/scheduler`, `/system/database`, and `/system/logs` use.
  */
 
-import { useEffect, useState, useCallback, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, useCallback, type ReactNode } from 'react';
 import { RefreshCw, ArrowUpToLine, Save, RotateCcw, ArrowUp, ArrowDown } from 'lucide-react';
 import type { MenuNodeSerialized } from '@/shared';
 import type { IPriceHistoryStats, IPriceHistorySettings, IPriceCoverageDiagnostics, IPriceSourceInfo, IPriceAssetCoverage } from '@/types';
 import { AdminPage, Stack } from '../../../../../../components/layout';
-import { Card } from '../../../../../../components/ui/Card';
+import { Panel } from '../../../../../../components/ui/Panel';
+import { Field } from '../../../../../../components/ui/Field';
+import { Input } from '../../../../../../components/ui/Input';
+import { Switch } from '../../../../../../components/ui/Switch';
 import { Button } from '../../../../../../components/ui/Button';
 import { IconButton } from '../../../../../../components/ui/IconButton';
-import { Badge } from '../../../../../../components/ui/Badge';
+import { Badge, type BadgeTone } from '../../../../../../components/ui/Badge';
 import { ClientTime } from '../../../../../../components/ui/ClientTime';
 import { TronContractAddress } from '../../../../../../components/ui/TronContractAddress';
 import { isValidTronAddress } from '../../../../../../lib/tronAddress';
@@ -50,6 +53,7 @@ import {
     runBackfill,
     runForward
 } from '../../../../../../modules/price-history';
+import styles from './page.module.scss';
 
 /** The page's tab ids; the `?tab=` value carried by each submenu node. */
 type TabId = 'coverage' | 'diagnostics' | 'schedules' | 'database' | 'logs' | 'settings';
@@ -191,12 +195,13 @@ interface ISourceOrderEditorProps {
 
 /**
  * Edit one asset class's ordered vendor list. Included vendors appear first in
- * the order they are tried, each with move buttons; excluded eligible vendors
- * follow, unchecked. A vendor the operator has disabled on its configuration
- * card is flagged, because the router will skip it whatever its position.
+ * the order they are tried, each switched on and with move buttons; excluded
+ * eligible vendors follow, switched off. A vendor the operator has disabled on
+ * its configuration card is flagged beside its name, because the router will
+ * skip it whatever its position.
  *
  * @param props - {@link ISourceOrderEditorProps}.
- * @returns The list.
+ * @returns The list as a titled panel.
  */
 function SourceOrderEditor({ label, eligible, value, disabled, onChange }: ISourceOrderEditorProps) {
     const included = value.map((id) => eligible.find((source) => source.id === id)).filter((source): source is IPriceSourceInfo => !!source);
@@ -224,61 +229,138 @@ function SourceOrderEditor({ label, eligible, value, disabled, onChange }: ISour
     };
 
     return (
-        <Card padding="sm" noBackgroundImage>
-            <Stack gap="sm">
-                <strong>{label}</strong>
-                <span className="text-muted">Tried top to bottom; the first vendor with prices for a range wins.</span>
-                <Table variant="compact" flush>
-                    <Tbody>
-                        {included.map((source, index) => (
-                            <Tr key={source.id}>
-                                <Td>
-                                    <label>
-                                        <input
-                                            type="checkbox"
-                                            checked
-                                            disabled={disabled}
-                                            onChange={() => onChange(value.filter((id) => id !== source.id))}
-                                        />{' '}
-                                        {index + 1}. {source.label}
-                                    </label>
-                                </Td>
-                                <Td>{!source.enabled && <Badge tone="warning">Disabled in providers</Badge>}</Td>
-                                <Td>
+        <Panel title={label} meta="Tried top to bottom; the first vendor with prices for a range wins.">
+            <Table variant="compact" flush>
+                <Thead>
+                    <Tr>
+                        <Th width="shrink">On</Th>
+                        <Th width="expand">Vendor</Th>
+                        <Th width="shrink">Order</Th>
+                    </Tr>
+                </Thead>
+                <Tbody>
+                    {included.map((source, index) => (
+                        <Tr key={source.id}>
+                            <Td>
+                                <Switch
+                                    on
+                                    disabled={disabled}
+                                    onChange={() => onChange(value.filter((id) => id !== source.id))}
+                                    aria-label={`${label}: ${source.label}`}
+                                />
+                            </Td>
+                            <Td>
+                                <span className={styles.vendor}>
+                                    {index + 1}. {source.label}
+                                    {!source.enabled && <Badge tone="warning" size="xs">Disabled in providers</Badge>}
+                                </span>
+                            </Td>
+                            <Td>
+                                <span className={styles.order_buttons}>
                                     <IconButton onClick={() => move(index, -1)} disabled={disabled || index === 0} aria-label={`Move ${source.label} up`}>
                                         <ArrowUp size={18} />
                                     </IconButton>
                                     <IconButton onClick={() => move(index, 1)} disabled={disabled || index === included.length - 1} aria-label={`Move ${source.label} down`}>
                                         <ArrowDown size={18} />
                                     </IconButton>
-                                </Td>
-                            </Tr>
-                        ))}
-                        {excluded.map((source) => (
-                            <Tr key={source.id}>
-                                <Td>
-                                    <label>
-                                        <input
-                                            type="checkbox"
-                                            checked={false}
-                                            disabled={disabled}
-                                            onChange={() => onChange([...value, source.id])}
-                                        />{' '}
-                                        <span className="text-muted">{source.label}</span>
-                                    </label>
-                                </Td>
-                                <Td>{!source.enabled && <Badge tone="neutral">Disabled in providers</Badge>}</Td>
-                                <Td />
-                            </Tr>
-                        ))}
-                        {eligible.length === 0 && (
-                            <Tr><Td colSpan={3}><span className="text-muted">No vendor can serve this asset class.</span></Td></Tr>
-                        )}
-                    </Tbody>
-                </Table>
-            </Stack>
-        </Card>
+                                </span>
+                            </Td>
+                        </Tr>
+                    ))}
+                    {excluded.map((source) => (
+                        <Tr key={source.id}>
+                            <Td>
+                                <Switch
+                                    on={false}
+                                    disabled={disabled}
+                                    onChange={() => onChange([...value, source.id])}
+                                    aria-label={`${label}: ${source.label}`}
+                                />
+                            </Td>
+                            <Td>
+                                <span className={styles.vendor}>
+                                    <span className="text-muted">{source.label}</span>
+                                    {!source.enabled && <Badge tone="neutral" size="xs">Disabled in providers</Badge>}
+                                </span>
+                            </Td>
+                            <Td />
+                        </Tr>
+                    ))}
+                    {eligible.length === 0 && (
+                        <Tr><Td colSpan={3}><span className="text-muted">No vendor can serve this asset class.</span></Td></Tr>
+                    )}
+                </Tbody>
+            </Table>
+        </Panel>
     );
+}
+
+/**
+ * The states a tracked asset's backfill can be in. Named once so the status
+ * badge and the Coverage tab's sort read the same classification and cannot
+ * disagree about which rows are in trouble.
+ */
+type AssetStatus = 'vendor-errors' | 'unpriced' | 'paused' | 'backfilling' | 'queued' | 'complete';
+
+/**
+ * The order the Coverage tab lists assets in, most in need of the operator
+ * first. The rows an operator opens the tab for were the last few of a long
+ * table in discovery order, below every complete asset.
+ */
+const STATUS_ORDER: readonly AssetStatus[] = ['vendor-errors', 'unpriced', 'paused', 'backfilling', 'queued', 'complete'];
+
+/**
+ * Statuses whose asset is waiting out a retry hold. These are the rows that
+ * show a retry time and that the Coverage panel counts as held back.
+ */
+const HELD_BACK: ReadonlySet<AssetStatus> = new Set(['vendor-errors', 'unpriced', 'paused']);
+
+/** The badge each status renders as. */
+const STATUS_BADGES: Readonly<Record<AssetStatus, { tone: BadgeTone; label: string }>> = {
+    'vendor-errors': { tone: 'danger', label: 'Vendor errors' },
+    unpriced: { tone: 'warning', label: 'Unpriced' },
+    paused: { tone: 'warning', label: 'Backfill paused' },
+    backfilling: { tone: 'info', label: 'Backfilling' },
+    queued: { tone: 'neutral', label: 'Queued' },
+    complete: { tone: 'success', label: 'Complete' }
+};
+
+/**
+ * Classify one asset's coverage row. An asset whose last fetch failed with
+ * vendor errors reads as failing in either phase, because the operator's next
+ * step there is the vendor, not the asset. A parked asset reads by phase: an
+ * unseeded asset no source could price, and a seeded asset whose deep walk
+ * was left unanswered while a source in its routing order was switched off.
+ * Without that second case an operator would read a paused walk as a running
+ * one and wonder why coverage stopped.
+ *
+ * @param asset - The coverage row.
+ * @returns The asset's status.
+ */
+function assetStatus(asset: IPriceAssetCoverage): AssetStatus {
+    let status: AssetStatus;
+    if (asset.backfillComplete) {
+        status = 'complete';
+    } else if (asset.failedAttempts > 0) {
+        status = 'vendor-errors';
+    } else if (asset.unpricedAttempts > 0) {
+        status = asset.recentSeeded ? 'paused' : 'unpriced';
+    } else {
+        status = asset.recentSeeded ? 'backfilling' : 'queued';
+    }
+    return status;
+}
+
+/**
+ * Order coverage rows by status, most in need of the operator first. The sort
+ * is stable, so assets with the same status keep the order the service
+ * reported them in, which is the order they were discovered.
+ *
+ * @param assets - The coverage rows as the stats snapshot lists them.
+ * @returns A new array in display order.
+ */
+function sortByStatus(assets: readonly IPriceAssetCoverage[]): IPriceAssetCoverage[] {
+    return [...assets].sort((a, b) => STATUS_ORDER.indexOf(assetStatus(a)) - STATUS_ORDER.indexOf(assetStatus(b)));
 }
 
 /**
@@ -302,31 +384,17 @@ function withRetryTime(badge: ReactNode, nextAttemptAt: string | null) {
 }
 
 /**
- * Render the status badge for one asset's coverage row. A held-back asset
- * shows when it will next be tried. An asset whose last fetch failed with
- * vendor errors reads as failing in either phase, because the operator's next
- * step there is the vendor, not the asset. A parked asset reads by phase: an
- * unseeded asset no source could price, and a seeded asset whose deep walk
- * was left unanswered while a source in its routing order was switched off.
- * Without that second case an operator would read a paused walk as a running
- * one and wonder why coverage stopped.
+ * Render the status badge for one asset's coverage row, with when it will next
+ * be tried if it is held back.
  *
  * @param asset - The coverage row.
  * @returns The badge, with a retry time for a held-back asset.
  */
 function statusBadge(asset: IPriceAssetCoverage) {
-    let badge: ReactNode;
-    if (asset.backfillComplete) {
-        badge = <Badge tone="success">Complete</Badge>;
-    } else if (asset.failedAttempts > 0) {
-        badge = withRetryTime(<Badge tone="danger">Vendor errors</Badge>, asset.nextAttemptAt);
-    } else if (asset.unpricedAttempts > 0) {
-        const label = asset.recentSeeded ? 'Backfill paused' : 'Unpriced';
-        badge = withRetryTime(<Badge tone="warning">{label}</Badge>, asset.nextAttemptAt);
-    } else {
-        badge = asset.recentSeeded ? <Badge tone="info">Backfilling</Badge> : <Badge tone="neutral">Queued</Badge>;
-    }
-    return badge;
+    const status = assetStatus(asset);
+    const { tone, label } = STATUS_BADGES[status];
+    const badge = <Badge tone={tone}>{label}</Badge>;
+    return HELD_BACK.has(status) ? withRetryTime(badge, asset.nextAttemptAt) : badge;
 }
 
 /**
@@ -343,6 +411,22 @@ export function PriceHistoryAdminClient({ submenuTree, submenuGeneratedAt, initi
     const [sources, setSources] = useState<IPriceSourceInfo[] | null>(null);
     const [draft, setDraft] = useState<IPriceHistorySettings | null>(null);
     const [busy, setBusy] = useState<string | null>(null);
+
+    /**
+     * The coverage rows in display order, held-back assets first, recomputed
+     * only when a new stats snapshot arrives.
+     */
+    const sortedAssets = useMemo(() => (stats ? sortByStatus(stats.assets) : []), [stats]);
+
+    /**
+     * How many assets are held back. The Coverage panel's header states it so
+     * the count reads as the rows at the top of the table rather than as a
+     * figure with no rows behind it.
+     */
+    const heldBackCount = useMemo(
+        () => sortedAssets.filter((asset) => HELD_BACK.has(assetStatus(asset))).length,
+        [sortedAssets]
+    );
 
     /**
      * Refetch the coverage snapshot, and seed the settings draft from it only
@@ -467,65 +551,79 @@ export function PriceHistoryAdminClient({ submenuTree, submenuGeneratedAt, initi
 
             {activeTab === 'coverage' && (
                 <Stack gap="md">
-                    <StatGrid>
+                    {/* Trouble shows through the tile's tone on a plain number,
+                        so the figures that signal a problem are no smaller
+                        than the rest of the strip. */}
+                    <StatGrid size="sm">
                         <StatTile
+                            size="sm"
                             label="Tracked assets"
                             value={stats?.totals.assetCount ?? '—'}
                         />
                         <StatTile
+                            size="sm"
                             label="Oldest day"
                             value={stats?.totals.oldestDay ?? '—'}
                         />
                         <StatTile
+                            size="sm"
                             label="Newest day"
                             value={stats?.totals.newestDay ?? '—'}
                         />
                         <StatTile
+                            size="sm"
                             label="Stale assets"
-                            value={!stats ? '—' : stats.totals.staleAssets > 0 ? <Badge tone="warning">{stats.totals.staleAssets}</Badge> : 0}
+                            value={stats?.totals.staleAssets ?? '—'}
+                            note="newest day behind yesterday"
+                            tone={stats && stats.totals.staleAssets > 0 ? 'warning' : 'neutral'}
                         />
                         <StatTile
+                            size="sm"
                             label="Provider errors"
-                            value={!stats
-                                    ? '—'
-                                    : stats.totals.providerErrors > 0
-                                        ? <Badge tone="danger">{stats.totals.providerErrors} / {stats.totals.providerCalls} calls</Badge>
-                                        : `0 / ${stats.totals.providerCalls} calls`}
+                            value={stats ? stats.totals.providerErrors.toLocaleString() : '—'}
+                            note={stats ? `of ${stats.totals.providerCalls.toLocaleString()} calls since boot` : undefined}
+                            tone={stats && stats.totals.providerErrors > 0 ? 'danger' : 'neutral'}
                         />
                     </StatGrid>
 
-                    <Stack direction="horizontal" gap="sm" wrap>
-                        <Button variant="secondary" size="sm" icon={<RefreshCw size={18} aria-hidden />} loading={busy === 'backfill'} disabled={!!busy} onClick={() => runAction('backfill', 'Backfill started', runBackfill)}>
-                            Run backfill
-                        </Button>
-                        <Button variant="secondary" size="sm" icon={<ArrowUpToLine size={18} aria-hidden />} loading={busy === 'forward'} disabled={!!busy} onClick={() => runAction('forward', 'Forward sync started', runForward)}>
-                            Run forward sync
-                        </Button>
-                    </Stack>
-
-                    <Card padding="md">
-                        {/* Eight columns do not fit a tablet, so each asset
-                            stacks into an entry headed by its name there. */}
-                        <Table variant="compact" flush stackAt="tablet">
+                    <Panel
+                        title="Coverage"
+                        meta={!stats
+                            ? 'Loading…'
+                            : `${stats.assets.length.toLocaleString()} assets${heldBackCount > 0 ? `, ${heldBackCount} held back and listed first` : ''}`}
+                        actions={(
+                            <>
+                                <Button variant="secondary" icon={<RefreshCw size={18} aria-hidden />} loading={busy === 'backfill'} disabled={!!busy} onClick={() => runAction('backfill', 'Backfill started', runBackfill)}>
+                                    Run backfill
+                                </Button>
+                                <Button variant="secondary" icon={<ArrowUpToLine size={18} aria-hidden />} loading={busy === 'forward'} disabled={!!busy} onClick={() => runAction('forward', 'Forward sync started', runForward)}>
+                                    Run forward sync
+                                </Button>
+                            </>
+                        )}
+                    >
+                        {/* About 690px wide at its narrowest, so it fits a
+                            tablet and stacks each asset into an entry headed
+                            by its name only below that. */}
+                        <Table variant="compact" flush stackAt="mobile">
                             <Thead>
                                 <Tr>
                                     <Th>Asset</Th>
-                                    <Th>Source</Th>
-                                    <Th numeric>Days</Th>
-                                    <Th>Oldest</Th>
-                                    <Th>Newest</Th>
-                                    <Th numeric>Days left</Th>
-                                    <Th>Status</Th>
-                                    <Th>Actions</Th>
+                                    <Th width="shrink">Source</Th>
+                                    <Th width="shrink" numeric>Days</Th>
+                                    <Th width="shrink">Range</Th>
+                                    <Th width="shrink" numeric>Days left</Th>
+                                    <Th width="expand">Status</Th>
+                                    <Th width="shrink">Reset</Th>
                                 </Tr>
                             </Thead>
                             <Tbody>
-                                {!stats || stats.assets.length === 0 ? (
+                                {sortedAssets.length === 0 ? (
                                     <Tr>
-                                        <Td colSpan={8}><span className="text-muted">No assets tracked yet — TRX is added on the first backfill tick.</span></Td>
+                                        <Td colSpan={7}><span className="text-muted">No assets tracked yet — TRX is added on the first backfill tick.</span></Td>
                                     </Tr>
                                 ) : (
-                                    stats.assets.map((asset) => (
+                                    sortedAssets.map((asset) => (
                                         <Tr key={asset.asset}>
                                             <Td>{renderAsset(asset.asset)}</Td>
                                             <Td label="Source">
@@ -535,13 +633,15 @@ export function PriceHistoryAdminClient({ submenuTree, submenuGeneratedAt, initi
                                                 )}
                                             </Td>
                                             <Td label="Days" numeric>{asset.dayCount.toLocaleString()}</Td>
-                                            <Td label="Oldest">{asset.oldestDay ?? '—'}</Td>
-                                            <Td label="Newest">{asset.newestDay ?? '—'}</Td>
+                                            <Td label="Range">
+                                                {asset.oldestDay && asset.newestDay ? `${asset.oldestDay} → ${asset.newestDay}` : '—'}
+                                            </Td>
                                             <Td label="Days left" numeric>
                                                 {asset.estimatedDaysRemaining === null ? '—' : asset.estimatedDaysRemaining.toLocaleString()}
                                             </Td>
                                             <Td label="Status">{statusBadge(asset)}</Td>
-                                            <Td label="Reset cursor">
+                                            {/* No label: the reset icon sits at the end of a stacked entry's last line. */}
+                                            <Td>
                                                 <IconButton
                                                     onClick={() => runAction(`reset:${asset.asset}`, `${asset.asset} reset; it re-seeds on the next tick`, () => resetAsset(asset.asset))}
                                                     disabled={!!busy}
@@ -556,45 +656,28 @@ export function PriceHistoryAdminClient({ submenuTree, submenuGeneratedAt, initi
                                 )}
                             </Tbody>
                         </Table>
-                    </Card>
+                    </Panel>
                 </Stack>
             )}
 
             {activeTab === 'diagnostics' && (
-                <Stack gap="md">
-                    <StatGrid>
-                        <StatTile
-                            label="Held tokens"
-                            value={diagnostics?.heldTokenCount ?? '—'}
-                        />
-                        <StatTile
-                            label="Priced"
-                            value={diagnostics?.pricedTokenCount ?? '—'}
-                        />
-                        <StatTile
-                            label="Unpriced"
-                            value={!diagnostics ? '—' : diagnostics.unpricedTokens.length > 0 ? <Badge tone="warning">{diagnostics.unpricedTokens.length}</Badge> : 0}
-                        />
-                    </StatGrid>
-                    <Card padding="md">
-                        {!diagnostics ? (
-                            <span className="text-muted">Loading…</span>
-                        ) : diagnostics.unpricedTokens.length === 0 ? (
-                            <span className="text-muted">All held tokens have local price coverage.</span>
-                        ) : (
-                            <Table variant="compact" flush>
-                                <Thead>
-                                    <Tr><Th>Unpriced token contract (excluded from USD totals)</Th></Tr>
-                                </Thead>
-                                <Tbody>
-                                    {diagnostics.unpricedTokens.map((asset) => (
-                                        <Tr key={asset}><Td>{renderAsset(asset)}</Td></Tr>
-                                    ))}
-                                </Tbody>
-                            </Table>
-                        )}
-                    </Card>
-                </Stack>
+                <Panel
+                    title="Unpriced token contracts"
+                    meta={diagnostics
+                        ? `${diagnostics.heldTokenCount.toLocaleString()} held · ${diagnostics.pricedTokenCount.toLocaleString()} priced · ${diagnostics.unpricedTokens.length.toLocaleString()} unpriced, excluded from USD totals`
+                        : 'Loading…'}
+                >
+                    {diagnostics && diagnostics.unpricedTokens.length === 0 && (
+                        <span className="text-muted">All held tokens have local price coverage.</span>
+                    )}
+                    {diagnostics && diagnostics.unpricedTokens.length > 0 && (
+                        <ul className={styles.chip_grid}>
+                            {diagnostics.unpricedTokens.map((asset) => (
+                                <li key={asset}>{renderAsset(asset)}</li>
+                            ))}
+                        </ul>
+                    )}
+                </Panel>
             )}
 
             {activeTab === 'schedules' && (
@@ -630,40 +713,47 @@ export function PriceHistoryAdminClient({ submenuTree, submenuGeneratedAt, initi
 
             {activeTab === 'settings' && (
                 <Stack gap="md">
-                    <Card padding="md">
+                    <Panel
+                        title="Ingestion"
+                        meta="Saves the pacing and both vendor orders. Vendor credentials are edited on the System page's Configuration tab."
+                        actions={(
+                            <Button variant="primary" icon={<Save size={18} aria-hidden />} loading={busy === 'save'} disabled={!draft || !!busy} onClick={saveSettings}>
+                                Save settings
+                            </Button>
+                        )}
+                    >
                         <Stack gap="md">
-                            <label>
-                                <input
-                                    type="checkbox"
-                                    checked={draft?.ingestionEnabled ?? false}
+                            <Field inline label="Ingestion enabled" hint="Off parks all price ingestion. Cursors and stored prices are kept.">
+                                <Switch
+                                    on={draft?.ingestionEnabled ?? false}
                                     disabled={!draft || !!busy}
-                                    onChange={(event) => setDraft((current) => (current ? { ...current, ingestionEnabled: event.target.checked } : current))}
-                                />{' '}
-                                Ingestion enabled
-                            </label>
-                            <label>
-                                Chunk days (one deep-backfill range request per tick)
-                                <input
-                                    type="number"
-                                    min={1}
-                                    max={1000}
-                                    value={draft?.chunkDays ?? 0}
-                                    disabled={!draft || !!busy}
-                                    onChange={(event) => setDraft((current) => (current ? { ...current, chunkDays: Number(event.target.value) } : current))}
+                                    onChange={(next) => setDraft((current) => (current ? { ...current, ingestionEnabled: next } : current))}
+                                    aria-label="Ingestion enabled"
                                 />
-                            </label>
-                            <label>
-                                Tokens seeded per tick
-                                <input
-                                    type="number"
-                                    min={1}
-                                    value={draft?.tokensPerTick ?? 0}
-                                    disabled={!draft || !!busy}
-                                    onChange={(event) => setDraft((current) => (current ? { ...current, tokensPerTick: Number(event.target.value) } : current))}
-                                />
-                            </label>
+                            </Field>
+                            <div className={styles.field_grid}>
+                                <Field label="Chunk days" hint="Days fetched by one deep-backfill request, 1 to 1000. Each tick moves one asset back by one chunk.">
+                                    <Input
+                                        type="number"
+                                        min={1}
+                                        max={1000}
+                                        value={draft?.chunkDays ?? 0}
+                                        disabled={!draft || !!busy}
+                                        onChange={(event) => setDraft((current) => (current ? { ...current, chunkDays: Number(event.target.value) } : current))}
+                                    />
+                                </Field>
+                                <Field label="Tokens seeded per tick" hint="The most tracked tokens given their first price fetch on each tick.">
+                                    <Input
+                                        type="number"
+                                        min={1}
+                                        value={draft?.tokensPerTick ?? 0}
+                                        disabled={!draft || !!busy}
+                                        onChange={(event) => setDraft((current) => (current ? { ...current, tokensPerTick: Number(event.target.value) } : current))}
+                                    />
+                                </Field>
+                            </div>
                         </Stack>
-                    </Card>
+                    </Panel>
 
                     <SourceOrderEditor
                         label="TRX price sources"
@@ -679,13 +769,6 @@ export function PriceHistoryAdminClient({ submenuTree, submenuGeneratedAt, initi
                         disabled={!draft || !sources || !!busy}
                         onChange={(next) => setDraft((current) => (current ? { ...current, tokenSources: next } : current))}
                     />
-                    <span className="text-muted">Vendor credentials and base URLs are edited on the System page&apos;s Configuration tab.</span>
-
-                    <Stack direction="horizontal" gap="sm">
-                        <Button variant="primary" size="sm" icon={<Save size={18} aria-hidden />} loading={busy === 'save'} disabled={!draft || !!busy} onClick={saveSettings}>
-                            Save settings
-                        </Button>
-                    </Stack>
                 </Stack>
             )}
         </AdminPage>

@@ -5,19 +5,23 @@
  *
  * The control surface a plugin's enable/disable would otherwise provide: add or
  * remove tracked accounts, pause/resume an individual backfill, and watch
- * per-account progress. Stats are owned by the page (fed live off the
- * `account-history:stats` socket event) and passed in; mutations call back via
- * `onChanged` so the page refetches. Like the sibling system surfaces this is an
- * admin client surface, not SSR-first public content.
+ * per-account progress. The figures for the whole tracked set sit at the top of
+ * the same panel, because they describe the rows beneath them. Stats are owned
+ * by the page (fed live off the `account-history:stats` socket event) and
+ * passed in; mutations call back via `onChanged` so the page refetches. Like
+ * the sibling system surfaces this is an admin client surface, not SSR-first
+ * public content.
  */
 
 import { useState, useCallback } from 'react';
 import { Plus, Play, Trash2, Pause, PlayCircle, RefreshCw, RotateCcw } from 'lucide-react';
-import { Stack } from '../../../../../../components/layout';
 import { Button } from '../../../../../../components/ui/Button';
 import { IconButton } from '../../../../../../components/ui/IconButton';
 import { Badge } from '../../../../../../components/ui/Badge';
 import { Input } from '../../../../../../components/ui/Input';
+import { Panel } from '../../../../../../components/ui/Panel';
+import { StatGrid, StatTile } from '../../../../../../components/ui/StatTile';
+import { TronAddress } from '../../../../../../components/ui/TronAddress';
 import { AddressSelector } from '../../../../../../components/ui/AddressSelector';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../../components/ui/Table';
 import { ClientTime } from '../../../../../../components/ui/ClientTime';
@@ -34,24 +38,21 @@ import {
     type IAccountHistorySourceFlags,
     type AccountIngestionStatus
 } from '../../../../../../modules/account-history';
+import { describeSkipReason } from './describeSkipReason';
 import styles from './page.module.scss';
 
 /**
  * Summarize a completed tick for the trigger buttons' toast, so the operator
  * learns what the tick actually did (or why it did nothing) without opening
- * the Tick Activity tab.
+ * the Activity tab.
  *
  * @param outcome - The tick outcome the trigger endpoint returned.
  * @returns A one-line human summary.
  */
 function describeOutcome(outcome: IAccountHistoryTickOutcomeView): string {
     let description: string;
-    if (outcome.skippedReason === 'disabled') {
-        description = 'Skipped — ingestion is disabled in settings.';
-    } else if (outcome.skippedReason === 'unavailable') {
-        description = 'Skipped — ClickHouse or the history provider is unavailable.';
-    } else if (outcome.skippedReason === 'overlapping') {
-        description = 'Skipped — another tick is already running.';
+    if (outcome.skippedReason) {
+        description = `Skipped. ${describeSkipReason(outcome.skippedReason)}`;
     } else {
         const errors = outcome.totals.errors > 0 ? `, ${outcome.totals.errors} error${outcome.totals.errors === 1 ? '' : 's'}` : '';
         description = `${outcome.totals.accountsTouched} account${outcome.totals.accountsTouched === 1 ? '' : 's'}, `
@@ -110,6 +111,11 @@ export function AccountsTab({ stats, onChanged }: { stats: IAccountHistoryStatsV
     const [busy, setBusy] = useState(false);
     const { push } = useToast();
 
+    /**
+     * Start tracking the selected address, then clear the form so the next
+     * address can be entered straight away. The page refetches stats through
+     * `onChanged`, which is what makes the new row appear.
+     */
     const add = useCallback(async () => {
         setBusy(true);
         try {
@@ -125,6 +131,12 @@ export function AccountsTab({ stats, onChanged }: { stats: IAccountHistoryStatsV
         }
     }, [address, label, onChanged, push]);
 
+    /**
+     * Stop tracking one account. The toast says the stored history stays,
+     * because an operator removing a row may expect it to be deleted.
+     *
+     * @param addr - Base58 address to stop tracking.
+     */
     const remove = useCallback(async (addr: string) => {
         try {
             await removeTrackedAccount(addr);
@@ -160,6 +172,13 @@ export function AccountsTab({ stats, onChanged }: { stats: IAccountHistoryStatsV
         }
     }, [onChanged, push]);
 
+    /**
+     * Pause or resume one account's ingestion while keeping its cursors, so a
+     * resumed account carries on from where it stopped.
+     *
+     * @param addr - Base58 address to change.
+     * @param paused - True to pause, false to resume.
+     */
     const togglePause = useCallback(async (addr: string, paused: boolean) => {
         try {
             await setAccountPaused(addr, paused);
@@ -169,6 +188,10 @@ export function AccountsTab({ stats, onChanged }: { stats: IAccountHistoryStatsV
         }
     }, [onChanged, push]);
 
+    /**
+     * Run one backfill tick now instead of waiting for its schedule, and
+     * report in a toast what the tick did.
+     */
     const runNow = useCallback(async () => {
         try {
             const outcome = await runIngestion();
@@ -182,6 +205,10 @@ export function AccountsTab({ stats, onChanged }: { stats: IAccountHistoryStatsV
         }
     }, [push]);
 
+    /**
+     * Run one forward-sync tick now, so completed accounts pick up new
+     * transactions without waiting for the schedule, and report the outcome.
+     */
     const runForwardNow = useCallback(async () => {
         try {
             const outcome = await runForwardSync();
@@ -196,52 +223,93 @@ export function AccountsTab({ stats, onChanged }: { stats: IAccountHistoryStatsV
     }, [push]);
 
     const accounts = stats?.accounts ?? [];
+    const totals = stats?.totals;
 
     return (
-        <Stack gap="md">
-            <div className={styles.toolbar}>
-                <AddressSelector
-                    value={address}
-                    onChange={setAddress}
-                    aria-label="Account address to track"
-                    disabled={busy}
-                />
+        <Panel
+            title="Tracked accounts"
+            actions={(
+                <>
+                    <Button variant="secondary" icon={<Play size={16} />} onClick={() => { void runNow(); }}>
+                        Run backfill
+                    </Button>
+                    <Button variant="secondary" icon={<RefreshCw size={16} />} onClick={() => { void runForwardNow(); }}>
+                        Run forward sync
+                    </Button>
+                </>
+            )}
+        >
+            {totals && (
+                <StatGrid size="sm">
+                    <StatTile
+                        size="sm"
+                        surface={false}
+                        label="Tracked"
+                        value={totals.trackedAccounts.toLocaleString()}
+                        note={`${totals.snapshottedTodayAccounts.toLocaleString()} snapshotted today`}
+                    />
+                    <StatTile size="sm" surface={false} label="Rows stored" value={totals.rowsIngested.toLocaleString()} />
+                    <StatTile size="sm" surface={false} label="Complete" value={totals.completeAccounts.toLocaleString()} />
+                    <StatTile
+                        size="sm"
+                        surface={false}
+                        label="Catching up"
+                        value={totals.catchingUpAccounts.toLocaleString()}
+                        note="Forward sync draining a backlog"
+                        tone={totals.catchingUpAccounts > 0 ? 'warning' : 'neutral'}
+                    />
+                    <StatTile
+                        size="sm"
+                        surface={false}
+                        label="Failed"
+                        value={totals.failedAccounts.toLocaleString()}
+                        tone={totals.failedAccounts > 0 ? 'danger' : 'neutral'}
+                    />
+                    <StatTile
+                        size="sm"
+                        surface={false}
+                        label="Current to"
+                        value={<ClientTime date={totals.oldestNewestTimestamp} format="relative" />}
+                        note="Least current complete account"
+                    />
+                </StatGrid>
+            )}
+
+            <div className={styles.add_form}>
+                <div className={styles.add_form__address}>
+                    <AddressSelector
+                        value={address}
+                        onChange={setAddress}
+                        aria-label="Account address to track"
+                        disabled={busy}
+                    />
+                </div>
                 <Input
                     value={label}
                     onChange={(event) => setLabel(event.target.value)}
                     placeholder="Label (optional)"
                     aria-label="Account label"
                     disabled={busy}
+                    className={styles.add_form__label}
                 />
-                <Button variant="primary" size="sm" loading={busy} disabled={!address} onClick={() => { void add(); }}>
-                    <Plus size={16} /> Track
-                </Button>
-                <Button variant="secondary" size="sm" onClick={() => { void runNow(); }}>
-                    <Play size={16} /> Run backfill
-                </Button>
-                <Button variant="secondary" size="sm" onClick={() => { void runForwardNow(); }}>
-                    <RefreshCw size={16} /> Run forward sync
+                <Button variant="primary" icon={<Plus size={16} />} loading={busy} disabled={!address} onClick={() => { void add(); }}>
+                    Track
                 </Button>
             </div>
 
-            <p className="text-muted" style={{ margin: 0, fontSize: 'var(--font-size-body-sm)' }}>
-                Backfill walks each account&apos;s full history newest-first, bounded per tick — no percentage, since the total count is
-                unknown until the walk ends. Once complete, forward sync keeps the account current: &ldquo;Newest tx&rdquo; is the latest
-                transaction stored, and a <em>catching up</em> tag means forward sync is still draining a backlog larger than one tick.
-            </p>
-
             {accounts.length === 0
-                ? <div className="text-muted">No accounts tracked yet.</div>
+                ? <p className="text-muted">No accounts tracked yet.</p>
                 : (
-                    /* Eight columns do not fit a tablet, so each account stacks
-                       into an entry headed by its label or address, with its
-                       buttons on the entry's last line. */
-                        <Table stackAt="tablet">
+                    /* Eight columns need about 1,250px, more than a tablet's
+                       976px content column, so each account stacks into an
+                       entry headed by its address and label, with its buttons
+                       on the entry's last line. */
+                        <Table flush stackAt="tablet">
                             <Thead>
                                 <Tr>
                                     <Th>Account</Th>
                                     <Th width="shrink">Status</Th>
-                                    <Th width="shrink">Rows</Th>
+                                    <Th width="shrink" numeric>Rows</Th>
                                     <Th width="shrink">Oldest reached</Th>
                                     <Th width="shrink">Newest tx</Th>
                                     <Th width="shrink">Snapshot</Th>
@@ -253,9 +321,19 @@ export function AccountsTab({ stats, onChanged }: { stats: IAccountHistoryStatsV
                                 {accounts.map(({ account, progress }) => (
                                     <Tr key={account.address} hasError={progress.status === 'failed'}>
                                         <Td>
-                                            <div className={styles.account_addr}>{account.label ?? account.address}</div>
-                                            {account.label && <div className="text-muted">{account.address}</div>}
-                                            {progress.lastError && <div className={styles.account_error}>{progress.lastError}</div>}
+                                            <div className={styles.account_identity}>
+                                                <TronAddress address={account.address} />
+                                                {account.label && <span className={styles.account_label}>{account.label}</span>}
+                                            </div>
+                                            {/* One line, with the full message in the
+                                                tooltip and on the Activity and Logs
+                                                tabs, so a long TronGrid error does not
+                                                make its row four lines tall. */}
+                                            {progress.lastError && (
+                                                <div className={styles.account_error} title={progress.lastError}>
+                                                    {progress.lastError}
+                                                </div>
+                                            )}
                                         </Td>
                                         <Td label="Status">
                                             <div className={styles.badge_stack}>
@@ -269,9 +347,9 @@ export function AccountsTab({ stats, onChanged }: { stats: IAccountHistoryStatsV
                                                 <div className={styles.source_flags}>{describeDraining(progress.forwardDraining)}</div>
                                             )}
                                         </Td>
-                                        <Td label="Rows" muted>{progress.rowsIngested.toLocaleString()}</Td>
+                                        <Td label="Rows" muted numeric>{progress.rowsIngested.toLocaleString()}</Td>
                                         <Td label="Oldest reached" muted>
-                                            {progress.oldestTimestampReached ? <ClientTime date={progress.oldestTimestampReached} format="datetime" /> : '—'}
+                                            {progress.oldestTimestampReached ? <ClientTime date={progress.oldestTimestampReached} format="short" /> : '—'}
                                         </Td>
                                         <Td label="Newest tx" muted>
                                             {progress.newestTimestampSeen ? <ClientTime date={progress.newestTimestampSeen} format="relative" /> : '—'}
@@ -282,7 +360,7 @@ export function AccountsTab({ stats, onChanged }: { stats: IAccountHistoryStatsV
                                             {progress.lastSnapshotDay ?? '—'}
                                         </Td>
                                         <Td label="Last run" muted>
-                                            {progress.lastRunAt ? <ClientTime date={progress.lastRunAt} format="datetime" /> : '—'}
+                                            {progress.lastRunAt ? <ClientTime date={progress.lastRunAt} format="short" /> : '—'}
                                             {progress.lastForwardRunAt && (
                                                 <div className={styles.forward_run}>
                                                     refreshed <ClientTime date={progress.lastForwardRunAt} format="relative" />
@@ -324,6 +402,6 @@ export function AccountsTab({ stats, onChanged }: { stats: IAccountHistoryStatsV
                             </Tbody>
                         </Table>
                 )}
-        </Stack>
+        </Panel>
     );
 }

@@ -19,9 +19,11 @@
  */
 
 import { useEffect, useState, useCallback, type ChangeEvent } from 'react';
-import { Plug, Eye, EyeOff, CheckCircle, AlertCircle, ExternalLink, Trash2, Plus } from 'lucide-react';
+import { Eye, EyeOff, CheckCircle, AlertCircle, ExternalLink, Trash2, Plus } from 'lucide-react';
 import { Card } from '../../../../../../../components/ui/Card';
+import { Panel } from '../../../../../../../components/ui/Panel';
 import { Button } from '../../../../../../../components/ui/Button';
+import { Field } from '../../../../../../../components/ui/Field';
 import { IconButton } from '../../../../../../../components/ui/IconButton';
 import { Input } from '../../../../../../../components/ui/Input';
 import { Switch } from '../../../../../../../components/ui/Switch';
@@ -255,11 +257,10 @@ export function TronGridProviderSection() {
     const busy = saving || addingKey || testing || busyKeyIndex !== null;
 
     return (
-        <Card padding="sm" noBackgroundImage>
-            <Stack gap="md">
-                <div className={styles.provider_header}>
-                    <Plug size={16} aria-hidden style={{ color: 'var(--color-primary)' }} />
-                    <h3 className={styles.provider_title}>TronGrid</h3>
+        <Panel
+            title="TronGrid"
+            meta={(
+                <span className={styles.badges}>
                     {config && config.apiKeyCount > 0 ? (
                         <Badge tone="success">{config.apiKeyCount} key{config.apiKeyCount === 1 ? '' : 's'}</Badge>
                     ) : (
@@ -270,120 +271,81 @@ export function TronGridProviderSection() {
                     ) : (
                         <Badge tone="warning">Connection staged</Badge>
                     )}
-                </div>
+                </span>
+            )}
+            actions={(
+                <>
+                    <Button
+                        variant="secondary"
+                        onClick={handleTest}
+                        loading={testing}
+                        disabled={busy}
+                        title="Probes every stored key with the saved config, so save before testing a new one"
+                    >
+                        Test connection
+                    </Button>
+                    <Button variant="primary" onClick={handleSave} loading={saving} disabled={busy}>
+                        Save
+                    </Button>
+                </>
+            )}
+        >
+            <p className={styles.description}>
+                Sync, chain parameters, and account history still reach TronGrid through the TRONGRID_API_KEY
+                environment variables and a host fixed in source, so the connection settings below change none of it
+                until the switchover moves the client onto them. Block receipts is the exception and takes effect
+                immediately.
+            </p>
 
-                <p className="text-muted">
-                    Blockchain sync, chain parameters, and account history all reach TRON through TronGrid. That access is
-                    still configured by the <strong>TRONGRID_API_KEY</strong> environment variables and a host fixed in
-                    source — <strong>the connection settings below change none of it</strong>. They store the same values in
-                    the database so they are in place, and verified, before the switchover moves the client onto them.
-                    <strong> Block receipts is the exception</strong>: that switch takes effect immediately.
-                </p>
-
-                <div className={styles.field}>
-                    <label className={styles.label} htmlFor="trongrid-receipts">Block receipts</label>
+            <div className={styles.field_grid}>
+                <Field
+                    inline
+                    label="Block receipts"
+                    htmlFor="trongrid-receipts"
+                    className={styles.field_wide}
+                    hint="Off by default, which leaves energy, bandwidth, and internal transactions empty on every transaction. On adds one request per block, not per transaction, and fills them in from the next block onward; blocks already indexed are not backfilled."
+                >
                     <Switch
                         id="trongrid-receipts"
                         on={fetchBlockReceipts}
                         onChange={setFetchBlockReceipts}
                         disabled={busy}
-                        aria-label="Fetch transaction receipts for every synced block"
+                        aria-label="Block receipts"
                     />
-                    <span className={styles.hint}>
-                        Off by default. Sync reads a block&apos;s transactions but not their receipts, so energy, bandwidth,
-                        and internal transactions are absent on every transaction and the block totals that add them up are
-                        always zero. Turning this on adds <strong>one</strong> request per block — one for the whole block,
-                        not one per transaction — and fills those fields in from the next block onward. Blocks already
-                        indexed keep the zeros; nothing is backfilled.
-                    </span>
-                </div>
+                </Field>
 
-                <div className={styles.field}>
-                    <label className={styles.label} htmlFor="trongrid-enabled">Enabled</label>
+                <Field
+                    inline
+                    label="Enabled"
+                    htmlFor="trongrid-enabled"
+                    hint="Reserved for the switchover. Until then this flag is recorded and nothing acts on it."
+                >
                     <Switch
                         id="trongrid-enabled"
                         on={enabled}
                         onChange={setEnabled}
                         disabled={busy}
-                        aria-label="Enable the database-backed TronGrid configuration"
+                        aria-label="Enabled"
                     />
-                    <span className={styles.hint}>
-                        Reserved for the switchover. Until then this flag is recorded and nothing acts on it.
-                    </span>
-                </div>
+                </Field>
 
-                <div className={styles.field}>
-                    <label className={styles.label} htmlFor="trongrid-base">Base URL</label>
+                <Field
+                    label="Base URL"
+                    className={styles.field_wide}
+                    hint="Serves both the REST calls and the TronWeb full node. Point it at a private node to leave the public API."
+                >
                     <Input
                         id="trongrid-base"
                         type="text"
                         value={baseUrl}
                         onChange={(e: ChangeEvent<HTMLInputElement>) => setBaseUrl(e.target.value)}
                         placeholder="https://api.trongrid.io"
+                        className={styles.mono}
                         disabled={busy}
-                        aria-label="TronGrid base URL"
                     />
-                    <span className={styles.hint}>
-                        Serves both the REST calls and the TronWeb full node. Point it at a private node to leave the public
-                        API entirely.
-                    </span>
-                </div>
+                </Field>
 
-                <div className={styles.field}>
-                    <span className={styles.label}>API keys</span>
-                    {config && config.apiKeys.length > 0 ? (
-                        <ul className={styles.key_list}>
-                            {config.apiKeys.map((maskedKey, index) => (
-                                <li key={`${maskedKey}-${index}`} className={styles.key_row}>
-                                    <span className={styles.key_position}>#{index + 1}</span>
-                                    <span className={styles.key_value}>{maskedKey}</span>
-                                    <IconButton
-                                        onClick={() => handleRemoveKey(index)}
-                                        disabled={busy}
-                                        aria-label={`Remove API key ${index + 1}`}
-                                    >
-                                        <Trash2 size={18} />
-                                    </IconButton>
-                                </li>
-                            ))}
-                        </ul>
-                    ) : (
-                        <span className={styles.hint}>
-                            No keys stored — requests would use TronGrid&apos;s shared per-IP pool.
-                        </span>
-                    )}
-                    <div className={styles.input_row}>
-                        <Input
-                            id="trongrid-key"
-                            type={showKey ? 'text' : 'password'}
-                            value={keyInput}
-                            onChange={(e: ChangeEvent<HTMLInputElement>) => setKeyInput(e.target.value)}
-                            placeholder="Paste a TronGrid API key"
-                            disabled={busy}
-                            aria-label="New TronGrid API key"
-                        />
-                        <IconButton
-                            onClick={() => setShowKey((v) => !v)}
-                            disabled={busy}
-                            aria-label={showKey ? 'Hide key' : 'Show key'}
-                        >
-                            {showKey ? <EyeOff size={18} /> : <Eye size={18} />}
-                        </IconButton>
-                        <Button variant="secondary" size="sm" onClick={handleAddKey} loading={addingKey} disabled={busy}>
-                            <Plus size={18} aria-hidden /> Add
-                        </Button>
-                    </div>
-                    <span className={styles.hint}>
-                        Keys rotate round-robin, so each one adds its own rate-limit allowance. Get one from{' '}
-                        <a className={styles.docs_link} href={TRONGRID_KEYS_URL} target="_blank" rel="noopener noreferrer">
-                            TronGrid <ExternalLink size={14} aria-hidden />
-                        </a>
-                        . Keys are stored and shown masked; add or remove them individually.
-                    </span>
-                </div>
-
-                <div className={styles.field}>
-                    <label className={styles.label} htmlFor="trongrid-throttle">Request throttle (ms)</label>
+                <Field label="Request throttle (ms)" hint="Minimum delay between outbound requests. Lower burns the rate limit faster; 0 removes pacing.">
                     <Input
                         id="trongrid-throttle"
                         type="number"
@@ -393,15 +355,10 @@ export function TronGridProviderSection() {
                         value={throttleMs}
                         onChange={(e: ChangeEvent<HTMLInputElement>) => setThrottleMs(e.target.value)}
                         disabled={busy}
-                        aria-label="TronGrid request throttle in milliseconds"
                     />
-                    <span className={styles.hint}>
-                        Minimum delay between outbound requests. Lower burns the rate limit faster; 0 removes pacing.
-                    </span>
-                </div>
+                </Field>
 
-                <div className={styles.field}>
-                    <label className={styles.label} htmlFor="trongrid-queue">Max queue size</label>
+                <Field label="Max queue size" hint="Callers that may wait on the serial request queue before new ones are rejected, so the queue cannot grow without bound when TronGrid slows down.">
                     <Input
                         id="trongrid-queue"
                         type="number"
@@ -411,16 +368,10 @@ export function TronGridProviderSection() {
                         value={maxQueueSize}
                         onChange={(e: ChangeEvent<HTMLInputElement>) => setMaxQueueSize(e.target.value)}
                         disabled={busy}
-                        aria-label="TronGrid maximum request queue size"
                     />
-                    <span className={styles.hint}>
-                        How many callers may wait on the serial request queue before new ones are rejected — the backstop
-                        against unbounded queue growth when TronGrid slows down.
-                    </span>
-                </div>
+                </Field>
 
-                <div className={styles.field}>
-                    <label className={styles.label} htmlFor="trongrid-timeout">Request timeout (ms)</label>
+                <Field label="Request timeout (ms)" hint="Per-request HTTP timeout before the call is abandoned and retried.">
                     <Input
                         id="trongrid-timeout"
                         type="number"
@@ -430,51 +381,100 @@ export function TronGridProviderSection() {
                         value={timeoutMs}
                         onChange={(e: ChangeEvent<HTMLInputElement>) => setTimeoutMs(e.target.value)}
                         disabled={busy}
-                        aria-label="TronGrid per-request timeout in milliseconds"
                     />
-                    <span className={styles.hint}>Per-request HTTP timeout before the call is abandoned and retried.</span>
-                </div>
+                </Field>
 
-                <div className={styles.actions}>
-                    <Button variant="primary" onClick={handleSave} loading={saving} disabled={busy}>
-                        Save
-                    </Button>
-                    <Button variant="secondary" onClick={handleTest} loading={testing} disabled={busy}>
-                        Test connection
-                    </Button>
-                    <span className={styles.hint}>
-                        Test uses the saved config and probes every stored key — save before testing a new one.
-                    </span>
-                </div>
-
-                {testResult && (
-                    <Stack gap="sm">
-                        <div className={testResult.ok ? styles.feedback_success : styles.feedback_error}>
-                            {testResult.ok ? <CheckCircle size={16} /> : <AlertCircle size={16} />}
-                            <span>{testResult.message}</span>
-                        </div>
-                        {testResult.keyResults.map((probe, index) => (
-                            <div
-                                key={`${probe.index ?? 'keyless'}-${index}`}
-                                className={probe.ok ? styles.feedback_success : styles.feedback_error}
+                <Field
+                    label="API keys"
+                    htmlFor="trongrid-key"
+                    className={styles.field_wide}
+                    hint={(
+                        // One element, so the field's message column keeps the
+                        // sentence and its link on one flowing line.
+                        <span>
+                            Keys rotate round-robin, so each adds its own rate-limit allowance. Get one from{' '}
+                            <a className={styles.docs_link} href={TRONGRID_KEYS_URL} target="_blank" rel="noopener noreferrer">
+                                TronGrid <ExternalLink size={14} aria-hidden />
+                            </a>
+                            . Keys are stored and shown masked; Test connection probes every saved key.
+                        </span>
+                    )}
+                >
+                    <div>
+                        {config && config.apiKeys.length > 0 ? (
+                            <ul className={styles.key_list}>
+                                {config.apiKeys.map((maskedKey, index) => (
+                                    <li key={`${maskedKey}-${index}`} className={styles.key_row}>
+                                        <span className={styles.key_position}>#{index + 1}</span>
+                                        <span className={styles.key_value}>{maskedKey}</span>
+                                        <IconButton
+                                            onClick={() => handleRemoveKey(index)}
+                                            disabled={busy}
+                                            aria-label={`Remove API key ${index + 1}`}
+                                        >
+                                            <Trash2 size={18} />
+                                        </IconButton>
+                                    </li>
+                                ))}
+                            </ul>
+                        ) : (
+                            <p className={styles.hint}>
+                                No keys stored — requests would use TronGrid&apos;s shared per-IP pool.
+                            </p>
+                        )}
+                        <div className={styles.input_row}>
+                            <Input
+                                id="trongrid-key"
+                                aria-describedby="trongrid-key-hint"
+                                type={showKey ? 'text' : 'password'}
+                                value={keyInput}
+                                onChange={(e: ChangeEvent<HTMLInputElement>) => setKeyInput(e.target.value)}
+                                placeholder="Paste a TronGrid API key"
+                                className={styles.mono}
+                                disabled={busy}
+                            />
+                            <IconButton
+                                onClick={() => setShowKey((v) => !v)}
+                                disabled={busy}
+                                aria-label={showKey ? 'Hide key' : 'Show key'}
                             >
-                                {probe.ok ? <CheckCircle size={16} /> : <AlertCircle size={16} />}
-                                <span>
-                                    {probe.message}
-                                    {typeof probe.latencyMs === 'number' && ` (${probe.latencyMs} ms)`}
-                                </span>
-                            </div>
-                        ))}
-                    </Stack>
-                )}
-
-                {feedback && (
-                    <div className={feedback.type === 'success' ? styles.feedback_success : styles.feedback_error}>
-                        {feedback.type === 'success' ? <CheckCircle size={16} /> : <AlertCircle size={16} />}
-                        <span>{feedback.message}</span>
+                                {showKey ? <EyeOff size={18} /> : <Eye size={18} />}
+                            </IconButton>
+                            <Button variant="secondary" onClick={handleAddKey} loading={addingKey} disabled={busy} icon={<Plus size={18} aria-hidden />}>
+                                Add
+                            </Button>
+                        </div>
                     </div>
-                )}
-            </Stack>
-        </Card>
+                </Field>
+            </div>
+
+            {testResult && (
+                <Stack gap="sm">
+                    <div className={testResult.ok ? styles.feedback_success : styles.feedback_error} role="status">
+                        {testResult.ok ? <CheckCircle size={16} aria-hidden /> : <AlertCircle size={16} aria-hidden />}
+                        <span>{testResult.message}</span>
+                    </div>
+                    {testResult.keyResults.map((probe, index) => (
+                        <div
+                            key={`${probe.index ?? 'keyless'}-${index}`}
+                            className={probe.ok ? styles.feedback_success : styles.feedback_error}
+                        >
+                            {probe.ok ? <CheckCircle size={16} aria-hidden /> : <AlertCircle size={16} aria-hidden />}
+                            <span>
+                                {probe.message}
+                                {typeof probe.latencyMs === 'number' && ` (${probe.latencyMs} ms)`}
+                            </span>
+                        </div>
+                    ))}
+                </Stack>
+            )}
+
+            {feedback && (
+                <div className={feedback.type === 'success' ? styles.feedback_success : styles.feedback_error} role="status">
+                    {feedback.type === 'success' ? <CheckCircle size={16} aria-hidden /> : <AlertCircle size={16} aria-hidden />}
+                    <span>{feedback.message}</span>
+                </div>
+            )}
+        </Panel>
     );
 }

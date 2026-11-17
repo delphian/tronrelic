@@ -37,6 +37,7 @@ import { Plus, Pencil, Trash2, Check, X, Search } from 'lucide-react';
 import { Stack } from '../../../../../../components/layout';
 import { Card } from '../../../../../../components/ui/Card';
 import { Button } from '../../../../../../components/ui/Button';
+import { IconButton } from '../../../../../../components/ui/IconButton';
 import { Input } from '../../../../../../components/ui/Input';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../../components/ui/Table';
 import { ClientTime } from '../../../../../../components/ui/ClientTime';
@@ -349,7 +350,9 @@ export function AddressTagsManager() {
      * swapping to an input with save/cancel while that chip is being edited.
      * Actions live on the chip rather than in a row-level column because a row
      * now holds many tags, and a single action column could not say which one
-     * it acts on.
+     * it acts on. They are borderless icon buttons, which stay muted until
+     * hovered, because a bordered button pair on every chip made each row
+     * taller and repeated a red delete control down the whole table.
      *
      * @param item - The assignment this chip represents.
      * @returns The chip element for its address row's tag cell.
@@ -370,47 +373,49 @@ export function AddressTagsManager() {
                             className={styles.tag_input}
                             autoFocus
                         />
-                        <Button
+                        <IconButton
                             variant="primary"
                             size="xs"
                             onClick={() => void handleRename(item)}
                             disabled={busy}
                             aria-label={`Save rename of tag ${item.tag}`}
+                            title="Save"
                         >
                             <Check size={14} />
-                        </Button>
-                        <Button
-                            variant="ghost"
+                        </IconButton>
+                        <IconButton
                             size="xs"
                             onClick={() => setEditKey(null)}
                             disabled={busy}
                             aria-label={`Cancel rename of tag ${item.tag}`}
+                            title="Cancel"
                         >
                             <X size={14} />
-                        </Button>
+                        </IconButton>
                     </>
                 ) : (
                     <>
                         <span className={styles.tag_text}>{item.tag}</span>
-                        <Button
-                            variant="ghost"
+                        <IconButton
                             size="xs"
                             onClick={() => {
                                 setEditKey(key);
                                 setEditValue(item.tag);
                             }}
                             aria-label={`Rename tag ${item.tag}`}
+                            title="Rename"
                         >
                             <Pencil size={14} />
-                        </Button>
-                        <Button
+                        </IconButton>
+                        <IconButton
                             variant="danger"
                             size="xs"
                             onClick={() => handleDelete(item)}
                             aria-label={`Delete tag ${item.tag}`}
+                            title="Delete"
                         >
                             <Trash2 size={14} />
-                        </Button>
+                        </IconButton>
                     </>
                 )}
             </span>
@@ -483,9 +488,9 @@ export function AddressTagsManager() {
                         <Table stackAt="mobile">
                             <Thead>
                                 <Tr>
-                                    <Th>Address</Th>
+                                    <Th width="shrink">Address</Th>
                                     <Th>Tags</Th>
-                                    <Th>Updated</Th>
+                                    <Th width="shrink">Updated</Th>
                                 </Tr>
                             </Thead>
                             <Tbody>
@@ -500,7 +505,7 @@ export function AddressTagsManager() {
                                             </div>
                                         </Td>
                                         <Td label="Updated">
-                                            <ClientTime date={group.updatedAt} format="datetime" />
+                                            <ClientTime date={group.updatedAt} format="short" />
                                         </Td>
                                     </Tr>
                                 ))}

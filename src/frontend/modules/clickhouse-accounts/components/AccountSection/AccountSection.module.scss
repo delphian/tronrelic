@@ -51,6 +51,17 @@
     font-size: var(--font-size-body-sm);
 }
 
+/* The view tabs on the left and, while Activity is open, its window control at
+   the end of the same row. Wraps the window control under the tabs when the
+   card is too narrow for both. */
+.view_bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap-sm);
+}
+
 .fact {
     display: flex;
     align-items: baseline;

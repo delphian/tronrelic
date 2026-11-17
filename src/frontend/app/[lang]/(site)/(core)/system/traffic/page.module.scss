@@ -2,19 +2,12 @@
  * System Traffic Page Styles
  *
  * The tab row, the global period and bot-filter controls, and the wrappers
- * that stack or band each tab's sections. Spacing between regions uses the
- * medium gap rather than the large one: the regions on this page are related
- * parts of one dashboard, and the large gap left a band of empty background
- * between every section, which is space an operator scrolls past for nothing.
+ * that stack or band each tab's sections. The `AdminPage` shell spaces the
+ * header, tab row, controls, and panel. Spacing inside a tab uses the medium
+ * gap rather than the large one: the sections on this page are related parts
+ * of one dashboard, and the large gap left a band of empty background between
+ * every section, which is space an operator scrolls past for nothing.
  */
-
-.container {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-md);
-    container-type: inline-size;
-    container-name: traffic-admin;
-}
 
 /* Tab row: the Submenu-Pattern menu (MenuNavClient) on the left, with the live
    counter pushed to the right edge. Replaces the former hand-rolled button row

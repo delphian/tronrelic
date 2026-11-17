@@ -48,8 +48,11 @@ interface IRefreshIndicatorProps {
  * the oldest answers the question the operator is actually asking, which is how
  * current the *whole* screen is.
  *
+ * The readout is phrasing content, a `span` rather than a `div`, so it can sit
+ * in a panel's header line beside the title it annotates.
+ *
  * @param sources - Consoles to summarize, with their latest poll outcomes.
- * @returns The right-aligned refresh readout.
+ * @returns The refresh readout.
  */
 export function RefreshIndicator({ sources }: IRefreshIndicatorProps) {
     const successes = sources
@@ -68,7 +71,7 @@ export function RefreshIndicator({ sources }: IRefreshIndicatorProps) {
     const failing = sources.filter(source => source.failing).map(source => source.label);
 
     return (
-        <div className={styles.meta} role="status" aria-label="Console refresh cadence">
+        <span className={styles.meta} role="status" aria-label="Console refresh cadence">
             <span className={styles.meta_label}>Refresh {REFRESH_INTERVAL_MS / 1000}s</span>
             {failing.length > 0 && (
                 <span className={styles.meta_stale}>
@@ -81,6 +84,6 @@ export function RefreshIndicator({ sources }: IRefreshIndicatorProps) {
                     <ClientTime date={lastSuccessAt} format="time" />
                 </span>
             )}
-        </div>
+        </span>
     );
 }

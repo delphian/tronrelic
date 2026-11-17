@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { Fragment, useState, useEffect, useCallback, useMemo, type ReactNode } from 'react';
 import {
     AlertCircle,
     CheckCircle,
@@ -9,18 +9,21 @@ import {
     XCircle
 } from 'lucide-react';
 import { Stack } from '../../../../../../../components/layout';
-import { Card } from '../../../../../../../components/ui/Card';
+import { Panel } from '../../../../../../../components/ui/Panel';
 import { Button } from '../../../../../../../components/ui/Button';
 import { Badge } from '../../../../../../../components/ui/Badge';
+import { Pagination } from '../../../../../../../components/ui/Pagination';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../../../components/ui/Table';
 import { Select } from '../../../../../../../components/ui/Select';
 import { ClientTime } from '../../../../../../../components/ui/ClientTime';
 import { formatBytes } from '../../../../../../../lib/format';
 import { StatStrip } from './StatStrip';
+import { formatMs } from './pipeline/pipeline-format';
 import { CollectionBrowser } from '../../../../../../../modules/database';
 import styles from './MongoSection.module.scss';
 
-interface DatabaseStatus {
+/** MongoDB health as the database probe reports it. */
+interface IDatabaseStatus {
     connected: boolean;
     responseTime: number | null;
     poolSize: number;
@@ -30,6 +33,7 @@ interface DatabaseStatus {
     recentErrors: string[];
 }
 
+/** One migration found on disk that has not run. */
 interface IMigrationMetadata {
     id: string;
     description: string;
@@ -40,6 +44,7 @@ interface IMigrationMetadata {
     checksum?: string;
 }
 
+/** One recorded run of a migration. */
 interface IMigrationExecution {
     migrationId: string;
     status: 'completed' | 'failed';
@@ -50,6 +55,7 @@ interface IMigrationExecution {
     errorStack?: string;
 }
 
+/** The status endpoint's answer: the pending queue and the totals. */
 interface IMigrationStatus {
     pending: IMigrationMetadata[];
     completed: IMigrationExecution[];
@@ -58,21 +64,57 @@ interface IMigrationStatus {
     totalCompleted: number;
 }
 
+/** The history endpoint's answer. */
 interface IMigrationHistory {
     migrations: IMigrationExecution[];
     total: number;
 }
 
+/** Status filter choices for the history table. */
+type HistoryStatusFilter = 'all' | 'completed' | 'failed';
+
+/**
+ * Runs shown per history page.
+ *
+ * The backend returns the whole history in one response, because it is a
+ * registry of every migration the deployment has run rather than an unbounded
+ * log, so the page is cut in the browser. Showing all of it put fifty-odd rows
+ * on the tab, about ten thousand pixels on a phone.
+ */
+const HISTORY_PAGE_SIZE = 10;
+
+/** Columns in a history row, which an error row spans. */
+const HISTORY_COLUMNS = 4;
+
+/**
+ * Let a qualified migration id wrap after its separators.
+ *
+ * An id such as `module:account-history:006_add_withdrawable_reward_to_snapshots`
+ * is one unbroken word, so on a phone it broke at whichever letter reached the
+ * edge. A break opportunity after each colon and underscore makes it wrap
+ * between its parts instead.
+ *
+ * @param id - The migration id.
+ * @returns The id with a `<wbr>` after each colon and underscore.
+ */
+function breakableId(id: string): ReactNode {
+    const parts = id.split(/(?<=[:_])/);
+    return parts.map((part, index) => (
+        <Fragment key={index}>
+            {part}
+            {index < parts.length - 1 && <wbr />}
+        </Fragment>
+    ));
+}
+
 /**
  * MongoDB administration body — health, the collection browser, and migrations.
  *
- * Each concern stands in its own card rather than sharing one enclosing panel:
- * they are independent surfaces an operator reads separately, and stacking them
- * inside a single card gave no boundary between a health readout, a data
- * browser, and an execution log. Order follows how the tab is actually used —
- * health first as the at-a-glance condition, the browser next as the reason to
- * open the tab, and migrations last because they are consulted during a
- * deploy rather than during routine inspection.
+ * Each concern stands in its own panel rather than sharing one: they are
+ * independent surfaces an operator reads separately. Order follows how the tab
+ * is used — health first as the at-a-glance condition, the browser next as the
+ * reason to open the tab, and migrations last because they are consulted
+ * during a deploy rather than during routine inspection.
  *
  * Migrations live on this tab because the `migrations` audit log is stored in
  * MongoDB; the executor still dispatches ClickHouse-targeted migrations
@@ -80,23 +122,19 @@ interface IMigrationHistory {
  * and when belongs to Mongo. ClickHouse health and the table browser
  * are a separate tab (see ClickHouseSection).
  *
- * @returns The MongoDB tab body as three sibling cards.
+ * @returns The MongoDB tab body as sibling panels.
  */
 export function MongoSection() {
     return (
         <Stack gap="lg">
-            <Card padding="sm" noBackgroundImage>
-                <MongoHealth />
-            </Card>
-            {/* The browser draws its own panel, so it sits beside the other cards
+            <MongoHealth />
+            {/* The browser draws its own panel, so it sits beside the other panels
               * rather than inside one. It starts collapsed: this view is unscoped,
               * so it lists every collection in the deployment, and expanded it
               * would bury the migration log under a hundred rows. Closed, it also
               * holds back the statistics request, one collStats per collection. */}
             <CollectionBrowser collapsible title="Collection Browser" />
-            <Card padding="sm" noBackgroundImage>
-                <Migrations />
-            </Card>
+            <Migrations />
         </Stack>
     );
 }
@@ -104,12 +142,13 @@ export function MongoSection() {
 /**
  * MongoDB connection health, polled every ten seconds.
  *
- * @returns The health card body.
+ * @returns The health panel.
  */
 function MongoHealth() {
-    const [database, setDatabase] = useState<DatabaseStatus | null>(null);
+    const [database, setDatabase] = useState<IDatabaseStatus | null>(null);
     const [error, setError] = useState<string | null>(null);
 
+    /** Read the database probe, keeping the last reading's absence explicit on failure. */
     const fetchData = useCallback(async () => {
         try {
             const response = await fetch(`/api/admin/system/health/database`);
@@ -134,15 +173,12 @@ function MongoHealth() {
     }, [fetchData]);
 
     return (
-        <div className={styles.block}>
-            <h3 className={styles.section_title}>Health</h3>
+        <Panel title="Health">
             {error && (
-                <div className="alert alert--danger" role="alert">
-                    <span className={styles.error_inline}>
-                        <AlertCircle size={14} aria-hidden="true" />
-                        {error}
-                    </span>
-                </div>
+                <p className={styles.error_inline} role="alert">
+                    <AlertCircle size={14} aria-hidden="true" />
+                    {error}
+                </p>
             )}
             {database && (
                 <StatStrip
@@ -162,25 +198,28 @@ function MongoHealth() {
                     ]}
                 />
             )}
-        </div>
+        </Panel>
     );
 }
 
 /**
- * Migration status, pending queue, and execution history.
+ * Migration status, pending queue, and execution history, as two panels: the
+ * pending queue with the controls that run it, then the history of runs.
  *
- * @returns The migrations card body.
+ * @returns The two migration panels.
  */
 function Migrations() {
     const [status, setStatus] = useState<IMigrationStatus | null>(null);
     const [history, setHistory] = useState<IMigrationHistory | null>(null);
     const [executing, setExecuting] = useState(false);
     const [autoRefresh, setAutoRefresh] = useState(false);
-    const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'failed'>('all');
+    const [statusFilter, setStatusFilter] = useState<HistoryStatusFilter>('all');
     const [sourceFilter, setSourceFilter] = useState<string>('all');
+    const [page, setPage] = useState(1);
     const [expandedErrors, setExpandedErrors] = useState<Set<string>>(new Set());
     const [error, setError] = useState<string | null>(null);
 
+    /** Load the pending queue and the running flag. */
     const fetchStatus = useCallback(async () => {
         try {
             const response = await fetch(`/api/admin/migrations/status`, {
@@ -195,6 +234,7 @@ function Migrations() {
         }
     }, []);
 
+    /** Load the run history for the selected status. */
     const fetchHistory = useCallback(async () => {
         try {
             const params = new URLSearchParams({ limit: '100', status: statusFilter });
@@ -210,6 +250,12 @@ function Migrations() {
         }
     }, [statusFilter]);
 
+    /**
+     * Run one pending migration, or every pending migration when no id is
+     * given, then reload the queue and the history so both show the result.
+     *
+     * @param migrationId - The migration to run; omit to run every pending one.
+     */
     const executeMigration = async (migrationId?: string) => {
         if (executing) return;
         setExecuting(true);
@@ -258,11 +304,17 @@ function Migrations() {
         }
     };
 
-    const toggleErrorExpansion = (migrationId: string) => {
+    /**
+     * Open or close one failed run's error under its row.
+     *
+     * @param runKey - The run's key, its migration id and start time, since a
+     *   migration that failed and then succeeded has two runs.
+     */
+    const toggleErrorExpansion = (runKey: string) => {
         setExpandedErrors((prev) => {
             const next = new Set(prev);
-            if (next.has(migrationId)) next.delete(migrationId);
-            else next.add(migrationId);
+            if (next.has(runKey)) next.delete(runKey);
+            else next.add(runKey);
             return next;
         });
     };
@@ -296,6 +348,12 @@ function Migrations() {
         [history, sourceFilter]
     );
 
+    // A filter change can leave fewer pages than the page being shown, so the
+    // page is clamped rather than showing an empty table.
+    const pageCount = Math.max(1, Math.ceil(filteredHistory.length / HISTORY_PAGE_SIZE));
+    const currentPage = Math.min(page, pageCount);
+    const pageRows = filteredHistory.slice((currentPage - 1) * HISTORY_PAGE_SIZE, currentPage * HISTORY_PAGE_SIZE);
+
     const groupedPending = useMemo(
         () =>
             status?.pending.reduce((acc, migration) => {
@@ -306,213 +364,225 @@ function Migrations() {
         [status?.pending]
     );
 
+    /**
+     * Render one pending migration with its own Execute button.
+     *
+     * @param migration - The pending migration.
+     * @returns The list item.
+     */
+    const renderPending = (migration: IMigrationMetadata) => (
+        <li key={migration.id} className={styles.migration_row}>
+            <div className={styles.migration_info}>
+                <code className={styles.migration_id}>{breakableId(migration.id)}</code>
+                <span className={styles.migration_description}>{migration.description}</span>
+                {migration.dependencies.length > 0 && (
+                    <span className={styles.migration_deps}>
+                        Depends on{' '}
+                        {migration.dependencies.map((dep, index) => (
+                            <Fragment key={dep}>
+                                {index > 0 && ', '}
+                                <code>{breakableId(dep)}</code>
+                            </Fragment>
+                        ))}
+                    </span>
+                )}
+            </div>
+            <Button
+                variant="ghost"
+                size="xs"
+                onClick={() => void executeMigration(migration.id)}
+                disabled={executing || status?.isRunning}
+                icon={<Play size={12} />}
+            >
+                Execute
+            </Button>
+        </li>
+    );
+
     return (
-        <div className={styles.block}>
-            <header className={styles.block_header}>
-                <h3 className={styles.section_title}>Migrations</h3>
-                <div className={styles.actions}>
-                    <Button
-                        variant="primary"
-                        size="xs"
-                        onClick={() => void executeMigration()}
-                        disabled={executing || status?.isRunning || !status?.totalPending}
-                        loading={executing}
-                        icon={<Play size={14} />}
-                    >
-                        Execute Pending
-                    </Button>
-                    <Button
-                        variant="ghost"
-                        size="xs"
-                        onClick={() => setAutoRefresh((prev) => !prev)}
-                        icon={<RefreshCw size={14} />}
-                    >
-                        {autoRefresh ? 'Auto-refresh On' : 'Auto-refresh Off'}
-                    </Button>
-                </div>
-            </header>
-
-            <StatStrip
-                items={[
-                    { label: 'Pending', value: (status?.totalPending ?? 0).toLocaleString() },
-                    { label: 'Completed', value: (status?.totalCompleted ?? 0).toLocaleString() },
-                    {
-                        label: 'Status',
-                        value: status?.isRunning ? 'Running' : 'Ready',
-                        tone: status?.isRunning ? 'warning' : 'success'
-                    }
-                ]}
-            />
-
-            {error && (
-                <div className="alert alert--danger" role="alert">
-                    <span className={styles.error_inline}>
+        <>
+            <Panel
+                title="Migrations"
+                meta={status && (
+                    <>
+                        {status.totalPending.toLocaleString()} pending · {status.totalCompleted.toLocaleString()} completed ·{' '}
+                        <Badge tone={status.isRunning ? 'warning' : 'success'} size="xs">
+                            {status.isRunning ? 'Running' : 'Ready'}
+                        </Badge>
+                    </>
+                )}
+                actions={(
+                    <>
+                        <Button
+                            variant="ghost"
+                            onClick={() => setAutoRefresh((prev) => !prev)}
+                            icon={<RefreshCw size={14} />}
+                            aria-pressed={autoRefresh}
+                        >
+                            {autoRefresh ? 'Auto-refresh on' : 'Auto-refresh off'}
+                        </Button>
+                        <Button
+                            variant="primary"
+                            onClick={() => void executeMigration()}
+                            disabled={executing || status?.isRunning || !status?.totalPending}
+                            loading={executing}
+                            icon={<Play size={14} />}
+                        >
+                            Execute pending
+                        </Button>
+                    </>
+                )}
+            >
+                {error && (
+                    <p className={styles.error_inline} role="alert">
                         <AlertCircle size={14} aria-hidden="true" />
                         {error}
-                    </span>
-                </div>
-            )}
+                    </p>
+                )}
 
-            <div className={styles.subblock}>
-                <h5 className={styles.subblock_title}>Pending</h5>
                 {status && status.totalPending === 0 ? (
                     <p className={styles.empty}>
                         <CheckCircle size={14} aria-hidden="true" />
                         No pending migrations
                     </p>
                 ) : (
-                    <div className={styles.pending_groups}>
+                    // A source with one pending migration gets no heading of its
+                    // own: its id already names the source.
+                    <ul className={styles.migration_list}>
                         {Object.entries(groupedPending).map(([source, migrations]) => (
-                            <details key={source} className={styles.group} open>
-                                <summary className={styles.group_summary}>
-                                    <span className={styles.group_source}>{source}</span>
-                                    <Badge tone="neutral">{migrations.length}</Badge>
-                                </summary>
-                                <ul className={styles.migration_list}>
-                                    {migrations.map((migration) => (
-                                        <li key={migration.id} className={styles.migration_row}>
-                                            <div className={styles.migration_info}>
-                                                <code className={styles.migration_id}>{migration.id}</code>
-                                                <span className={styles.migration_description}>
-                                                    {migration.description}
-                                                </span>
-                                                {migration.dependencies.length > 0 && (
-                                                    <div className={styles.migration_deps}>
-                                                        <span className={styles.deps_label}>Depends:</span>
-                                                        {migration.dependencies.map((dep) => (
-                                                            <Badge key={dep} tone="neutral">
-                                                                {dep}
-                                                            </Badge>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                            </div>
-                                            <Button
-                                                variant="ghost"
-                                                size="xs"
-                                                onClick={() => void executeMigration(migration.id)}
-                                                disabled={executing || status?.isRunning}
-                                                icon={<Play size={12} />}
-                                            >
-                                                Execute
-                                            </Button>
-                                        </li>
-                                    ))}
-                                </ul>
-                            </details>
+                            migrations.length === 1 ? renderPending(migrations[0]) : (
+                                <li key={source} className={styles.group}>
+                                    <span className={styles.group_source}>
+                                        {source} · {migrations.length}
+                                    </span>
+                                    <ul className={styles.migration_list}>
+                                        {migrations.map(renderPending)}
+                                    </ul>
+                                </li>
+                            )
                         ))}
-                    </div>
+                    </ul>
                 )}
-            </div>
+            </Panel>
 
-            <div className={styles.subblock}>
-                <header className={styles.history_header}>
-                    <h5 className={styles.subblock_title}>History</h5>
-                    <div className={styles.filters}>
-                        <Select
-                            value={statusFilter}
-                            onChange={(e) => setStatusFilter(e.target.value as 'all' | 'completed' | 'failed')}
-                            className={styles.select}
-                            aria-label="Filter by status"
-                        >
-                            <option value="all">All Status</option>
-                            <option value="completed">Completed</option>
-                            <option value="failed">Failed</option>
-                        </Select>
-                        <Select
-                            value={sourceFilter}
-                            onChange={(e) => setSourceFilter(e.target.value)}
-                            className={styles.select}
-                            aria-label="Filter by source"
-                        >
-                            <option value="all">All Sources</option>
-                            {uniqueSources.map((source) => (
-                                <option key={source} value={source}>
-                                    {source}
-                                </option>
-                            ))}
-                        </Select>
-                    </div>
-                </header>
-                <div className={styles.history_table_wrap}>
-                    {filteredHistory.length === 0 ? (
-                        <p className={styles.empty}>
-                            <AlertCircle size={14} aria-hidden="true" />
-                            No migration history
-                        </p>
-                    ) : (
-                        <Table variant="compact" stackAt="mobile">
-                            <Thead>
-                                <Tr>
-                                    <Th>Migration ID</Th>
-                                    <Th>Status</Th>
-                                    <Th>Executed At</Th>
-                                    <Th>Duration</Th>
-                                    <Th>Source</Th>
-                                    <Th>Error</Th>
-                                </Tr>
-                            </Thead>
-                            <Tbody>
-                                {filteredHistory.map((migration) => {
-                                    const isExpanded = expandedErrors.has(migration.migrationId);
-                                    return (
-                                        <Tr key={`${migration.migrationId}-${migration.executedAt}`}>
+            <Panel
+                title="Migration history"
+                meta={history ? `${filteredHistory.length.toLocaleString()} runs` : undefined}
+                actions={(
+                    <Pagination
+                        total={filteredHistory.length}
+                        pageSize={HISTORY_PAGE_SIZE}
+                        currentPage={currentPage}
+                        onPageChange={setPage}
+                    />
+                )}
+            >
+                <div className={styles.filters}>
+                    <Select
+                        value={statusFilter}
+                        onChange={(e) => {
+                            setStatusFilter(e.target.value as HistoryStatusFilter);
+                            setPage(1);
+                        }}
+                        aria-label="Filter by status"
+                    >
+                        <option value="all">All statuses</option>
+                        <option value="completed">Completed</option>
+                        <option value="failed">Failed</option>
+                    </Select>
+                    <Select
+                        value={sourceFilter}
+                        onChange={(e) => {
+                            setSourceFilter(e.target.value);
+                            setPage(1);
+                        }}
+                        aria-label="Filter by source"
+                    >
+                        <option value="all">All sources</option>
+                        {uniqueSources.map((source) => (
+                            <option key={source} value={source}>
+                                {source}
+                            </option>
+                        ))}
+                    </Select>
+                </div>
+
+                {filteredHistory.length === 0 ? (
+                    <p className={styles.empty}>
+                        <AlertCircle size={14} aria-hidden="true" />
+                        No migration history
+                    </p>
+                ) : (
+                    <Table variant="compact" flush stackAt="mobile">
+                        <Thead>
+                            <Tr>
+                                <Th scope="col" width="expand">Migration</Th>
+                                <Th scope="col" width="shrink">Status</Th>
+                                <Th scope="col" width="shrink">Executed</Th>
+                                <Th scope="col" width="shrink" numeric>Duration</Th>
+                            </Tr>
+                        </Thead>
+                        <Tbody>
+                            {pageRows.map((migration) => {
+                                const runKey = `${migration.migrationId}-${migration.executedAt}`;
+                                const isExpanded = expandedErrors.has(runKey);
+                                return (
+                                    <Fragment key={runKey}>
+                                        <Tr hasError={migration.status === 'failed'}>
                                             <Td>
-                                                <code className={styles.cell_id}>{migration.migrationId}</code>
+                                                <code className={styles.cell_id}>{breakableId(migration.migrationId)}</code>
                                             </Td>
                                             <Td label="Status">
-                                                {migration.status === 'completed' ? (
-                                                    <Badge tone="success">
-                                                        <CheckCircle size={12} />
-                                                        Completed
-                                                    </Badge>
-                                                ) : (
-                                                    <Badge tone="danger">
-                                                        <XCircle size={12} />
-                                                        Failed
-                                                    </Badge>
-                                                )}
-                                            </Td>
-                                            <Td label="Executed at" muted>
-                                                <ClientTime date={migration.executedAt} format="short" />
-                                            </Td>
-                                            <Td label="Duration" muted>{migration.executionDuration}ms</Td>
-                                            <Td label="Source">
-                                                <Badge tone="neutral">{migration.source}</Badge>
-                                            </Td>
-                                            <Td label="Error" stackSpan="full">
-                                                {migration.error ? (
-                                                    <div className={styles.error_cell}>
+                                                <span className={styles.status_cell}>
+                                                    {migration.status === 'completed' ? (
+                                                        <Badge tone="success" size="xs">
+                                                            <CheckCircle size={12} aria-hidden />
+                                                            Completed
+                                                        </Badge>
+                                                    ) : (
+                                                        <Badge tone="danger" size="xs">
+                                                            <XCircle size={12} aria-hidden />
+                                                            Failed
+                                                        </Badge>
+                                                    )}
+                                                    {migration.error && (
                                                         <Button
                                                             variant="ghost"
                                                             size="xs"
-                                                            onClick={() => toggleErrorExpansion(migration.migrationId)}
+                                                            onClick={() => toggleErrorExpansion(runKey)}
+                                                            aria-expanded={isExpanded}
                                                         >
-                                                            {isExpanded ? 'Hide' : 'Show'}
+                                                            {isExpanded ? 'Hide error' : 'Show error'}
                                                         </Button>
-                                                        {isExpanded && (
-                                                            <div className={styles.error_details}>
-                                                                <p className={styles.error_message}>{migration.error}</p>
-                                                                {migration.errorStack && (
-                                                                    <pre className={styles.error_stack}>
-                                                                        {migration.errorStack}
-                                                                    </pre>
-                                                                )}
-                                                            </div>
+                                                    )}
+                                                </span>
+                                            </Td>
+                                            <Td label="Executed" muted>
+                                                <ClientTime date={migration.executedAt} format="short" />
+                                            </Td>
+                                            <Td label="Duration" numeric muted>{formatMs(migration.executionDuration)}</Td>
+                                        </Tr>
+                                        {migration.error && isExpanded && (
+                                            <Tr isExpanded>
+                                                <Td colSpan={HISTORY_COLUMNS}>
+                                                    <div className={styles.error_details}>
+                                                        <p className={styles.error_message}>{migration.error}</p>
+                                                        {migration.errorStack && (
+                                                            <pre className={styles.error_stack}>
+                                                                {migration.errorStack}
+                                                            </pre>
                                                         )}
                                                     </div>
-                                                ) : (
-                                                    <span className="text-subtle">—</span>
-                                                )}
-                                            </Td>
-                                        </Tr>
-                                    );
-                                })}
-                            </Tbody>
-                        </Table>
-                    )}
-                </div>
-            </div>
-        </div>
+                                                </Td>
+                                            </Tr>
+                                        )}
+                                    </Fragment>
+                                );
+                            })}
+                        </Tbody>
+                    </Table>
+                )}
+            </Panel>
+        </>
     );
 }

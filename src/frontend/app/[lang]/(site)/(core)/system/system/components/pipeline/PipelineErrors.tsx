@@ -10,8 +10,7 @@
  */
 
 import type { IPipelineStatus } from '@/types';
-import { Card } from '../../../../../../../../components/ui/Card';
-import { Stack } from '../../../../../../../../components/layout';
+import { Panel } from '../../../../../../../../components/ui/Panel';
 import { Badge } from '../../../../../../../../components/ui/Badge';
 import { ClientTime } from '../../../../../../../../components/ui/ClientTime';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../../../../components/ui/Table';
@@ -34,51 +33,52 @@ const STAGE_NAMES: Record<IPipelineStatus['errors'][number]['stage'], string> = 
 /**
  * Render the error history and the backfill queue.
  *
+ * The four short columns are shrink columns, so they keep their text on one
+ * line and the message takes the rest of the width rather than squeezing
+ * "6m ago" and "Fetch (tick)" onto two lines each. The message may break
+ * inside a long token, such as a duplicate key's hash, because with the short
+ * columns held at their one-line width nothing else can give the table room.
+ *
  * @param props - The payload.
- * @returns The card.
+ * @returns The panel.
  */
 export function PipelineErrors({ pipeline }: IPipelineErrorsProps) {
     const { errors, backfill } = pipeline;
 
     return (
-        <Card padding="sm" noBackgroundImage>
-            <Stack gap="sm">
-                <header className={styles.card_header}>
-                    <h3 className={styles.card_title}>Errors and backfill</h3>
-                    <span className={styles.card_note}>
-                        {backfill.size > 0
-                            ? `${formatNumber(backfill.size)} blocks waiting to be fetched again (${backfill.sample.map(formatNumber).join(', ')}${backfill.size > backfill.sample.length ? ', …' : ''})`
-                            : 'No blocks waiting to be fetched again'}
-                    </span>
-                </header>
-
-                {errors.length === 0 ? (
-                    <p className="text-muted">No pipeline errors since the backend started.</p>
-                ) : (
-                    <Table variant="compact" flush stackAt="mobile">
-                        <Thead>
-                            <Tr>
-                                <Th scope="col">When</Th>
-                                <Th scope="col">Stage</Th>
-                                <Th scope="col" numeric>Block</Th>
-                                <Th scope="col">Class</Th>
-                                <Th scope="col" width="expand">Message</Th>
+        <Panel
+            title="Errors and backfill"
+            titleAs="h3"
+            meta={backfill.size > 0
+                ? `${formatNumber(backfill.size)} blocks waiting to be fetched again (${backfill.sample.map(formatNumber).join(', ')}${backfill.size > backfill.sample.length ? ', …' : ''})`
+                : 'No blocks waiting to be fetched again'}
+        >
+            {errors.length === 0 ? (
+                <p className="text-muted">No pipeline errors since the backend started.</p>
+            ) : (
+                <Table variant="compact" flush stackAt="mobile">
+                    <Thead>
+                        <Tr>
+                            <Th scope="col" width="shrink">When</Th>
+                            <Th scope="col" width="shrink">Stage</Th>
+                            <Th scope="col" width="shrink" numeric>Block</Th>
+                            <Th scope="col" width="shrink">Class</Th>
+                            <Th scope="col" width="expand">Message</Th>
+                        </Tr>
+                    </Thead>
+                    <Tbody>
+                        {errors.map((error, index) => (
+                            <Tr key={`${error.at}-${index}`} hasError={error.stage === 'commit'}>
+                                <Td label="When"><ClientTime date={error.at} format="relative" /></Td>
+                                <Td label="Stage">{STAGE_NAMES[error.stage]}</Td>
+                                <Td label="Block" numeric>{formatNumber(error.blockNumber)}</Td>
+                                <Td label="Class"><Badge tone={error.stage === 'commit' ? 'danger' : 'warning'} size="xs">{error.errorClass}</Badge></Td>
+                                <Td label="Message" stackSpan="full" muted className={styles.message}>{error.message}</Td>
                             </Tr>
-                        </Thead>
-                        <Tbody>
-                            {errors.map((error, index) => (
-                                <Tr key={`${error.at}-${index}`} hasError={error.stage === 'commit'}>
-                                    <Td label="When"><ClientTime date={error.at} format="relative" /></Td>
-                                    <Td label="Stage">{STAGE_NAMES[error.stage]}</Td>
-                                    <Td label="Block" numeric>{formatNumber(error.blockNumber)}</Td>
-                                    <Td label="Class"><Badge tone={error.stage === 'commit' ? 'danger' : 'warning'} size="xs">{error.errorClass}</Badge></Td>
-                                    <Td label="Message" stackSpan="full" muted>{error.message}</Td>
-                                </Tr>
-                            ))}
-                        </Tbody>
-                    </Table>
-                )}
-            </Stack>
-        </Card>
+                        ))}
+                    </Tbody>
+                </Table>
+            )}
+        </Panel>
     );
 }

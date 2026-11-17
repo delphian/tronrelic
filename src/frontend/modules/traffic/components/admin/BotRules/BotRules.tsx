@@ -25,6 +25,7 @@ import { Pencil, Plus, Trash2 } from 'lucide-react';
 import type { IBotRule, IBotRuleStats, IBotRuleSuggestion } from '@/types';
 import { Panel } from '../../../../../components/ui/Panel';
 import { Button } from '../../../../../components/ui/Button';
+import { IconButton } from '../../../../../components/ui/IconButton';
 import { Badge } from '../../../../../components/ui/Badge';
 import { Switch } from '../../../../../components/ui/Switch';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
@@ -196,8 +197,8 @@ export function BotRules() {
             title="Bot rules"
             meta={meta}
             actions={!editor && (
-                <Button type="button" size="sm" variant="secondary" onClick={() => openEditor(null, emptyBotRuleForm())}>
-                    <Plus size={16} aria-hidden="true" /> New rule
+                <Button type="button" variant="secondary" icon={<Plus size={16} aria-hidden="true" />} onClick={() => openEditor(null, emptyBotRuleForm())}>
+                    New rule
                 </Button>
             )}
         >
@@ -234,13 +235,16 @@ export function BotRules() {
                     <Table variant="compact" stackAt="mobile">
                         <Thead>
                             <Tr>
+                                {/* Every column but the rule is short, so each keeps
+                                    its cells on one line and the rule's name,
+                                    conditions, and note take the spare width. */}
                                 <Th>Rule</Th>
-                                <Th>State</Th>
-                                <Th numeric>24h</Th>
-                                <Th numeric>7d</Th>
-                                <Th>Last match</Th>
-                                <Th>On</Th>
-                                <Th><span className={styles.visually_hidden}>Actions</span></Th>
+                                <Th width="shrink">State</Th>
+                                <Th width="shrink" numeric>24h</Th>
+                                <Th width="shrink" numeric>7d</Th>
+                                <Th width="shrink">Last match</Th>
+                                <Th width="shrink">On</Th>
+                                <Th width="shrink"><span className={styles.visually_hidden}>Actions</span></Th>
                             </Tr>
                         </Thead>
                         <Tbody>
@@ -272,12 +276,12 @@ export function BotRules() {
                                         </Td>
                                         <Td>
                                             <span className={styles.row_actions}>
-                                                <Button type="button" size="xs" variant="ghost" onClick={() => openEditor(rule, botRuleFormFromRule(rule))} aria-label={`Edit rule ${rule.name}`}>
-                                                    <Pencil size={14} aria-hidden="true" />
-                                                </Button>
-                                                <Button type="button" size="xs" variant="ghost" onClick={() => handleDelete(rule)} aria-label={`Delete rule ${rule.name}`}>
-                                                    <Trash2 size={14} aria-hidden="true" />
-                                                </Button>
+                                                <IconButton onClick={() => openEditor(rule, botRuleFormFromRule(rule))} aria-label={`Edit rule ${rule.name}`}>
+                                                    <Pencil size={16} aria-hidden="true" />
+                                                </IconButton>
+                                                <IconButton variant="danger" onClick={() => handleDelete(rule)} aria-label={`Delete rule ${rule.name}`}>
+                                                    <Trash2 size={16} aria-hidden="true" />
+                                                </IconButton>
                                             </span>
                                         </Td>
                                     </Tr>

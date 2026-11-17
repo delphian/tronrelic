@@ -9,6 +9,10 @@
  * observed account, such as the one the chain writer uses, gets Activity and
  * Queries only: it has no limits to show or change, and its queries cannot be
  * stopped from here, because stopping a chain insert would leave a gap.
+ *
+ * The Activity view's 7, 30, and 90 day window control sits at the end of the
+ * view tab row while that view is open, so it does not take a row of its own
+ * above the figures. The section therefore holds the window and passes it in.
  */
 
 import { useState } from 'react';
@@ -21,7 +25,12 @@ import { ClientTime } from '../../../../components/ui/ClientTime';
 import { SegmentedControl } from '../../../../components/ui/SegmentedControl';
 import { useToast } from '../../../../components/ui/ToastProvider';
 import { applyClickHouseAccount } from '../../api/client';
-import { ActivityView } from '../ActivityView/ActivityView';
+import {
+    ACTIVITY_WINDOW_OPTIONS,
+    ActivityView,
+    DEFAULT_ACTIVITY_WINDOW,
+    type ActivityWindowDays
+} from '../ActivityView/ActivityView';
 import { ChangesView } from '../ChangesView/ChangesView';
 import { LimitsView } from '../LimitsView/LimitsView';
 import { QueriesView } from '../QueriesView/QueriesView';
@@ -85,6 +94,7 @@ function grantDrift(account: IClickHouseAccountSummary): string[] | null {
 export function AccountSection({ account, onUpdated }: IAccountSectionProps) {
     const { push } = useToast();
     const [view, setView] = useState<AccountView>(account.managed ? 'limits' : 'activity');
+    const [activityWindow, setActivityWindow] = useState<ActivityWindowDays>(DEFAULT_ACTIVITY_WINDOW);
     const [applying, setApplying] = useState(false);
     const [changesKey, setChangesKey] = useState(0);
     const badge = STATE_BADGE[account.state];
@@ -185,16 +195,26 @@ export function AccountSection({ account, onUpdated }: IAccountSectionProps) {
             )}
 
             <Stack gap="md">
-                <SegmentedControl
-                    variant="tablist"
-                    label={`${account.label} views`}
-                    options={viewOptions.map(option => ({ ...option, controls: panelId }))}
-                    value={view}
-                    onChange={setView}
-                />
+                <div className={styles.view_bar}>
+                    <SegmentedControl
+                        variant="tablist"
+                        label={`${account.label} views`}
+                        options={viewOptions.map(option => ({ ...option, controls: panelId }))}
+                        value={view}
+                        onChange={setView}
+                    />
+                    {view === 'activity' && (
+                        <SegmentedControl
+                            label={`${account.label} activity window`}
+                            options={ACTIVITY_WINDOW_OPTIONS}
+                            value={activityWindow}
+                            onChange={setActivityWindow}
+                        />
+                    )}
+                </div>
                 <div id={panelId} role="tabpanel" aria-label={`${account.label} ${view}`}>
                     {view === 'limits' && account.managed && <LimitsView account={account} onUpdated={handleLimitsSaved} />}
-                    {view === 'activity' && <ActivityView accountId={account.id} managed={account.managed} />}
+                    {view === 'activity' && <ActivityView accountId={account.id} managed={account.managed} windowDays={activityWindow} />}
                     {view === 'queries' && <QueriesView accountId={account.id} accountLabel={account.label} canKill={account.managed} />}
                     {view === 'changes' && account.managed && <ChangesView accountId={account.id} refreshKey={changesKey} />}
                 </div>

@@ -1,19 +1,17 @@
 /**
  * RefreshIndicator styles.
  *
- * A caption-weight readout aligned to the right edge above the Overview
- * consoles. Deliberately unsurfaced — no card, border, or background — because
- * it annotates the cards below rather than being a panel of its own. Carried
- * over verbatim from the telemetry strip's meta row so the readout keeps the
- * position and weight operators already know it by.
+ * A caption-weight readout that sits in the Server panel's header line, beside
+ * the title. Deliberately unsurfaced — no border or background — because it
+ * annotates the panel rather than being a panel of its own, and it takes no
+ * line of its own above the panel.
  */
 
 .meta {
-    display: flex;
-    justify-content: flex-end;
-    align-items: center;
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: baseline;
     gap: var(--gap-sm);
-    padding: 0 var(--padding-xs);
 }
 
 .meta_label {
@@ -34,7 +32,7 @@
  *
  * Warning rather than danger: the figures on screen are still real, they have
  * merely stopped advancing, and the console that failed raises its own danger
- * alert in the card below.
+ * alert in the panel below.
  */
 .meta_stale {
     display: inline-flex;

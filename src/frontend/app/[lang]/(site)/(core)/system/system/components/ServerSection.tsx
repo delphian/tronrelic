@@ -178,19 +178,19 @@ export function ServerSection({ onRefresh }: IServerSectionProps) {
             )}
             {infrastructure && (
                 <div className={styles.block}>
-                    <h4 className={styles.block_title}>Droplet</h4>
+                    <h3 className={styles.block_title}>Droplet</h3>
                     <StatStrip items={buildHostItems(infrastructure.host)} />
                 </div>
             )}
             {infrastructure && (
                 <div className={styles.block}>
-                    <h4 className={styles.block_title}>Containers</h4>
+                    <h3 className={styles.block_title}>Containers</h3>
                     <ContainerTable docker={infrastructure.docker} />
                 </div>
             )}
             {redis && (
                 <div className={styles.block}>
-                    <h4 className={styles.block_title}>Redis Cache</h4>
+                    <h3 className={styles.block_title}>Redis Cache</h3>
                     <StatStrip
                         items={[
                             {
@@ -216,7 +216,7 @@ export function ServerSection({ onRefresh }: IServerSectionProps) {
             )}
             {server && (
                 <div className={styles.block}>
-                    <h4 className={styles.block_title}>Backend Process</h4>
+                    <h3 className={styles.block_title}>Backend Process</h3>
                     <StatStrip
                         items={[
                             { label: 'Uptime', value: formatUptime(server.uptime) },
@@ -353,7 +353,9 @@ function ContainerRow({ container }: IContainerRowProps) {
  *
  * Disks are spread in rather than fixed in the list because the set varies by
  * deployment — production adds ClickHouse's dedicated block device, which a
- * local Docker stack does not have.
+ * local Docker stack does not have. Each disk cell is labelled "Disk" and
+ * names its mount path in the note, because a path such as
+ * `/mnt/clickhouse_data` is too long for a stat label and broke mid-word there.
  *
  * @param host - Host metrics from the infrastructure probe.
  * @returns Stat cells ready for the strip.
@@ -379,9 +381,9 @@ function buildHostItems(host: HostMetrics) {
             tone: percentTone(host.memoryPercent)
         },
         ...host.disks.map(disk => ({
-            label: `Disk ${disk.path}`,
+            label: 'Disk',
             value: `${disk.usedPercent.toFixed(0)}%`,
-            detail: `${formatBytes(disk.freeBytes)} free`,
+            detail: `${formatBytes(disk.freeBytes)} free on ${disk.path}`,
             tone: percentTone(disk.usedPercent)
         })),
         { label: 'Host Uptime', value: formatUptime(host.uptime) }

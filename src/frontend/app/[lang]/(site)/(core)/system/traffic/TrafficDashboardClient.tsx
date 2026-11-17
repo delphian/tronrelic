@@ -29,7 +29,7 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { Radio } from 'lucide-react';
 import type { MenuNodeSerialized } from '@/shared';
-import { Page, PageHeader } from '../../../../../../components/layout';
+import { AdminPage } from '../../../../../../components/layout';
 import { MenuNavClient } from '../../../../../../components/layout/MenuNav/MenuNavClient';
 import { SegmentedControl } from '../../../../../../components/ui/SegmentedControl';
 import {
@@ -272,114 +272,112 @@ export function TrafficDashboardClient({ submenuTree, submenuGeneratedAt, initia
     // to the first view and silently ignored it on the other two.
     const showBotToggle = showGlobalControls;
 
-    // <Page> and the single <h1> come from here, as on every other /system
-    // page; the root layout owns <main>, so neither is repeated below.
+    // The admin shell supplies <Page> and the single <h1>, and spaces the
+    // header, tab row, controls, and panel one stack gap apart, as on every
+    // other /system page; the root layout owns <main>.
     return (
-        <Page>
-            <div className={styles.container}>
-                <PageHeader
-                    title="Traffic"
-                    subtitle="Visitors, crawlers, search performance, and redirects."
-                />
-                <div className={styles.tab_row}>
-                    <div className={styles.submenu}>
-                        <MenuNavClient
-                            namespace={SUBMENU_NAMESPACE}
-                            items={submenuTree}
-                            generatedAt={submenuGeneratedAt}
-                            ariaLabel="Traffic sections"
-                            activeUrl={`/system/traffic?tab=${activeTab}`}
-                            onItemSelect={handleTabSelect}
+        <AdminPage
+            title="Traffic"
+            subtitle="Visitors, crawlers, search performance, and redirects."
+        >
+            <div className={styles.tab_row}>
+                <div className={styles.submenu}>
+                    <MenuNavClient
+                        namespace={SUBMENU_NAMESPACE}
+                        items={submenuTree}
+                        generatedAt={submenuGeneratedAt}
+                        ariaLabel="Traffic sections"
+                        activeUrl={`/system/traffic?tab=${activeTab}`}
+                        onItemSelect={handleTabSelect}
+                    />
+                </div>
+                {liveVisitors !== null && (
+                    <span className={styles.live} title="Distinct visitors in the last 5 minutes">
+                        <Radio size={14} aria-hidden="true" />
+                        {liveVisitors.toLocaleString()} online now
+                    </span>
+                )}
+            </div>
+
+            {showGlobalControls && (
+                <div className={styles.global_controls}>
+                    <PeriodPicker
+                        period={period}
+                        onPeriodChange={setPeriod}
+                        customStart={customStart}
+                        customEnd={customEnd}
+                        onCustomStartChange={setCustomStart}
+                        onCustomEndChange={setCustomEnd}
+                    />
+                    {showBotToggle && (
+                        <SegmentedControl
+                            label="Bot traffic filter"
+                            value={includeBots ? 'include' : 'exclude'}
+                            options={BOT_FILTER_OPTIONS}
+                            onChange={(id) => setIncludeBots(id === 'include')}
                         />
-                    </div>
-                    {liveVisitors !== null && (
-                        <span className={styles.live} title="Distinct visitors in the last 5 minutes">
-                            <Radio size={14} aria-hidden="true" />
-                            {liveVisitors.toLocaleString()} online now
-                        </span>
                     )}
                 </div>
+            )}
 
-                {showGlobalControls && (
-                    <div className={styles.global_controls}>
-                        <PeriodPicker
-                            period={period}
-                            onPeriodChange={setPeriod}
-                            customStart={customStart}
-                            customEnd={customEnd}
-                            onCustomStartChange={setCustomStart}
-                            onCustomEndChange={setCustomEnd}
-                        />
-                        {showBotToggle && (
-                            <SegmentedControl
-                                label="Bot traffic filter"
-                                value={includeBots ? 'include' : 'exclude'}
-                                options={BOT_FILTER_OPTIONS}
-                                onChange={(id) => setIncludeBots(id === 'include')}
-                            />
-                        )}
+            <div className={styles.content}>
+                {activeTab === 'analytics' && (
+                    <AnalyticsDashboard period={period} customRange={customRange} includeBots={includeBots} refreshSignal={dashboardRefresh} />
+                )}
+                {activeTab === 'visitors' && (
+                    <VisitorsExplorer
+                        period={period}
+                        customRange={customRange}
+                        includeBots={includeBots}
+                    />
+                )}
+                {activeTab === 'crawlers' && (
+                    <div className={styles.tab_stack}>
+                        <CrawlerDashboard refreshSignal={dashboardRefresh} />
+                        <TrafficDashboard refreshSignal={dashboardRefresh} />
                     </div>
                 )}
-
-                <div className={styles.content}>
-                    {activeTab === 'analytics' && (
-                        <AnalyticsDashboard period={period} customRange={customRange} includeBots={includeBots} refreshSignal={dashboardRefresh} />
-                    )}
-                    {activeTab === 'visitors' && (
-                        <VisitorsExplorer
-                            period={period}
-                            customRange={customRange}
-                            includeBots={includeBots}
-                        />
-                    )}
-                    {activeTab === 'crawlers' && (
-                        <div className={styles.tab_stack}>
-                            <CrawlerDashboard refreshSignal={dashboardRefresh} />
-                            <TrafficDashboard refreshSignal={dashboardRefresh} />
+                {activeTab === 'seo' && <GscKeywords />}
+                {activeTab === 'redirects' && (
+                    <div className={styles.tab_stack}>
+                        <RedirectAnalytics />
+                        <RedirectsManager />
+                    </div>
+                )}
+                {activeTab === 'ai' && <AiToolsPanel />}
+                {activeTab === 'schedules' && (
+                    <SchedulerMonitor jobFilter={isTrafficJob} title="Traffic Schedules" hideStats />
+                )}
+                {/* The ClickHouse browser is read-only, and it renders even
+                    when no table matches: the visitor and Search Console
+                    figures live there, so an empty panel is the sign that
+                    ClickHouse is not configured or a migration has not run.
+                    The MongoDB browser allows edits, as on /system/database;
+                    prefer the Settings and Redirects tabs for ordinary work,
+                    because they go through the module's services. A direct
+                    edit to the ignore list here, for one, is not applied to
+                    the dashboard's exclusion until the list next changes
+                    through Settings or the backend restarts. */}
+                {activeTab === 'database' && (
+                    <div className={styles.tab_stack}>
+                        <CollectionBrowser prefix={COLLECTION_PREFIX} title="Traffic Collections" />
+                        <ClickHouseTableBrowser tables={CLICKHOUSE_TABLES} title="Traffic Tables" />
+                    </div>
+                )}
+                {activeTab === 'logs' && <SystemLogsMonitor service={LOG_SERVICE} title="Traffic Logs" />}
+                {/* Short, independent settings panels side by side when the
+                    page is wide enough, stacked otherwise; the bot rules
+                    table and editor need the full width, so they sit below. */}
+                {activeTab === 'settings' && (
+                    <div className={styles.tab_stack}>
+                        <div className={styles.settings_band}>
+                            <IgnoredUsers />
+                            <GscSettings />
                         </div>
-                    )}
-                    {activeTab === 'seo' && <GscKeywords />}
-                    {activeTab === 'redirects' && (
-                        <div className={styles.tab_stack}>
-                            <RedirectAnalytics />
-                            <RedirectsManager />
-                        </div>
-                    )}
-                    {activeTab === 'ai' && <AiToolsPanel />}
-                    {activeTab === 'schedules' && (
-                        <SchedulerMonitor jobFilter={isTrafficJob} title="Traffic Schedules" hideStats />
-                    )}
-                    {/* The ClickHouse browser is read-only, and it renders even
-                        when no table matches: the visitor and Search Console
-                        figures live there, so an empty panel is the sign that
-                        ClickHouse is not configured or a migration has not run.
-                        The MongoDB browser allows edits, as on /system/database;
-                        prefer the Settings and Redirects tabs for ordinary work,
-                        because they go through the module's services. A direct
-                        edit to the ignore list here, for one, is not applied to
-                        the dashboard's exclusion until the list next changes
-                        through Settings or the backend restarts. */}
-                    {activeTab === 'database' && (
-                        <div className={styles.tab_stack}>
-                            <CollectionBrowser prefix={COLLECTION_PREFIX} title="Traffic Collections" />
-                            <ClickHouseTableBrowser tables={CLICKHOUSE_TABLES} title="Traffic Tables" />
-                        </div>
-                    )}
-                    {activeTab === 'logs' && <SystemLogsMonitor service={LOG_SERVICE} title="Traffic Logs" />}
-                    {/* Short, independent settings panels side by side when the
-                        page is wide enough, stacked otherwise; the bot rules
-                        table and editor need the full width, so they sit below. */}
-                    {activeTab === 'settings' && (
-                        <div className={styles.tab_stack}>
-                            <div className={styles.settings_band}>
-                                <IgnoredUsers />
-                                <GscSettings />
-                            </div>
-                            <BotRules />
-                        </div>
-                    )}
-                </div>
+                        <BotRules />
+                    </div>
+                )}
             </div>
-        </Page>
+        </AdminPage>
     );
 }

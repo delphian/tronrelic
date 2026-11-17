@@ -6,11 +6,6 @@
     block-size: var(--avatar-size-lg);
 }
 
-.toolbar {
-    display: flex;
-    justify-content: flex-end;
-}
-
 /* The daily table sits behind a disclosure: the chart answers the usual
    question, and the table is the exact figures for anyone who needs them. */
 .details {
