@@ -244,7 +244,12 @@
         padding: var(--padding-xs) var(--padding-sm);
     }
 
-    .tab_icon {
+    /* Hide the icon only on a row that still shows its labels. A
+     * namespace configured with `styling.showLabels: false` renders each
+     * label as `.sr_only`, which makes the icon the tab's only visible
+     * content, so that row keeps its icons however narrow it gets. */
+    .tab:not(:has(.sr_only)) .tab_icon,
+    .categoryButton:not(:has(.sr_only)) .tab_icon {
         display: none;
     }
 }
