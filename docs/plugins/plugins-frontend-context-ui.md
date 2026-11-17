@@ -177,7 +177,7 @@ return <context.ui.Link href={localize(`/blog/${post.slug}`)}>{post.title}</cont
 
 `PriceRail` places listed values (ticks, such as a rate card's tiers) and observed values (markers, such as what buyers paid) on one linear scale, with the span from the lowest to the highest tick shaded. It knows nothing about units, so pass plain numbers in one unit and a `formatValue`. It holds no state and renders from SSR data. See [component-price-rail.md](../frontend/react/component-price-rail.md).
 
-`minDate`/`maxDate`/`yAxisMin`/`yAxisMax` are fixed-axis overrides for sparse data — without them the chart auto-scales tightly.
+`minDate`/`maxDate`/`yAxisMin`/`yAxisMax` are fixed-axis overrides for sparse data — without them the chart auto-scales tightly. `LineChart` rounds its value axis out to ticks of 1, 2, or 5 times a power of ten, so every label is a round number and the line sits inside the axis; a `yAxisMin` or `yAxisMax` you pass is kept as given, with round ticks inside it. The label gutter widens for long labels, so a `yAxisFormatter` that writes full figures is never clipped, though a compact one (`22K`) leaves more width for the line.
 
 `BarChart` renders grouped columns (one per series per shared category) and supports negative values below a zero baseline. `mode` selects density: `normal` paints axes, legend, and an interactive tooltip; `widget` strips chrome to bars and baseline for a compact widget-zone fit, defaulting `showLegend` to false. On both charts, `title` and `actions` share one header row — pass window/view toggles via `actions` to sit them beside the title instead of stacking a separate toolbar. Per-series `legendValue` annotates the legend only (not the tooltip), letting it act as a complete key such as a window total.
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { cn } from '../../../../lib/cn';
+import { buildNiceTicks } from '../../../../lib/buildNiceTicks';
 import styles from './LineChart.module.scss';
 
 /**
@@ -144,9 +145,35 @@ const DEFAULT_COLORS = ['#7C9BFF', '#5CE1E6', '#FF9F6E', '#F06EF0'];
 const TOOLTIP_EDGE_GUTTER = 8;
 
 /**
- * Chart margins for axis labels and padding.
+ * Chart margins for axis labels and padding. `left` is the narrowest the
+ * value-axis gutter gets; a chart whose labels need more widens it, see
+ * {@link Y_LABEL_CHAR_WIDTH}.
  */
 const MARGIN = { top: 24, right: 32, bottom: 36, left: 64 };
+
+/**
+ * Space, in viewBox units, between a value-axis label's right edge and the
+ * plot, plus a little room before its left edge. The label is drawn 10 units
+ * left of the plot, right-aligned.
+ */
+const Y_LABEL_GAP = 14;
+
+/**
+ * Width, in viewBox units, allowed per character of a value-axis label at its
+ * 12-unit font size. An estimate rather than a measurement, because the chart
+ * renders on the server, which cannot measure text; it is set a little above a
+ * digit's width so the estimate errs wide. A fixed 64-unit gutter clipped a
+ * label such as "22,191.667" and showed it as "2,191.667", a smaller number
+ * than the label below it.
+ */
+const Y_LABEL_CHAR_WIDTH = 7;
+
+/**
+ * Value-axis formatter used when the caller passes none. Declared once at
+ * module level so its identity is stable and the memoized chart layout, which
+ * measures the formatted labels, is not rebuilt on every render.
+ */
+const DEFAULT_Y_AXIS_FORMATTER = (value: number): string => value.toLocaleString();
 
 /**
  * Width, in viewBox units, the chart assumes before its ResizeObserver measures
@@ -215,7 +242,7 @@ export function LineChart({
     title,
     actions,
     height = 320,
-    yAxisFormatter = value => value.toLocaleString(),
+    yAxisFormatter = DEFAULT_Y_AXIS_FORMATTER,
     xAxisFormatter = value => value.toLocaleDateString(),
     tooltipDateFormatter,
     className,
@@ -337,15 +364,27 @@ export function LineChart({
             maxY = minValue === maxValue ? maxValue + 1 : maxValue;
         }
 
-        const rangeY = maxY - minY || 1;
+        // Round the axis out to tick values a reader can take at face value,
+        // keeping either end the caller fixed. Zero is a multiple of every
+        // step, so an axis that crosses zero always labels it.
+        const yAxis = buildNiceTicks(minY, maxY, {
+            keepMin: fixedYMin !== undefined,
+            keepMax: fixedYMax !== undefined
+        });
+        const rangeY = yAxis.max - yAxis.min || 1;
+
+        // Widen the label gutter for long labels so none is clipped at the
+        // chart's left edge.
+        const widestLabel = Math.max(...yAxis.ticks.map(value => yAxisFormatter(value).length));
+        const marginLeft = Math.max(MARGIN.left, Y_LABEL_GAP + Math.ceil(widestLabel * Y_LABEL_CHAR_WIDTH));
 
         const width = Math.max(containerWidth, 320);
-        const innerWidth = width - MARGIN.left - MARGIN.right;
+        const innerWidth = width - marginLeft - MARGIN.right;
         const innerHeight = height - MARGIN.top - MARGIN.bottom;
 
         const scaleX = (value: Date) =>
-            MARGIN.left + ((value.getTime() - minDate.getTime()) / rangeX) * innerWidth;
-        const scaleY = (value: number) => MARGIN.top + innerHeight - ((value - minY) / rangeY) * innerHeight;
+            marginLeft + ((value.getTime() - minDate.getTime()) / rangeX) * innerWidth;
+        const scaleY = (value: number) => MARGIN.top + innerHeight - ((value - yAxis.min) / rangeY) * innerHeight;
 
         const normalizedSeries = nonEmptySeries.map((item, index) => {
             const color = item.color ?? DEFAULT_COLORS[index % DEFAULT_COLORS.length];
@@ -362,34 +401,9 @@ export function LineChart({
             return { ...item, color, points };
         });
 
-        const yTicks = Array.from({ length: 4 }).map((_, index) => {
-            const value = minY + (rangeY / 3) * index;
-            return {
-                value,
-                y: scaleY(value)
-            };
-        });
+        const yTicks = yAxis.ticks.map(value => ({ value, y: scaleY(value) }));
 
-        /**
-         * When zero-crossing is detected, ensure '0' appears as a Y-axis label.
-         *
-         * This provides an explicit visual reference that aligns with the zero-line,
-         * making it clearer where positive values transition to negative values.
-         * We check if 0 already exists in the ticks (within a small epsilon) to
-         * avoid duplicate labels.
-         */
-        const showZeroLine = minY < 0 && maxY > 0;
-        if (showZeroLine) {
-            const hasZeroTick = yTicks.some(tick => Math.abs(tick.value) < 0.0001);
-            if (!hasZeroTick) {
-                yTicks.push({
-                    value: 0,
-                    y: scaleY(0)
-                });
-                // Sort ticks by value (descending) to maintain proper Y-axis ordering
-                yTicks.sort((a, b) => b.value - a.value);
-            }
-        }
+        const showZeroLine = yAxis.min < 0 && yAxis.max > 0;
 
         const xTicks = [minDate, new Date((minDate.getTime() + maxDate.getTime()) / 2), maxDate];
 
@@ -425,13 +439,14 @@ export function LineChart({
             xTicks,
             minDate,
             maxDate,
-            minY,
-            maxY,
+            minY: yAxis.min,
+            maxY: yAxis.max,
             scaleY,
             domainPoints,
-            zeroLineY
+            zeroLineY,
+            marginLeft
         };
-    }, [series, height, containerWidth, fixedMinDate, fixedMaxDate, fixedYMin, fixedYMax, hiddenSeries]);
+    }, [series, height, containerWidth, fixedMinDate, fixedMaxDate, fixedYMin, fixedYMax, hiddenSeries, yAxisFormatter]);
 
     // Optional header row shared by the empty and populated renders: the
     // operator-set title on the left, caller-supplied controls (e.g. a widget's
@@ -464,7 +479,7 @@ export function LineChart({
         );
     }
 
-    const { width, height: chartHeight, normalizedSeries, yTicks, xTicks, domainPoints, zeroLineY } = chartData;
+    const { width, height: chartHeight, normalizedSeries, yTicks, xTicks, domainPoints, zeroLineY, marginLeft } = chartData;
 
     /**
      * Handles pointer movement over the chart to show tooltips.
@@ -606,7 +621,7 @@ export function LineChart({
                 </defs>
 
                 <line
-                    x1={MARGIN.left}
+                    x1={marginLeft}
                     x2={width - MARGIN.right}
                     y1={chartHeight - MARGIN.bottom}
                     y2={chartHeight - MARGIN.bottom}
@@ -617,7 +632,7 @@ export function LineChart({
                 {yTicks.map((tick, index) => (
                     <g key={`y-tick-${index}`}>
                         <line
-                            x1={MARGIN.left}
+                            x1={marginLeft}
                             x2={width - MARGIN.right}
                             y1={tick.y}
                             y2={tick.y}
@@ -625,7 +640,7 @@ export function LineChart({
                             strokeDasharray="6 6"
                         />
                         <text
-                            x={MARGIN.left - 10}
+                            x={marginLeft - 10}
                             y={tick.y + 4}
                             textAnchor="end"
                             fill="rgba(226,234,255,0.55)"
@@ -638,7 +653,7 @@ export function LineChart({
 
                 {zeroLineY !== null && (
                     <line
-                        x1={MARGIN.left}
+                        x1={marginLeft}
                         x2={width - MARGIN.right}
                         y1={zeroLineY}
                         y2={zeroLineY}
@@ -653,10 +668,10 @@ export function LineChart({
                         key={`x-tick-${index}`}
                         x={
                             index === 0
-                                ? MARGIN.left
+                                ? marginLeft
                                 : index === xTicks.length - 1
                                     ? width - MARGIN.right
-                                    : (MARGIN.left + width - MARGIN.right) / 2
+                                    : (marginLeft + width - MARGIN.right) / 2
                         }
                         y={chartHeight - MARGIN.bottom + 24}
                         fill="rgba(226,234,255,0.55)"

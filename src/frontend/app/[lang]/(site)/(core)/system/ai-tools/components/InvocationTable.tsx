@@ -14,11 +14,16 @@
  * and client, which are what an admin scans MCP traffic for. Callers are named
  * by email address where the endpoint supplied one.
  *
- * Seven columns do not fit a tablet, so the table uses the shared Table's
- * `stackAt="tablet"`. Stacked, the time and the tool name share the entry's
- * first line and the remaining values are named beneath them.
+ * The seven columns need about 810px, so they fit a tablet's panel and the
+ * table stacks only at phone width (`stackAt="mobile"`). Stacked, the time and
+ * the tool name share the entry's first line and the remaining values are
+ * named beneath them. The caller stays a one-field value beside its label: a
+ * typical email address fits there, and a longer one breaks after its `@`.
+ * Spanning two fields would put the label above the value and add a line to
+ * every entry.
  */
 
+import type { ReactNode } from 'react';
 import type { IToolInvocationRecord } from '@/types';
 import { Badge } from '../../../../../../../components/ui/Badge';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../../../components/ui/Table';
@@ -53,16 +58,30 @@ interface IInvocationTableProps {
 }
 
 /**
+ * Let a caller's email address break after its `@` when the column is too
+ * narrow for it, rather than at whatever letter reaches the edge, which split
+ * addresses into pieces such as "gmail.c" and "om". A name with no `@` is
+ * returned unchanged.
+ *
+ * @param name - The caller's display name, usually an email address.
+ * @returns The name with a line-break opportunity after its `@`.
+ */
+function breakAfterAt(name: string): ReactNode {
+    const at = name.indexOf('@');
+    return at < 0 ? name : <>{name.slice(0, at + 1)}<wbr />{name.slice(at + 1)}</>;
+}
+
+/**
  * Render the invocation audit rows for a set of records. The row is for
  * scanning only; the full record lives behind the click, in the caller's
  * slide-over.
  *
  * @param props - {@link IInvocationTableProps}.
- * @returns The rows table, stacked into labelled entries at tablet width and below.
+ * @returns The rows table, stacked into labelled entries at phone width.
  */
 export function InvocationTable({ records, onSelect, userLabels = {}, mcpColumns = false }: IInvocationTableProps) {
     return (
-        <Table stackAt="tablet">
+        <Table stackAt="mobile">
             <Thead>
                 <Tr>
                     <Th width="shrink" className={styles.col_time}>Time</Th>
@@ -106,7 +125,7 @@ export function InvocationTable({ records, onSelect, userLabels = {}, mcpColumns
                                 </button>
                             </Td>
                             <Td label="Caller">
-                                <span className={styles.caller_cell}>{caller.primary}</span>
+                                <span className={styles.caller_cell}>{breakAfterAt(caller.primary)}</span>
                                 <span className={styles.caller_kind}>{caller.kind}</span>
                             </Td>
                             {mcpColumns ? (
