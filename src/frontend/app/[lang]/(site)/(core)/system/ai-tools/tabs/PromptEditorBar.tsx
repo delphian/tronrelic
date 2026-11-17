@@ -155,8 +155,9 @@ export function PromptEditorBar({
                         onClick={onSave}
                         disabled={saving || saveBlockedReason !== null}
                         title={saveBlockedReason ?? 'Save name, prompt text, model, tools, and triggers'}
+                        icon={<Save size={12} />}
                     >
-                        <Save size={12} /> {saving ? 'Saving…' : 'Save prompt'}
+                        {saving ? 'Saving…' : 'Save prompt'}
                     </Button>
 
                     <button

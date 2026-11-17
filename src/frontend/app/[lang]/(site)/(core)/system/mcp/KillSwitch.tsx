@@ -4,19 +4,25 @@
  * @fileoverview The MCP endpoint's master kill switch.
  *
  * The MCP module cannot be disabled like a plugin, so this switch is how an
- * operator takes the endpoint offline. It is drawn as a full-width card with a
- * large state label and a single large action, in a danger tone while the
- * endpoint is live, so its state is readable at a glance and the off action is
- * one click away. Turning the endpoint on asks for confirmation because it
- * opens a door; turning it off does not, because an incident is no time for a
- * dialog.
+ * operator takes the endpoint offline. It has two forms, chosen by the page:
+ *
+ * - Compact, beside the page title while the endpoint is on: a status badge
+ *   and the "Turn off MCP" button. On is the normal state, so it takes no
+ *   space above the tabs, and the off action stays one click away on every tab.
+ * - A full-width banner above the tabs while the endpoint is off, or while its
+ *   state could not be read. Those are the states that need attention, so they
+ *   keep the large label and the explanation.
+ *
+ * Turning the endpoint on asks for confirmation because it opens a door;
+ * turning it off does not, because an incident is no time for a dialog.
  */
 
 import { useCallback, useState } from 'react';
 import { Power, PowerOff } from 'lucide-react';
 import type { IMcpSettings, IMcpStatus } from '@/types';
-import { Card } from '../../../../../../components/ui/Card';
+import { Badge } from '../../../../../../components/ui/Badge';
 import { Button } from '../../../../../../components/ui/Button';
+import { Card } from '../../../../../../components/ui/Card';
 import { ClientTime } from '../../../../../../components/ui/ClientTime';
 import { ConfirmDialog } from '../../../../../../components/ui/ConfirmDialog';
 import { useModal } from '../../../../../../components/ui/ModalProvider';
@@ -25,9 +31,9 @@ import { setMcpEnabled } from '../../../../../../modules/mcp';
 import styles from './page.module.scss';
 
 /**
- * Props for {@link KillSwitchCard}.
+ * Props for {@link KillSwitch}.
  */
-interface IKillSwitchCardProps {
+interface IKillSwitchProps {
     /** Current status; null when it could not be loaded. */
     status: IMcpStatus | null;
     /**
@@ -36,15 +42,20 @@ interface IKillSwitchCardProps {
      * status and keeps any counts that changed while the request was in flight.
      */
     onSettingsChange: (settings: IMcpSettings) => void;
+    /**
+     * Draw the badge-and-button form for the page header instead of the
+     * banner. The page passes it only while the endpoint is on.
+     */
+    compact?: boolean;
 }
 
 /**
- * Render the kill switch.
+ * Render the kill switch as a header status or as a banner.
  *
- * @param props - {@link IKillSwitchCardProps}.
- * @returns The kill switch card.
+ * @param props - {@link IKillSwitchProps}.
+ * @returns The compact status and button, or the banner card.
  */
-export function KillSwitchCard({ status, onSettingsChange }: IKillSwitchCardProps) {
+export function KillSwitch({ status, onSettingsChange, compact = false }: IKillSwitchProps) {
     const [working, setWorking] = useState(false);
     const { open, close } = useModal();
     const { push } = useToast();
@@ -94,7 +105,28 @@ export function KillSwitchCard({ status, onSettingsChange }: IKillSwitchCardProp
         }
     }, [enabled, apply, open, close, status]);
 
-    return (
+    const button = (
+        <Button
+            variant={enabled ? 'danger' : 'primary'}
+            icon={enabled ? <PowerOff size={18} aria-hidden /> : <Power size={18} aria-hidden />}
+            loading={working}
+            disabled={status === null}
+            onClick={handleClick}
+        >
+            {enabled ? 'Turn off MCP' : 'Turn on MCP'}
+        </Button>
+    );
+
+    return compact ? (
+        <div className={styles.kill_switch_compact}>
+            {/* The badge is the live state; the button's own label already
+                says what it does, so the badge needs no second sentence. */}
+            <Badge tone={enabled ? 'success' : 'neutral'} showLiveIndicator={enabled} role="status">
+                {enabled ? 'Endpoint on' : 'Endpoint off'}
+            </Badge>
+            {button}
+        </div>
+    ) : (
         <Card className={`${styles.kill_switch} ${enabled ? styles['kill_switch--on'] : styles['kill_switch--off']}`}>
             <div className={styles.kill_switch__body}>
                 <div className={styles.kill_switch__state}>
@@ -117,15 +149,7 @@ export function KillSwitchCard({ status, onSettingsChange }: IKillSwitchCardProp
                         </div>
                     </div>
                 </div>
-                <Button
-                    variant={enabled ? 'danger' : 'primary'}
-                    icon={enabled ? <PowerOff size={18} aria-hidden /> : <Power size={18} aria-hidden />}
-                    loading={working}
-                    disabled={status === null}
-                    onClick={handleClick}
-                >
-                    {enabled ? 'Turn off MCP' : 'Turn on MCP'}
-                </Button>
+                {button}
             </div>
         </Card>
     );

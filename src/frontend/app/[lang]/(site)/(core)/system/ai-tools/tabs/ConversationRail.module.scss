@@ -138,11 +138,14 @@
     overflow-wrap: anywhere;
 }
 
+/* Time, turn count, and cost on one line. Three short values that fit the
+   rail's width, so the line does not wrap; the badges have their own line
+   below. */
 .row_meta {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
     gap: var(--gap-2xs);
+    white-space: nowrap;
     font-size: var(--font-size-caption);
     color: var(--color-text-muted);
 }
@@ -150,6 +153,15 @@
 .row_cost {
     margin-left: auto;
     font-variant-numeric: tabular-nums;
+}
+
+/* The run's mode and outcome badges, on a line under the meta line, present
+   only when the run has any. */
+.row_flags {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-2xs);
 }
 
 /* Copy sits in the row's corner and shows on hover or focus, so the list

@@ -321,8 +321,8 @@ export function PromptTriggersEditor({
             )}
 
             <div className={styles.trigger_actions}>
-                <Button variant="ghost" size="xs" onClick={() => addDraft('cron')} disabled={disabled}>
-                    <Plus size={12} /> Add cron trigger
+                <Button variant="ghost" size="xs" onClick={() => addDraft('cron')} disabled={disabled} icon={<Plus size={12} />}>
+                    Add cron trigger
                 </Button>
                 <Button
                     variant="ghost"
@@ -330,8 +330,9 @@ export function PromptTriggersEditor({
                     onClick={() => addDraft('hook')}
                     disabled={disabled || bindableHooks.length === 0}
                     title={bindableHooks.length === 0 ? 'No bindable hooks available' : undefined}
+                    icon={<Plus size={12} />}
                 >
-                    <Plus size={12} /> Add hook trigger
+                    Add hook trigger
                 </Button>
             </div>
         </div>

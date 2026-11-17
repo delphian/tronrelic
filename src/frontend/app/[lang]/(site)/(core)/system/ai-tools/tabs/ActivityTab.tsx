@@ -219,8 +219,8 @@ export function ActivityTab({ fixedTriggerPath, fixedChargedGroupId, fixedPrinci
                         Caller: {principal.label}
                     </Button>
                 )}
-                <Button variant="ghost" size="sm" onClick={() => { void load(); }}>
-                    <RefreshCw size={16} /> Refresh
+                <Button variant="ghost" size="sm" onClick={() => { void load(); }} icon={<RefreshCw size={16} />}>
+                    Refresh
                 </Button>
                 <span className="text-subtle" style={{ fontSize: 'var(--font-size-body-sm)' }}>
                     {loading ? 'Loading…' : `Showing ${items.length} of ${total.toLocaleString('en-US')}`}

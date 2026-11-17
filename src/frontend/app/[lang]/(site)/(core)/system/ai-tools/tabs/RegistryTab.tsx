@@ -184,7 +184,9 @@ export function RegistryTab({ onChanged }: { onChanged: () => void }) {
                     <AlertCircle size={16} style={{ color: 'var(--color-danger)', verticalAlign: 'text-bottom' }} /> {error}
                 </div>
             )}
-            <CollapsibleSection title="Tools" summary={toolsSummary}>
+            {/* Open on arrival: the tool list is what the tab is for, and the
+                other three sections are settings an admin opens on purpose. */}
+            <CollapsibleSection title="Tools" summary={toolsSummary} defaultOpen>
                 {tools.length === 0
                     ? <div className={styles.placeholder}>No tools are registered.</div>
                     : (
@@ -235,8 +237,11 @@ export function RegistryTab({ onChanged }: { onChanged: () => void }) {
                                 ? <div className={styles.placeholder}>No tools match the current filters.</div>
                                 : (
                                     /* Four columns fit a tablet; on a phone each tool stacks
-                                       into one triage line plus its teaser. */
-                                    <Table stackAt="mobile">
+                                       into one triage line plus its teaser. Compact rows,
+                                       because each tool is one line of text and there are
+                                       close to a hundred of them. Flush, because the table
+                                       ends the section's card. */
+                                    <Table variant="compact" stackAt="mobile" flush>
                                         <Thead>
                                             <Tr>
                                                 <Th width="shrink">Enabled</Th>

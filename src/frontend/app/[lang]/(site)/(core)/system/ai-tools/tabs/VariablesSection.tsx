@@ -220,7 +220,7 @@ export function VariablesSection({ onChanged }: { onChanged: () => void }) {
     return (
         <CollapsibleSection title="Variables" summary={summary}>
             <Stack gap="md">
-                <p className={styles.tool_desc}>
+                <p className={styles.intro}>
                     Prompt variables expand into a prompt wherever <code>{'{%name%}'}</code> appears. Built-in
                     variables can be reclassified; custom variables are admin-authored constants. Marking a
                     variable <strong>secret</strong> counts it toward the lethal-trifecta check.
@@ -276,16 +276,16 @@ export function VariablesSection({ onChanged }: { onChanged: () => void }) {
                                         <Button variant="primary" size="sm" onClick={() => void handleSubmit()} disabled={saving}>
                                             {saving ? 'Saving…' : editingName ? 'Save changes' : 'Create variable'}
                                         </Button>
-                                        <Button variant="ghost" size="sm" onClick={closeForm} disabled={saving}>
-                                            <X size={16} /> Cancel
+                                        <Button variant="ghost" size="sm" onClick={closeForm} disabled={saving} icon={<X size={16} />}>
+                                            Cancel
                                         </Button>
                                     </Stack>
                                 </Stack>
                             </div>
                         )
                         : (
-                            <Button variant="secondary" size="sm" onClick={openCreate}>
-                                <Plus size={16} /> New custom variable
+                            <Button variant="secondary" size="sm" onClick={openCreate} icon={<Plus size={16} />}>
+                                New custom variable
                             </Button>
                         )}
                 </div>
@@ -295,8 +295,9 @@ export function VariablesSection({ onChanged }: { onChanged: () => void }) {
                     : (
                         /* Five columns fit a tablet; on a phone each variable stacks,
                            headed by its pattern. The revealed value is a row of one
-                           cell, so it stays a full-width block. */
-                        <Table stackAt="mobile">
+                           cell, so it stays a full-width block. Flush, because the
+                           table ends the section's card. */
+                        <Table stackAt="mobile" flush>
                             <Thead>
                                 <Tr>
                                     <Th>Variable</Th>
@@ -351,18 +352,16 @@ export function VariablesSection({ onChanged }: { onChanged: () => void }) {
                                                                 onClick={() => openEdit(variable)}
                                                                 disabled={busyName === variable.name}
                                                                 aria-label={`Edit ${variable.name}`}
-                                                            >
-                                                                <Pencil size={14} />
-                                                            </Button>
+                                                                icon={<Pencil size={14} />}
+                                                            />
                                                             <Button
                                                                 variant="danger"
                                                                 size="xs"
                                                                 onClick={() => void handleDelete(variable.name)}
                                                                 disabled={busyName === variable.name}
                                                                 aria-label={`Delete ${variable.name}`}
-                                                            >
-                                                                <Trash2 size={14} />
-                                                            </Button>
+                                                                icon={<Trash2 size={14} />}
+                                                            />
                                                         </Stack>
                                                     )}
                                                 </Td>

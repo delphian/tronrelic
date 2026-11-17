@@ -32,6 +32,13 @@
  *   the new message and the answer streaming in under it stay in view with the
  *   composer at the bottom of the pane. There is no empty space under the
  *   composer once the conversation fills the pane.
+ * - Following reacts to size as well as to new turns. Much of what changes the
+ *   transcript's height lands after the render that scrolled it: a reopened
+ *   conversation's tool grant comes back as chips once the tool list loads,
+ *   its audit records arrive from a second request, and the pane itself is
+ *   resized once its offset is measured. A ResizeObserver on the pane, the log,
+ *   and the composer re-follows on each of those, so the model picker, Tools,
+ *   and Send stay in view at the live edge instead of being pushed below it.
  * - Past conversations sit in a rail beside the chat that starts collapsed,
  *   so the transcript gets the full width until the operator opens it from the
  *   header. A conversation picked there opens in place; the tab stays mounted
@@ -692,6 +699,10 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
     const conversationIdRef = useRef<string | null>(null);
     /** The scrolling transcript. */
     const transcriptRef = useRef<HTMLDivElement>(null);
+    /** The conversation log inside the transcript, observed so late growth re-follows the live edge. */
+    const logRef = useRef<HTMLDivElement>(null);
+    /** The composer under the log, observed for the same reason. */
+    const composerRef = useRef<HTMLDivElement>(null);
     /** The rail-plus-card row, measured to size the pane to the viewport. */
     const workspaceRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -1428,6 +1439,41 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
         }
     }, [messages, active, followIfEnabled]);
 
+    // Follow the live edge again whenever the transcript or anything in it
+    // changes size, not only when `messages` does. Several things grow after
+    // the render the effect above scrolled for: a reopened conversation's tool
+    // grant comes back as chips once the tool list has loaded, its audit
+    // records arrive from a second request and can add the unlinked-calls
+    // table, and the pane itself is resized once useViewportFill measures its
+    // offset. Without this the composer's model picker, Tools, and Send were
+    // left below the pane with nothing to scroll them back, and the gap was
+    // under the "Latest" threshold, so no button offered a way back either.
+    //
+    // A resize while the operator is typing in the composer is left alone. The
+    // effect below positions the pane for every keystroke on purpose, holding
+    // the view still for an edit in the middle of a long prompt, and a follow
+    // here would undo that by jumping to the bottom.
+    useEffect(() => {
+        let cleanup: (() => void) | undefined;
+        const pane = transcriptRef.current;
+        if (active && pane && typeof ResizeObserver !== 'undefined') {
+            /** Re-follow after a size change, unless the change is the operator's own typing. */
+            const handleResize = (): void => {
+                if (document.activeElement !== textareaRef.current) {
+                    followIfEnabled();
+                }
+            };
+            const observer = new ResizeObserver(handleResize);
+            for (const element of [pane, logRef.current, composerRef.current]) {
+                if (element) {
+                    observer.observe(element);
+                }
+            }
+            cleanup = () => observer.disconnect();
+        }
+        return cleanup;
+    }, [active, followIfEnabled]);
+
     // Grow the composer with its text, with no cap: the composer sits inside
     // the transcript's scrolling region, so a long prompt makes the pane scroll
     // rather than opening a second scroll box inside the first. The height is
@@ -1962,8 +2008,9 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
                             variant="danger"
                             size="xs"
                             onClick={() => { modal.close(modalId); void handleDeletePrompt(prompt.id); }}
+                            icon={<Trash2 size={12} />}
                         >
-                            <Trash2 size={12} /> Delete
+                            Delete
                         </Button>
                     </div>
                 </div>
@@ -2383,8 +2430,9 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
                                 onClick={handleNewChat}
                                 disabled={streaming || (!hasTurns && !editingPrompt && !input && !awaitingRunId)}
                                 aria-label="Start a new conversation"
+                                icon={<Plus size={14} />}
                             >
-                                <Plus size={14} /> New chat
+                                New chat
                             </Button>
                         </div>
                     </div>
@@ -2398,6 +2446,7 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
                             announced as conversation. */}
                         <div ref={transcriptRef} className={styles.transcript}>
                             <div
+                                ref={logRef}
                                 className={styles.log}
                                 role="log"
                                 aria-live="polite"
@@ -2453,7 +2502,7 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
                                 )}
                             </div>
 
-                            <div className={styles.composer}>
+                            <div ref={composerRef} className={styles.composer}>
                                 <PromptLine>
                                     <Textarea
                                         ref={textareaRef}
@@ -2551,8 +2600,9 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
                                                     size="xs"
                                                     onClick={() => { void handleStop(); }}
                                                     aria-label="Stop the in-flight response"
+                                                    icon={<Square size={14} />}
                                                 >
-                                                    <Square size={14} /> Stop
+                                                    Stop
                                                 </Button>
                                             ) : (
                                                 <Button
@@ -2561,8 +2611,9 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
                                                     onClick={() => { void handleSend(); }}
                                                     disabled={!input.trim() || (needsToolPrefill && toolsLoading)}
                                                     aria-label="Send message"
+                                                    icon={<ArrowUp size={14} />}
                                                 >
-                                                    <ArrowUp size={14} /> Send
+                                                    Send
                                                 </Button>
                                             )}
                                         </div>

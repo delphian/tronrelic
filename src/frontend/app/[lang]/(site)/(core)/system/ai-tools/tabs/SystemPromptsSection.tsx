@@ -252,7 +252,7 @@ export function SystemPromptsSection() {
     return (
         <CollapsibleSection title="System Prompts" summary={summary}>
             <Stack gap="md">
-                <p className={styles.tool_desc}>
+                <p className={styles.intro}>
                     System prompts are injected into every AI query. The <strong>master</strong> prompt always
                     applies (leave it blank to contribute nothing). Each <strong>additional</strong> prompt applies
                     when the querying user matches its user ids <em>or</em> belongs to all of its groups. Bodies
@@ -312,8 +312,8 @@ export function SystemPromptsSection() {
                                             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addUserId(); } }}
                                             aria-label="Add target user id"
                                         />
-                                        <Button variant="secondary" size="sm" onClick={addUserId} disabled={!userIdDraft.trim()}>
-                                            <Plus size={16} /> Add
+                                        <Button variant="secondary" size="sm" onClick={addUserId} disabled={!userIdDraft.trim()} icon={<Plus size={16} />}>
+                                            Add
                                         </Button>
                                     </Stack>
                                     {form.userIds.length > 0 && (
@@ -375,16 +375,16 @@ export function SystemPromptsSection() {
                                         >
                                             {saving ? 'Saving…' : editingId ? 'Save changes' : 'Create prompt'}
                                         </Button>
-                                        <Button variant="ghost" size="sm" onClick={closeForm} disabled={saving}>
-                                            <X size={16} /> Cancel
+                                        <Button variant="ghost" size="sm" onClick={closeForm} disabled={saving} icon={<X size={16} />}>
+                                            Cancel
                                         </Button>
                                     </Stack>
                                 </Stack>
                             </div>
                         )
                         : (
-                            <Button variant="secondary" size="sm" onClick={openCreate}>
-                                <Plus size={16} /> New system prompt
+                            <Button variant="secondary" size="sm" onClick={openCreate} icon={<Plus size={16} />}>
+                                New system prompt
                             </Button>
                         )}
                 </div>
@@ -393,8 +393,9 @@ export function SystemPromptsSection() {
                     ? <div className={styles.placeholder}>No additional system prompts.</div>
                     : (
                         /* Five columns fit a tablet; on a phone each prompt stacks,
-                           headed by its name, with the edit and delete buttons last. */
-                        <Table stackAt="mobile">
+                           headed by its name, with the edit and delete buttons last.
+                           Flush, because the table ends the section's card. */
+                        <Table stackAt="mobile" flush>
                             <Thead>
                                 <Tr>
                                     <Th>Prompt</Th>
@@ -438,18 +439,16 @@ export function SystemPromptsSection() {
                                                     onClick={() => openEdit(prompt)}
                                                     disabled={busyId === prompt.id}
                                                     aria-label={`Edit ${prompt.name}`}
-                                                >
-                                                    <Pencil size={14} />
-                                                </Button>
+                                                    icon={<Pencil size={14} />}
+                                                />
                                                 <Button
                                                     variant="danger"
                                                     size="xs"
                                                     onClick={() => void handleDelete(prompt.id)}
                                                     disabled={busyId === prompt.id}
                                                     aria-label={`Delete ${prompt.name}`}
-                                                >
-                                                    <Trash2 size={14} />
-                                                </Button>
+                                                    icon={<Trash2 size={14} />}
+                                                />
                                             </Stack>
                                         </Td>
                                     </Tr>

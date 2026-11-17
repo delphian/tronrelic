@@ -26,6 +26,8 @@ import type {
     IAccountSummary,
     IConnectedApp,
     IConnectedAppAdminRow,
+    IConnectedAppListOptions,
+    IConnectedAppListPage,
     IConnectedAppsService,
     IDatabaseService,
     ISystemLogService
@@ -42,13 +44,36 @@ import type { IAccountActivityRecorder } from './IAccountActivityRecorder.js';
 export interface IOAuthStoreAdapter {
     findMany<T>(data: {
         model: string;
-        where?: Array<{ field: string; value: string | string[]; operator?: 'eq' | 'in' }>;
+        where?: IOAuthStoreWhere[];
         limit?: number;
         offset?: number;
         sortBy?: { field: string; direction: 'asc' | 'desc' };
     }): Promise<T[]>;
-    count(data: { model: string; where?: Array<{ field: string; value: string }> }): Promise<number>;
+    count(data: { model: string; where?: IOAuthStoreWhere[] }): Promise<number>;
     deleteMany(data: { model: string; where: Array<{ field: string; value: string }> }): Promise<number>;
+}
+
+/**
+ * One condition in an adapter query: a field equal to a value, or, with the
+ * `in` operator, equal to any value in a list. The adapter turns a user id in
+ * either form into the stored `ObjectId` itself.
+ */
+interface IOAuthStoreWhere {
+    field: string;
+    value: string | string[];
+    operator?: 'eq' | 'in';
+}
+
+/**
+ * The accounts an admin search matched, as `listAll` narrows the grant query
+ * to them. Kept with the summaries the directory returned, so the rows can be
+ * labelled with emails without asking the directory a second time.
+ */
+interface ISearchScope {
+    /** The matching accounts, most recently active first. */
+    accounts: IAccountSummary[];
+    /** True when more accounts matched than {@link SEARCH_ACCOUNT_LIMIT}. */
+    truncated: boolean;
 }
 
 /** A stored consent row, as the adapter returns it. */
@@ -90,6 +115,17 @@ const USAGE_WRITE_INTERVAL_MS = 5 * 60_000;
 
 /** Upper bound on remembered last-write times, so many distinct grants cannot grow memory without limit. */
 const USAGE_THROTTLE_MAX = 10_000;
+
+/**
+ * Most accounts one admin search reads from the directory, which is also the
+ * directory's own largest page. The grant query then filters by these
+ * accounts' ids with `$in`, so the bound keeps that list, and the directory
+ * read behind it, a fixed size however broad the search text is. The most
+ * recently active accounts are read first, because an account holding a
+ * connected app is one that makes MCP calls, and every call moves its
+ * last-seen time.
+ */
+const SEARCH_ACCOUNT_LIMIT = 200;
 
 /**
  * Singleton store of connected-app grants.
@@ -201,28 +237,70 @@ export class ConnectedAppsService implements IConnectedAppsService {
     }
 
     /** @inheritdoc */
-    async listAll(options: { limit: number; offset: number }): Promise<{ apps: IConnectedAppAdminRow[]; total: number }> {
-        const adapter = await this.getAdapter();
-        const [total, consents] = await Promise.all([
-            adapter.count({ model: 'oauthConsent' }),
-            adapter.findMany<IConsentRow>({
-                model: 'oauthConsent',
-                limit: options.limit,
-                offset: options.offset,
-                sortBy: { field: 'createdAt', direction: 'desc' }
-            })
-        ]);
-        const [apps, accounts] = await Promise.all([
-            this.toApps(adapter, consents),
-            this.accounts.getAccountsByIds(consents.map(consent => consent.userId))
-        ]);
-        const accountsById = new Map<string, IAccountSummary>(accounts.map(account => [account.id, account]));
-        const rows = apps.map((app, index): IConnectedAppAdminRow => {
-            const userId = consents[index].userId;
-            const email = accountsById.get(userId)?.email;
-            return { ...app, userId, ...(email ? { userEmail: email } : {}) };
-        });
-        return { apps: rows, total };
+    async listAll(options: IConnectedAppListOptions): Promise<IConnectedAppListPage> {
+        const scope = await this.findSearchScope(options.search);
+        let page: IConnectedAppListPage = { apps: [], total: 0, searchTruncated: scope?.truncated ?? false };
+        // A search that matched no account matches no grant, so the grant
+        // tables are not read at all.
+        if (scope === null || scope.accounts.length > 0) {
+            const adapter = await this.getAdapter();
+            const where: IOAuthStoreWhere[] | undefined = scope
+                ? [{ field: 'userId', value: scope.accounts.map(account => account.id), operator: 'in' }]
+                : undefined;
+            const [total, consents] = await Promise.all([
+                adapter.count({ model: 'oauthConsent', where }),
+                adapter.findMany<IConsentRow>({
+                    model: 'oauthConsent',
+                    where,
+                    limit: options.limit,
+                    offset: options.offset,
+                    sortBy: { field: 'createdAt', direction: 'desc' }
+                })
+            ]);
+            // The search already read the accounts it matched, so only an
+            // unfiltered page asks the directory for its rows' emails.
+            const [apps, accounts] = await Promise.all([
+                this.toApps(adapter, consents),
+                scope ? scope.accounts : this.accounts.getAccountsByIds(consents.map(consent => consent.userId))
+            ]);
+            const accountsById = new Map<string, IAccountSummary>(accounts.map(account => [account.id, account]));
+            const rows = apps.map((app, index): IConnectedAppAdminRow => {
+                const userId = consents[index].userId;
+                const email = accountsById.get(userId)?.email;
+                return { ...app, userId, ...(email ? { userEmail: email } : {}) };
+            });
+            page = { apps: rows, total, searchTruncated: scope?.truncated ?? false };
+        }
+        return page;
+    }
+
+    /**
+     * Find the accounts an admin search names, so the grant query can be
+     * narrowed to their ids.
+     *
+     * The email lives on the account record, which only the account directory
+     * reads, and the grant tables hold the user id alone, so a search is two
+     * steps: the directory's own case-insensitive email-or-name search, then
+     * the grants of the accounts it returned. The directory read is bounded
+     * by {@link SEARCH_ACCOUNT_LIMIT}.
+     *
+     * @param search - The admin's search text, or nothing.
+     * @returns The matching accounts and whether there were more than were
+     *   read, or null when there is no search text, meaning every grant.
+     */
+    private async findSearchScope(search: string | undefined): Promise<ISearchScope | null> {
+        const text = search?.trim() ?? '';
+        let scope: ISearchScope | null = null;
+        if (text.length > 0) {
+            const matched = await this.accounts.listAccounts({
+                search: text,
+                limit: SEARCH_ACCOUNT_LIMIT,
+                sortBy: 'lastSeenAt',
+                sortDirection: 'desc'
+            });
+            scope = { accounts: matched.accounts, truncated: matched.total > matched.accounts.length };
+        }
+        return scope;
     }
 
     /** @inheritdoc */

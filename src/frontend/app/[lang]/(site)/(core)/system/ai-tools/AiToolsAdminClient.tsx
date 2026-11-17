@@ -26,15 +26,17 @@
  * the address already named a destination, with either a `?tab=` deep link or a
  * `?conversation=` one that only the Query tab can show, in which case that
  * choice wins. A menu
- * node cannot carry a live count, so the pending-approval tally rides a summary
- * badge above the tab row rather than on the Approvals node itself. Governed
+ * node cannot carry a live count, so the pending-approval tally rides a badge
+ * beside the page title rather than on the Approvals node itself. The page
+ * renders in the shared `AdminPage` shell, which holds the header, the tab row,
+ * and the active panel one stack gap apart, as every admin page does. Governed
  * events arrive as WebSocket refetch signals — the count itself always comes from
  * the gated REST feed, never a global broadcast.
  */
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import type { MenuNodeSerialized } from '@/shared';
-import { Page, Section } from '../../../../../../components/layout';
+import { AdminPage } from '../../../../../../components/layout';
 import { Badge } from '../../../../../../components/ui/Badge';
 import { MenuNavClient } from '../../../../../../components/layout/MenuNav/MenuNavClient';
 import { getSocket } from '../../../../../../lib/socketClient';
@@ -213,57 +215,44 @@ export function AiToolsAdminClient({ submenuTree, submenuGeneratedAt, initialTab
     }, []);
 
     return (
-        <Page>
-            {/* The System layout supplies no heading, so this names the page for
-                screen readers. Visually hidden because a visible title would only
-                repeat the menu entry and the active tab; /system/curation does
-                the same. */}
-            <h1 className={styles.sr_only}>AI tools</h1>
+        <AdminPage
+            title="AI Tools"
+            subtitle="The tools an AI model may call, their policies and audit trail, and a chat to run them."
+            actions={pending > 0
+                ? <Badge tone="warning">{pending} pending approval{pending === 1 ? '' : 's'}</Badge>
+                : undefined}
+        >
+            <MenuNavClient
+                namespace={SUBMENU_NAMESPACE}
+                items={submenuTree}
+                generatedAt={submenuGeneratedAt}
+                ariaLabel="AI tool governance sections"
+                activeUrl={`/system/ai-tools?tab=${activeTab}`}
+                onItemSelect={handleTabSelect}
+            />
 
-            {/* The pending-approval count, the tab row, and the panel share one
-                Section so the space between them is a section gap. As separate
-                children of Page they would each be spaced by the page gap, which
-                is meant for separating major page blocks and left the count
-                floating far above the tabs it describes. */}
-            <Section gap="md">
-                {pending > 0 && (
-                    <div className={styles.summary}>
-                        <Badge tone="warning">{pending} pending approval{pending === 1 ? '' : 's'}</Badge>
-                    </div>
-                )}
-
-                <MenuNavClient
-                    namespace={SUBMENU_NAMESPACE}
-                    items={submenuTree}
-                    generatedAt={submenuGeneratedAt}
-                    ariaLabel="AI tool governance sections"
-                    activeUrl={`/system/ai-tools?tab=${activeTab}`}
-                    onItemSelect={handleTabSelect}
-                />
-
-                <div className={styles.content}>
-                    {/* Hidden rather than unmounted while another tab is open, so the
-                        conversation and any in-flight stream survive the visit. */}
-                    <div hidden={activeTab !== 'query'}>
-                        <QueryTab active={activeTab === 'query'} initialConversationId={initialConversationId} />
-                    </div>
-                    {activeTab === 'registry' && <RegistryTab onChanged={noop} />}
-                    {activeTab === 'activity' && <ActivityTab />}
-                    {activeTab === 'approvals' && <ApprovalsTab onChanged={refreshPending} />}
-                    {activeTab === 'schedules' && (
-                        <SchedulerMonitor jobFilter={isAiToolsJob} title="AI Tools Schedules" hideStats />
-                    )}
-                    {/* Editing stays enabled, as on /system/database. Prefer the
-                        Registry and Query tabs for ordinary work, because they go
-                        through the module's services and keep its in-memory
-                        registries in step with what is stored; treat this browser
-                        as the escape hatch for a document those tabs cannot reach. */}
-                    {activeTab === 'database' && (
-                        <CollectionBrowser prefix={COLLECTION_PREFIX} title="AI Tools Collections" />
-                    )}
-                    {activeTab === 'logs' && <SystemLogsMonitor service={LOG_SERVICE} title="AI Tools Logs" />}
+            <div className={styles.content}>
+                {/* Hidden rather than unmounted while another tab is open, so the
+                    conversation and any in-flight stream survive the visit. */}
+                <div hidden={activeTab !== 'query'}>
+                    <QueryTab active={activeTab === 'query'} initialConversationId={initialConversationId} />
                 </div>
-            </Section>
-        </Page>
+                {activeTab === 'registry' && <RegistryTab onChanged={noop} />}
+                {activeTab === 'activity' && <ActivityTab />}
+                {activeTab === 'approvals' && <ApprovalsTab onChanged={refreshPending} />}
+                {activeTab === 'schedules' && (
+                    <SchedulerMonitor jobFilter={isAiToolsJob} title="AI Tools Schedules" hideStats />
+                )}
+                {/* Editing stays enabled, as on /system/database. Prefer the
+                    Registry and Query tabs for ordinary work, because they go
+                    through the module's services and keep its in-memory
+                    registries in step with what is stored; treat this browser
+                    as the escape hatch for a document those tabs cannot reach. */}
+                {activeTab === 'database' && (
+                    <CollectionBrowser prefix={COLLECTION_PREFIX} title="AI Tools Collections" />
+                )}
+                {activeTab === 'logs' && <SystemLogsMonitor service={LOG_SERVICE} title="AI Tools Logs" />}
+            </div>
+        </AdminPage>
     );
 }

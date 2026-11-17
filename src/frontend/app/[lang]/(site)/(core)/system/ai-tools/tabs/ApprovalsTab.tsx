@@ -221,22 +221,26 @@ export function ApprovalsTab({ onChanged }: { onChanged: () => void }) {
                     <>
                         {/* The header's select-all checkbox is hidden once the rows
                             stack on a phone, so the same control is offered here,
-                            shown only at that width. */}
-                        <label className={`${styles.check_label} ${styles.stacked_only}`}>
-                            <input
-                                type="checkbox"
-                                checked={allChecked}
-                                onChange={toggleAll}
-                            />
-                            Select all
-                        </label>
+                            shown only at that width. The wrapper carries the
+                            show-when-stacked rule alone, so the label's own
+                            display rule cannot override it. */}
+                        <div className={styles.stacked_only}>
+                            <label className={styles.check_label}>
+                                <input
+                                    type="checkbox"
+                                    checked={allChecked}
+                                    onChange={toggleAll}
+                                />
+                                Select all
+                            </label>
+                        </div>
                         {checked.size > 0 && (
                             <div className={styles.bulk_bar}>
                                 <span className="text-muted" style={{ fontSize: 'var(--font-size-body-sm)' }}>
                                     {checked.size} selected
                                 </span>
-                                <Button variant="danger" size="sm" loading={bulkBusy} onClick={handleBulkReject}>
-                                    <X size={16} /> Reject selected
+                                <Button variant="danger" loading={bulkBusy} onClick={handleBulkReject} icon={<X size={16} />}>
+                                    Reject selected
                                 </Button>
                             </div>
                         )}
@@ -286,11 +290,23 @@ export function ApprovalsTab({ onChanged }: { onChanged: () => void }) {
                                         <Td muted label="Trigger">{approval.context.triggerPath}</Td>
                                         <Td onClick={stopCellClick}>
                                             <div className={styles.row_actions}>
-                                                <Button variant="primary" size="sm" loading={busyId === approval.id} onClick={() => handleRowApprove(approval)}>
-                                                    <Check size={16} /> Approve
+                                                <Button
+                                                    variant="primary"
+                                                    size="sm"
+                                                    loading={busyId === approval.id}
+                                                    onClick={() => handleRowApprove(approval)}
+                                                    icon={<Check size={16} />}
+                                                >
+                                                    Approve
                                                 </Button>
-                                                <Button variant="danger" size="sm" disabled={busyId === approval.id} onClick={() => handleReject(approval)}>
-                                                    <X size={16} /> Reject
+                                                <Button
+                                                    variant="danger"
+                                                    size="sm"
+                                                    disabled={busyId === approval.id}
+                                                    onClick={() => handleReject(approval)}
+                                                    icon={<X size={16} />}
+                                                >
+                                                    Reject
                                                 </Button>
                                             </div>
                                         </Td>

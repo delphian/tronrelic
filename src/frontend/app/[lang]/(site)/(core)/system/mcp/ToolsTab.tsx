@@ -16,6 +16,10 @@
  * endpoint, may be granted only tools whose data is marked public. A tool
  * whose capability changed after it was granted is flagged and is not served
  * until granted again.
+ *
+ * Around a hundred tools are registered, so a name search and a status filter
+ * sit beside the group picker and narrow the list in the browser; the whole
+ * list is already on the page, so filtering it needs no request.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -23,8 +27,9 @@ import type { IMcpGroup, IMcpGroupPolicy, IMcpServerDescriptionStatus, IMcpToolE
 import { mcpGroupMayHoldTool } from '@/types';
 import { Card } from '../../../../../../components/ui/Card';
 import { Stack } from '../../../../../../components/layout';
-import { Badge } from '../../../../../../components/ui/Badge';
+import { Badge, type BadgeTone } from '../../../../../../components/ui/Badge';
 import { Field } from '../../../../../../components/ui/Field';
+import { Input } from '../../../../../../components/ui/Input';
 import { Select } from '../../../../../../components/ui/Select';
 import { Switch } from '../../../../../../components/ui/Switch';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../../components/ui/Table';
@@ -71,32 +76,92 @@ function groupMayHold(tool: IMcpToolExposure, group: IMcpGroup): boolean {
 }
 
 /**
- * Describe a tool's state for the managed group as a badge.
+ * The kinds of state a tool can be in for the managed group. The status badge
+ * names the exact state, and the status filter selects by kind, so one badge
+ * wording per kind is not needed and the filter stays short.
+ *
+ * - `served`: granted, and served to the group's members.
+ * - `blocked`: granted, but not served for a reason other than a changed
+ *   capability (the group may no longer hold it, is switched off, or the tool
+ *   is disabled in the registry).
+ * - `stale`: granted, but the tool's capability changed since, so it waits to
+ *   be granted again.
+ * - `hidden`: not granted, and could be.
+ * - `restricted`: not granted, and the group may not hold it.
+ */
+type ToolStatusKind = 'served' | 'blocked' | 'stale' | 'hidden' | 'restricted';
+
+/** The status filter's value: one kind, or every tool. */
+type ToolStatusFilter = ToolStatusKind | 'all';
+
+/** A tool's state for the managed group: its kind, and the badge that names it. */
+interface IToolStatus {
+    /** Which kind of state, for the status filter. */
+    kind: ToolStatusKind;
+    /** The badge text. */
+    label: string;
+    /** The badge colour. */
+    tone: BadgeTone;
+}
+
+/**
+ * Work out a tool's state for the managed group. The status column and the
+ * status filter both read it, so a tool is always listed under the filter
+ * whose badge it shows.
  *
  * @param tool - The tool row.
  * @param group - The group being managed.
  * @param grant - The group's grant for the tool, when it has one.
- * @returns The badge to show in the status column.
+ * @returns The state's kind and its badge.
  */
-function statusBadge(tool: IMcpToolExposure, group: IMcpGroup, grant: IMcpToolGrant | undefined) {
-    let badge = <Badge tone="neutral" size="sm">Hidden</Badge>;
+function describeStatus(tool: IMcpToolExposure, group: IMcpGroup, grant: IMcpToolGrant | undefined): IToolStatus {
+    const mayHold = groupMayHold(tool, group);
+    let status: IToolStatus = { kind: 'hidden', label: 'Hidden', tone: 'neutral' };
     // A grant the group may no longer hold is reported before staleness: its
     // switch shows as on so the only action is to withdraw it, and "grant
     // again" would point the admin at a request the server refuses.
-    if (!grant && !groupMayHold(tool, group)) {
-        badge = <Badge tone="neutral" size="sm">{group.isAnonymous ? 'Not public' : 'Restricted'}</Badge>;
-    } else if (grant && !groupMayHold(tool, group)) {
-        badge = <Badge tone="warning" size="sm">{group.isAnonymous ? 'Blocked — not public' : 'Blocked — restricted'}</Badge>;
+    if (!grant && !mayHold) {
+        status = { kind: 'restricted', label: group.isAnonymous ? 'Not public' : 'Restricted', tone: 'neutral' };
+    } else if (grant && !mayHold) {
+        status = { kind: 'blocked', label: group.isAnonymous ? 'Blocked — not public' : 'Blocked — restricted', tone: 'warning' };
     } else if (grant && !group.policy.enabled) {
-        badge = <Badge tone="warning" size="sm">Granted, group switched off</Badge>;
+        // The switch beside it shows the tool is granted, so the badge only
+        // says why it is not served; a longer badge widens the whole column.
+        status = { kind: 'blocked', label: 'Group switched off', tone: 'warning' };
     } else if (grant?.stale) {
-        badge = <Badge tone="warning" size="sm">Changed — grant again</Badge>;
+        status = { kind: 'stale', label: 'Changed — grant again', tone: 'warning' };
     } else if (grant && !tool.enabledInRegistry) {
-        badge = <Badge tone="warning" size="sm">Granted, disabled in registry</Badge>;
+        status = { kind: 'blocked', label: 'Disabled in registry', tone: 'warning' };
     } else if (grant?.served) {
-        badge = <Badge tone={tool.restrictedReason === null ? 'success' : 'danger'} size="sm">{tool.restrictedReason === null ? 'Served' : 'Served — restricted'}</Badge>;
+        const restricted = tool.restrictedReason !== null;
+        status = { kind: 'served', label: restricted ? 'Served — restricted' : 'Served', tone: restricted ? 'danger' : 'success' };
     }
-    return badge;
+    return status;
+}
+
+/**
+ * Build the status filter's choices for the managed group. The restricted
+ * kind takes the group's own word for it, so Anonymous reads "Not public"
+ * as its badges do.
+ *
+ * @param group - The group being managed, or null when the groups could not be loaded.
+ * @returns The options, "Any status" first.
+ */
+function statusFilterOptions(group: IMcpGroup | null): Array<{ value: ToolStatusFilter; label: string }> {
+    return [
+        { value: 'all', label: 'Any status' },
+        { value: 'served', label: 'Served' },
+        { value: 'blocked', label: 'Granted, not served' },
+        { value: 'stale', label: 'Changed since granted' },
+        { value: 'hidden', label: 'Hidden' },
+        { value: 'restricted', label: group?.isAnonymous ? 'Not public' : 'Restricted' }
+    ];
+}
+
+/** Narrow a select's value to a status filter, falling back to every tool. */
+function toStatusFilter(value: string): ToolStatusFilter {
+    const known: ToolStatusFilter[] = ['all', 'served', 'blocked', 'stale', 'hidden', 'restricted'];
+    return known.find(option => option === value) ?? 'all';
 }
 
 /**
@@ -108,8 +173,11 @@ function statusBadge(tool: IMcpToolExposure, group: IMcpGroup, grant: IMcpToolGr
  */
 function restrictionNote(tool: IMcpToolExposure, group: IMcpGroup): string | null {
     let note: string | null = null;
+    // The anonymous reason already says what Anonymous may hold, and it shows
+    // on most rows while Anonymous is managed, so it is not followed by a
+    // second sentence repeating it.
     if (group.isAnonymous && tool.anonymousIneligibleReason !== null) {
-        note = `${tool.anonymousIneligibleReason} Only tools marked public can be granted to Anonymous.`;
+        note = tool.anonymousIneligibleReason;
     } else if (tool.restrictedReason !== null && group.isGateGroup) {
         note = `${tool.restrictedReason} Restricted tools can only be granted to a narrower group.`;
     } else if (tool.restrictedReason !== null && !group.policy.allowRestrictedTools) {
@@ -131,6 +199,8 @@ export function ToolsTab({ initialTools, initialGroups, initialGroupId, onToolsC
         initialGroups.find(group => group.id === initialGroupId)?.id ?? initialGroups[0]?.id ?? ''
     );
     const [busy, setBusy] = useState<string | null>(null);
+    const [nameFilter, setNameFilter] = useState('');
+    const [statusFilter, setStatusFilter] = useState<ToolStatusFilter>('all');
     const { push } = useToast();
 
     const selected = groups.find(group => group.id === selectedId) ?? groups[0] ?? null;
@@ -138,6 +208,22 @@ export function ToolsTab({ initialTools, initialGroups, initialGroupId, onToolsC
     const restrictedGrantCount = selected
         ? tools.filter(tool => tool.restrictedReason !== null && tool.grants.some(grant => grant.groupId === selected.id)).length
         : 0;
+
+    /**
+     * The rows the filters let through. A name matches anywhere in the tool's
+     * name or its owning module or plugin, ignoring case, so "whale" finds
+     * every whale-alerts tool. Without a managed group there is no status to
+     * filter on, so only the name applies.
+     */
+    const visibleTools = useMemo(() => {
+        const needle = nameFilter.trim().toLowerCase();
+        return tools.filter(tool => {
+            const nameMatches = needle === '' || tool.name.toLowerCase().includes(needle) || tool.provider.toLowerCase().includes(needle);
+            const grant = selected ? tool.grants.find(entry => entry.groupId === selected.id) : undefined;
+            const statusMatches = statusFilter === 'all' || selected === null || describeStatus(tool, selected, grant).kind === statusFilter;
+            return nameMatches && statusMatches;
+        });
+    }, [tools, nameFilter, statusFilter, selected]);
 
     /**
      * Grant or withdraw one tool for the managed group and replace its row
@@ -211,7 +297,7 @@ export function ToolsTab({ initialTools, initialGroups, initialGroupId, onToolsC
 
     /**
      * Report every change to the rows to the parent, so the overview counts
-     * beside the kill switch stay accurate. Runs after the state commits
+     * stay accurate. Runs after the state commits
      * rather than inside the state updater, which must stay free of side effects.
      */
     useEffect(() => {
@@ -229,24 +315,56 @@ export function ToolsTab({ initialTools, initialGroups, initialGroupId, onToolsC
                 again. Hover a capability badge to see what it means.
             </p>
 
-            {selected === null ? (
+            {selected === null && (
                 <div className="alert">The user groups could not be loaded, so tools cannot be granted. Reload the page to try again.</div>
-            ) : (
-                <>
-                    <Field label="Managing access for" className={styles.group_picker}>
+            )}
+
+            {/* The group picker chooses what the protections card and the
+                Status and Grant columns act on; the search and the status
+                filter only narrow the list below. */}
+            <div className={styles.tool_filters}>
+                {selected !== null && (
+                    <Field label="Managing access for" className={styles.tool_filter_group}>
                         <Select
                             value={selected.id}
                             onChange={
                                 event => selectGroup(event.target.value)
                             }
                         >
+                            {/* The Anonymous group's name already says who it
+                                is, so only mcp-users is explained here. */}
                             {groups.map(group => (
                                 <option key={group.id} value={group.id}>
-                                    {group.isGateGroup ? `${group.name} (every signed-in account)` : group.isAnonymous ? `${group.name} (anyone, without signing in)` : group.name}
+                                    {group.isGateGroup ? `${group.name} (every signed-in account)` : group.name}
                                 </option>
                             ))}
                         </Select>
                     </Field>
+                )}
+                <Field label="Find a tool" className={styles.tool_filter_search}>
+                    <Input
+                        type="search"
+                        value={nameFilter}
+                        onChange={event => setNameFilter(event.target.value)}
+                        placeholder="Name or module"
+                    />
+                </Field>
+                {selected !== null && (
+                    <Field label={`Status for ${selected.name}`} className={styles.tool_filter_status}>
+                        <Select
+                            value={statusFilter}
+                            onChange={event => setStatusFilter(toStatusFilter(event.target.value))}
+                        >
+                            {statusFilterOptions(selected).map(option => (
+                                <option key={option.value} value={option.value}>{option.label}</option>
+                            ))}
+                        </Select>
+                    </Field>
+                )}
+            </div>
+
+            {selected !== null && (
+                <>
                     <GroupPolicyCard
                         key={selected.id}
                         group={selected}
@@ -260,20 +378,33 @@ export function ToolsTab({ initialTools, initialGroups, initialGroupId, onToolsC
             )}
 
             <Card padding="xs">
-                {/* Badge rows in three columns outgrow a tablet, so rows stack at
-                    1024px and below, each headed by the tool's name. */}
-                <Table flush stackAt="tablet">
+                {/* Status and Grant hold one badge and a switch, so they shrink
+                    to them and the other columns take the spare width. The
+                    capability badges may wrap: a restricted tool can carry five,
+                    which on one line would take half a tablet's width. The table
+                    then fits a tablet, and rows stack only at phone width, each
+                    headed by the tool's name. */}
+                <Table flush stackAt="mobile">
                     <Thead>
                         <Tr>
                             <Th>Tool</Th>
                             <Th>Capability</Th>
                             <Th>Access</Th>
-                            <Th>Status{selected ? ` for ${selected.name}` : ''}</Th>
-                            <Th>Grant</Th>
+                            {/* Not "Status for <group>": the column keeps its
+                                heading on one line, and a long group name there
+                                widened it past the badges. The picker and the
+                                status filter above already name the group. */}
+                            <Th width="shrink">Status</Th>
+                            <Th width="shrink">Grant</Th>
                         </Tr>
                     </Thead>
                     <Tbody>
-                        {tools.map(tool => {
+                        {visibleTools.length === 0 && (
+                            <Tr>
+                                <Td colSpan={5} muted>No tools match these filters.</Td>
+                            </Tr>
+                        )}
+                        {visibleTools.map(tool => {
                             const grant = selected ? tool.grants.find(entry => entry.groupId === selected.id) : undefined;
                             const mayHold = selected !== null && groupMayHold(tool, selected);
                             // A grant the group may no longer hold shows as on, so
@@ -282,11 +413,16 @@ export function ToolsTab({ initialTools, initialGroups, initialGroupId, onToolsC
                             // the server would refuse.
                             const on = grant !== undefined && (!grant.stale || !mayHold);
                             const note = selected ? restrictionNote(tool, selected) : null;
+                            const status = selected ? describeStatus(tool, selected, grant) : null;
                             return (
                                 <Tr key={tool.name}>
+                                    {/* The reason a tool cannot be granted sits under
+                                        its name, because the Status column is kept
+                                        to one line. */}
                                     <Td>
                                         <div className={styles.tool_name}>{tool.name}</div>
                                         <div className={styles.tool_meta}>{tool.provider}</div>
+                                        {note && <div className={styles.tool_note}>{note}</div>}
                                     </Td>
                                     <Td label="Capability">
                                         {/* The shared badges explain themselves on hover and
@@ -308,14 +444,11 @@ export function ToolsTab({ initialTools, initialGroups, initialGroupId, onToolsC
                                         </div>
                                     </Td>
                                     <Td label="Status">
-                                        {selected && (
-                                            <Stack gap="sm">
-                                                <div>{statusBadge(tool, selected, grant)}</div>
-                                                {note && <span className={styles.tool_meta}>{note}</span>}
-                                            </Stack>
-                                        )}
+                                        {status && <Badge tone={status.tone} size="sm">{status.label}</Badge>}
                                     </Td>
-                                    <Td label="Grant">
+                                    {/* No label: the switch ends the stacked entry
+                                        and names itself through its aria-label. */}
+                                    <Td>
                                         <Switch
                                             on={on}
                                             onChange={next => { void toggle(tool, next); }}

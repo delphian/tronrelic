@@ -12,6 +12,9 @@
  * The enable switch and its cell stop click propagation so toggling a tool never
  * also opens the panel; everything else on the row is a path into the detail.
  *
+ * The switch takes its small step, because the table is compact and a
+ * full-size switch was the tallest thing on a one-line row.
+ *
  * No cell carries a stacked label. When the Registry table stacks on a phone,
  * the switch, risk chip, and name share the entry's first line, which is the
  * same triage reading the full-width row gives, and the teaser wraps beneath.
@@ -56,6 +59,7 @@ export function RegistryToolRow({ tool, hasOverride, busy, indented = false, onT
         <Tr className={styles.tool_row} onClick={() => onSelect(tool)}>
             <Td onClick={stopCellClick} className={indented ? styles.tool_indent : undefined}>
                 <Switch
+                    size="sm"
                     on={tool.enabled}
                     onChange={(next) => onToggle(tool.name, next)}
                     disabled={busy}

@@ -5,7 +5,8 @@
  */
 
 import type { IConnectedApp } from './IConnectedApp.js';
-import type { IConnectedAppAdminRow } from './IConnectedAppAdminRow.js';
+import type { IConnectedAppListOptions } from './IConnectedAppListOptions.js';
+import type { IConnectedAppListPage } from './IConnectedAppListPage.js';
 
 /**
  * Lists and revokes the apps users have authorized through OAuth.
@@ -24,12 +25,18 @@ export interface IConnectedAppsService {
     listForUser(userId: string): Promise<IConnectedApp[]>;
 
     /**
-     * List grants across all users, for the admin page.
+     * List grants across all users, for the admin page, one page at a time.
      *
-     * @param options - Page size and offset.
+     * A search narrows the list to the grants of accounts whose email or
+     * display name contains the text. The matching accounts are read through
+     * the account directory, at most one directory page of them and the most
+     * recently active first, so a very broad search lists the grants of those
+     * accounts only and says so through `searchTruncated`.
+     *
+     * @param options - Page size, offset, and the optional search.
      * @returns One page of grants, newest first, with the total count.
      */
-    listAll(options: { limit: number; offset: number }): Promise<{ apps: IConnectedAppAdminRow[]; total: number }>;
+    listAll(options: IConnectedAppListOptions): Promise<IConnectedAppListPage>;
 
     /**
      * Revoke one user's grant to one app: delete the consent and every refresh
