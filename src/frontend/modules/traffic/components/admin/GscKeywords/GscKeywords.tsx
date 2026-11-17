@@ -149,6 +149,26 @@ function NotFinalBadge({ firstIncompleteDate }: { firstIncompleteDate: string })
     );
 }
 
+/**
+ * Show a Search Console page as its path. Every page Google reports is on this
+ * site, so the origin repeated on every row took about 170px of each cell and
+ * pushed the pair rows onto two lines; the full URL stays in the cell's title.
+ * A value that does not parse as an absolute URL is shown unchanged.
+ *
+ * @param url - The page URL as Google returned it.
+ * @returns The URL's path, query, and fragment.
+ */
+function pagePath(url: string): string {
+    let path = url;
+    try {
+        const parsed = new URL(url);
+        path = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    } catch {
+        // Not an absolute URL, so there is no origin to drop.
+    }
+    return path;
+}
+
 /** Resolve a CSS variable (such as '--color-primary') to its computed value with an SSR-safe fallback. */
 function resolveCSSColor(varName: string, fallback: string): string {
     if (typeof document === 'undefined') return fallback;
@@ -448,26 +468,28 @@ export function GscKeywords() {
                         empty={!pages || pages.length === 0}
                         emptyMessage="No page data in this window yet. Trigger a refresh in the Settings tab to backfill the current window."
                     >
-                        {/* Two-up in a band about 660px wide on a desktop, so it
-                            stacks only at phone width, headed by the page. */}
-                        <Table variant="compact" flush stackAt="phone" className={styles.dense_table}>
+                        {/* Never stacks: with the origin dropped from each page
+                            and the click-through rate dropped at phone width
+                            (see the stylesheet), the path and three figures
+                            fit a phone, where stacking gave each page five lines. */}
+                        <Table variant="compact" flush className={styles.dense_table}>
                             <Thead>
                                 <Tr>
                                     <Th scope="col" width="expand">Page</Th>
                                     <Th scope="col" width="shrink" numeric>Clicks</Th>
                                     <Th scope="col" width="shrink" numeric>Impr.</Th>
-                                    <Th scope="col" width="shrink" numeric>CTR</Th>
+                                    <Th scope="col" width="shrink" numeric className={styles.ctr_column}>CTR</Th>
                                     <Th scope="col" width="shrink" numeric>Pos.</Th>
                                 </Tr>
                             </Thead>
                             <Tbody>
                                 {(pages ?? []).map(pg => (
                                     <Tr key={pg.page}>
-                                        <Td className={styles.wrap_cell}>{pg.page}</Td>
-                                        <Td label="Clicks" numeric>{numberFormatter.format(pg.clicks)}</Td>
-                                        <Td label="Impressions" numeric muted>{numberFormatter.format(pg.impressions)}</Td>
-                                        <Td label="Click-through rate" numeric muted>{(pg.ctr * 100).toFixed(1)}%</Td>
-                                        <Td label="Average position" numeric muted>{pg.position.toFixed(1)}</Td>
+                                        <Td className={styles.wrap_cell} title={pg.page}>{pagePath(pg.page)}</Td>
+                                        <Td numeric>{numberFormatter.format(pg.clicks)}</Td>
+                                        <Td numeric muted>{numberFormatter.format(pg.impressions)}</Td>
+                                        <Td numeric muted className={styles.ctr_column}>{(pg.ctr * 100).toFixed(1)}%</Td>
+                                        <Td numeric muted>{pg.position.toFixed(1)}</Td>
                                     </Tr>
                                 ))}
                             </Tbody>
@@ -506,7 +528,7 @@ export function GscKeywords() {
                                 {(pairs ?? []).map(pair => (
                                     <Tr key={`${pair.keyword} ${pair.page}`}>
                                         <Td className={styles.wrap_cell}>{pair.keyword}</Td>
-                                        <Td label="Page" className={styles.wrap_cell} muted>{pair.page}</Td>
+                                        <Td label="Page" className={styles.wrap_cell} muted title={pair.page}>{pagePath(pair.page)}</Td>
                                         <Td label="Clicks" numeric>{numberFormatter.format(pair.clicks)}</Td>
                                         <Td label="Impressions" numeric muted>{numberFormatter.format(pair.impressions)}</Td>
                                         <Td label="Click-through rate" numeric muted>{(pair.ctr * 100).toFixed(1)}%</Td>

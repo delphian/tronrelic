@@ -18,13 +18,12 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { KeyRound, Trash2 } from 'lucide-react';
-import { Stack } from '../../../../../../components/layout';
-import { Card } from '../../../../../../components/ui/Card';
+import { ExternalLink, KeyRound, Trash2 } from 'lucide-react';
 import { Badge } from '../../../../../../components/ui/Badge';
 import { Button } from '../../../../../../components/ui/Button';
-import { Input } from '../../../../../../components/ui/Input';
 import { Field } from '../../../../../../components/ui/Field';
+import { Input } from '../../../../../../components/ui/Input';
+import { Panel } from '../../../../../../components/ui/Panel';
 import { Switch } from '../../../../../../components/ui/Switch';
 import { useToast } from '../../../../../../components/ui/ToastProvider';
 import {
@@ -35,14 +34,41 @@ import {
 } from '../../../../../../modules/address-tags';
 import styles from './page.module.scss';
 
-/** Human labels for the scheduled sources' switches. */
-const SOURCE_LABELS: Record<string, string> = {
-    'ofac-sdn': 'OFAC SDN list (daily snapshot)',
-    'usdt-blacklist': 'Tether USDT blacklist (event poll + weekly verify)'
+/**
+ * Where an operator can ask Chainalysis about access to the screening API.
+ *
+ * The backend calls `https://public.chainalysis.com/api/v1/address/`, which
+ * only works with a key Chainalysis issues. This URL is the one Chainalysis
+ * still publishes for that request, in their own announcement of the sanctions
+ * screening API, and there is no self-service signup anywhere else. It no
+ * longer reaches a key-request form: it redirects to the commercial Address
+ * Screening product page, whose only form is a sales enquiry. Do not describe
+ * it to operators as a way to obtain a free key, because the destination page
+ * offers no such thing, and re-check where it lands before changing the copy
+ * below.
+ */
+const CHAINALYSIS_KEY_URL = 'https://go.chainalysis.com/crypto-sanctions-screening.html';
+
+/**
+ * The label and hint for each scheduled source's switch. The hint says what
+ * the switch starts, so an operator does not have to open the Sources tab to
+ * learn how often a feed runs.
+ */
+const SOURCE_FIELDS: Record<string, { label: string; hint: string }> = {
+    'ofac-sdn': {
+        label: 'OFAC SDN list',
+        hint: 'Takes a daily snapshot of the sanctions list.'
+    },
+    'usdt-blacklist': {
+        label: 'Tether USDT blacklist',
+        hint: 'Polls freeze events every five minutes and re-checks every held freeze weekly.'
+    }
 };
 
 /**
  * The Settings panel: source switches and the Chainalysis key form.
+ *
+ * @returns The tab.
  */
 export function SettingsTab() {
     const [settings, setSettings] = useState<IAddressTagsSettingsView | null>(null);
@@ -123,64 +149,72 @@ export function SettingsTab() {
         }
     }, [apply, keyDraft, notify]);
 
-    if (!settings) {
-        return (
-            <Card>
-                <div className={styles.placeholder}>
-                    {loading ? 'Loading settings…' : 'Settings unavailable.'}
-                </div>
-            </Card>
-        );
-    }
-
     return (
-        <Stack gap="lg">
-            <Card>
-                <Stack gap="md">
-                    <p className={styles.intro}>
-                        Each switch gates that source&apos;s <em>scheduled</em> runs; &ldquo;Run now&rdquo; on the Sources tab works
-                        either way. All scheduled ingestion additionally requires the platform scheduler to be on
-                        (<code>ENABLE_SCHEDULER</code>).
-                    </p>
-                    {Object.entries(settings.sources).map(([id, source]) => (
-                        <div key={id} className={styles.switch_row}>
-                            <Switch
-                                on={source.enabled}
-                                onChange={(next) => void apply(
-                                    { sources: { [id]: { enabled: next } } },
-                                    `${SOURCE_LABELS[id] ?? id} ${next ? 'enabled' : 'disabled'}`
-                                )}
-                                disabled={saving}
-                                aria-label={`Toggle scheduled runs for ${SOURCE_LABELS[id] ?? id}`}
-                            />
-                            <span>{SOURCE_LABELS[id] ?? id}</span>
-                        </div>
-                    ))}
-                </Stack>
-            </Card>
+        <Panel
+            className={styles.settings_panel}
+            title="Sources"
+            meta="Switches gate scheduled runs only; Run now on Sources works either way"
+        >
+            {!settings ? (
+                <p className="text-muted">{loading ? 'Loading settings…' : 'Settings unavailable.'}</p>
+            ) : (
+                <div className={styles.settings_form}>
+                    {Object.entries(settings.sources).map(([id, source]) => {
+                        const field = SOURCE_FIELDS[id] ?? { label: id, hint: '' };
+                        return (
+                            <Field key={id} inline label={field.label} hint={field.hint} htmlFor={`address-tags-source-${id}`}>
+                                <Switch
+                                    id={`address-tags-source-${id}`}
+                                    on={source.enabled}
+                                    onChange={(next) => void apply(
+                                        { sources: { [id]: { enabled: next } } },
+                                        `${field.label} ${next ? 'enabled' : 'disabled'}`
+                                    )}
+                                    disabled={saving}
+                                    aria-label={`Scheduled runs for ${field.label}`}
+                                />
+                            </Field>
+                        );
+                    })}
 
-            <Card>
-                <Stack gap="md">
-                    <div className={styles.switch_row}>
+                    <Field
+                        inline
+                        label="Chainalysis screening"
+                        hint="Lets an admin screen one address on the Sources tab. Needs the API key below."
+                        htmlFor="address-tags-chainalysis-enabled"
+                    >
                         <Switch
+                            id="address-tags-chainalysis-enabled"
                             on={settings.chainalysis.enabled}
                             onChange={(next) => void apply(
                                 { chainalysis: { enabled: next } },
                                 `Chainalysis screening ${next ? 'enabled' : 'disabled'}`
                             )}
                             disabled={saving}
-                            aria-label="Toggle Chainalysis screening"
+                            aria-label="Chainalysis screening"
                         />
-                        <span>Chainalysis screening</span>
-                        {settings.chainalysis.configured
-                            ? <Badge tone="success">key configured (…{settings.chainalysis.keySuffix})</Badge>
-                            : <Badge tone="warning">no key configured</Badge>}
-                    </div>
+                    </Field>
 
                     <Field
-                        label="Chainalysis API key"
-                        hint="Write-only: the stored key is never shown again, only whether one is configured and its last four characters. Saving replaces any existing key."
+                        label={(
+                            <>
+                                Chainalysis API key
+                                {settings.chainalysis.configured
+                                    ? <Badge tone="success">set, ends …{settings.chainalysis.keySuffix}</Badge>
+                                    : <Badge tone="warning">not set</Badge>}
+                            </>
+                        )}
                         htmlFor="chainalysis-api-key"
+                        hint={(
+                            <>
+                                Write-only: after saving, only its last four characters are shown, and saving again
+                                replaces it. Chainalysis has no self-service signup for this API, and its only
+                                documented route is a sales enquiry.{' '}
+                                <a className={styles.docs_link} href={CHAINALYSIS_KEY_URL} target="_blank" rel="noopener noreferrer">
+                                    Contact Chainalysis about API access <ExternalLink size={14} aria-hidden />
+                                </a>
+                            </>
+                        )}
                     >
                         <div className={styles.key_form}>
                             <Input
@@ -189,24 +223,26 @@ export function SettingsTab() {
                                 onChange={(event) => setKeyDraft(event.target.value)}
                                 placeholder={settings.chainalysis.configured ? 'Enter a replacement key' : 'Enter an API key'}
                                 autoComplete="off"
+                                aria-describedby="chainalysis-api-key-hint"
                                 className={styles.key_input}
                             />
-                            <Button variant="primary" onClick={() => void handleSaveKey()} disabled={saving}>
-                                <KeyRound size={16} /> Save key
+                            <Button variant="primary" icon={<KeyRound size={16} />} onClick={() => void handleSaveKey()} disabled={saving}>
+                                Save key
                             </Button>
                             {settings.chainalysis.configured && (
                                 <Button
                                     variant="danger"
+                                    icon={<Trash2 size={16} />}
                                     onClick={() => void apply({ chainalysis: { apiKey: null } }, 'Chainalysis API key cleared')}
                                     disabled={saving}
                                 >
-                                    <Trash2 size={16} /> Clear key
+                                    Clear key
                                 </Button>
                             )}
                         </div>
                     </Field>
-                </Stack>
-            </Card>
-        </Stack>
+                </div>
+            )}
+        </Panel>
     );
 }

@@ -16,13 +16,13 @@
  * by the /system dashboard convention.
  */
 
-import { useCallback, useEffect, useState } from 'react';
-import { ExternalLink, Play, ShieldQuestion } from 'lucide-react';
+import { useCallback, useEffect, useId, useState } from 'react';
+import { Play, Settings, ShieldQuestion } from 'lucide-react';
 import { Stack } from '../../../../../../components/layout';
-import { Card } from '../../../../../../components/ui/Card';
 import { Badge } from '../../../../../../components/ui/Badge';
 import { Button } from '../../../../../../components/ui/Button';
 import { ClientTime } from '../../../../../../components/ui/ClientTime';
+import { Panel } from '../../../../../../components/ui/Panel';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../../components/ui/Table';
 import { AddressSelector } from '../../../../../../components/ui/AddressSelector';
 import { useToast } from '../../../../../../components/ui/ToastProvider';
@@ -37,21 +37,6 @@ import {
 import styles from './page.module.scss';
 
 /**
- * Where an operator can ask Chainalysis about access to the screening API.
- *
- * The backend calls `https://public.chainalysis.com/api/v1/address/`, which
- * only works with a key Chainalysis issues. This URL is the one Chainalysis
- * still publishes for that request, in their own announcement of the sanctions
- * screening API, and there is no self-service signup anywhere else. It no
- * longer reaches a key-request form: it redirects to the commercial Address
- * Screening product page, whose only form is a sales enquiry. Do not describe
- * it to operators as a way to obtain a free key, because the destination page
- * offers no such thing, and re-check where it lands before changing the copy
- * below.
- */
-const CHAINALYSIS_KEY_URL = 'https://go.chainalysis.com/crypto-sanctions-screening.html';
-
-/**
  * Human labels for the registered source ids, so the table reads as the feeds
  * an operator knows rather than internal identifiers.
  */
@@ -60,6 +45,9 @@ const SOURCE_LABELS: Record<string, string> = {
     'usdt-blacklist': 'Tether USDT blacklist',
     chainalysis: 'Chainalysis screening'
 };
+
+/** The id the Chainalysis lookup source registers under. */
+const CHAINALYSIS_SOURCE_ID = 'chainalysis';
 
 /**
  * Compress a reconcile's counts into one readable line for the table.
@@ -83,15 +71,31 @@ function summarizeResult(result: ITagSyncResultView | null | undefined): string 
 }
 
 /**
+ * Props for the Sources panel.
+ */
+interface ISourcesTabProps {
+    /**
+     * Switch the page to its Settings tab. The screening card offers this when
+     * screening cannot run yet, because the switch and the key it needs are
+     * both on that tab.
+     */
+    onOpenSettings: () => void;
+}
+
+/**
  * The Sources panel: status table, per-source run buttons, and the screening
  * control.
+ *
+ * @param props - The callback that opens the Settings tab.
+ * @returns The tab.
  */
-export function SourcesTab() {
+export function SourcesTab({ onOpenSettings }: ISourcesTabProps) {
     const [sources, setSources] = useState<ITagSourceStatusView[]>([]);
     const [loading, setLoading] = useState(true);
     const [runningId, setRunningId] = useState<string | null>(null);
     const [screenTarget, setScreenTarget] = useState<string | null>(null);
     const [screening, setScreening] = useState(false);
+    const screenHintId = useId();
     const { push } = useToast();
 
     /**
@@ -175,47 +179,58 @@ export function SourcesTab() {
         }
     }, [load, notify, screenTarget]);
 
-    return (
-        <Stack gap="lg">
-            <Card>
-                <Stack gap="md">
-                    <p className={styles.intro}>
-                        Machine sources assert reserved-prefix tags (<code>ofac:sdn</code>, <code>usdt:frozen</code>,{' '}
-                        <code>chainalysis:sanctioned</code>) with a citation behind every claim. Scheduled runs stop entirely when the
-                        platform scheduler is off (<code>ENABLE_SCHEDULER=false</code>) — that is the ingestion kill switch — and each
-                        source also has its own switch on the Settings tab. &ldquo;Run now&rdquo; works regardless of the switch, for
-                        testing and recovery.
-                    </p>
+    // Screening refuses while its switch is off or no key is saved, so the
+    // form is offered only when both hold. Showing it otherwise invites an
+    // operator to fill it in and be refused.
+    const chainalysis = sources.find((source) => source.id === CHAINALYSIS_SOURCE_ID);
+    const screeningReady = chainalysis !== undefined && chainalysis.enabled && chainalysis.configured;
 
-                    {sources.length === 0 ? (
-                        <div className={styles.placeholder}>
-                            {loading ? 'Loading source statuses…' : 'No sources registered.'}
-                        </div>
-                    ) : (
-                        /* Six columns do not fit a tablet, so each source
-                           stacks into an entry headed by its name, with Run now
-                           on the entry's last line. */
-                        <Table flush stackAt="tablet">
-                            <Thead>
-                                <Tr>
-                                    <Th>Source</Th>
-                                    <Th>State</Th>
-                                    <Th>Last success</Th>
-                                    <Th>Last result</Th>
-                                    <Th>Last error</Th>
-                                    <Th>Actions</Th>
-                                </Tr>
-                            </Thead>
-                            <Tbody>
-                                {sources.map((source) => (
+    return (
+        <Stack gap="md">
+            <Panel
+                title="Ingestion sources"
+                meta="Scheduled runs need ENABLE_SCHEDULER on; Run now ignores the switches on Settings"
+            >
+                {sources.length === 0 ? (
+                    <div className={styles.placeholder}>
+                        {loading ? 'Loading source statuses…' : 'No sources registered.'}
+                    </div>
+                ) : (
+                    /* Source, Last success, Last result, and Actions keep their
+                       content on one line at its own width, and State lets its
+                       badges wrap, so Last error takes the spare width. Those
+                       columns alone need about 900px, which leaves the error a
+                       few dozen pixels of a tablet's 976px, so the rows stack
+                       at tablet width rather than only on a phone. */
+                    <Table flush stackAt="tablet">
+                        <Thead>
+                            <Tr>
+                                <Th width="shrink">Source</Th>
+                                <Th>State</Th>
+                                <Th width="shrink">Last success</Th>
+                                <Th width="shrink">Last result</Th>
+                                <Th>Last error</Th>
+                                <Th width="shrink">Actions</Th>
+                            </Tr>
+                        </Thead>
+                        <Tbody>
+                            {sources.map((source) => {
+                                const hasError = Boolean(source.state.lastError || source.verifyState?.lastError);
+                                return (
                                     <Tr key={source.id}>
                                         <Td>
                                             <div className={styles.source_name}>{SOURCE_LABELS[source.id] ?? source.id}</div>
                                             <div className={styles.source_meta}>
                                                 {source.mode}
                                                 {source.cron ? ` · ${source.cron}` : ' · on demand'}
-                                                {source.cursor ? ` · cursor ${source.cursor}` : ''}
                                             </div>
+                                            {/* On a line of its own, because the
+                                                column holds its lines unwrapped and
+                                                a cursor appended to the line above
+                                                would set the column's width. */}
+                                            {source.cursor && (
+                                                <div className={styles.source_meta}>cursor {source.cursor}</div>
+                                            )}
                                         </Td>
                                         <Td label="State">
                                             <div className={styles.badge_row}>
@@ -236,7 +251,11 @@ export function SourcesTab() {
                                                 </div>
                                             )}
                                         </Td>
-                                        <Td label="Last result" stackSpan={2}>
+                                        {/* No stackSpan: the summary wraps to two
+                                            lines in one column at most, and a
+                                            wider field would push Run now onto
+                                            a line of its own. */}
+                                        <Td label="Last result">
                                             {summarizeResult(source.state.lastResult)}
                                             {source.verifyState?.lastResult && (
                                                 <div className={styles.source_meta}>
@@ -244,68 +263,85 @@ export function SourcesTab() {
                                                 </div>
                                             )}
                                         </Td>
-                                        <Td label="Last error" stackSpan="full">
+                                        {/* The whole line only when there is an
+                                            error to read; an empty one keeps a
+                                            single column so it does not push
+                                            Run now onto a line of its own. */}
+                                        <Td label="Last error" stackSpan={hasError ? 'full' : undefined}>
                                             {source.state.lastError && (
                                                 <div className={styles.error_text}>{source.state.lastError}</div>
                                             )}
                                             {source.verifyState?.lastError && (
                                                 <div className={styles.error_text}>verify: {source.verifyState.lastError}</div>
                                             )}
-                                            {!source.state.lastError && !source.verifyState?.lastError && '—'}
+                                            {!hasError && '—'}
                                         </Td>
                                         <Td>
                                             {source.mode !== 'lookup' && (
                                                 <Button
                                                     variant="secondary"
-                                                    size="sm"
+                                                    icon={<Play size={14} />}
                                                     onClick={() => void handleRun(source.id)}
                                                     disabled={runningId !== null || source.running}
                                                     aria-label={`Run ${SOURCE_LABELS[source.id] ?? source.id} now`}
                                                 >
-                                                    <Play size={14} /> {runningId === source.id ? 'Running…' : 'Run now'}
+                                                    {runningId === source.id ? 'Running…' : 'Run now'}
                                                 </Button>
                                             )}
                                         </Td>
                                     </Tr>
-                                ))}
-                            </Tbody>
-                        </Table>
-                    )}
-                </Stack>
-            </Card>
+                                );
+                            })}
+                        </Tbody>
+                    </Table>
+                )}
+            </Panel>
 
-            <Card>
-                <Stack gap="md">
-                    <p className={styles.intro}>
-                        Screen one address through Chainalysis on demand. A sanctions identification tags the address{' '}
-                        <code>chainalysis:sanctioned</code> with the identification as its citation; a clean answer withdraws any prior
-                        flag. This is direct-match screening only — it does not detect proximity to sanctioned addresses. Requires the
-                        Chainalysis switch to be on and an API key saved, both on the Settings tab.
-                    </p>
-                    <p className={styles.intro}>
-                        No key yet? The key has to come from Chainalysis, and they publish no self-service signup for this API. The
-                        page below is the only route they document, and it now leads to their commercial Address Screening enquiry
-                        form, so whether you are given access and on what terms is between you and Chainalysis.{' '}
-                        <a className={styles.docs_link} href={CHAINALYSIS_KEY_URL} target="_blank" rel="noopener noreferrer">
-                            Contact Chainalysis about API access <ExternalLink size={14} aria-hidden />
-                        </a>
-                        . Once you have a key, paste it into the Settings tab.
-                    </p>
-                    <div className={styles.screen_form}>
-                        <div className={styles.screen_input}>
-                            <AddressSelector
-                                value={screenTarget}
-                                onChange={setScreenTarget}
-                                disabled={screening}
-                                aria-label="TRON address to screen"
-                            />
-                        </div>
-                        <Button variant="primary" onClick={() => void handleScreen()} disabled={screening}>
-                            <ShieldQuestion size={16} /> {screening ? 'Screening…' : 'Screen address'}
+            {/* While screening cannot run, the panel is its header alone: one
+                line saying what is missing, with the button that opens the tab
+                where both are set. */}
+            {chainalysis && (
+                <Panel
+                    title="Screen one address"
+                    meta={screeningReady
+                        ? 'Direct sanctions matches through Chainalysis'
+                        : 'Needs the Chainalysis switch on and an API key saved'}
+                    actions={!screeningReady && (
+                        <Button variant="secondary" icon={<Settings size={16} />} onClick={onOpenSettings}>
+                            Open Settings
                         </Button>
-                    </div>
-                </Stack>
-            </Card>
+                    )}
+                >
+                    {screeningReady && (
+                        <>
+                            <div className={styles.screen_form}>
+                                <div className={styles.screen_input}>
+                                    <AddressSelector
+                                        value={screenTarget}
+                                        onChange={setScreenTarget}
+                                        disabled={screening}
+                                        aria-label="TRON address to screen"
+                                        aria-describedby={screenHintId}
+                                    />
+                                </div>
+                                <Button
+                                    variant="primary"
+                                    icon={<ShieldQuestion size={16} />}
+                                    onClick={() => void handleScreen()}
+                                    disabled={screening}
+                                >
+                                    {screening ? 'Screening…' : 'Screen address'}
+                                </Button>
+                            </div>
+                            <p id={screenHintId} className={styles.hint}>
+                                A match tags the address <code>chainalysis:sanctioned</code> with the identification as its
+                                citation, and a clean answer withdraws any earlier flag. It does not detect proximity to
+                                sanctioned addresses.
+                            </p>
+                        </>
+                    )}
+                </Panel>
+            )}
         </Stack>
     );
 }

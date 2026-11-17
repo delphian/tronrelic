@@ -1,44 +1,18 @@
 /**
- * Stage card header: stage name and description on the left, the stage's
- * control on the right, wrapping under the text when the card is narrow.
+ * Stage card layout. The header comes from the shared Panel; this lets the
+ * card shrink inside its grid column instead of widening the grid to the
+ * width of its timing table, and sets the stage's one-sentence description.
  */
 
 .card {
     min-width: 0;
 }
 
-.header {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: var(--gap-sm);
-}
-
-.heading {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-2xs);
-    min-width: 0;
-    flex: 1 1 14rem;
-}
-
-.title {
-    font-size: var(--font-size-body-sm);
-    font-weight: var(--font-weight-semibold);
-    letter-spacing: var(--letter-spacing-wide);
-    text-transform: uppercase;
-}
-
+/* Caption size and muted, so the sentence reads as part of the header rather
+   than as the first of the card's figures. */
 .description {
     margin: 0;
     font-size: var(--font-size-caption);
+    line-height: var(--line-height-normal);
     color: var(--color-text-muted);
-}
-
-.actions {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--gap-xs);
 }

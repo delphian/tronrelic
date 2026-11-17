@@ -3,64 +3,76 @@
  * only — colors, spacing, and typography flow through design tokens.
  */
 
-.intro {
-    margin: 0;
-    max-width: var(--max-width-prose);
-    color: var(--color-text-muted);
-    font-size: var(--font-size-body-sm);
-    line-height: var(--line-height-relaxed);
+@use '../../../../../breakpoints' as *;
+
+/* Add form: the address selector takes the spare width, the optional label
+   stays narrower, and the Track button sits at the end. On a phone the
+   selector takes a line of its own and the label shares the next line with
+   the button. */
+.add_form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-sm);
 }
 
-.tick_account {
-    font-size: var(--font-size-caption);
-    color: var(--color-text-muted);
+.add_form__address {
+    flex: 1 1 var(--max-width-xs);
+    min-width: 0;
 }
 
-.tick_account + .tick_account {
-    margin-top: var(--gap-2xs);
+.add_form__label {
+    flex: 1 1 calc(var(--max-width-xs) / 2);
+    max-width: var(--max-width-xs);
+    min-width: 0;
 }
 
-.tick_account_addr {
-    font-family: var(--font-mono);
+/* The account's address chip with its operator label beside it, wrapping
+   under the chip only when the column is too narrow for both. */
+.account_identity {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: var(--gap-sm);
+    row-gap: var(--gap-2xs);
+}
+
+.account_label {
+    font-weight: var(--font-weight-medium);
     color: var(--color-text);
 }
 
-.source_flags {
+/* The last error, cut to one line. `width: 0` keeps the message out of the
+   table's column sizing, so a long error cannot widen the Account column,
+   and `min-width: 100%` then gives it the width the column already has. */
+.account_error {
+    width: 0;
+    min-width: 100%;
     margin-top: var(--gap-2xs);
+    overflow: hidden;
+    color: var(--color-danger-text);
     font-size: var(--font-size-caption);
-    color: var(--color-text-muted);
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-.summary {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--gap-sm);
-}
-
-.toolbar {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--gap-sm);
+/* While the accounts table stacks its rows (its `stackAt="tablet"`), the
+   address and error head an entry with the whole line to themselves, so the
+   error may run to the line's end instead of stopping at the width of the
+   address and label above it. `table` is the size container the shared
+   Table declares on its wrapper. */
+@container table (max-width: #{$breakpoint-tablet}) {
+    .account_error {
+        width: auto;
+        min-width: 0;
+        max-width: 100%;
+    }
 }
 
 .row_actions {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
     gap: var(--gap-xs);
-}
-
-.account_addr {
-    font-weight: var(--font-weight-medium);
-    word-break: break-all;
-}
-
-.account_error {
-    margin-top: var(--gap-2xs);
-    color: var(--color-danger);
-    font-size: var(--font-size-caption);
 }
 
 .badge_stack {
@@ -70,35 +82,67 @@
     gap: var(--gap-2xs);
 }
 
+.source_flags {
+    margin-top: var(--gap-2xs);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
 .forward_run {
     margin-top: var(--gap-2xs);
     color: var(--color-text-muted);
     font-size: var(--font-size-caption);
 }
 
-/* Wraps so the control drops under its label on a phone instead of squeezing
-   the label's description into a narrow column. */
-.setting_row {
+/* One account a tick advanced: its address chip, then the spend. */
+.tick_account {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.tick_account + .tick_account {
+    margin-top: var(--gap-2xs);
+}
+
+.tick_account_line {
     display: flex;
     flex-wrap: wrap;
-    align-items: flex-start;
-    justify-content: space-between;
+    align-items: center;
+    column-gap: var(--gap-xs);
+}
+
+/* An error in the Activity tab is shown whole, because that tab is where an
+   operator goes to read it. */
+.tick_error {
+    margin-top: var(--gap-2xs);
+    color: var(--color-danger-text);
+    font-size: var(--font-size-caption);
+}
+
+/* The settings panel is capped, Save button included, so each control and the
+   button that commits it sit near their labels instead of across a 1,300px
+   card. */
+.settings_panel {
+    max-width: var(--max-width-lg);
+}
+
+.settings_form {
+    display: flex;
+    flex-direction: column;
     gap: var(--gap-md);
 }
 
-/* The label block starts from a fixed basis rather than its text width, so on
-   a wide screen it fills the row beside the control and only wraps the
-   control below it once fewer than that many pixels remain. */
-.setting_row > :first-child {
-    flex: 1 1 var(--max-width-xs);
-    min-width: 0;
+/* The two number fields side by side where there is room, one per line on a
+   phone. `auto-fit` collapses unused tracks, so the two fields share the
+   panel's width rather than leaving an empty third column. */
+.settings_grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, calc(var(--max-width-xs) * 0.8)), 1fr));
+    gap: var(--gap-md);
 }
 
-.setting_label {
-    font-weight: var(--font-weight-semibold);
-}
-
+/* A count needs only a few digits, so the input keeps that width inside a
+   field that would otherwise stretch it. */
 .number_input {
-    max-width: var(--max-width-xs);
     width: 8ch;
 }

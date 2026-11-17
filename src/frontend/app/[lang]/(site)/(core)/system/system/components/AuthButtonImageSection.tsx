@@ -25,9 +25,9 @@ import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ImageIcon, Save, Trash2, UserRound } from 'lucide-react';
 import { Card } from '../../../../../../../components/ui/Card';
+import { Panel } from '../../../../../../../components/ui/Panel';
 import { Button } from '../../../../../../../components/ui/Button';
 import { Badge } from '../../../../../../../components/ui/Badge';
-import { Stack } from '../../../../../../../components/layout';
 import { useToast } from '../../../../../../../components/ui/ToastProvider/ToastProvider';
 import { useFilePicker } from '../../../../../../../lib/filePickerRegistry';
 import {
@@ -191,79 +191,76 @@ export function AuthButtonImageSection() {
         );
     } else {
         content = (
-            <Card padding="sm" noBackgroundImage>
-                <Stack gap="md">
-                    <div className={providerStyles.provider_header}>
-                        <UserRound size={16} aria-hidden style={{ color: 'var(--color-primary)' }} />
-                        <h3 className={providerStyles.provider_title}>Sign-in button image</h3>
-                        {saved.authButtonImageUrl
-                            ? <Badge tone="success">Image set</Badge>
-                            : <Badge tone="neutral">Default button</Badge>}
+            <Panel
+                title="Sign-in button image"
+                meta={saved.authButtonImageUrl
+                    ? <Badge tone="success">Image set</Badge>
+                    : <Badge tone="neutral">Default button</Badge>}
+                actions={(
+                    <Button
+                        variant="primary"
+                        onClick={() => void handleSave()}
+                        disabled={!dirty || saving}
+                        loading={saving}
+                        icon={<Save size={18} />}
+                    >
+                        Save
+                    </Button>
+                )}
+            >
+                <p className={providerStyles.description}>
+                    Replaces the &quot;Sign in&quot; button with a round image, such as the site mascot, wherever the
+                    Sign-in button widget is placed on /system/widgets. Signed-out visitors who click it open the
+                    sign-in dialog, and signed-in visitors go to their profile.
+                </p>
+
+                <div className={styles.preview_row}>
+                    <div className={styles.preview}>
+                        {previewUrl
+                            ? (
+                                // Plain <img> is the project's convention for uploaded images.
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={previewUrl} alt="Preview of the sign-in button image" className={styles.preview_img} />
+                            )
+                            : <UserRound size={24} aria-hidden />}
                     </div>
-
-                    <p className="text-muted">
-                        Replaces the &quot;Sign in&quot; button with a round image, such as the site mascot, wherever the
-                        Sign-in button widget is placed on /system/widgets. Visitors who are signed out open the sign-in
-                        dialog when they click it, and visitors who are signed in go to their profile. A square image
-                        with a transparent background works best. Use &quot;Crop and resize&quot; in the picker to save a
-                        {' '}{BUTTON_IMAGE_SIZE}×{BUTTON_IMAGE_SIZE} pixel copy for the button, which keeps the download
-                        small for visitors and leaves the original in the file library.
-                    </p>
-
-                    <div className={styles.preview_row}>
-                        <div className={styles.preview}>
-                            {previewUrl
-                                ? (
-                                    // Plain <img> is the project's convention for uploaded images.
-                                    // eslint-disable-next-line @next/next/no-img-element
-                                    <img src={previewUrl} alt="Preview of the sign-in button image" className={styles.preview_img} />
-                                )
-                                : <UserRound size={24} aria-hidden />}
-                        </div>
+                    <div className={styles.preview_body}>
                         <span className={providerStyles.hint}>
                             {previewUrl
                                 ? 'This is how the image is framed on the button. Save to publish it.'
                                 : 'No image is set, so the widget shows the default "Sign in" button.'}
                             {dirty && ' You have unsaved changes.'}
+                            {' '}A square image with a transparent background works best. &quot;Crop and resize&quot; in
+                            the picker saves a {BUTTON_IMAGE_SIZE}×{BUTTON_IMAGE_SIZE} pixel copy that keeps the
+                            download small and leaves the original in the file library.
                         </span>
+                        {!pickerAvailable && (
+                            <span className={providerStyles.hint}>
+                                No files provider is enabled, so an image cannot be chosen right now. Enable the Files
+                                plugin under System, then Plugins, to upload or choose one.
+                            </span>
+                        )}
+                        <div className={styles.preview_actions}>
+                            <Button
+                                variant="secondary"
+                                onClick={() => void choose()}
+                                disabled={!pickerAvailable || saving}
+                                icon={<ImageIcon size={18} />}
+                            >
+                                Choose image
+                            </Button>
+                            <Button
+                                variant="ghost"
+                                onClick={remove}
+                                disabled={!draft.authButtonImageUrl || saving}
+                                icon={<Trash2 size={18} />}
+                            >
+                                Remove image
+                            </Button>
+                        </div>
                     </div>
-
-                    {!pickerAvailable && (
-                        <span className={providerStyles.hint}>
-                            No files provider is enabled, so an image cannot be chosen right now. Enable the Files
-                            plugin under System, then Plugins, to upload or choose one.
-                        </span>
-                    )}
-
-                    <div className={providerStyles.actions}>
-                        <Button
-                            variant="secondary"
-                            onClick={() => void choose()}
-                            disabled={!pickerAvailable || saving}
-                            icon={<ImageIcon size={18} />}
-                        >
-                            Choose image
-                        </Button>
-                        <Button
-                            variant="ghost"
-                            onClick={remove}
-                            disabled={!draft.authButtonImageUrl || saving}
-                            icon={<Trash2 size={18} />}
-                        >
-                            Remove image
-                        </Button>
-                        <Button
-                            variant="primary"
-                            onClick={() => void handleSave()}
-                            disabled={!dirty || saving}
-                            loading={saving}
-                            icon={<Save size={18} />}
-                        >
-                            Save
-                        </Button>
-                    </div>
-                </Stack>
-            </Card>
+                </div>
+            </Panel>
         );
     }
 

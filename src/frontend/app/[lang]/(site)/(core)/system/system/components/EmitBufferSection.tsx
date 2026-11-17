@@ -22,12 +22,13 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { Gauge, Save } from 'lucide-react';
+import { Save } from 'lucide-react';
 import { Card } from '../../../../../../../components/ui/Card';
+import { Panel } from '../../../../../../../components/ui/Panel';
 import { Button } from '../../../../../../../components/ui/Button';
+import { Field } from '../../../../../../../components/ui/Field';
 import { Input } from '../../../../../../../components/ui/Input';
 import { Badge } from '../../../../../../../components/ui/Badge';
-import { Stack } from '../../../../../../../components/layout';
 import { useToast } from '../../../../../../../components/ui/ToastProvider/ToastProvider';
 import { readFieldInteger } from './field-integer';
 import {
@@ -61,6 +62,39 @@ const FIELD_LABELS: Record<EmitBufferField, string> = {
 
 /** The fields in the order the card lists them. */
 const FIELD_KEYS = Object.keys(FIELD_LABELS) as EmitBufferField[];
+
+/**
+ * The visible label suffix and the one-line hint for each field.
+ *
+ * Each hint keeps the rule that stops a value being saved or working, such as
+ * an ordering between two depths, beside the field it governs. The reasoning
+ * behind the defaults lives in the panel's closed guide instead, so the fields
+ * can share rows.
+ */
+const FIELD_DETAILS: Record<EmitBufferField, { id: string; unit?: string; hint: string }> = {
+    emitBufferTargetDepth: {
+        id: 'emit-buffer-target',
+        hint: 'Blocks held back before broadcasting; each costs one block time of feed latency. 0 switches buffering off.'
+    },
+    emitBufferCatchupDepth: {
+        id: 'emit-buffer-catchup-depth',
+        hint: 'Above this depth the buffer drains faster than the chain produces. Must be greater than the target depth.'
+    },
+    emitBufferMaxDepth: {
+        id: 'emit-buffer-max-depth',
+        hint: 'Beyond this depth blocks go out with no wait. Must be greater than the catch-up depth.'
+    },
+    emitBufferRefillIntervalMs: {
+        id: 'emit-buffer-refill',
+        unit: 'ms',
+        hint: 'Spacing while below the target. Must be longer than one block time, or a spent lead never grows back.'
+    },
+    emitBufferCatchupIntervalMs: {
+        id: 'emit-buffer-catchup-interval',
+        unit: 'ms',
+        hint: 'Spacing above the catch-up depth, so a backlog drains faster than blocks arrive.'
+    }
+};
 
 /** Placeholder state held only until the first fetch resolves. */
 const EMPTY_FORM: EmitBufferFormState = {
@@ -240,132 +274,70 @@ export function EmitBufferSection() {
     const bufferingOff = saved.emitBufferTargetDepth === '0';
 
     return (
-        <Card padding="sm" noBackgroundImage>
-            <Stack gap="md">
-                <div className={styles.provider_header}>
-                    <Gauge size={16} aria-hidden style={{ color: 'var(--color-primary)' }} />
-                    <h3 className={styles.provider_title}>Block feed buffer</h3>
-                    {bufferingOff
-                        ? <Badge tone="warning">Buffering off</Badge>
-                        : <Badge tone="success">Holding {saved.emitBufferTargetDepth} blocks</Badge>}
-                </div>
+        <Panel
+            title="Block feed buffer"
+            meta={bufferingOff
+                ? <Badge tone="warning">Buffering off</Badge>
+                : <Badge tone="success">Holding {saved.emitBufferTargetDepth} blocks</Badge>}
+            actions={(
+                <Button
+                    variant="primary"
+                    onClick={() => void handleSave()}
+                    disabled={!dirty || saving}
+                    loading={saving}
+                    icon={<Save size={18} />}
+                >
+                    Save
+                </Button>
+            )}
+        >
+            <p className={styles.description}>
+                The backend holds a lead of finished blocks and broadcasts them on its own clock, so a slow upstream
+                response or a late sync tick is covered rather than shown as a gap. Saving applies to the live feed at
+                once; judge the values by the underrun count on the Pipeline tab&apos;s Buffer card, which should not rise.
+            </p>
 
-                <p className="text-muted">
-                    The backend holds a lead of finished blocks and broadcasts them on its own clock, so a slow
-                    upstream response or a late sync tick is covered rather than shown as a gap. Saving applies these
-                    values to the live feed straight away, with no restart. Judge them from the underrun count on the{' '}
-                    <strong>Pipeline</strong> tab&apos;s Buffer card: a deployment holding a real lead never drains to zero, so any
-                    increase means the target depth is too small for what this deployment&apos;s upstream access
-                    actually does.
+            <div className={styles.field_grid}>
+                {FIELD_KEYS.map((key) => {
+                    const details = FIELD_DETAILS[key];
+                    return (
+                        <Field
+                            key={key}
+                            label={details.unit ? `${FIELD_LABELS[key]} (${details.unit})` : FIELD_LABELS[key]}
+                            hint={details.hint}
+                        >
+                            <Input
+                                id={details.id}
+                                type="number"
+                                value={form[key]}
+                                onChange={(event) => handleChange(key, event.target.value)}
+                                disabled={saving}
+                            />
+                        </Field>
+                    );
+                })}
+            </div>
+
+            <details className={styles.guide}>
+                <summary>How to size the buffer</summary>
+                <p>
+                    The target depth is the lead a hiccup draws on. The default of twenty covers three fully missed
+                    15-second sync ticks plus a skipped chain slot. Zero switches buffering off, which is a supported
+                    setting for a staged rollout rather than a broken one. A deployment holding a real lead never drains
+                    to zero, so any rise in underruns means the target is too small for what this deployment&apos;s
+                    upstream access actually does.
                 </p>
-
-                <div className={styles.field}>
-                    <label className={styles.label} htmlFor="emit-buffer-target">
-                        {FIELD_LABELS.emitBufferTargetDepth}
-                    </label>
-                    <Input
-                        id="emit-buffer-target"
-                        type="number"
-                        value={form.emitBufferTargetDepth}
-                        onChange={(event) => handleChange('emitBufferTargetDepth', event.target.value)}
-                        disabled={saving}
-                        aria-label="Blocks of lead the feed holds"
-                    />
-                    <span className={styles.hint}>
-                        Blocks held back before broadcasting. This is the lead a hiccup draws on, and each block of it
-                        costs one block time of feed latency. The default of twenty covers three fully missed
-                        15-second sync ticks plus a skipped chain slot. <strong>Zero switches buffering off</strong>, which is a supported setting for a
-                        staged rollout rather than a broken one.
-                    </span>
-                </div>
-
-                <div className={styles.field}>
-                    <label className={styles.label} htmlFor="emit-buffer-catchup-depth">
-                        {FIELD_LABELS.emitBufferCatchupDepth}
-                    </label>
-                    <Input
-                        id="emit-buffer-catchup-depth"
-                        type="number"
-                        value={form.emitBufferCatchupDepth}
-                        onChange={(event) => handleChange('emitBufferCatchupDepth', event.target.value)}
-                        disabled={saving}
-                        aria-label="Depth at which the buffer starts draining faster"
-                    />
-                    <span className={styles.hint}>
-                        Depth above which the buffer drains faster than the chain produces, so the burst a sync tick
-                        delivers does not settle in as permanent latency. Must be greater than the target depth.
-                    </span>
-                </div>
-
-                <div className={styles.field}>
-                    <label className={styles.label} htmlFor="emit-buffer-max-depth">
-                        {FIELD_LABELS.emitBufferMaxDepth}
-                    </label>
-                    <Input
-                        id="emit-buffer-max-depth"
-                        type="number"
-                        value={form.emitBufferMaxDepth}
-                        onChange={(event) => handleChange('emitBufferMaxDepth', event.target.value)}
-                        disabled={saving}
-                        aria-label="Depth beyond which blocks are broadcast immediately"
-                    />
-                    <span className={styles.hint}>
-                        Depth beyond which blocks go out with no wait at all. A buffer this deep means something
-                        upstream is wrong rather than merely uneven, and at that point the accumulated delay hurts a
-                        viewer more than the uneven spacing would. Must be greater than the catch-up depth.
-                    </span>
-                </div>
-
-                <div className={styles.field}>
-                    <label className={styles.label} htmlFor="emit-buffer-refill">
-                        {FIELD_LABELS.emitBufferRefillIntervalMs} (ms)
-                    </label>
-                    <Input
-                        id="emit-buffer-refill"
-                        type="number"
-                        value={form.emitBufferRefillIntervalMs}
-                        onChange={(event) => handleChange('emitBufferRefillIntervalMs', event.target.value)}
-                        disabled={saving}
-                        aria-label="Milliseconds between broadcasts while below the target depth"
-                    />
-                    <span className={styles.hint}>
-                        Spacing used while the buffer is below its target. <strong>Must be longer than one block
-                        time.</strong> Releasing more slowly than blocks arrive is the only way a lead spent covering a
-                        gap ever grows back. Set it equal to the block time and the buffer covers exactly one gap for
-                        the life of the process and then runs flat, with nothing in the logs to say so.
-                    </span>
-                </div>
-
-                <div className={styles.field}>
-                    <label className={styles.label} htmlFor="emit-buffer-catchup-interval">
-                        {FIELD_LABELS.emitBufferCatchupIntervalMs} (ms)
-                    </label>
-                    <Input
-                        id="emit-buffer-catchup-interval"
-                        type="number"
-                        value={form.emitBufferCatchupIntervalMs}
-                        onChange={(event) => handleChange('emitBufferCatchupIntervalMs', event.target.value)}
-                        disabled={saving}
-                        aria-label="Milliseconds between broadcasts above the catch-up depth"
-                    />
-                    <span className={styles.hint}>
-                        Spacing used above the catch-up depth, so a backlog that has built up drains faster than
-                        blocks arrive instead of being held as permanent latency.
-                    </span>
-                </div>
-
-                <div className={styles.actions}>
-                    <Button
-                        variant="primary"
-                        onClick={() => void handleSave()}
-                        disabled={!dirty || saving}
-                        loading={saving}
-                        icon={<Save size={18} />}
-                    >
-                        Save
-                    </Button>
-                </div>
-            </Stack>
-        </Card>
+                <p>
+                    The catch-up depth stops the burst a sync tick delivers from settling in as permanent latency. A
+                    buffer as deep as the max depth means something upstream is wrong rather than merely uneven, and at
+                    that point the accumulated delay hurts a viewer more than uneven spacing would.
+                </p>
+                <p>
+                    Releasing more slowly than blocks arrive is the only way a lead spent covering a gap grows back. Set
+                    the refill interval equal to the block time and the buffer covers exactly one gap for the life of the
+                    process and then runs flat, with nothing in the logs to say so.
+                </p>
+            </details>
+        </Panel>
     );
 }

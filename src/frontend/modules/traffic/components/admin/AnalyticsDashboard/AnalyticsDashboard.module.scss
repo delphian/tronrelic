@@ -18,9 +18,11 @@
  *
  * The core <Grid columns="responsive"> reads its column floor from
  * --grid-responsive-min, which consumers set at their own scope. Each band
- * picks the floor its panels need: tables with several columns get the wide
- * one, lists and charts the narrow one. Top alignment keeps a short panel at
- * its own height beside a tall one instead of stretching into an empty card.
+ * picks the floor its panels need: the sources and landing-page tables have
+ * three or four short columns and fit 420px, so they sit side by side from a
+ * tablet up; lists and charts take the narrow floor. Top alignment keeps a
+ * short panel at its own height beside a tall one instead of stretching into
+ * an empty card.
  * ------------------------------------------------------------------------- */
 
 .band {
@@ -28,7 +30,7 @@
 }
 
 .band__wide {
-    --grid-responsive-min: var(--max-width-md);
+    --grid-responsive-min: var(--max-width-sm);
 }
 
 .band__narrow {
@@ -218,5 +220,16 @@
 @container panel (max-width: #{$breakpoint-mobile-md}) {
     .detail_row__cell {
         padding: var(--padding-xs);
+    }
+}
+
+/* A phone-width panel drops the traffic-source share column, whose percentage
+   repeats what the bar beside the visitor count already shows. Without it the
+   table keeps its rows on a phone instead of stacking each source into a
+   three-line entry. A two-up panel on a tablet is wider than this and keeps
+   the column. */
+@container panel (max-width: #{$breakpoint-mobile-sm}) {
+    .share_column {
+        display: none;
     }
 }

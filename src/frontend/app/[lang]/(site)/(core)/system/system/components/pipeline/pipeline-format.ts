@@ -29,14 +29,20 @@ export function formatNumber(value: number | null | undefined): string {
 /**
  * Format a duration in milliseconds at a precision that suits its size.
  *
+ * Also used for migration run times on the MongoDB tab, which can last many
+ * minutes, so durations of a minute or more are given in minutes rather than
+ * as a four-digit count of seconds.
+ *
  * @param ms - The duration, or null when unknown.
- * @returns For example `4.2 ms`, `180 ms`, or `1.25 s`.
+ * @returns For example `4.2 ms`, `180 ms`, `1.25 s`, or `30.1 min`.
  */
 export function formatMs(ms: number | null | undefined): string {
     let text = '—';
 
     if (typeof ms === 'number' && Number.isFinite(ms)) {
-        if (ms >= 1000) {
+        if (ms >= 60000) {
+            text = `${(ms / 60000).toFixed(1)} min`;
+        } else if (ms >= 1000) {
             text = `${(ms / 1000).toFixed(2)} s`;
         } else if (ms < 10) {
             text = `${ms.toFixed(1)} ms`;

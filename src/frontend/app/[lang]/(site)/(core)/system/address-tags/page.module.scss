@@ -47,7 +47,19 @@
     align-items: center;
 }
 
+/* A chip wider than the whole line shrinks to the line and its tag wraps
+   inside it; a chip that fits keeps its width and moves to the next line, as
+   a wrapping flex row places items by their full width before shrinking any.
+   Do not set `flex: none` here or override the break-anywhere wrapping a
+   stacked phone row applies. A stacked row sizes its value to the content's
+   narrowest width, so a chip that cannot shrink below its whole tag pushes
+   that value past the edge of the row. */
+.tag_list > :global(.chip) {
+    max-width: 100%;
+}
+
 .tag_text {
+    min-width: 0;
     font-weight: var(--font-weight-medium);
     color: var(--color-text);
 }
@@ -69,11 +81,17 @@
 
 /* One row per tag: name, a proportional bar, and the count. The whole row is a
    button, because the point of showing a count above the table is being able to
-   reach the rows behind it in one click. */
+   reach the rows behind it in one click.
+
+   The rows flow into as many columns of at least 320px as the card holds, two
+   or three on a desktop, so ten tags take four or five lines instead of ten
+   and each bar is short enough to compare with its neighbours. They read
+   across, then down, so the most used tags fill the first line. */
 .tag_bars {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-2xs);
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--max-width-xs)), 1fr));
+    column-gap: var(--gap-lg);
+    row-gap: var(--gap-2xs);
     margin: 0;
     padding: 0;
     list-style: none;
@@ -180,22 +198,8 @@
     }
 }
 
-/* Explanatory lead paragraph inside a panel card.
- *
- * No measure cap here. A 64ch limit is the right default for a column of
- * running prose, but these paragraphs sit above a wide status table inside the
- * same card, and stopping them well short of the card's edge reads as a layout
- * fault rather than as a reading aid. The card's own padding already sets the
- * line length, so the paragraph tracks the panel it introduces. */
-.intro {
-    margin: 0;
-    color: var(--color-text-muted);
-    font-size: var(--font-size-body-sm);
-    line-height: var(--line-height-relaxed);
-}
-
-/* External link out of an intro paragraph, matching the `docs_link` treatment
-   the provider sections on /system/system already use for the same job. The
+/* External link out of a field hint, matching the `docs_link` treatment the
+   provider sections on /system/system already use for the same job. The
    inline-flex keeps the trailing external-link icon on the label's own line, so
    the icon cannot wrap by itself and read as unrelated to the text before it. */
 .docs_link {
@@ -246,12 +250,23 @@
     min-width: 0;
 }
 
-/* One settings switch with its label and any status badge beside it. */
-.switch_row {
+/* Standing guidance under the screening form, styled as a field hint. */
+.hint {
+    color: var(--field-hint-color);
+    font-size: var(--field-message-font-size);
+    line-height: var(--line-height-normal);
+}
+
+/* The settings panel is capped so each switch and the key field sit near
+   their labels instead of across a 1,300px card. */
+.settings_panel {
+    max-width: var(--max-width-lg);
+}
+
+.settings_form {
     display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--gap-sm);
+    flex-direction: column;
+    gap: var(--gap-md);
 }
 
 /* Chainalysis key entry: input beside save/clear, wrapping when narrow. */
@@ -262,7 +277,10 @@
     flex-wrap: wrap;
 }
 
+/* A key is one token, so the input stops at a width that shows it whole
+   rather than stretching across the panel. */
 .key_input {
     flex: 1 1 var(--max-width-xs);
+    max-width: var(--max-width-md);
     min-width: 0;
 }

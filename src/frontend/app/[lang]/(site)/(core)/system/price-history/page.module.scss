@@ -1,0 +1,47 @@
+/**
+ * Price History admin page styles
+ *
+ * Only the two layouts this page needs that no shared component provides: the
+ * Diagnostics chip grid and the Settings field grid. Panels, tables, fields,
+ * and controls carry their own styles.
+ */
+
+/*
+ * Unpriced token contracts as a wrapping grid of address chips. One chip per
+ * table row left most of a wide card empty, so the chips flow into as many
+ * columns as fit, each wide enough for one truncated address chip.
+ */
+.chip_grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, calc(var(--max-width-xs) / 2)), 1fr));
+    gap: var(--gap-xs);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+/*
+ * Short numeric settings side by side. Each field takes a column at least as
+ * wide as its label and hint need, rather than a full-width row for a
+ * two-digit value.
+ */
+.field_grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--max-width-xs)), 1fr));
+    align-items: start;
+    gap: var(--gap-md);
+}
+
+/* A vendor's name with the "disabled in providers" badge beside it. */
+.vendor {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-xs);
+}
+
+/* The move-up and move-down buttons, kept together at the row's end. */
+.order_buttons {
+    display: inline-flex;
+    gap: var(--gap-2xs);
+}

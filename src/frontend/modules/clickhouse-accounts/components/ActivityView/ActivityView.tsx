@@ -10,13 +10,16 @@
  * each day into queries that finished, queries a limit stopped, and queries
  * that failed for another reason, because a rising count of limit stops is the
  * signal that an account's limits are too tight for its work.
+ *
+ * The window control is drawn by the account section, on the same row as its
+ * view tabs, rather than on a toolbar row of its own above the figures, so the
+ * window is held there and passed in.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { IClickHouseAccountQuotaUsage, IClickHouseAccountUsageDay } from '@/types';
 import { Stack } from '../../../../components/layout';
 import { ClientTime } from '../../../../components/ui/ClientTime';
-import { SegmentedControl } from '../../../../components/ui/SegmentedControl';
 import { Skeleton } from '../../../../components/ui/Skeleton';
 import { StatGrid, StatTile } from '../../../../components/ui/StatTile';
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../../../components/ui/Table';
@@ -27,13 +30,17 @@ import { formatCount, formatMilliseconds, formatSeconds } from '../../lib/format
 import styles from './ActivityView.module.scss';
 
 /** Window lengths the admin can choose, in days. */
-type WindowDays = '7' | '30' | '90';
+export type ActivityWindowDays = '7' | '30' | '90';
 
-const WINDOW_OPTIONS: ReadonlyArray<{ id: WindowDays; label: string }> = [
+/** The window choices, in the order the window control lists them. */
+export const ACTIVITY_WINDOW_OPTIONS: ReadonlyArray<{ id: ActivityWindowDays; label: string }> = [
     { id: '7', label: '7 days' },
     { id: '30', label: '30 days' },
     { id: '90', label: '90 days' }
 ];
+
+/** The window an account's Activity view opens on. */
+export const DEFAULT_ACTIVITY_WINDOW: ActivityWindowDays = '30';
 
 /** Date format for chart axis ticks: short month and day, in UTC to match the rollup's days. */
 const AXIS_DATE = new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', timeZone: 'UTC' });
@@ -46,6 +53,8 @@ interface IActivityViewProps {
     accountId: string;
     /** Whether the account is managed, which is when it has a quota to show. */
     managed: boolean;
+    /** Days of history to show, chosen with the window control beside the view tabs. */
+    windowDays: ActivityWindowDays;
 }
 
 /**
@@ -82,11 +91,10 @@ function fillDays(history: IClickHouseAccountUsageDay[], days: number): IClickHo
  * view mounts only when its tab is selected, as every panel on this page
  * does, so the request happens on arrival rather than on page load.
  *
- * @param props - The account and whether it is managed.
+ * @param props - The account, whether it is managed, and the window to show.
  * @returns The Activity view.
  */
-export function ActivityView({ accountId, managed }: IActivityViewProps) {
-    const [windowDays, setWindowDays] = useState<WindowDays>('30');
+export function ActivityView({ accountId, managed, windowDays }: IActivityViewProps) {
     const [history, setHistory] = useState<IClickHouseAccountUsageDay[] | null>(null);
     const [quota, setQuota] = useState<IClickHouseAccountQuotaUsage[]>([]);
     const [error, setError] = useState<string | null>(null);
@@ -145,15 +153,6 @@ export function ActivityView({ accountId, managed }: IActivityViewProps) {
 
     return (
         <Stack gap="md">
-            <div className={styles.toolbar}>
-                <SegmentedControl
-                    label="Activity window"
-                    options={WINDOW_OPTIONS}
-                    value={windowDays}
-                    onChange={setWindowDays}
-                />
-            </div>
-
             {error && <p className="alert" role="alert">{error}</p>}
 
             {history === null && !error ? (

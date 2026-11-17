@@ -14,15 +14,15 @@
  */
 
 import { useEffect, useState, useCallback, type ChangeEvent, type ReactElement } from 'react';
-import { Plug, Eye, EyeOff, CheckCircle, AlertCircle, ExternalLink } from 'lucide-react';
-import { Card } from '../../../../../../../components/ui/Card';
+import { Eye, EyeOff, CheckCircle, AlertCircle, ExternalLink } from 'lucide-react';
+import { Panel } from '../../../../../../../components/ui/Panel';
 import { Button } from '../../../../../../../components/ui/Button';
+import { Field } from '../../../../../../../components/ui/Field';
 import { IconButton } from '../../../../../../../components/ui/IconButton';
 import { Input } from '../../../../../../../components/ui/Input';
 import { Select } from '../../../../../../../components/ui/Select';
 import { Switch } from '../../../../../../../components/ui/Switch';
 import { Badge } from '../../../../../../../components/ui/Badge';
-import { Stack } from '../../../../../../../components/layout';
 import {
     updateProviderConfig,
     testProvider,
@@ -167,13 +167,20 @@ export function ProviderVendorSection({ provider }: IProviderVendorSectionProps)
     const enabled = config.enabled;
 
     /**
-     * Render the control for one field by its kind.
+     * Render the control for one field by its kind, wrapped in a `Field` that
+     * owns its label and hint.
+     *
+     * A boolean is an inline field, so the switch sits beside its label at its
+     * own width instead of stretching across the card with its icon in the
+     * middle. A secret, with its reveal and clear buttons, and a URL each take
+     * a wide cell; every other field takes one column of the grid.
      *
      * @param field - The field descriptor.
      * @returns The labelled control.
      */
     const renderField = (field: IProviderFieldView): ReactElement => {
         const id = `${provider.id}-${field.key}`;
+        const wide = field.kind === 'secret' || field.kind === 'url';
         let control: ReactElement;
         switch (field.kind) {
             case 'boolean':
@@ -183,7 +190,7 @@ export function ProviderVendorSection({ provider }: IProviderVendorSectionProps)
                         on={values[field.key] === true}
                         onChange={(on: boolean) => setValue(field.key, on)}
                         disabled={saving}
-                        aria-label={`${provider.label}: ${field.label}`}
+                        aria-label={field.label}
                     />
                 );
                 break;
@@ -212,23 +219,25 @@ export function ProviderVendorSection({ provider }: IProviderVendorSectionProps)
                         value={values[field.key] === undefined || values[field.key] === null ? '' : String(values[field.key])}
                         onChange={(e: ChangeEvent<HTMLInputElement>) => setValue(field.key, e.target.value === '' ? undefined : Number(e.target.value))}
                         disabled={saving}
-                        aria-label={`${provider.label}: ${field.label}`}
                     />
                 );
                 break;
             case 'secret': {
                 const configured = config[`${field.key}Configured`] === true;
                 const masked = String(config[field.key] ?? '');
+                // The field wraps this row rather than the input, so it cannot
+                // attach its hint to the input; the input names the hint itself.
                 control = (
                     <div className={styles.input_row}>
                         <Input
                             id={id}
+                            aria-describedby={field.hint ? `${id}-hint` : undefined}
                             type={revealed[field.key] ? 'text' : 'password'}
                             value={secretInputs[field.key] ?? ''}
                             onChange={(e: ChangeEvent<HTMLInputElement>) => setSecretInputs((current) => ({ ...current, [field.key]: e.target.value }))}
                             placeholder={configured ? `Configured (${masked}) — type to replace` : field.placeholder}
+                            className={styles.mono}
                             disabled={saving}
-                            aria-label={`${provider.label}: ${field.label}`}
                         />
                         <IconButton
                             onClick={() => setRevealed((current) => ({ ...current, [field.key]: !current[field.key] }))}
@@ -238,7 +247,7 @@ export function ProviderVendorSection({ provider }: IProviderVendorSectionProps)
                             {revealed[field.key] ? <EyeOff size={18} /> : <Eye size={18} />}
                         </IconButton>
                         {configured && (
-                            <Button variant="ghost" size="sm" onClick={() => handleClearSecret(field.key)} disabled={saving}>Clear</Button>
+                            <Button variant="ghost" onClick={() => handleClearSecret(field.key)} disabled={saving}>Clear</Button>
                         )}
                     </div>
                 );
@@ -254,27 +263,31 @@ export function ProviderVendorSection({ provider }: IProviderVendorSectionProps)
                         value={String(values[field.key] ?? '')}
                         onChange={(e: ChangeEvent<HTMLInputElement>) => setValue(field.key, e.target.value)}
                         placeholder={field.placeholder}
+                        className={field.kind === 'url' ? styles.mono : undefined}
                         disabled={saving}
-                        aria-label={`${provider.label}: ${field.label}`}
                     />
                 );
                 break;
         }
         return (
-            <div className={styles.field} key={field.key}>
-                <label className={styles.label} htmlFor={id}>{field.label}</label>
+            <Field
+                key={field.key}
+                label={field.label}
+                htmlFor={id}
+                hint={field.hint}
+                inline={field.kind === 'boolean'}
+                className={wide ? styles.field_wide : undefined}
+            >
                 {control}
-                {field.hint && <span className={styles.hint}>{field.hint}</span>}
-            </div>
+            </Field>
         );
     };
 
     return (
-        <Card padding="sm" noBackgroundImage>
-            <Stack gap="md">
-                <div className={styles.provider_header}>
-                    <Plug size={16} aria-hidden style={{ color: 'var(--color-primary)' }} />
-                    <h3 className={styles.provider_title}>{provider.label}</h3>
+        <Panel
+            title={provider.label}
+            meta={(
+                <span className={styles.badges}>
                     {secretFields.length > 0 && (
                         anySecretConfigured ? <Badge tone="success">Key configured</Badge> : <Badge tone="neutral">Keyless</Badge>
                     )}
@@ -282,49 +295,61 @@ export function ProviderVendorSection({ provider }: IProviderVendorSectionProps)
                     {provider.capabilities.map((capability) => (
                         <Badge key={capability} tone="info">{capability}</Badge>
                     ))}
-                </div>
-
-                <p className="text-muted">
-                    {provider.description}
-                    {provider.docsUrl && (
-                        <>
-                            {' '}
-                            <a className={styles.docs_link} href={provider.docsUrl} target="_blank" rel="noopener noreferrer">
-                                Vendor docs <ExternalLink size={14} aria-hidden />
-                            </a>
-                        </>
-                    )}
-                </p>
-
-                {provider.fields.map(renderField)}
-
-                <div className={styles.actions}>
+                </span>
+            )}
+            actions={(
+                <>
+                    <Button
+                        variant="secondary"
+                        onClick={handleTest}
+                        loading={testing}
+                        disabled={saving || testing}
+                        title="Tests the saved config, so save a new key before testing it"
+                    >
+                        Test connection
+                    </Button>
                     <Button variant="primary" onClick={handleSave} loading={saving} disabled={saving}>
                         Save
                     </Button>
-                    <Button variant="secondary" onClick={handleTest} loading={testing} disabled={saving || testing}>
-                        Test connection
-                    </Button>
-                    <span className={styles.hint}>Test uses the saved config — save a new key before testing it.</span>
+                </>
+            )}
+        >
+            <p className={styles.description}>
+                {provider.description}
+                {provider.docsUrl && (
+                    <>
+                        {' '}
+                        <a className={styles.docs_link} href={provider.docsUrl} target="_blank" rel="noopener noreferrer">
+                            Vendor docs <ExternalLink size={14} aria-hidden />
+                        </a>
+                    </>
+                )}
+            </p>
+
+            <div className={styles.field_grid}>
+                {provider.fields.map(renderField)}
+            </div>
+
+            {secretFields.length > 0 && (
+                <p className={styles.hint}>Test connection uses the saved config, so save a new key before testing it.</p>
+            )}
+
+            {testResult && (
+                <div className={testResult.ok ? styles.feedback_success : styles.feedback_error} role="status">
+                    {testResult.ok ? <CheckCircle size={16} aria-hidden /> : <AlertCircle size={16} aria-hidden />}
+                    <span>
+                        {testResult.message}
+                        {typeof testResult.latencyMs === 'number' && ` (${testResult.latencyMs} ms${testResult.usingKey ? ', with key' : ', keyless'})`}
+                    </span>
                 </div>
+            )}
 
-                {testResult && (
-                    <div className={testResult.ok ? styles.feedback_success : styles.feedback_error}>
-                        {testResult.ok ? <CheckCircle size={16} /> : <AlertCircle size={16} />}
-                        <span>
-                            {testResult.message}
-                            {typeof testResult.latencyMs === 'number' && ` (${testResult.latencyMs} ms${testResult.usingKey ? ', with key' : ', keyless'})`}
-                        </span>
-                    </div>
-                )}
-
-                {feedback && (
-                    <div className={feedback.type === 'success' ? styles.feedback_success : styles.feedback_error}>
-                        {feedback.type === 'success' ? <CheckCircle size={16} /> : <AlertCircle size={16} />}
-                        <span>{feedback.message}</span>
-                    </div>
-                )}
-            </Stack>
-        </Card>
+            {feedback && (
+                <div className={feedback.type === 'success' ? styles.feedback_success : styles.feedback_error} role="status">
+                    {feedback.type === 'success' ? <CheckCircle size={16} aria-hidden /> : <AlertCircle size={16} aria-hidden />}
+                    <span>{feedback.message}</span>
+                </div>
+            )}
+        </Panel>
     );
 }

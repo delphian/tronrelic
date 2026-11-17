@@ -411,7 +411,9 @@ export function AnalyticsDashboard({ period, customRange, includeBots, refreshSi
             ] = await Promise.all([
                 adminGetConversionFunnel(period, customRange, excludeBots),
                 adminGetTrafficSources(period, customRange, excludeBots),
-                adminGetTopLandingPages({ period, limit: 15, customRange, excludeBots }),
+                // 20, the row count the sources read returns, so the two
+                // panels side by side end level instead of one stopping short.
+                adminGetTopLandingPages({ period, limit: 20, customRange, excludeBots }),
                 adminGetGeoDistribution({ period, limit: 20, customRange, excludeBots }),
                 adminGetDeviceBreakdown(period, customRange, excludeBots),
                 adminGetCampaignPerformance({ period, limit: 15, customRange, excludeBots }),
@@ -516,8 +518,8 @@ export function AnalyticsDashboard({ period, customRange, includeBots, refreshSi
                 <p className={styles.loading}>Loading analytics data…</p>
             ) : (
                 <>
-                    {/* Sources and landing pages: both tables need width, so the
-                        band's floor is the wide one and they stack below it. */}
+                    {/* Sources and landing pages side by side from a tablet up,
+                        each listing 20 rows so the pair ends level. */}
                     <Grid columns="responsive" gap="sm" className={`${styles.band} ${styles.band__wide}`}>
                         <Panel
                             title="Traffic sources"
@@ -531,17 +533,18 @@ export function AnalyticsDashboard({ period, customRange, includeBots, refreshSi
                             {trafficSources.length === 0 ? (
                                 <p className={styles.empty_state}>No traffic data for this period.</p>
                             ) : (
-                                /* Two-up in a band about 660px wide on a desktop, so it
-                                   stacks only at phone width; the chevron and source
-                                   share the heading line. */
-                                <Table variant="compact" flush stackAt="phone" className={styles.dense_table}>
+                                /* Never stacks: the source, its badge, and the visitor
+                                   figure fit a phone on one line once the share
+                                   column is dropped below 480px (see the stylesheet),
+                                   where stacking gave every source three lines. */
+                                <Table variant="compact" flush className={styles.dense_table}>
                                     <Thead>
                                         <Tr>
                                             <Th scope="col" width="shrink" aria-label="Expand" />
                                             <Th scope="col" width="expand">Source</Th>
                                             <Th scope="col" width="shrink">Category</Th>
                                             <Th scope="col" width="shrink" numeric>Visitors</Th>
-                                            <Th scope="col" width="shrink" numeric>%</Th>
+                                            <Th scope="col" width="shrink" numeric className={styles.share_column}>%</Th>
                                         </Tr>
                                     </Thead>
                                     <Tbody>
@@ -578,7 +581,7 @@ export function AnalyticsDashboard({ period, customRange, includeBots, refreshSi
                                                         <Td label="Visitors" numeric>
                                                             <ShareFigure value={s.visitors} max={maxSourceCount} />
                                                         </Td>
-                                                        <Td label="Share" numeric muted>{s.percentage}%</Td>
+                                                        <Td numeric muted className={styles.share_column}>{s.percentage}%</Td>
                                                     </Tr>
                                                     {isExpanded && (
                                                         <Tr className={styles.detail_row}>
@@ -741,8 +744,10 @@ export function AnalyticsDashboard({ period, customRange, includeBots, refreshSi
                             <Table variant="compact" flush stackAt="mobile" className={styles.dense_table}>
                                 <Thead>
                                     <Tr>
-                                        <Th scope="col">Source</Th>
-                                        <Th scope="col">Medium</Th>
+                                        {/* Short tags kept on one line; the campaign
+                                            name takes the spare width. */}
+                                        <Th scope="col" width="shrink">Source</Th>
+                                        <Th scope="col" width="shrink">Medium</Th>
                                         <Th scope="col" width="expand">Campaign</Th>
                                         <Th scope="col" width="shrink" numeric>Visitors</Th>
                                         <Th

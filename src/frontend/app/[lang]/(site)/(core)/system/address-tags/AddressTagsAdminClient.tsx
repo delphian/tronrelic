@@ -33,7 +33,6 @@ import { SchedulerMonitor, type SchedulerJob } from '../../../../../../modules/s
 import { AddressTagsManager } from './AddressTagsManager';
 import { SourcesTab } from './SourcesTab';
 import { SettingsTab } from './SettingsTab';
-import styles from './page.module.scss';
 
 /** The page's six tab ids; the `?tab=` value carried by each submenu node. */
 type TabId = 'tags' | 'sources' | 'settings' | 'schedules' | 'database' | 'logs';
@@ -156,6 +155,17 @@ export function AddressTagsAdminClient({ submenuTree, submenuGeneratedAt, initia
         window.history.replaceState(null, '', `/system/address-tags?tab=${tab}`);
     }, []);
 
+    /**
+     * Open the Settings tab from inside another panel, the same way a click on
+     * its tab does, so the address bar stays a deep link to what is shown. The
+     * Sources tab calls this when screening cannot run until a switch is turned
+     * on and a key saved there.
+     */
+    const openSettings = useCallback(() => {
+        setActiveTab('settings');
+        window.history.replaceState(null, '', '/system/address-tags?tab=settings');
+    }, []);
+
     return (
         <AdminPage
             title="Address Tags"
@@ -171,7 +181,7 @@ export function AddressTagsAdminClient({ submenuTree, submenuGeneratedAt, initia
             />
 
             {activeTab === 'tags' && <AddressTagsManager />}
-            {activeTab === 'sources' && <SourcesTab />}
+            {activeTab === 'sources' && <SourcesTab onOpenSettings={openSettings} />}
             {activeTab === 'settings' && <SettingsTab />}
             {activeTab === 'schedules' && (
                 <SchedulerMonitor

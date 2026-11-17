@@ -1,57 +1,76 @@
 /**
- * Shared styles for the Configuration tab's cards — TronScan, TronGrid, and the
- * block feed buffer.
+ * Shared styles for the Configuration tab's panels — the site URL, the sign-in
+ * button image, the block feed buffer, and the vendor cards.
  *
- * Colocated with the sections rather than living in the page-level module, so
- * the forms' styles travel with the components that own them — the same
- * arrangement every other section on this page already uses. One file serves
- * every card because they are the same form: a header with badges, labelled
- * fields, an action row, inline feedback. A per-card copy would drift, and
- * cards drifting apart on one tab reads as a bug.
+ * One file serves every panel because they are the same form: a `Panel` header
+ * with status badges and the Save control, a short description, a grid of
+ * labelled fields, and inline feedback. A per-panel copy would drift, and
+ * panels drifting apart on one tab reads as a bug. The file keeps its original
+ * name, from when only the vendor cards used it.
  *
- * The file and its `provider_*` class names keep their original wording now
- * that a non-provider card shares them. Renaming both would touch every card on
- * the tab to change nothing a reader sees.
- *
- * Only the forms' own layout and inline feedback live here. The controls
- * themselves are primitives (`Input`, `Select`, `IconButton`, `Button`,
- * `Switch`), so their padding, border, radius, focus ring, and disabled
- * treatment come from the shared input/button tokens and are deliberately not
- * restated in this file.
+ * Only the forms' own layout lives here. The header comes from `Panel`, each
+ * label and hint from `Field`, and the controls from the `Input`, `Select`,
+ * `Switch`, `IconButton`, and `Button` primitives, so their type, padding,
+ * border, focus ring, and disabled treatment are deliberately not restated.
  */
 
-/* Wraps so a card title and two status badges never overrun a phone. */
-.provider_header {
-    display: flex;
+@use '../../../../../../breakpoints' as *;
+
+/* Status badges in a panel's header line, beside the title. */
+.badges {
+    display: inline-flex;
     flex-wrap: wrap;
     align-items: center;
     gap: var(--gap-xs);
 }
 
-.provider_title {
+/* One or two sentences saying what the panel configures, set below the field
+   labels' size so they introduce the form rather than outweigh it. */
+.description {
     margin: 0;
-    font-size: var(--font-size-heading-sm);
-    font-weight: var(--font-weight-semibold);
-}
-
-.field {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-2xs);
-}
-
-.label {
     font-size: var(--font-size-body-sm);
-    font-weight: var(--font-weight-medium);
-}
-
-.hint {
+    line-height: var(--line-height-normal);
     color: var(--color-text-muted);
-    font-size: var(--font-size-caption);
 }
 
-/* The key field takes the room left after its reveal and save buttons, and
-   may shrink below its natural width so the buttons stay on a phone screen. */
+/*
+ * Short fields share a row: a two-digit depth or a timeout needs a column, not
+ * a whole row. Columns are at least the extra-small width token wide, and
+ * `min()` keeps a single column inside a container narrower than that.
+ * `dense` lets a short field that follows a wide one move up beside the
+ * fields before it instead of leaving a gap. The grid is also the container
+ * its wide fields measure, so a panel in a narrow column lays its fields out
+ * for the space it really has.
+ */
+.field_grid {
+    container-type: inline-size;
+    container-name: config-form;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--max-width-xs)), 1fr));
+    grid-auto-flow: row dense;
+    align-items: start;
+    gap: var(--gap-md);
+}
+
+/* A URL, a secret with its buttons, or a list takes the whole row on a
+   narrow form and two columns once the form is wide enough to have them. */
+.field_wide {
+    grid-column: 1 / -1;
+}
+
+@container config-form (min-width: #{$breakpoint-mobile-lg}) {
+    .field_wide {
+        grid-column: span 2;
+    }
+}
+
+/* URLs and keys are literal strings, so they are set in the monospace face. */
+.mono {
+    font-family: var(--font-mono);
+}
+
+/* A secret or a new pool key and the buttons beside it. The input takes the
+   room the buttons leave and may shrink so they stay on a phone screen. */
 .input_row {
     display: flex;
     align-items: center;
@@ -70,11 +89,10 @@
     color: var(--color-primary);
 }
 
-.actions {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--gap-sm);
+/* Muted guidance that is not attached to one field. */
+.hint {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
 }
 
 /*
@@ -85,8 +103,7 @@
 .key_list {
     display: flex;
     flex-direction: column;
-    gap: var(--gap-2xs);
-    margin: 0;
+    margin: 0 0 var(--gap-xs);
     padding: 0;
     list-style: none;
 }
@@ -110,14 +127,29 @@
     font-size: var(--font-size-body-sm);
 }
 
-/* One result line per probed key, so a single dead key in the pool is visible.
-   Wraps so a long failure message stays on screen on a phone. */
-.probe_row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--gap-xs);
+/*
+ * The longer reasoning behind a panel's settings, closed by default. An
+ * operator tuning a value reads it once; leaving it open pushed the fields
+ * below a screen of text on a phone.
+ */
+.guide {
     font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+
+    summary {
+        cursor: pointer;
+        color: var(--color-text);
+    }
+
+    summary:focus-visible {
+        outline: var(--focus-outline-width) solid var(--color-focus);
+        outline-offset: var(--focus-outline-offset);
+    }
+
+    p {
+        margin: var(--gap-xs) 0 0;
+        line-height: var(--line-height-normal);
+    }
 }
 
 .feedback_success {

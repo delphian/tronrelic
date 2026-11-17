@@ -46,16 +46,17 @@ const SUBMENU_NAMESPACE = 'price-history';
 /**
  * In-page tabs for `/system/price-history`, registered as memory-only menu nodes.
  * Schedules, Database, and Logs are the core components scoped to this module,
- * which every component with an admin page owes its operator. Settings sits last
- * because the tabs before it report state and Settings changes it.
+ * which every component with an admin page owes its operator. Settings follows
+ * the module's own tabs and comes before those three, the order the other
+ * module admin pages use, so an operator finds it in the same place on each.
  */
 const SUBMENU_TABS: ReadonlyArray<{ label: string; tab: string; icon: string; order: number }> = [
     { label: 'Coverage', tab: 'coverage', icon: 'Table', order: 0 },
     { label: 'Diagnostics', tab: 'diagnostics', icon: 'AlertTriangle', order: 1 },
-    { label: 'Schedules', tab: 'schedules', icon: 'Clock', order: 2 },
-    { label: 'Database', tab: 'database', icon: 'Database', order: 3 },
-    { label: 'Logs', tab: 'logs', icon: 'ScrollText', order: 4 },
-    { label: 'Settings', tab: 'settings', icon: 'Settings', order: 5 }
+    { label: 'Settings', tab: 'settings', icon: 'Settings', order: 2 },
+    { label: 'Schedules', tab: 'schedules', icon: 'Clock', order: 3 },
+    { label: 'Database', tab: 'database', icon: 'Database', order: 4 },
+    { label: 'Logs', tab: 'logs', icon: 'ScrollText', order: 5 }
 ];
 
 /**

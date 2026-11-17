@@ -19,27 +19,22 @@
  * ClickHouse each own a tab; a panel mounts only while its tab is active, so its
  * fetches fire on arrival rather than on page load.
  *
- * The tab row and the active panel are siblings inside ONE `Stack`, which is
- * what keeps the page's vertical rhythm coherent. `Page` is a grid whose gap is
- * `--page-gap` (3rem) — the right distance between page-level sections, and far
- * too much between a tab row and the panel it controls. Giving `Page` a single
- * child confines that 3rem to the page edge and lets the stack own the interior.
- *
- * This page renders no `PageHeader` on purpose. The tab row already names the
- * surface, and an operator arrives here to read telemetry above the fold.
+ * The page renders in the shared `AdminPage` shell, which holds the header,
+ * the tab row, and the active panel in one stack, so the header sits as close
+ * to its tabs as on every other admin page. The compact header is one short
+ * line; the tab row below it names each surface.
  */
 
 import { useState, useCallback } from 'react';
 import type { MenuNodeSerialized } from '@/shared';
 import type { IPipelineStatus } from '@/types';
-import { Page, Stack } from '../../../../../../components/layout';
+import { AdminPage } from '../../../../../../components/layout';
 import { MenuNavClient } from '../../../../../../components/layout/MenuNav/MenuNavClient';
 import { Card } from '../../../../../../components/ui/Card';
 import { SchedulerMonitor, type SchedulerJob } from '../../../../../../modules/scheduler';
 import { SystemLogsMonitor } from '../../../../../../modules/logs';
 import { PipelineTab } from './components/pipeline/PipelineTab';
 import { ServerTab } from './components/ServerTab';
-import { SectionPanel } from './components/SectionPanel';
 import { ConfigurationTab } from './components/ConfigurationTab';
 import { WebSocketsSection } from './components/WebSocketsSection';
 import { MongoSection } from './components/MongoSection';
@@ -121,42 +116,39 @@ export function SystemAdminClient({ submenuTree, submenuGeneratedAt, initialTab,
     }, [activateTab]);
 
     return (
-        <Page>
-            <Stack gap="lg">
-                <MenuNavClient
-                    namespace={SUBMENU_NAMESPACE}
-                    items={submenuTree}
-                    generatedAt={submenuGeneratedAt}
-                    ariaLabel="System sections"
-                    activeUrl={`/system/system?tab=${activeTab}`}
-                    onItemSelect={handleTabSelect}
-                />
+        <AdminPage
+            title="System"
+            subtitle="Block ingestion, server health, runtime settings, and the databases behind them."
+        >
+            <MenuNavClient
+                namespace={SUBMENU_NAMESPACE}
+                items={submenuTree}
+                generatedAt={submenuGeneratedAt}
+                ariaLabel="System sections"
+                activeUrl={`/system/system?tab=${activeTab}`}
+                onItemSelect={handleTabSelect}
+            />
 
-                {activeTab === 'pipeline' && <PipelineTab initialPipeline={initialPipeline} onOpenSettings={openSettings} />}
-                {activeTab === 'server' && <ServerTab />}
-                {/* Configuration supplies its own cards — the site URL panel and each
-                  * provider section are independent surfaces with independent save
-                  * controls, so they sit as siblings rather than in one shared panel. */}
-                {activeTab === 'config' && <ConfigurationTab />}
-                {/* The monitor draws its own panel, so it needs no card around it. */}
-                {activeTab === 'schedules' && (
-                    <SchedulerMonitor jobFilter={isPipelineJob} title="Block Pipeline Schedules" hideStats />
-                )}
-                {activeTab === 'logs' && (
-                    <Card padding="sm" noBackgroundImage>
-                        <SystemLogsMonitor service={BLOCKCHAIN_LOG_SERVICE} title="Block Pipeline Logs" />
-                    </Card>
-                )}
-                {activeTab === 'websockets' && <SectionPanel><WebSocketsSection /></SectionPanel>}
-                {/* MongoDB supplies its own cards — health, browser, and migrations are
-                  * independent surfaces, so they sit as siblings rather than inside the
-                  * shared single-section panel. */}
-                {activeTab === 'mongo' && <MongoSection />}
-                {/* ClickHouse supplies its own cards — health and tables, the accounts
-                  * panel, and the accounts module's records are independent surfaces,
-                  * so they sit as siblings as MongoDB's do. */}
-                {activeTab === 'clickhouse' && <ClickHouseSection />}
-            </Stack>
-        </Page>
+            {activeTab === 'pipeline' && <PipelineTab initialPipeline={initialPipeline} onOpenSettings={openSettings} />}
+            {activeTab === 'server' && <ServerTab />}
+            {/* Configuration supplies its own panels — the site URL and each
+              * provider section are independent surfaces with independent save
+              * controls, so they sit as siblings rather than in one shared panel. */}
+            {activeTab === 'config' && <ConfigurationTab />}
+            {/* The monitor draws its own panel, so it needs no card around it. */}
+            {activeTab === 'schedules' && (
+                <SchedulerMonitor jobFilter={isPipelineJob} title="Block Pipeline Schedules" hideStats />
+            )}
+            {activeTab === 'logs' && (
+                <Card padding="sm" noBackgroundImage>
+                    <SystemLogsMonitor service={BLOCKCHAIN_LOG_SERVICE} title="Block Pipeline Logs" />
+                </Card>
+            )}
+            {/* WebSockets, MongoDB, and ClickHouse each supply their own panels,
+              * because each tab holds several independent surfaces. */}
+            {activeTab === 'websockets' && <WebSocketsSection />}
+            {activeTab === 'mongo' && <MongoSection />}
+            {activeTab === 'clickhouse' && <ClickHouseSection />}
+        </AdminPage>
     );
 }

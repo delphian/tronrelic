@@ -42,14 +42,17 @@ export function BotRuleSuggestions({ suggestions, onUse }: IBotRuleSuggestionsPr
             ) : (
                 <Table variant="compact" stackAt="mobile">
                     <Thead>
+                        {/* The browser identifier is the one long value, so it
+                            takes the spare width and every other column keeps
+                            its cells on one line. */}
                         <Tr>
-                            <Th>Network</Th>
-                            <Th numeric>Cookies</Th>
-                            <Th numeric>Reports</Th>
-                            <Th numeric>No referrer</Th>
-                            <Th>Most common browser identifier</Th>
-                            <Th>Last seen</Th>
-                            <Th><span className={styles.visually_hidden}>Actions</span></Th>
+                            <Th width="shrink">Network</Th>
+                            <Th width="shrink" numeric>Cookies</Th>
+                            <Th width="shrink" numeric>Reports</Th>
+                            <Th width="shrink" numeric>No referrer</Th>
+                            <Th width="expand">Most common browser identifier</Th>
+                            <Th width="shrink">Last seen</Th>
+                            <Th width="shrink"><span className={styles.visually_hidden}>Actions</span></Th>
                         </Tr>
                     </Thead>
                     <Tbody>
@@ -70,8 +73,8 @@ export function BotRuleSuggestions({ suggestions, onUse }: IBotRuleSuggestionsPr
                                 <Td label="Last seen" muted><ClientTime date={s.lastSeen} format="relative" /></Td>
                                 {/* No label: the Rule button names its own action. */}
                                 <Td>
-                                    <Button type="button" size="xs" variant="secondary" onClick={() => onUse(s)} aria-label={`Start a rule for AS${s.asn}`}>
-                                        <Plus size={14} aria-hidden="true" /> Rule
+                                    <Button type="button" size="xs" variant="secondary" icon={<Plus size={14} aria-hidden="true" />} onClick={() => onUse(s)} aria-label={`Start a rule for AS${s.asn}`}>
+                                        Rule
                                     </Button>
                                 </Td>
                             </Tr>

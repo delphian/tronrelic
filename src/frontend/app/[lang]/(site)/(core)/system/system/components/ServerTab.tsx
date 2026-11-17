@@ -1,8 +1,7 @@
 'use client';
 
 import { useCallback, useMemo, useState } from 'react';
-import { Stack } from '../../../../../../../components/layout';
-import { Card } from '../../../../../../../components/ui/Card';
+import { Panel } from '../../../../../../../components/ui/Panel';
 import { RefreshIndicator } from './RefreshIndicator';
 import { ServerSection } from './ServerSection';
 import {
@@ -12,14 +11,15 @@ import {
     type IRefreshReport,
     type IRefreshSource
 } from './overview-refresh';
-import styles from './ServerTab.module.scss';
 
 /**
  * Server tab — droplet, containers, Redis, and the backend process.
  *
  * Block ingestion has its own Pipeline tab, the page's default, so the Server
  * console never pushes it below the fold and this tab holds the server readings
- * alone. The card keeps its `id` so `#server` stays a working deep link.
+ * alone. The panel keeps its `id` so `#server` stays a working deep link, and
+ * the refresh readout sits in the panel's header line beside the title rather
+ * than on a line of its own above the panel.
  *
  * The tab owns the freshness state the refresh readout renders, folding each
  * poll outcome into the previous freshness rather than replacing it, so a
@@ -49,13 +49,8 @@ export function ServerTab() {
     ], [serverFreshness]);
 
     return (
-        <Stack gap="lg">
-            <RefreshIndicator sources={refreshSources} />
-
-            <Card id="server" padding="sm" noBackgroundImage>
-                <h3 className={styles.section_title}>Server</h3>
-                <ServerSection onRefresh={noteServerRefresh} />
-            </Card>
-        </Stack>
+        <Panel id="server" title="Server" meta={<RefreshIndicator sources={refreshSources} />}>
+            <ServerSection onRefresh={noteServerRefresh} />
+        </Panel>
     );
 }

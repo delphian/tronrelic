@@ -27,8 +27,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import type { MenuNodeSerialized } from '@/shared';
 import { AdminPage, Stack } from '../../../../../../components/layout';
-import { Badge } from '../../../../../../components/ui/Badge';
-import { ClientTime } from '../../../../../../components/ui/ClientTime';
 import { MenuNavClient } from '../../../../../../components/layout/MenuNav/MenuNavClient';
 import { getSocket } from '../../../../../../lib/socketClient';
 import { ClickHouseTableBrowser, CollectionBrowser } from '../../../../../../modules/database';
@@ -38,7 +36,6 @@ import { getStats, type IAccountHistoryStatsView } from '../../../../../../modul
 import { AccountsTab } from './AccountsTab';
 import { ActivityTab } from './ActivityTab';
 import { SettingsTab } from './SettingsTab';
-import styles from './page.module.scss';
 
 /** The page's six tab ids; the `?tab=` value carried by each submenu node. */
 type TabId = 'accounts' | 'activity' | 'settings' | 'schedules' | 'database' | 'logs';
@@ -181,31 +178,8 @@ export function AccountHistoryAdminClient({ submenuTree, submenuGeneratedAt, ini
     return (
         <AdminPage
             title="Account History"
-            subtitle="Track specific TRON accounts, backfill their full transaction history into ClickHouse, and keep completed accounts current with forward sync."
+            subtitle="Backfill the full history of tracked TRON accounts into ClickHouse, keep it current with forward sync, and sample each account's balances, on three schedules that run apart from live block sync."
         >
-            <p className={styles.intro}>
-                Two pull-based passes run on their own schedules, independent of the live block sync. A bounded <strong>backfill</strong>{' '}
-                walks each tracked account&apos;s full history newest-first until both TronGrid endpoints exhaust; once an account is
-                complete, <strong>forward sync</strong> keeps it current by appending transactions that land afterward. Use the tabs to
-                manage the tracked set, tune pacing, and edit the two schedules.
-            </p>
-
-            {stats && (
-                <div className={styles.summary}>
-                    <Badge tone="info">{stats.totals.trackedAccounts} tracked</Badge>
-                    <Badge tone="neutral">{stats.totals.rowsIngested.toLocaleString()} rows</Badge>
-                    {stats.totals.completeAccounts > 0 && <Badge tone="success">{stats.totals.completeAccounts} complete</Badge>}
-                    {stats.totals.catchingUpAccounts > 0 && <Badge tone="warning">{stats.totals.catchingUpAccounts} catching up</Badge>}
-                    {stats.totals.failedAccounts > 0 && <Badge tone="danger">{stats.totals.failedAccounts} failed</Badge>}
-                    <Badge tone={stats.totals.snapshottedTodayAccounts >= stats.totals.trackedAccounts ? 'success' : 'neutral'}>
-                        {stats.totals.snapshottedTodayAccounts}/{stats.totals.trackedAccounts} snapshotted today
-                    </Badge>
-                    {stats.totals.oldestNewestTimestamp && (
-                        <Badge tone="neutral">current to <ClientTime date={stats.totals.oldestNewestTimestamp} format="relative" /></Badge>
-                    )}
-                </div>
-            )}
-
             <MenuNavClient
                 namespace={SUBMENU_NAMESPACE}
                 items={submenuTree}
@@ -218,10 +192,12 @@ export function AccountHistoryAdminClient({ submenuTree, submenuGeneratedAt, ini
             {activeTab === 'accounts' && <AccountsTab stats={stats} onChanged={loadStats} />}
             {activeTab === 'activity' && <ActivityTab stats={stats} />}
             {activeTab === 'settings' && <SettingsTab />}
-            {activeTab === 'schedules' && <SchedulerMonitor jobFilter={isAccountHistoryJob} title="Account History Schedules" />}
+            {activeTab === 'schedules' && (
+                <SchedulerMonitor jobFilter={isAccountHistoryJob} title="Account History Schedules" hideStats />
+            )}
 
             {/* Editing and deletion stay enabled on the MongoDB browser, as on
-              * every Database tab, but prefer the Tracked Accounts tab: pausing
+              * every Database tab, but prefer the Accounts tab: pausing
               * an account there writes the `paused` flag to both the tracked
               * and the progress document, which an edit to one document here
               * would not. Treat this browser as the escape hatch for a cursor
