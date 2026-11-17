@@ -27,9 +27,14 @@
     border-bottom: var(--border-width-thin) solid var(--color-border);
 }
 
-/* Wrapper around MenuNavClient; lets it take its natural width so the live
-   counter's margin-left:auto can claim the remaining row width. */
+/* Wrapper around MenuNavClient. It takes the row's free width, so the tab row
+   decides what fits from the space the row actually has, and the live counter
+   sits after it at the right edge. The wrapper must not size to its content:
+   the tab row is a size container that reports no width of its own, and a
+   wrapper that shrank to its content would leave the tabs nothing to fit into
+   and keep them folded into "More" at any width. */
 .submenu {
+    flex: 1 1 auto;
     min-width: 0;
 }
 

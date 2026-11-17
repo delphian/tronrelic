@@ -206,6 +206,49 @@
     opacity: 0.6;
 }
 
+/**
+ * In-page tab row (the menu module's Submenu Pattern).
+ *
+ * MenuNavClient adds this class when it renders a tab row, which it knows
+ * from the `activeUrl` or `onItemSelect` prop. The site header's menu passes
+ * neither and never gets it.
+ *
+ * The size container does two jobs. It lets the rule below tighten the tabs
+ * when the row is narrow, and it stops the tabs from counting toward the
+ * row's width, so a row of tabs that never wrap cannot widen the page around
+ * it. The row therefore takes its width from its host, which an admin page
+ * gives it by stretching it across a column. A host that sizes the row to its
+ * content leaves it zero wide, so a wrapper beside other controls needs
+ * `flex: 1 1 auto`, as on the Traffic page.
+ *
+ * The header menu is left out on purpose: it sits in a widget item that can
+ * take its width from its content, and containment there would collapse it.
+ */
+.nav--submenu {
+    container-type: inline-size;
+    container-name: menu-submenu;
+}
+
+/**
+ * Narrow tab rows, such as an admin page on a phone.
+ *
+ * The tabs take the compact padding and drop their icons but keep their
+ * labels, so a short row such as Address Tags' five tabs fits without
+ * folding. A row that still does not fit folds into "More" as usual. The
+ * "More" dropdown is portaled outside the row, so its entries keep their
+ * icons and full padding.
+ */
+@container menu-submenu (max-width: #{$breakpoint-mobile-md}) {
+    .tab,
+    .categoryButton {
+        padding: var(--padding-xs) var(--padding-sm);
+    }
+
+    .tab_icon {
+        display: none;
+    }
+}
+
 .nested {
     display: block;
     width: 100%;

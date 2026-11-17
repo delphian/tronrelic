@@ -16,7 +16,7 @@ Source: [components/layout/](../../../src/frontend/components/layout/). Export b
 
 | Component | Purpose | Source |
 |-----------|---------|--------|
-| `<Page>` | Page-level vertical grid with responsive gap and optional background image | [Page](../../../src/frontend/components/layout/Page/) |
+| `<Page>` | Page-level vertical grid with responsive gap and optional background image. Its one column is `minmax(0, 1fr)`, so a child that cannot shrink overflows inside itself instead of widening the page | [Page](../../../src/frontend/components/layout/Page/) |
 | `<PageHeader>` | Page title + subtitle block with optional actions slot | [PageHeader](../../../src/frontend/components/layout/PageHeader/) |
 | `<Stack>` | Flex container; `gap="sm\|md\|lg"`, `direction="vertical\|horizontal"` | [Stack](../../../src/frontend/components/layout/Stack/) |
 | `<Grid>` | Grid container; `gap`, `columns="2\|3\|responsive"` | [Grid](../../../src/frontend/components/layout/Grid/) |

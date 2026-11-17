@@ -191,6 +191,12 @@ The frontend renders the row with `MenuNavClient` (`src/frontend/components/layo
 | `onItemSelect(item, event)` | Leaf clicks call this and suppress navigation — the page drives `activeTab` (e.g. a `?tab=` query param) instead of routing |
 | `activeUrl` | Highlights the leaf whose `url` matches, bypassing pathname matching — required because the route is identical across tabs |
 
+Either prop makes the row a tab row, which behaves differently from the header menu in three ways:
+
+- **It is a size container.** The tabs no longer count toward the row's width, so a row of tabs cannot widen the page around it. The row takes its width from its host, so stretch it across a column (a `Stack`, `Section`, or `Page` does this). A wrapper beside other controls needs `flex: 1 1 auto`, as on `/system/traffic`; a wrapper that sizes to its content leaves the row zero wide.
+- **Narrow rows tighten.** Below 480px the tabs take compact padding and hide their icons, keeping their labels, before anything folds into "More".
+- **The selected tab stays visible.** `MenuNavClient` passes the active item to `PriorityNav` as `activeId`, which keeps it in the row in place of the last tab that fits. If it still ends up in "More", the "More" button is drawn as active and shows its label. The header menu gets the same swap, but its "More" button stays icon-only.
+
 Because `onItemSelect` is a function it cannot cross the server boundary — the consumer is the page's own client component (holding `activeTab` state and the SSR-fetched namespace tree), rendering `MenuNavClient` directly rather than `MenuNavSSR`. **Core admin pages** render `MenuNavClient` directly. **Plugins** cannot import core components, so they consume `context.layout.SubMenu` (a thin wrapper with a friendlier `onSelect(item)` callback), register tabs via `context.menuService.create(...)`, and fetch the namespace tree SSR-first through `serverDataFetcher`. See [plugins-frontend-context-ui.md](../../../../docs/plugins/plugins-frontend-context-ui.md#submenu--in-page-tab-navigation).
 
 ```typescript
