@@ -64,15 +64,16 @@ export interface ISchedulerMonitorProps {
     jobFilter?: string[] | ((job: ISchedulerJobStatus) => boolean);
 
     /**
-     * Heading for the stats bar. Override it when the monitor is embedded in
-     * a page whose own heading would otherwise be ambiguous.
+     * Title of the monitor's panel, shown in every mode, including with
+     * `hideStats`. Defaults to "Scheduled Jobs". The monitor draws its own
+     * panel, so place it directly on the page or tab rather than inside a card.
      */
     title?: string;
 
     /**
-     * Hides the aggregate stats bar. Set this when embedding the monitor as
-     * one tab among several, where platform-wide totals would misrepresent
-     * the handful of jobs on screen.
+     * Hides the stats strip. Its counts follow `jobFilter`, and the success
+     * rate appears only on the unfiltered monitor, because the scheduler
+     * reports that figure across every job.
      */
     hideStats?: boolean;
 }

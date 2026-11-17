@@ -42,13 +42,16 @@ const PAGE_SIZES: readonly number[] = [10, 25, 50, 100];
  *
  * **Layout, top to bottom:**
  * - One toolbar: severity chips that are both the level filter and the level
- *   counts, then the service filter, auto-refresh, and "Clear all". The chip
- *   selection is remembered per operator in the user-settings store and
- *   shared by every instance of this component.
+ *   counts, then the service filter and auto-refresh, which share one line
+ *   in a narrow container. The chip selection is remembered per operator in
+ *   the user-settings store and shared by every instance of this component.
  * - A compact table, one line per entry, with the error text from the entry's
  *   context on a muted second line. Selecting a row opens the full record in a
  *   slide-over rather than expanding the row, so the list never jumps.
- * - A footer with the entry count, page controls, and page size.
+ * - A footer with the entry count, page controls, page size, and "Clear all".
+ *   "Clear all" deletes every service's logs, so it sits in the footer, away
+ *   from the auto-refresh control an operator changes often, and asks for
+ *   confirmation in a modal before deleting anything.
  *
  * **Data Sources:**
  * - `/admin/system/logs` - Paginated logs with filtering
@@ -230,16 +233,19 @@ export function SystemLogsMonitor({ service, title }: ISystemLogsMonitorProps) {
      * Opens a confirmation modal before clearing all logs.
      *
      * Uses the ModalProvider system instead of browser-native confirm() for
-     * consistent UI and accessibility.
+     * consistent UI and accessibility. The message states how many entries the
+     * last stats refresh counted, so the operator sees the size of what they
+     * are about to delete rather than only the entries on the current page.
      */
     const handleClearLogs = useCallback(() => {
         const modalId = 'confirm-clear-logs';
+        const countNote = stats ? ` (${stats.total.toLocaleString()} at the last refresh)` : '';
         open({
             id: modalId,
             title: 'Clear all logs',
             content: (
                 <Stack gap="md">
-                    <p>This deletes every saved log entry from every service, not only the ones shown. It cannot be undone.</p>
+                    <p>This deletes every saved log entry from every service{countNote}, not only the ones shown. It cannot be undone.</p>
                     <Stack direction="horizontal" gap="sm">
                         <Button
                             variant="danger"
@@ -260,7 +266,7 @@ export function SystemLogsMonitor({ service, title }: ISystemLogsMonitorProps) {
             ),
             size: 'sm'
         });
-    }, [open, close, executeClearLogs]);
+    }, [open, close, executeClearLogs, stats]);
 
     /**
      * Queue for the background preference writes. The user-settings store keeps
@@ -419,6 +425,9 @@ export function SystemLogsMonitor({ service, title }: ISystemLogsMonitorProps) {
     const closeEntry = useCallback(() => { setSelectedLog(null); }, []);
 
     const showServiceColumn = !service;
+    // Only the unscoped view offers "Clear all", because it deletes every
+    // service's logs rather than the scoped ones.
+    const canClearAll = !service;
     const firstShown = total === 0 ? 0 : (page - 1) * limit + 1;
     const lastShown = Math.min(page * limit, total);
 
@@ -541,22 +550,18 @@ export function SystemLogsMonitor({ service, title }: ISystemLogsMonitorProps) {
                             ))}
                         </Select>
                     </div>
-
-                    {!service && (
-                        <Button variant="ghost" size="xs" icon={<Trash2 size={14} />} onClick={handleClearLogs}>
-                            Clear all
-                        </Button>
-                    )}
                 </div>
             </div>
 
             {body}
 
-            {total > 0 && (
+            {(total > 0 || canClearAll) && (
                 <div className={styles.footer}>
-                    <span className={styles.range}>
-                        {firstShown.toLocaleString()}–{lastShown.toLocaleString()} of {total.toLocaleString()}
-                    </span>
+                    {total > 0 && (
+                        <span className={styles.range}>
+                            {firstShown.toLocaleString()}–{lastShown.toLocaleString()} of {total.toLocaleString()}
+                        </span>
+                    )}
                     {total > limit && (
                         <Pagination
                             total={total}
@@ -565,19 +570,33 @@ export function SystemLogsMonitor({ service, title }: ISystemLogsMonitorProps) {
                             onPageChange={restartList}
                         />
                     )}
-                    <Select
-                        size="xs"
-                        aria-label="Entries per page"
-                        value={limit}
-                        onChange={e => {
-                            setLimit(Number(e.target.value));
-                            restartList(1);
-                        }}
-                    >
-                        {PAGE_SIZES.map(size => (
-                            <option key={size} value={size}>{size} per page</option>
-                        ))}
-                    </Select>
+                    <div className={styles.footer_actions}>
+                        {total > 0 && (
+                            <Select
+                                size="xs"
+                                aria-label="Entries per page"
+                                value={limit}
+                                onChange={e => {
+                                    setLimit(Number(e.target.value));
+                                    restartList(1);
+                                }}
+                            >
+                                {PAGE_SIZES.map(size => (
+                                    <option key={size} value={size}>{size} per page</option>
+                                ))}
+                            </Select>
+                        )}
+                        {/* In the footer, not the toolbar, so the control that
+                            deletes every service's logs never sits beside the
+                            auto-refresh control. It stays available when the
+                            current filter matches nothing, which is why the
+                            footer renders for it on its own. */}
+                        {canClearAll && (
+                            <Button variant="ghost" size="xs" icon={<Trash2 size={14} />} onClick={handleClearLogs}>
+                                Clear all
+                            </Button>
+                        )}
+                    </div>
                 </div>
             )}
 

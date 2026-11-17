@@ -10,20 +10,22 @@
  * Scoping is what makes it reusable. Given a `prefix`, it asks the API for one
  * namespace and renders only that, so a plugin can embed the same component on
  * its own admin page scoped to `plugin_<id>_` and an operator never leaves that
- * section to inspect the plugin's data. Without a prefix it behaves as before,
- * showing the whole database for the system console.
+ * section to inspect the plugin's data. Without a prefix it shows the whole
+ * database for the system console. A scoped browser lists each collection
+ * without the prefix and states the prefix once in its header, because the
+ * same 20-odd characters on every row wrapped each name on a phone.
  *
  * Editing replaces the whole document rather than patching fields, because the
  * editor is a JSON blob: what the operator sees is what gets written, including
  * fields they removed. `_id` is not editable — the API discards it — so a save
  * either replaces a document in place or fails, and can never silently re-key.
  *
- * The inventory itself is a real table with sortable columns rather than a list
- * of rows carrying badges. Document count and stored size are quantities an
+ * The inventory is a real table with sortable columns rather than a list of
+ * rows carrying badges. Document count and stored size are quantities an
  * operator compares across collections — which one grew, which one is worth an
- * index — and a column of right-aligned figures answers that by scanning, where
- * badges scattered along each row do not. The component renders bare, without a
- * card of its own, so the embedding surface owns the heading and the boundary.
+ * index — and a column of right-aligned figures answers that by scanning. The
+ * browser draws its own panel card, shared with the ClickHouse browser, so do
+ * not wrap it in another card.
  *
  * `collapsible` puts the whole inventory behind a closed disclosure. That is
  * for a page where the browser is one surface among several and the unscoped
@@ -38,7 +40,6 @@ import {
     useCallback,
     useMemo,
     Fragment,
-    type ReactElement,
     type ReactNode
 } from 'react';
 import type { ICollectionBrowserProps } from '@/types';
@@ -49,19 +50,15 @@ import { ClientTime } from '../../../../components/ui/ClientTime';
 import { CopyButton } from '../../../../components/ui/CopyButton';
 import { useToast } from '../../../../components/ui/ToastProvider/ToastProvider';
 import { formatBytes } from '../../../../lib/format';
-import {
-    AlertCircle,
-    ArrowDown,
-    ArrowUp,
-    ArrowUpDown,
-    ChevronDown,
-    ChevronRight,
-    ChevronsLeft,
-    ChevronsRight,
-    Database,
-    Trash2,
-    Pencil
-} from 'lucide-react';
+import { AlertCircle, ChevronDown, ChevronRight, Trash2, Pencil } from 'lucide-react';
+import { BrowserPanel, type IBrowserSummary } from '../BrowserPanel';
+import { BrowserPager } from '../BrowserPager';
+import { InventoryTable, InventoryRow } from '../InventoryTable';
+import { useInventorySort } from '../../hooks/useInventorySort';
+import { stripNamePrefix } from '../../lib/stripNamePrefix';
+import { formatCount } from '../../lib/formatCount';
+import type { IInventoryColumn } from '../../types/IInventoryColumn';
+import type { IInventorySort } from '../../types/IInventorySort';
 import styles from './CollectionBrowser.module.scss';
 
 interface ICollectionStat {
@@ -75,35 +72,15 @@ interface ICollectionStat {
 /** A column the collection table can be ranked by. */
 type CollectionSortKey = 'name' | 'count' | 'size' | 'indexes';
 
-/** Which way a sorted column runs. */
-type SortDirection = 'asc' | 'desc';
-
-/**
- * The column the table is ranked by, and the direction it runs in.
- */
-interface ICollectionSort {
-    /** The ranked column. */
-    key: CollectionSortKey;
-    /** `asc` puts the smallest first, `desc` the largest. */
-    direction: SortDirection;
-}
-
 /**
  * The sortable columns of the collection table.
  *
- * `initialDirection` is what a first click on a column produces. The numeric
- * columns open descending because the question an operator brings to this
- * table is nearly always "what is biggest" — which collection is eating disk,
- * which document count explains a slow query — and making them click twice to
- * reach that would be a step for nothing. Name opens ascending, which is plain
- * alphabetical order and the table's resting state.
+ * The numeric columns open descending because the question an operator brings
+ * to this table is nearly always "what is biggest" — which collection is eating
+ * disk, which document count explains a slow query. Name opens ascending, which
+ * is plain alphabetical order and the table's resting state.
  */
-const COLLECTION_COLUMNS: ReadonlyArray<{
-    key: CollectionSortKey;
-    label: string;
-    numeric: boolean;
-    initialDirection: SortDirection;
-}> = [
+const COLLECTION_COLUMNS: ReadonlyArray<IInventoryColumn<CollectionSortKey>> = [
     { key: 'name', label: 'Collection', numeric: false, initialDirection: 'asc' },
     { key: 'count', label: 'Documents', numeric: true, initialDirection: 'desc' },
     { key: 'size', label: 'Size', numeric: true, initialDirection: 'desc' },
@@ -111,7 +88,7 @@ const COLLECTION_COLUMNS: ReadonlyArray<{
 ];
 
 /** Where the table rests before the operator sorts it: alphabetical by name. */
-const DEFAULT_SORT: ICollectionSort = { key: 'name', direction: 'asc' };
+const DEFAULT_SORT: IInventorySort<CollectionSortKey> = { key: 'name', direction: 'asc' };
 
 /**
  * Order two collections by the active column.
@@ -126,7 +103,11 @@ const DEFAULT_SORT: ICollectionSort = { key: 'name', direction: 'asc' };
  * @param sort - The active column and direction.
  * @returns Negative, zero, or positive per the `Array.prototype.sort` contract.
  */
-function compareCollections(a: ICollectionStat, b: ICollectionStat, sort: ICollectionSort): number {
+function compareCollections(
+    a: ICollectionStat,
+    b: ICollectionStat,
+    sort: IInventorySort<CollectionSortKey>
+): number {
     const ordering = sort.key === 'name'
         ? a.name.localeCompare(b.name)
         : a[sort.key] - b[sort.key];
@@ -198,14 +179,12 @@ function displayedTotalPages(totalPages: number, page: number): number {
 /**
  * Render the collection browser.
  *
- * @param prefix - Namespace to scope to; omit for the whole database.
+ * @param prefix - Namespace to scope to; omit for the whole database. Listed
+ * names are shown without it, and the header states it once.
  * @param allowEdit - Whether the edit affordance is offered.
  * @param allowDelete - Whether the delete affordance is offered.
- * @param title - Heading for the collection list. Omit when the embedding
- * surface already labels the browser, which is the common case — a second
- * heading immediately under the first reads as a duplicate. In the collapsible
- * form the heading doubles as the control that opens the browser, so supply one
- * there rather than leaving the disclosure labelled "Collections".
+ * @param title - Title of the browser's panel; "Collections" when omitted. In
+ * the collapsible form it doubles as the control that opens the browser.
  * @param collapsible - Whether to start closed behind a disclosure heading.
  */
 export function CollectionBrowser({
@@ -222,7 +201,7 @@ export function CollectionBrowser({
     const isCollapsed = collapsible && collapsed;
 
     const [stats, setStats] = useState<IDatabaseStats | null>(null);
-    const [sort, setSort] = useState<ICollectionSort>(DEFAULT_SORT);
+    const { sort, toggleSort } = useInventorySort(COLLECTION_COLUMNS, DEFAULT_SORT);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [expandedCollection, setExpandedCollection] = useState<string | null>(null);
@@ -255,6 +234,10 @@ export function CollectionBrowser({
 
     const { push: pushToast } = useToast();
 
+    // The prefix as a usable value, or undefined for the unscoped view. An
+    // empty string is treated as no prefix, matching what the API does with it.
+    const scopePrefix = typeof prefix === 'string' && prefix.length > 0 ? prefix : undefined;
+
     // SystemAuthGate (console) or the plugin admin route guarantees an admin
     // session at this depth; the same-origin Better Auth cookie authorizes
     // every request below.
@@ -269,8 +252,8 @@ export function CollectionBrowser({
     const fetchStats = useCallback(async () => {
         try {
             setLoading(true);
-            const query = typeof prefix === 'string' && prefix.length > 0
-                ? `?prefix=${encodeURIComponent(prefix)}`
+            const query = scopePrefix !== undefined
+                ? `?prefix=${encodeURIComponent(scopePrefix)}`
                 : '';
             const response = await fetch(`/api/admin/database/stats${query}`, {
                 headers: { 'Content-Type': 'application/json' }
@@ -288,7 +271,7 @@ export function CollectionBrowser({
         } finally {
             setLoading(false);
         }
-    }, [prefix]);
+    }, [scopePrefix]);
 
     /**
      * Load one page of documents from a collection.
@@ -365,21 +348,37 @@ export function CollectionBrowser({
      * Used after an edit or a delete, where the operator should stay exactly
      * where they were. Replaying the stored request is what makes that
      * possible without a page number the API could seek to.
+     *
+     * @param collectionName - Collection whose current page to reload.
      */
     const refreshCurrentPage = useCallback((collectionName: string) => {
         return fetchDocuments(collectionName, pageRequest, page);
     }, [fetchDocuments, pageRequest, page]);
 
-    // A collapsed browser does not fetch. The statistics request runs one
-    // `collStats` command per collection in scope, and the unscoped system
-    // console view covers every collection in the deployment, so sending it for
-    // a panel nobody opened is real work spent on nothing. The trade is that
-    // opening the browser costs a round trip; the loading line covers it.
+    /**
+     * Fetch the statistics once the browser is open, and again when its scope
+     * changes.
+     *
+     * A collapsed browser does not fetch. The statistics request runs one
+     * `collStats` command per collection in scope, and the unscoped system
+     * console view covers every collection in the deployment, so sending it for
+     * a panel nobody opened is real work spent on nothing. The trade is that
+     * opening the browser costs a round trip; the loading line covers it.
+     */
     useEffect(() => {
-        if (isCollapsed) return;
-        void fetchStats();
+        if (!isCollapsed) {
+            void fetchStats();
+        }
     }, [isCollapsed, fetchStats]);
 
+    /**
+     * Open a collection's documents, or close them if it is the open one.
+     *
+     * Any open or edited document belongs to the previous collection, so both
+     * are cleared before the switch.
+     *
+     * @param collectionName - The collection the operator clicked.
+     */
     const toggleCollection = (collectionName: string) => {
         setExpandedDocumentId(null);
         setEditingDocumentId(null);
@@ -394,6 +393,11 @@ export function CollectionBrowser({
         }
     };
 
+    /**
+     * Unfold a document's full JSON, or fold it back up if it is the open one.
+     *
+     * @param documentId - Row key of the document the operator clicked.
+     */
     const toggleDocument = (documentId: string) => {
         setExpandedDocumentId(prev => (prev === documentId ? null : documentId));
     };
@@ -479,6 +483,16 @@ export function CollectionBrowser({
         }
     }, [editDraft, pushToast, cancelEditing, refreshCurrentPage, fetchStats]);
 
+    /**
+     * Delete a document after the operator confirms it.
+     *
+     * The confirmation names the document and the collection, because the
+     * delete cannot be undone. Afterwards the operator stays on the page they
+     * were on, and the inventory's counts are refreshed with it.
+     *
+     * @param collectionName - Collection owning the document.
+     * @param documentId - The document's `_id`.
+     */
     const deleteDocument = useCallback(async (collectionName: string, documentId: string) => {
         const confirmed = typeof window !== 'undefined'
             ? window.confirm(
@@ -526,81 +540,207 @@ export function CollectionBrowser({
         }
     }, [pushToast, expandedDocumentId, refreshCurrentPage, fetchStats]);
 
-    /**
-     * Rank a column, or flip it if it is already the ranked one.
-     *
-     * Row expansion is keyed by collection name rather than position, so an
-     * open collection stays open across a re-sort and the operator does not
-     * lose the documents they were reading.
-     *
-     * @param key - The column the operator clicked.
-     */
-    const toggleSort = useCallback((key: CollectionSortKey) => {
-        setSort((previous) => {
-            if (previous.key === key) {
-                return { key, direction: previous.direction === 'asc' ? 'desc' : 'asc' };
-            }
-
-            const column = COLLECTION_COLUMNS.find((candidate) => candidate.key === key);
-            return { key, direction: column?.initialDirection ?? 'desc' };
-        });
-    }, []);
-
+    /** The inventory in the order the active sort asks for, copied so state is never sorted in place. */
     const sortedCollections = useMemo(
         () => [...(stats?.collections ?? [])].sort((a, b) => compareCollections(a, b, sort)),
         [stats?.collections, sort]
     );
 
-    // The browser's heading, and in the collapsible form the control that opens
-    // it. A button inside a heading is the disclosure markup a screen reader
-    // announces correctly: the label stays part of the document outline, and
-    // `aria-expanded` says whether the section beneath it is showing.
-    const header = collapsible ? (
-        <h3 className={styles.disclosure_heading}>
-            <button
-                type="button"
-                className={styles.disclosure_button}
-                aria-expanded={!collapsed}
-                onClick={() => setCollapsed(previous => !previous)}
-            >
-                {collapsed
-                    ? <ChevronRight size={16} aria-hidden="true" />
-                    : <ChevronDown size={16} aria-hidden="true" />}
-                {title ?? 'Collections'}
-            </button>
-        </h3>
-    ) : (
-        title !== undefined ? <h3 className={styles.section_title}>{title}</h3> : null
-    );
+    // The header's summary line. Kept once the statistics have loaded, so a
+    // browser closed again after being opened still says what it holds.
+    const summary: IBrowserSummary | null = stats === null ? null : {
+        databases: [stats.dbName],
+        prefix: scopePrefix,
+        count: stats.collections.length,
+        singular: 'collection',
+        plural: 'collections',
+        totalSize: stats.totalSize
+    };
 
     /**
-     * Put one of the browser's short states — closed, loading, failed, empty —
-     * on the same outer element and under the same heading as the loaded view.
+     * Build the documents panel shown beneath an open collection.
      *
-     * The heading has to outlive every one of those states in the collapsible
-     * form. Returning a bare message instead would take the disclosure control
-     * with it, so a failed statistics request would leave an error on screen
-     * that the operator could no longer close.
+     * Only the open collection calls this, so `documents` and the paging state
+     * always belong to it.
      *
-     * @param body - Shown in place of the collection table; null when the browser is closed.
+     * @param collectionName - The open collection.
+     * @returns The page bar and the page's documents, or the loading, error, or
+     * empty message in their place.
      */
-    const shell = (body: ReactNode): ReactElement => (
-        <div className={styles.browser}>
-            {header}
-            {body}
+    const renderDocuments = (collectionName: string): ReactNode => (
+        <div className={styles.documents_panel}>
+            {documentsError !== null && (
+                <div className="alert alert--danger" role="alert">
+                    <span className={styles.error_inline}>
+                        <AlertCircle size={14} aria-hidden="true" />
+                        {documentsError}
+                    </span>
+                </div>
+            )}
+            {loadingDocuments && <p className={styles.message}>Loading documents…</p>}
+            {!loadingDocuments && documents === null && (
+                <p className={styles.message}>No documents loaded</p>
+            )}
+            {!loadingDocuments && documents !== null && (
+                <>
+                    {/* First is gated on position, not on `hasPrevPage`. It is an
+                      * absolute anchor needing no cursor, so it stays meaningful
+                      * where a relative step cannot go: a `prev` landing on a page
+                      * emptied by concurrent deletes returns no cursors and both
+                      * flags false, and gating on the flag would disable every
+                      * control at once — stranding the operator on a blank table. */}
+                    <BrowserPager
+                        summary={formatCount(documents.total, 'document', 'documents')}
+                        page={page}
+                        totalPages={displayedTotalPages(documents.totalPages, page)}
+                        canFirst={page > 1}
+                        canPrevious={documents.hasPrevPage && documents.startCursor !== null}
+                        canNext={documents.hasNextPage && documents.endCursor !== null}
+                        canLast={documents.hasNextPage}
+                        onFirst={() => void fetchDocuments(collectionName, FIRST_PAGE, 1)}
+                        onPrevious={() => void fetchDocuments(
+                            collectionName,
+                            { direction: 'prev', cursor: documents.startCursor ?? undefined },
+                            page - 1
+                        )}
+                        onNext={() => void fetchDocuments(
+                            collectionName,
+                            { direction: 'next', cursor: documents.endCursor ?? undefined },
+                            page + 1
+                        )}
+                        onLast={() => void fetchDocuments(collectionName, { direction: 'last' })}
+                    />
+                    <Table variant="compact" stackAt="mobile">
+                        <Thead>
+                            <Tr>
+                                <Th width="shrink" aria-label="Expand" />
+                                <Th>_id</Th>
+                                <Th>createdAt</Th>
+                                <Th>updatedAt</Th>
+                                <Th width="shrink" aria-label="Actions" />
+                            </Tr>
+                        </Thead>
+                        <Tbody>
+                            {documents.documents.map((doc, index) => {
+                                // Only documents with a real _id can be addressed by the API.
+                                // Rows without _id render view-only, with edit and delete
+                                // disabled — there is no key to send.
+                                const docId = doc._id != null ? String(doc._id) : null;
+                                const rowKey = docId ?? `__row_${index}`;
+                                const isOpen = expandedDocumentId === rowKey;
+                                const isEditing = editingDocumentId === rowKey;
+                                return (
+                                    <Fragment key={rowKey}>
+                                        <Tr
+                                            isExpanded={isOpen}
+                                            onClick={() => toggleDocument(rowKey)}
+                                        >
+                                            <Td muted>
+                                                {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                                            </Td>
+                                            <Td>
+                                                <code className={styles.document_id}>{docId ?? '—'}</code>
+                                            </Td>
+                                            <Td muted label="createdAt">
+                                                {doc.createdAt
+                                                    ? <ClientTime date={doc.createdAt} format="short" />
+                                                    : '—'}
+                                            </Td>
+                                            <Td muted label="updatedAt">
+                                                {doc.updatedAt
+                                                    ? <ClientTime date={doc.updatedAt} format="short" />
+                                                    : '—'}
+                                            </Td>
+                                            <Td>
+                                                <div className={styles.row_actions} onClick={(e) => e.stopPropagation()}>
+                                                    <CopyButton
+                                                        value={JSON.stringify(doc, null, 2)}
+                                                        aria-label="Copy document JSON"
+                                                    />
+                                                    {allowEdit && (
+                                                        <Button
+                                                            variant="ghost"
+                                                            icon={<Pencil size={16} />}
+                                                            aria-label={docId ? 'Edit document' : 'Edit unavailable: document has no _id'}
+                                                            disabled={!docId}
+                                                            onClick={() => docId && startEditing(rowKey, doc)}
+                                                        />
+                                                    )}
+                                                    {allowDelete && (
+                                                        <Button
+                                                            variant="ghost"
+                                                            icon={<Trash2 size={16} />}
+                                                            aria-label={docId ? 'Delete document' : 'Delete unavailable: document has no _id'}
+                                                            disabled={!docId}
+                                                            loading={docId !== null && deletingDocumentId === docId}
+                                                            onClick={() => docId && void deleteDocument(collectionName, docId)}
+                                                        />
+                                                    )}
+                                                </div>
+                                            </Td>
+                                        </Tr>
+                                        {isOpen && (
+                                            <Tr className={styles.document_detail_row}>
+                                                <Td colSpan={5}>
+                                                    {isEditing && docId ? (
+                                                        <div className={styles.document_editor}>
+                                                            <Textarea
+                                                                aria-label={`Edit document ${docId}`}
+                                                                value={editDraft}
+                                                                onChange={(event) => {
+                                                                    setEditDraft(event.target.value);
+                                                                    setEditError(null);
+                                                                }}
+                                                                rows={16}
+                                                                spellCheck={false}
+                                                            />
+                                                            {editError !== null && (
+                                                                <p className={styles.editor_error}>{editError}</p>
+                                                            )}
+                                                            <div className={styles.editor_actions}>
+                                                                <span className={styles.editor_hint}>
+                                                                    Replaces the whole document. `_id` cannot be changed.
+                                                                </span>
+                                                                <Button variant="ghost" onClick={cancelEditing}>
+                                                                    Cancel
+                                                                </Button>
+                                                                <Button
+                                                                    loading={savingDocumentId === docId}
+                                                                    onClick={() => void saveDocument(collectionName, docId)}
+                                                                >
+                                                                    Save
+                                                                </Button>
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <pre className={styles.document_json}>
+                                                            {JSON.stringify(doc, null, 2)}
+                                                        </pre>
+                                                    )}
+                                                </Td>
+                                            </Tr>
+                                        )}
+                                    </Fragment>
+                                );
+                            })}
+                        </Tbody>
+                    </Table>
+                </>
+            )}
         </div>
     );
 
+    // What the panel shows beneath its header. Every state keeps the header,
+    // because in the collapsible form the heading is the disclosure control:
+    // dropping it with a failed request would leave an error on screen the
+    // operator could no longer close.
+    let body: ReactNode = null;
     if (isCollapsed) {
-        return shell(null);
-    }
-
-    if (loading) {
-        return shell(<p className={styles.loading}>Loading database statistics…</p>);
-    }
-
-    if (error) {
-        return shell(
+        body = null;
+    } else if (loading) {
+        body = <p className={styles.message}>Loading database statistics…</p>;
+    } else if (error) {
+        body = (
             <div className="alert alert--danger" role="alert">
                 <span className={styles.error_inline}>
                     <AlertCircle size={14} aria-hidden="true" />
@@ -608,333 +748,69 @@ export function CollectionBrowser({
                 </span>
             </div>
         );
-    }
-
-    if (!stats) {
-        return shell(<p className={styles.loading}>No database statistics available</p>);
+    } else if (!stats) {
+        body = <p className={styles.message}>No database statistics available</p>;
+    } else if (sortedCollections.length === 0) {
+        body = (
+            <p className={styles.message}>
+                {scopePrefix !== undefined ? `No collections found for ${scopePrefix}` : 'No collections found'}
+            </p>
+        );
+    } else {
+        body = (
+            <InventoryTable
+                columns={COLLECTION_COLUMNS}
+                sort={sort}
+                onSort={toggleSort}
+                rowCount={sortedCollections.length}
+            >
+                {sortedCollections.map(collection => {
+                    const isCollectionOpen = expandedCollection === collection.name;
+                    return (
+                        <InventoryRow
+                            key={collection.name}
+                            name={collection.name}
+                            label={stripNamePrefix(collection.name, scopePrefix)}
+                            expanded={isCollectionOpen}
+                            onToggle={() => toggleCollection(collection.name)}
+                            figures={[
+                                {
+                                    key: 'count',
+                                    value: collection.count.toLocaleString(),
+                                    summary: formatCount(collection.count, 'doc', 'docs'),
+                                    numeric: true
+                                },
+                                {
+                                    key: 'size',
+                                    value: formatBytes(collection.size),
+                                    summary: formatBytes(collection.size),
+                                    numeric: true
+                                },
+                                {
+                                    key: 'indexes',
+                                    value: collection.indexes.toLocaleString(),
+                                    summary: formatCount(collection.indexes, 'index', 'indexes'),
+                                    numeric: true
+                                }
+                            ]}
+                        >
+                            {isCollectionOpen ? renderDocuments(collection.name) : null}
+                        </InventoryRow>
+                    );
+                })}
+            </InventoryTable>
+        );
     }
 
     return (
-        <div className={styles.browser}>
-            {header}
-
-            <p className={styles.overview}>
-                <Database size={14} aria-hidden="true" />
-                <code className={styles.db_name}>{stats.dbName}</code>
-                <span className={styles.overview_meta}>
-                    {stats.collections.length}{' '}
-                    {stats.collections.length === 1 ? 'collection' : 'collections'} ·{' '}
-                    {formatBytes(stats.totalSize)} total
-                </span>
-            </p>
-
-            {sortedCollections.length === 0 ? (
-                <p className={styles.loading}>
-                    {typeof prefix === 'string' && prefix.length > 0
-                        ? `No collections found for ${prefix}`
-                        : 'No collections found'}
-                </p>
-            ) : (
-                /* Stacks on a phone, where the three numeric columns left the
-                   collection name a few dozen pixels. Stacked, the toggle and
-                   the name share the heading line, the figures are named, and
-                   a sort picker stands in for the hidden sortable headers. */
-                <Table
-                    variant="compact"
-                    stackAt="mobile"
-                    stackedSort={{ columns: COLLECTION_COLUMNS, active: sort.key, direction: sort.direction, onSort: toggleSort }}
-                >
-                    <Thead>
-                        <Tr>
-                            <Th width="shrink" aria-label="Expand" />
-                            {COLLECTION_COLUMNS.map(column => {
-                                const isSorted = sort.key === column.key;
-                                return (
-                                    <Th
-                                        key={column.key}
-                                        width={column.numeric ? 'shrink' : 'expand'}
-                                        numeric={column.numeric}
-                                        aria-sort={
-                                            isSorted
-                                                ? (sort.direction === 'asc' ? 'ascending' : 'descending')
-                                                : 'none'
-                                        }
-                                    >
-                                        <button
-                                            type="button"
-                                            className={styles.sort_button}
-                                            onClick={() => toggleSort(column.key)}
-                                        >
-                                            {column.label}
-                                            {isSorted
-                                                ? (sort.direction === 'asc'
-                                                    ? <ArrowUp size={14} aria-hidden="true" />
-                                                    : <ArrowDown size={14} aria-hidden="true" />)
-                                                : (
-                                                    <ArrowUpDown
-                                                        size={14}
-                                                        aria-hidden="true"
-                                                        className={styles.sort_icon_idle}
-                                                    />
-                                                )}
-                                        </button>
-                                    </Th>
-                                );
-                            })}
-                        </Tr>
-                    </Thead>
-                    <Tbody>
-                        {sortedCollections.map(collection => {
-                            const isCollectionOpen = expandedCollection === collection.name;
-                            return (
-                                <Fragment key={collection.name}>
-                                    <Tr
-                                        isExpanded={isCollectionOpen}
-                                        className={styles.collection_row}
-                                        onClick={() => toggleCollection(collection.name)}
-                                        // The expand button in the first cell is the keyboard's
-                                        // way in, so the row stays out of the tab order.
-                                        tabIndex={-1}
-                                    >
-                                        <Td muted>
-                                            {/* The row itself is clickable for pointer users; this button is
-                                              * what makes the same toggle reachable by keyboard, so it stops
-                                              * the click from also firing the row handler and undoing itself. */}
-                                            <button
-                                                type="button"
-                                                className={styles.expand_button}
-                                                aria-expanded={isCollectionOpen}
-                                                aria-label={`${isCollectionOpen ? 'Collapse' : 'Expand'} ${collection.name}`}
-                                                onClick={(event) => {
-                                                    event.stopPropagation();
-                                                    toggleCollection(collection.name);
-                                                }}
-                                            >
-                                                {isCollectionOpen
-                                                    ? <ChevronDown size={14} />
-                                                    : <ChevronRight size={14} />}
-                                            </button>
-                                        </Td>
-                                        <Td>
-                                            <code className={styles.collection_name}>{collection.name}</code>
-                                        </Td>
-                                        <Td muted numeric label="Documents">{collection.count.toLocaleString()}</Td>
-                                        <Td muted numeric label="Size" className={styles.size_cell}>{formatBytes(collection.size)}</Td>
-                                        <Td muted numeric label="Indexes">{collection.indexes.toLocaleString()}</Td>
-                                    </Tr>
-
-                                    {isCollectionOpen && (
-                                        <Tr className={styles.documents_row}>
-                                            <Td colSpan={COLLECTION_COLUMNS.length + 1}>
-                                                <div className={styles.documents_panel}>
-                                                    {documentsError !== null && (
-                                                        <div className="alert alert--danger" role="alert">
-                                                            <span className={styles.error_inline}>
-                                                                <AlertCircle size={14} aria-hidden="true" />
-                                                                {documentsError}
-                                                            </span>
-                                                        </div>
-                                                    )}
-                                                    {loadingDocuments ? (
-                                                        <p className={styles.loading}>Loading documents...</p>
-                                                    ) : documents ? (
-                                                        <>
-                                                            <div className={styles.documents_header}>
-                                                                <span>
-                                                                    Showing {documents.documents.length} of {documents.total} documents
-                                                                </span>
-                                                                <div className={styles.pagination}>
-                                                                    {/* First is gated on position, not on `hasPrevPage`. It is an
-                                                                      * absolute anchor needing no cursor, so it stays meaningful
-                                                                      * where a relative step cannot go: a `prev` landing on a page
-                                                                      * emptied by concurrent deletes returns no cursors and both
-                                                                      * flags false, and gating on the flag would disable every
-                                                                      * control at once — stranding the operator on a blank table. */}
-                                                                    <Button
-                                                                        variant="ghost"
-                                                                        size="sm"
-                                                                        icon={<ChevronsLeft size={16} />}
-                                                                        aria-label="First page"
-                                                                        disabled={page <= 1}
-                                                                        onClick={() => void fetchDocuments(collection.name, FIRST_PAGE, 1)}
-                                                                    />
-                                                                    <Button
-                                                                        variant="ghost"
-                                                                        size="sm"
-                                                                        disabled={!documents.hasPrevPage || documents.startCursor === null}
-                                                                        onClick={() => void fetchDocuments(
-                                                                            collection.name,
-                                                                            { direction: 'prev', cursor: documents.startCursor ?? undefined },
-                                                                            page - 1
-                                                                        )}
-                                                                    >
-                                                                        Previous
-                                                                    </Button>
-                                                                    <span className={styles.page_info}>
-                                                                        Page {page.toLocaleString()} of{' '}
-                                                                        {displayedTotalPages(documents.totalPages, page).toLocaleString()}
-                                                                    </span>
-                                                                    <Button
-                                                                        variant="ghost"
-                                                                        size="sm"
-                                                                        disabled={!documents.hasNextPage || documents.endCursor === null}
-                                                                        onClick={() => void fetchDocuments(
-                                                                            collection.name,
-                                                                            { direction: 'next', cursor: documents.endCursor ?? undefined },
-                                                                            page + 1
-                                                                        )}
-                                                                    >
-                                                                        Next
-                                                                    </Button>
-                                                                    <Button
-                                                                        variant="ghost"
-                                                                        size="sm"
-                                                                        icon={<ChevronsRight size={16} />}
-                                                                        aria-label="Last page"
-                                                                        disabled={!documents.hasNextPage}
-                                                                        onClick={() => void fetchDocuments(collection.name, { direction: 'last' })}
-                                                                    />
-                                                                </div>
-                                                            </div>
-                                                            <div className={styles.documents_list}>
-                                                                <Table variant="compact" stackAt="mobile">
-                                                                    <Thead>
-                                                                        <Tr>
-                                                                            <Th width="shrink" aria-label="Expand" />
-                                                                            <Th>_id</Th>
-                                                                            <Th>createdAt</Th>
-                                                                            <Th>updatedAt</Th>
-                                                                            <Th width="shrink" aria-label="Actions" />
-                                                                        </Tr>
-                                                                    </Thead>
-                                                                    <Tbody>
-                                                                        {documents.documents.map((doc, index) => {
-                                                                            // Only documents with a real _id can be addressed by the API.
-                                                                            // Rows without _id render view-only, with edit and delete
-                                                                            // disabled — there is no key to send.
-                                                                            const docId = doc._id != null ? String(doc._id) : null;
-                                                                            const rowKey = docId ?? `__row_${index}`;
-                                                                            const isOpen = expandedDocumentId === rowKey;
-                                                                            const isEditing = editingDocumentId === rowKey;
-                                                                            return (
-                                                                                <Fragment key={rowKey}>
-                                                                                    <Tr
-                                                                                        isExpanded={isOpen}
-                                                                                        onClick={() => toggleDocument(rowKey)}
-                                                                                        className={styles.document_row}
-                                                                                    >
-                                                                                        <Td muted>
-                                                                                            {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                                                                                        </Td>
-                                                                                        <Td>
-                                                                                            <code className={styles.document_id}>{docId ?? '—'}</code>
-                                                                                        </Td>
-                                                                                        <Td muted label="createdAt">
-                                                                                            {doc.createdAt
-                                                                                                ? <ClientTime date={doc.createdAt} format="short" />
-                                                                                                : '—'}
-                                                                                        </Td>
-                                                                                        <Td muted label="updatedAt">
-                                                                                            {doc.updatedAt
-                                                                                                ? <ClientTime date={doc.updatedAt} format="short" />
-                                                                                                : '—'}
-                                                                                        </Td>
-                                                                                        <Td>
-                                                                                            <div className={styles.row_actions} onClick={(e) => e.stopPropagation()}>
-                                                                                                <CopyButton
-                                                                                                    value={JSON.stringify(doc, null, 2)}
-                                                                                                    aria-label="Copy document JSON"
-                                                                                                />
-                                                                                                {allowEdit && (
-                                                                                                    <Button
-                                                                                                        variant="ghost"
-                                                                                                        size="sm"
-                                                                                                        icon={<Pencil size={16} />}
-                                                                                                        aria-label={docId ? 'Edit document' : 'Edit unavailable: document has no _id'}
-                                                                                                        disabled={!docId}
-                                                                                                        onClick={() => docId && startEditing(rowKey, doc)}
-                                                                                                    />
-                                                                                                )}
-                                                                                                {allowDelete && (
-                                                                                                    <Button
-                                                                                                        variant="ghost"
-                                                                                                        size="sm"
-                                                                                                        icon={<Trash2 size={16} />}
-                                                                                                        aria-label={docId ? 'Delete document' : 'Delete unavailable: document has no _id'}
-                                                                                                        disabled={!docId}
-                                                                                                        loading={docId !== null && deletingDocumentId === docId}
-                                                                                                        onClick={() => docId && void deleteDocument(collection.name, docId)}
-                                                                                                    />
-                                                                                                )}
-                                                                                            </div>
-                                                                                        </Td>
-                                                                                    </Tr>
-                                                                                    {isOpen && (
-                                                                                        <Tr className={styles.document_detail_row}>
-                                                                                            <Td colSpan={5}>
-                                                                                                {isEditing && docId ? (
-                                                                                                    <div className={styles.document_editor}>
-                                                                                                        <Textarea
-                                                                                                            aria-label={`Edit document ${docId}`}
-                                                                                                            value={editDraft}
-                                                                                                            onChange={(event) => {
-                                                                                                                setEditDraft(event.target.value);
-                                                                                                                setEditError(null);
-                                                                                                            }}
-                                                                                                            rows={16}
-                                                                                                            spellCheck={false}
-                                                                                                        />
-                                                                                                        {editError !== null && (
-                                                                                                            <p className={styles.editor_error}>{editError}</p>
-                                                                                                        )}
-                                                                                                        <div className={styles.editor_actions}>
-                                                                                                            <span className={styles.editor_hint}>
-                                                                                                                Replaces the whole document. `_id` cannot be changed.
-                                                                                                            </span>
-                                                                                                            <Button
-                                                                                                                variant="ghost"
-                                                                                                                size="sm"
-                                                                                                                onClick={cancelEditing}
-                                                                                                            >
-                                                                                                                Cancel
-                                                                                                            </Button>
-                                                                                                            <Button
-                                                                                                                size="sm"
-                                                                                                                loading={savingDocumentId === docId}
-                                                                                                                onClick={() => void saveDocument(collection.name, docId)}
-                                                                                                            >
-                                                                                                                Save
-                                                                                                            </Button>
-                                                                                                        </div>
-                                                                                                    </div>
-                                                                                                ) : (
-                                                                                                    <pre className={styles.document_json}>
-                                                                                                        {JSON.stringify(doc, null, 2)}
-                                                                                                    </pre>
-                                                                                                )}
-                                                                                            </Td>
-                                                                                        </Tr>
-                                                                                    )}
-                                                                                </Fragment>
-                                                                            );
-                                                                        })}
-                                                                    </Tbody>
-                                                                </Table>
-                                                            </div>
-                                                        </>
-                                                    ) : (
-                                                        <p className={styles.loading}>No documents loaded</p>
-                                                    )}
-                                                </div>
-                                            </Td>
-                                        </Tr>
-                                    )}
-                                </Fragment>
-                            );
-                        })}
-                    </Tbody>
-                </Table>
-            )}
-        </div>
+        <BrowserPanel
+            title={title ?? 'Collections'}
+            collapsible={collapsible}
+            collapsed={collapsed}
+            onToggle={() => setCollapsed(previous => !previous)}
+            summary={summary}
+        >
+            {body}
+        </BrowserPanel>
     );
 }

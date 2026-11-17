@@ -1,0 +1,54 @@
+/**
+ * Styles for the header both storage browsers share.
+ *
+ * The core Panel supplies the card, the title type, and the muted meta line.
+ * What is left here is the disclosure control a collapsible browser puts in
+ * the title, and the names the summary sets in monospace.
+ */
+
+/*
+ * The control that opens and closes a collapsible browser.
+ *
+ * It takes the Panel title's type rather than button chrome, because it is the
+ * section's heading first, and a button-shaped heading would sit directly above
+ * the controls inside the table. The chevron and the pointer cursor mark it as
+ * operable.
+ *
+ * Baseline alignment lets the title text set the button's baseline, so the
+ * title lines up with the meta text on the Panel's header row. The chevron has
+ * no baseline of its own, so it is centred instead of joining that alignment.
+ */
+.disclosure {
+    display: inline-flex;
+    align-items: baseline;
+    gap: var(--gap-xs);
+    padding: 0;
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    font: inherit;
+    letter-spacing: inherit;
+    color: inherit;
+}
+
+.disclosure svg {
+    align-self: center;
+    flex-shrink: 0;
+    color: var(--color-text-muted);
+}
+
+.disclosure:hover svg {
+    color: var(--color-text);
+}
+
+/*
+ * A database name or the shared prefix in the summary. Monospace marks it as
+ * an identifier. It may break anywhere, because a long plugin prefix on a
+ * phone would otherwise push the header row wider than the panel.
+ */
+.identifier {
+    font-family: var(--font-mono);
+    color: var(--color-text);
+    overflow-wrap: anywhere;
+}

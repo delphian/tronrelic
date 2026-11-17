@@ -1,257 +1,18 @@
 /**
  * Styles for CollectionBrowser component.
  *
- * The inventory is a data table, not a list of disclosure panels: the quantities
- * an operator compares (document count, stored size, index count) are columns, so
- * a sorted column can be scanned down. What is left here is the chrome the table
- * primitive does not supply — the sort affordance in each header, the expand
- * control in the row, and the document panel that unfolds beneath a row.
+ * The panel, its header, the inventory table, and the page bar are shared with
+ * the ClickHouse browser and styled where they live (BrowserPanel,
+ * InventoryTable, BrowserPager). What is left here is the documents panel that
+ * opens beneath a collection: the document rows' actions, the JSON view, and
+ * the inline editor.
  *
- * Uses design tokens from semantic-tokens.scss and follows TronRelic's CSS Module
- * patterns. Container queries enable responsive behavior in different layout
- * contexts.
+ * Uses Layer 2 tokens from semantic-tokens.scss only, so every gap and size
+ * follows the compact density of the admin pages this browser sits on.
  */
 
-@use '../../../../app/breakpoints' as *;
-
-.browser {
-    container-type: inline-size;
-    container-name: browser;
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-sm);
-}
-
-/*
- * Database identity line: which database is being browsed, how many collections
- * it holds, and what it costs on disk. One quiet line rather than a hero block —
- * the table below is the content, and this only has to orient the reader.
- */
-.overview {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: var(--gap-xs);
+.message {
     margin: 0;
-    font-size: var(--font-size-caption);
-    color: var(--color-text-muted);
-}
-
-.overview svg {
-    color: var(--color-primary);
-    flex-shrink: 0;
-}
-
-.db_name {
-    font-family: var(--font-mono);
-    font-size: var(--font-size-caption);
-    color: var(--color-text);
-}
-
-.overview_meta {
-    color: var(--color-text-muted);
-}
-
-.section_title {
-    margin: 0;
-    font-size: var(--font-size-heading-xs);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text);
-}
-
-/*
- * Heading of the collapsible form. It carries no type of its own, because the
- * button inside it does. Keeping the heading element around the button is what
- * leaves the label in the document outline while the whole label stays one
- * click target.
- */
-.disclosure_heading {
-    margin: 0;
-}
-
-/*
- * The control that opens and closes the browser.
- *
- * Typed to match .section_title rather than dressed as a button: this is the
- * section's heading first, and giving it button chrome would put a second
- * button-shaped thing directly above the controls inside the table. The chevron
- * and the pointer cursor are what mark it as operable. Full width so the click
- * target covers the row rather than only the words.
- */
-.disclosure_button {
-    display: flex;
-    align-items: center;
-    gap: var(--gap-xs);
-    width: 100%;
-    padding: 0;
-    background: none;
-    border: none;
-    cursor: pointer;
-    text-align: left;
-    font-family: inherit;
-    font-size: var(--font-size-heading-xs);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text);
-}
-
-.disclosure_button svg {
-    color: var(--color-text-muted);
-    flex-shrink: 0;
-}
-
-.disclosure_button:hover svg {
-    color: var(--color-text);
-}
-
-/*
- * Sort affordance inside a column header.
- *
- * A real <button> so the column is operable by keyboard and announced as
- * actionable; it inherits the header's own typography so the row still reads as
- * a table head rather than a strip of controls. Inline-flex keeps it subject to
- * the header's text-align, which is what right-aligns it in numeric columns.
- */
-.sort_button {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--gap-2xs);
-    padding: 0;
-    background: none;
-    border: none;
-    cursor: pointer;
-    color: inherit;
-    font: inherit;
-    letter-spacing: inherit;
-    text-transform: inherit;
-}
-
-.sort_button:hover {
-    color: var(--color-text);
-}
-
-/* Idle direction glyph — present so the column reads as sortable, dimmed so it
-   does not compete with the arrow on the column actually being sorted. */
-.sort_icon_idle {
-    opacity: var(--opacity-35);
-}
-
-.collection_row {
-    cursor: pointer;
-}
-
-.expand_button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: var(--padding-2xs);
-    background: none;
-    border: none;
-    cursor: pointer;
-    color: var(--color-text-muted);
-}
-
-.expand_button:hover {
-    color: var(--color-text);
-}
-
-.collection_name {
-    font-family: var(--font-mono);
-    font-size: var(--font-size-body-sm);
-    color: var(--color-text);
-    word-break: break-all;
-}
-
-/* A formatted size reads as one quantity ("61.96 GB"); letting the unit wrap to
- * its own line splits that quantity in two and doubles the row's height. */
-.size_cell {
-    white-space: nowrap;
-}
-
-.documents_row {
-    background: var(--color-surface-muted);
-}
-
-.documents_panel {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-sm);
-}
-
-.documents_header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding-bottom: var(--padding-xs);
-    border-bottom: var(--border-width-thin) solid var(--color-border);
-    font-size: var(--font-size-sm);
-    color: var(--color-text-muted);
-    flex-wrap: wrap;
-    gap: var(--spacing-4);
-}
-
-/*
- * Page controls: jump-to-first, step back, position, step forward,
- * jump-to-last. Wraps because five controls plus a page readout no longer fit
- * a narrow embedded browser on one line.
- */
-.pagination {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: var(--gap-sm);
-}
-
-.page_info {
-    padding: 0 var(--spacing-4);
-    font-size: var(--font-size-sm);
-    color: var(--color-text);
-}
-
-.documents_list {
-    max-height: 500px;
-    overflow-y: auto;
-}
-
-.document_row {
-    cursor: pointer;
-}
-
-.row_actions {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-3);
-    justify-content: flex-end;
-}
-
-.document_id {
-    font-family: var(--font-mono);
-    font-size: var(--font-size-xs);
-    color: var(--color-text);
-}
-
-.document_detail_row {
-    background: var(--color-surface-muted);
-}
-
-.document_json {
-    margin: 0;
-    padding: var(--spacing-5) var(--spacing-6);
-    background: var(--color-surface);
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-sm);
-    font-family: var(--font-mono);
-    font-size: var(--font-size-xs);
-    color: var(--color-text);
-    overflow-x: auto;
-    white-space: pre-wrap;
-    word-wrap: break-word;
-    line-height: var(--line-height-relaxed);
-}
-
-.loading {
-    margin: 0;
-    padding: var(--padding-md);
-    text-align: center;
     color: var(--color-text-muted);
     font-size: var(--font-size-body-sm);
 }
@@ -262,12 +23,48 @@
     gap: var(--gap-xs);
 }
 
-/* Responsive adjustments */
-@container browser (max-width: #{$breakpoint-mobile-lg}) {
-    .documents_header {
-        flex-direction: column;
-        align-items: flex-start;
-    }
+.documents_panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+}
+
+.row_actions {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
+    justify-content: flex-end;
+}
+
+.document_id {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+    color: var(--color-text);
+}
+
+.document_detail_row {
+    background: var(--color-surface-muted);
+}
+
+/*
+ * A document's full JSON. Capped at the code-block height and scrolled inside,
+ * so one large document cannot push the rest of the page out of view; only one
+ * document is open at a time, which keeps the whole page of documents short.
+ */
+.document_json {
+    margin: 0;
+    max-height: var(--code-block-max-height);
+    overflow: auto;
+    padding: var(--padding-sm-md);
+    background: var(--color-surface);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+    color: var(--color-text);
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    line-height: var(--line-height-relaxed);
 }
 
 /*

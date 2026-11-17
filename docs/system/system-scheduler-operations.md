@@ -79,7 +79,7 @@ The backend does not check the field count itself. It passes the string to node-
 
 ## How a Scheduled Time Becomes a Run
 
-`SchedulerService` does not import a cron library. It receives an `ICronTrigger` (from `@/types`) through `setDependencies`, and `SchedulerModule` passes in `NodeCronTrigger`, the only backend file that imports node-cron. The trigger reports each scheduled time, called a slot, and each slot it missed. The service decides whether a slot starts a run.
+`SchedulerService` does not import a cron library. It receives an `ICronTrigger` (from `@/types`) through `setDependencies`, and `SchedulerModule` passes in `NodeCronTrigger`, the only backend file that imports node-cron. The trigger reports each scheduled time, called a slot, and each slot it missed. The service decides whether a slot starts a run. The handle the trigger returns can also report the next slot, which the status endpoint shows as each job's `nextRun`.
 
 Each slot starts at most one run. The service records the latest slot each job has handled and ignores any slot at or before it. This rule exists because node-cron 3, run with `recoverMissedExecutions`, fired every scheduled second a second time on its next poll, so every job ran twice and any run longer than a second logged a skip. node-cron 4 plans each slot once, and the service rule keeps that true whatever the library does.
 

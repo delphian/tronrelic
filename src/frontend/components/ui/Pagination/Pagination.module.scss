@@ -11,9 +11,16 @@
  * gutter is taken off. It therefore never grows past its parent and wraps onto
  * a second line instead of running off the screen.
  *
- * The corner is --radius-lg rather than --radius-full. On one line the bar is
- * about 42px tall, so a 24px radius still draws a full pill; when it wraps,
- * the same radius gives a rounded rectangle instead of a 999px stadium.
+ * The frame comes from the --pagination-* tokens, which the page density
+ * selects. A public page draws the buttons in a muted, bordered bar. A compact
+ * admin page draws no frame, so the bar is only as tall as its buttons and no
+ * taller than the controls beside it in a table footer. The gap and the framed
+ * padding are density-scaled Layer 2 tokens; a Layer 1 value here would hold
+ * the bar at its public size on every page.
+ *
+ * The corner is --radius-lg rather than --radius-full. On one line the framed
+ * bar is about 44px tall, so a 24px radius still draws a full pill; when it
+ * wraps, the same radius gives a rounded rectangle instead of a 999px stadium.
  */
 .pagination {
     display: inline-flex;
@@ -21,13 +28,20 @@
     justify-content: center;
     align-items: center;
     max-width: 100%;
-    gap: var(--spacing-4);
-    padding: var(--spacing-2) var(--spacing-5);
+    gap: var(--gap-sm);
+    padding: var(--pagination-padding);
     border-radius: var(--radius-lg);
-    background: var(--color-surface-muted);
-    border: var(--border-width-thin) solid var(--color-border);
+    background: var(--pagination-background);
+    border: var(--pagination-border);
 }
 
+/*
+ * The page buttons hold the sm button height at every density. It is the
+ * public look, and it is also the height a compact admin page gives an
+ * unsized <Button> or form control, so the buttons already line up with the
+ * controls beside them there. Following the unsized --button-height instead
+ * would grow them to 42px on public pages.
+ */
 .control,
 .page {
     min-width: var(--button-height-sm);
@@ -36,7 +50,7 @@
     border: none;
     background: transparent;
     color: var(--color-text-muted);
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-body-sm);
     cursor: pointer;
     transition: background-color var(--transition-base), color var(--transition-base);
     display: inline-flex;
@@ -61,7 +75,7 @@
 }
 
 .dots {
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-body-sm);
     color: var(--color-text-muted);
-    padding: 0 var(--spacing-1);
+    padding: 0 var(--padding-2xs);
 }

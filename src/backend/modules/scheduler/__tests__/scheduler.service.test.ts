@@ -63,7 +63,9 @@ class FakeCronTrigger implements ICronTrigger {
              */
             stop: (): void => {
                 entry.stopped = true;
-            }
+            },
+            /** The fake follows no clock, so it has no next time to report. */
+            nextRun: (): Date | null => null
         };
     }
 

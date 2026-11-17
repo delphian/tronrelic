@@ -27,7 +27,7 @@ Schedule changes via `PATCH` persist to MongoDB and survive restarts — operato
 | `schedule` | string | Active cron expression |
 | `enabled` | boolean | |
 | `lastRun` | string \| null | ISO; `null` when never run |
-| `nextRun` | null | Reserved; always `null` (computation not wired) |
+| `nextRun` | string \| null | ISO; the next time the live cron task fires, from node-cron. `null` for a disabled job, which has no task |
 | `status` | string | `success` \| `failed` \| `running` \| `never_run` |
 | `duration` | number \| null | Seconds (last execution `duration / 1000`) |
 | `error` | string \| null | Last failure message |

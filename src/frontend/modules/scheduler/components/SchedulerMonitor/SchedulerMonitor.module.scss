@@ -1,14 +1,33 @@
 /**
  * SchedulerMonitor Component Styles
  *
- * Compact table-based layout for scheduler job management with toggle switches,
- * expandable details rows, and inline schedule editing.
- * Mirrors the plugins admin page styling for consistency.
- * Uses semantic tokens from semantic-tokens.scss.
- * Layout handled by Page and Stack components from components/layout/.
+ * The job table's own pieces: the namespace in the panel's meta line, the job
+ * cell with its expand toggle and one-line error, the cron input sized to the
+ * longest schedule on screen, the details row, and the alerts and messages.
+ * The card and title are the core Panel, the stats strip is StatGrid and
+ * StatTile, and the table is the shared Table, so none of those is styled
+ * here. Uses Layer 2 tokens from semantic-tokens.scss.
  */
 
 @use '../../../../app/breakpoints' as *;
+
+/* The namespace the rows drop, stated once in the panel's meta line. Set like
+   the prefix in the storage browsers' header: monospace marks it as an
+   identifier, and it may break anywhere so a long namespace on a phone does
+   not push the header row wider than the panel. */
+.identifier {
+    font-family: var(--font-mono);
+    color: var(--color-text);
+    overflow-wrap: anywhere;
+}
+
+/* Loading and empty lines. Plain muted text rather than a box, because the
+   panel is already the card around them. */
+.message {
+    margin: 0;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+}
 
 /* Alert Messages */
 .alert_error,
@@ -33,91 +52,25 @@
     color: var(--alert-success-color);
 }
 
-/* Compact Stats Bar */
-/* Wraps so five figures and their dividers never run past a phone's edge. */
-.stats_bar {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--gap-sm-md);
-    padding: var(--padding-sm-md);
-    background: var(--card-background);
-    border-radius: var(--radius-md);
-    border: var(--card-border);
-}
-
-.stat {
-    display: flex;
-    align-items: baseline;
-    gap: var(--gap-xs);
-}
-
-.stat_value {
-    font-size: var(--font-size-heading-md);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text);
-}
-
-.stat_label {
-    font-size: var(--font-size-caption);
-    color: var(--color-text-muted);
-    text-transform: uppercase;
-    letter-spacing: var(--letter-spacing-wide);
-}
-
-.stat_success {
-    color: var(--color-success);
-}
-
-.stat_primary {
-    color: var(--color-primary);
-}
-
-.stat_danger {
-    color: var(--color-danger);
-}
-
-.stat_divider {
-    width: var(--border-width-thin);
-    height: var(--gap-lg);
-    background: var(--color-border);
-}
-
 /* Table Cell Overrides */
-.th_enabled {
-    text-align: center;
-}
-
-.th_last_run {
-    white-space: nowrap;
-}
-
-.th_schedule {
-    min-width: 140px;
-}
-
-.cell_expand {
-    text-align: center;
-}
-
-.cell_status {
-    white-space: nowrap;
-}
-
-.cell_last_run {
-    white-space: nowrap;
-}
-
-.cell_enabled {
-    text-align: center;
-}
-
-.th_actions {
-    text-align: center;
-}
-
+.th_enabled,
+.cell_enabled,
+.th_actions,
 .cell_actions {
     text-align: center;
+}
+
+/* Job cell: the expand toggle beside the name, and for a failed job the first
+   line of its error under the name. */
+/* The name track never narrows below the name's longest unbroken part. With a
+   zero minimum the table measured the cell as the chevron alone, gave the Job
+   column less than the name needed, and the name ran under the switch in the
+   next column. */
+.job_cell {
+    display: grid;
+    grid-template-columns: auto minmax(min-content, 1fr);
+    align-items: center;
+    column-gap: var(--gap-xs);
 }
 
 .expand_btn {
@@ -149,6 +102,24 @@
     font-size: var(--font-size-body-sm);
 }
 
+/* The first line of a failed job's error, cut off with an ellipsis. The full
+   text is in its title and in the details row. A table sizes each column from
+   its content first, so a line that does not wrap would widen the Job column
+   to the whole message and push the table into a sideways scroll.
+   `contain: inline-size` gives the line no width of its own when the cell is
+   measured, so the column is sized by the name alone, and the line then
+   stretches across the width the name track ends up with. */
+.job_error {
+    grid-column: 2;
+    contain: inline-size;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--font-size-body-xs);
+    color: var(--color-text-muted);
+}
+
 .error_icon {
     color: var(--color-danger);
     flex-shrink: 0;
@@ -160,11 +131,16 @@
 }
 
 /* Schedule Input
- * The shared <Input> owns sizing, border, radius, and focus ring. This slim
- * override keeps the cron field's monospace font, minimum width, and the
- * surface-elevated hover affordance that signals the cell is editable. */
-.schedule_input {
-    min-width: 120px;
+ * The shared <Input> owns border, radius, padding, and focus ring. This sets
+ * the cron field's monospace font and a width of
+ * `--scheduler-monitor-schedule-chars` characters, which the component sets on
+ * the table from the longest schedule on screen. `content-box` makes that width
+ * the text area alone, so the input's own padding, which depends on the page
+ * density, is added around it rather than taken out of it. The cell selector
+ * outranks the Input's own `width: 100%` whichever stylesheet loads first. */
+.cell_schedule .schedule_input {
+    box-sizing: content-box;
+    width: calc(var(--scheduler-monitor-schedule-chars) * 1ch);
     font-family: var(--font-mono);
 }
 
@@ -204,6 +180,15 @@
     color: var(--color-text);
 }
 
+/* The job's full name, shown when the table drops a shared namespace from
+   the rows. */
+.detail_name {
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text);
+    font-family: var(--font-mono);
+    overflow-wrap: anywhere;
+}
+
 /* Error Block in Details */
 .error_block {
     padding: var(--padding-sm);
@@ -229,16 +214,24 @@
     word-break: break-word;
 }
 
-/* Empty State */
-.empty_state {
-    padding: var(--card-padding-lg);
-    text-align: center;
-    color: var(--color-text-muted);
-    border: var(--border-width-thin) dashed var(--color-border);
-    border-radius: var(--radius-md);
-    background: var(--card-background);
-}
+/* Stacked rows. The component passes `stackAt="mobile"` and the shared Table
+ * declares `container-name: table`, so this query matches exactly while the
+ * rows are stacked. Columns are not hidden there: the Schedule column is the
+ * only place a cron schedule can be edited.
+ *
+ * A stacked field is only as wide as its share of the line, so the schedule
+ * input fills its field rather than keeping a width that could run past a
+ * phone's edge. The error line measures its full text again, so the job cell,
+ * which heads the entry and is sized by its content, widens to show as much of
+ * the message as the line allows instead of stopping at the name's width. */
+@container table (max-width: #{$breakpoint-mobile-lg}) {
+    .cell_schedule .schedule_input {
+        box-sizing: border-box;
+        width: 100%;
+    }
 
-/* Narrow widths are handled by the shared Table's `stackAt="mobile"`, which
-   keeps every column as a labelled line. Columns are not hidden here: the
-   Schedule column is the only place a cron schedule can be edited. */
+    .job_error {
+        width: auto;
+        min-width: 0;
+    }
+}
