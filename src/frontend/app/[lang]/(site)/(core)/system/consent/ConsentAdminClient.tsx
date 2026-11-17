@@ -17,7 +17,7 @@
 
 import { useCallback, useState } from 'react';
 import type { MenuNodeSerialized } from '@/shared';
-import { Page, PageHeader, Stack } from '../../../../../../components/layout';
+import { AdminPage } from '../../../../../../components/layout';
 import { MenuNavClient } from '../../../../../../components/layout/MenuNav/MenuNavClient';
 import { CollectionBrowser } from '../../../../../../modules/database';
 import { SystemLogsMonitor } from '../../../../../../modules/logs';
@@ -88,30 +88,24 @@ export function ConsentAdminClient({ submenuTree, submenuGeneratedAt, initialTab
     }, []);
 
     return (
-        <Page>
-            {/* One Stack holds the header, the tab row, and the active panel so
-                they sit one stack gap apart instead of the page's wider gap. */}
-            <Stack gap="md">
-                <PageHeader
-                    title="Consent"
-                    subtitle="The cookie banner for visitors in the EEA, the UK, and Switzerland, and the Google Ads tag it controls."
-                />
+        <AdminPage
+            title="Consent"
+            subtitle="The cookie banner for visitors in the EEA, the UK, and Switzerland, and the Google Ads tag it controls."
+        >
+            <MenuNavClient
+                namespace={SUBMENU_NAMESPACE}
+                items={submenuTree}
+                generatedAt={submenuGeneratedAt}
+                ariaLabel="Consent sections"
+                activeUrl={`/system/consent?tab=${activeTab}`}
+                onItemSelect={handleTabSelect}
+            />
 
-                <MenuNavClient
-                    namespace={SUBMENU_NAMESPACE}
-                    items={submenuTree}
-                    generatedAt={submenuGeneratedAt}
-                    ariaLabel="Consent sections"
-                    activeUrl={`/system/consent?tab=${activeTab}`}
-                    onItemSelect={handleTabSelect}
-                />
-
-                {activeTab === 'settings' && <SettingsTab />}
-                {activeTab === 'database' && (
-                    <CollectionBrowser prefix={COLLECTION_PREFIX} title="Consent Collections" />
-                )}
-                {activeTab === 'logs' && <SystemLogsMonitor service={LOG_SERVICE} />}
-            </Stack>
-        </Page>
+            {activeTab === 'settings' && <SettingsTab />}
+            {activeTab === 'database' && (
+                <CollectionBrowser prefix={COLLECTION_PREFIX} title="Consent Collections" />
+            )}
+            {activeTab === 'logs' && <SystemLogsMonitor service={LOG_SERVICE} />}
+        </AdminPage>
     );
 }

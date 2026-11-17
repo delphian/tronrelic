@@ -1360,11 +1360,14 @@
      * PAGE TITLE SIZE
      *
      * The smallest and largest size of the <PageHeader> title, which grows
-     * with the window between them. A public page uses the large heading
-     * range, because its title is the first thing a visitor reads. `compact`
-     * below sets both bounds to one smaller heading, because an admin page
-     * title only names the tool the operator already chose, and a large one
-     * pushes the tool itself down the screen.
+     * with the window between them, and the size of the subtitle under it.
+     * A public page uses the large heading range and an emphasized subtitle,
+     * because its title is the first thing a visitor reads. `compact` below
+     * sets both title bounds to one smaller heading and the subtitle to
+     * secondary body text, because an admin page title only names the tool
+     * the operator already chose, and a large header pushes the tool itself
+     * down the screen. On a phone the full-size subtitle ran to four lines
+     * and was the tallest part of the header.
      *
      * Declared in this block for the same reason as the default control
      * step above: a density step can only reselect a token that this
@@ -1372,6 +1375,29 @@
      * ------------------------------------------------------------------ */
     --page-header-title-font-size-min: var(--font-size-heading-lg);
     --page-header-title-font-size-max: var(--font-size-heading-xl);
+    --page-header-subtitle-font-size: var(--font-size-body-lg);
+
+    /* ------------------------------------------------------------------
+     * PARAGRAPH SPACING
+     *
+     * The space above and below a <p> that sets no margin of its own,
+     * applied by the base `p` rule in globals.scss. It is the browser's own
+     * 1em here, so a public page and rendered Markdown keep the spacing
+     * they have always had. `compact` below sets it to zero, because an
+     * admin page spaces its content with Stack and Grid gaps, and the
+     * browser margin added 16px above and below every intro line on top of
+     * those gaps.
+     *
+     * A stylesheet that renders Markdown on an admin page, such as an
+     * editor preview, sets its own paragraph margin so its text keeps
+     * paragraph breaks. The base rule is a bare element selector, so any
+     * class rule beats it.
+     *
+     * Declared in this block for the same reason as the default control
+     * step above: a density step can only reselect a token that this
+     * selector list also declares.
+     * ------------------------------------------------------------------ */
+    --paragraph-margin: 1em;
 
     /* ------------------------------------------------------------------
      * STACKED TABLE LABEL COLUMN
@@ -1428,10 +1454,12 @@
  * buttons and fields. An unsized button takes its `sm` step, and an unsized
  * form control takes --input-padding-compact with the `sm` type size, which
  * puts a one-line field at about the button's 34px height. It also sets the
- * page title to one smaller heading (see PAGE TITLE SIZE above), narrows
- * the column-name track of stacked table rows (see STACKED TABLE LABEL
- * COLUMN above), and drops the frame around pagination buttons (see
- * PAGINATION FRAME above). The other steps keep the defaults.
+ * page title to one smaller heading and the subtitle to secondary body text
+ * (see PAGE TITLE SIZE above), removes the browser's paragraph margins (see
+ * PARAGRAPH SPACING above), narrows the column-name track of stacked table
+ * rows (see STACKED TABLE LABEL COLUMN above), and drops the frame around
+ * pagination buttons (see PAGINATION FRAME above). The other steps keep the
+ * defaults.
  * ========================================================================== */
 
 [data-density="compact"] {
@@ -1443,6 +1471,8 @@
     --input-font-size: var(--input-font-size-sm);
     --page-header-title-font-size-min: var(--font-size-heading-md);
     --page-header-title-font-size-max: var(--font-size-heading-md);
+    --page-header-subtitle-font-size: var(--font-size-body-sm);
+    --paragraph-margin: 0;
     --table-stack-label-width: var(--table-stack-label-width-compact);
     --pagination-padding: var(--pagination-padding-bare);
     --pagination-background: var(--pagination-background-bare);

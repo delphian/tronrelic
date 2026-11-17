@@ -19,7 +19,7 @@
 
 import { useCallback, useState } from 'react';
 import type { MenuNodeSerialized } from '@/shared';
-import { Page, PageHeader, Stack } from '../../../../../../components/layout';
+import { AdminPage } from '../../../../../../components/layout';
 import { MenuNavClient } from '../../../../../../components/layout/MenuNav/MenuNavClient';
 import { CollectionBrowser } from '../../../../../../modules/database';
 import { SystemLogsMonitor } from '../../../../../../modules/logs';
@@ -105,42 +105,36 @@ export function LocalizationAdminClient({ submenuTree, submenuGeneratedAt, initi
     }, []);
 
     return (
-        <Page>
-            {/* One Stack holds the header, the tab row, and the active panel so
-                they sit one stack gap apart instead of the page's wider gap. */}
-            <Stack gap="md">
-                <PageHeader
-                    title="Localization"
-                    subtitle="Languages, the routes published in each, and the translations visitors see. English is the default and needs no setup."
-                />
+        <AdminPage
+            title="Localization"
+            subtitle="Languages, the routes published in each, and the translations visitors see. English is the default and needs no setup."
+        >
+            <MenuNavClient
+                namespace={SUBMENU_NAMESPACE}
+                items={submenuTree}
+                generatedAt={submenuGeneratedAt}
+                ariaLabel="Localization sections"
+                activeUrl={`/system/localization?tab=${activeTab}`}
+                onItemSelect={handleTabSelect}
+            />
 
-                <MenuNavClient
-                    namespace={SUBMENU_NAMESPACE}
-                    items={submenuTree}
-                    generatedAt={submenuGeneratedAt}
-                    ariaLabel="Localization sections"
-                    activeUrl={`/system/localization?tab=${activeTab}`}
-                    onItemSelect={handleTabSelect}
-                />
-
-                {activeTab === 'languages' && <LanguagesTab />}
-                {activeTab === 'routes' && <RoutesTab onShowKeys={handleShowKeys} />}
-                {activeTab === 'translations' && <TranslationsTab initialRoute={routeFilter} />}
-                {activeTab === 'switches' && <SwitchesTab />}
-                {/* Interface text and content (pages and other content types)
-                    keep separate AI translation settings; both live here so an
-                    operator finds every translation setting in one place. */}
-                {activeTab === 'settings' && (
-                    <>
-                        <SettingsTab />
-                        <ContentTranslationSettings />
-                    </>
-                )}
-                {activeTab === 'database' && (
-                    <CollectionBrowser prefix={COLLECTION_PREFIX} title="Localization Collections" />
-                )}
-                {activeTab === 'logs' && <SystemLogsMonitor service={LOG_SERVICE} />}
-            </Stack>
-        </Page>
+            {activeTab === 'languages' && <LanguagesTab />}
+            {activeTab === 'routes' && <RoutesTab onShowKeys={handleShowKeys} />}
+            {activeTab === 'translations' && <TranslationsTab initialRoute={routeFilter} />}
+            {activeTab === 'switches' && <SwitchesTab />}
+            {/* Interface text and content (pages and other content types)
+                keep separate AI translation settings; both live here so an
+                operator finds every translation setting in one place. */}
+            {activeTab === 'settings' && (
+                <>
+                    <SettingsTab />
+                    <ContentTranslationSettings />
+                </>
+            )}
+            {activeTab === 'database' && (
+                <CollectionBrowser prefix={COLLECTION_PREFIX} title="Localization Collections" />
+            )}
+            {activeTab === 'logs' && <SystemLogsMonitor service={LOG_SERVICE} />}
+        </AdminPage>
     );
 }

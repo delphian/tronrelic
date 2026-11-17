@@ -12,6 +12,8 @@ import type { IPanelProps } from '../ui/IPanelProps.js';
 import type { ILinkProps } from '../ui/ILinkProps.js';
 import type { IFigureListProps } from '../ui/IFigureListProps.js';
 import type { IPriceRailProps } from '../ui/IPriceRailProps.js';
+import type { IAdminPageProps } from '../ui/IAdminPageProps.js';
+import type { IPaginationProps } from '../ui/IPaginationProps.js';
 import type { ITranslator } from '../localization/ITranslator.js';
 
 /**
@@ -863,6 +865,20 @@ export interface IUIComponents {
      * prefetching is off unless `prefetch` is set. See {@link ILinkProps}.
      */
     Link: ComponentType<ILinkProps>;
+
+    /**
+     * Page control for a list fetched one page at a time: previous and next
+     * buttons and a window of page numbers. Renders nothing when everything
+     * fits on one page. Use it instead of drawing page buttons by hand, so
+     * every pager on the site looks and behaves the same, including the bare
+     * frame it takes on a compact admin page. See {@link IPaginationProps}.
+     *
+     * @example
+     * ```tsx
+     * <ui.Pagination total={total} pageSize={25} currentPage={page} onPageChange={setPage} />
+     * ```
+     */
+    Pagination: ComponentType<IPaginationProps>;
 }
 
 /**
@@ -1059,6 +1075,24 @@ export interface ILayoutComponents {
         children?: React.ReactNode;
         className?: string;
     }>;
+
+    /**
+     * The shell of an admin page: a `Page` holding the header and then the
+     * children, one stack gap apart. Use it for every plugin admin page
+     * instead of placing `PageHeader`, `SubMenu`, and the panel directly in
+     * `Page`, where the wider page gap separates the header from its own
+     * tabs, so the page matches every core admin page. See
+     * {@link IAdminPageProps}.
+     *
+     * @example
+     * ```tsx
+     * <layout.AdminPage title="Dust Tracker" subtitle="Thresholds and delivery">
+     *   <layout.SubMenu namespace="dust-tracker" items={tabs} activeUrl={activeUrl} onSelect={selectTab} />
+     *   {tab === 'settings' && <SettingsPanel />}
+     * </layout.AdminPage>
+     * ```
+     */
+    AdminPage: ComponentType<IAdminPageProps>;
 
     /**
      * Stack component for vertical or horizontal spacing between children.
@@ -1868,10 +1902,10 @@ export interface IFrontendPluginContext {
     /** Plugin identifier used for namespacing events and API routes */
     pluginId: string;
 
-    /** UI component library (Card, Badge, Button, CopyButton, IconButton, Switch, SegmentedControl, Input, Select, Textarea, Field, Skeleton, StatTile, StatGrid, ClientTime, Tooltip, TronAddress, TronContractAddress, TronTransactionId, AddressSelector, IconPickerModal, ConfirmDialog, Table family) */
+    /** UI component library (Card, Badge, Button, CopyButton, IconButton, Switch, SegmentedControl, Input, Select, Textarea, Field, Skeleton, StatTile, StatGrid, ClientTime, Tooltip, TronAddress, TronContractAddress, TronTransactionId, AddressSelector, IconPickerModal, ConfirmDialog, Table family, Pagination) */
     ui: IUIComponents;
 
-    /** Layout component library (Page, PageHeader, Stack, Grid, Section, SubMenu) */
+    /** Layout component library (Page, PageHeader, AdminPage, Stack, Grid, Section, SubMenu) */
     layout: ILayoutComponents;
 
     /** Chart component library (LineChart, BarChart) */

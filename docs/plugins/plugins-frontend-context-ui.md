@@ -13,8 +13,8 @@ Layout components carry typed props — `<layout.Stack gap="md">` fails compilat
 ```typescript
 interface IFrontendPluginContext {
     pluginId: string;              // Used internally for namespacing events and API routes
-    layout: ILayoutComponents;     // Page, PageHeader, Stack, Grid, Section, SubMenu
-    ui: IUIComponents;             // Card, Panel, FigureList, Badge, Button, CopyButton, IconButton, Switch, Input, Field, Skeleton, ClientTime, Tooltip, TronAddress, TronContractAddress, TronTransactionId, IconPickerModal, Table family, Link
+    layout: ILayoutComponents;     // Page, PageHeader, AdminPage, Stack, Grid, Section, SubMenu
+    ui: IUIComponents;             // Card, Panel, FigureList, Badge, Button, CopyButton, IconButton, Switch, Input, Field, Skeleton, ClientTime, Tooltip, TronAddress, TronContractAddress, TronTransactionId, IconPickerModal, Table family, Link, Pagination
     charts: IChartComponents;      // LineChart, BarChart, PriceRail
     system: ISystemComponents;     // SchedulerMonitor, CollectionBrowser, ClickHouseTableBrowser, SystemLogsMonitor, AiToolSchemaView (admin)
     api: IApiClient;               // get/post/put/patch/delete
@@ -34,10 +34,22 @@ Page structure. Use these for all structural markup.
 |-----------|-------|---------|
 | `Page` | `children`, `className?` | Page-level grid with responsive gap |
 | `PageHeader` | `title: ReactNode`, `subtitle?: ReactNode`, `children?`, `className?` | Page title section (title accepts ReactNode for skeletons) |
+| `AdminPage` | `title: ReactNode`, `subtitle?: ReactNode`, `actions?`, `children` | The shell of an admin page: the header, then the children one stack gap apart — see below |
 | `Stack` | `gap?: 'sm'\|'md'\|'lg'`, `direction?: 'vertical'\|'horizontal'`, `children`, `className?` | Flex container with gap |
 | `Grid` | `gap?: 'sm'\|'md'\|'lg'`, `columns?: 2\|3\|'responsive'`, `children`, `className?` | Grid layout |
 | `Section` | `gap?: 'sm'\|'md'\|'lg'`, `children`, `className?` | Spaced content section |
 | `SubMenu` | `namespace`, `items: ISubMenuItem[]`, `activeUrl?`, `onSelect?: (item) => void`, `ariaLabel?` | In-page tab row backed by the menu service — see below |
+
+### AdminPage — The Admin Page Shell
+
+Render every plugin admin page in `layout.AdminPage` rather than placing `PageHeader`, `SubMenu`, and the panel directly in `layout.Page`. `Page` spaces its children by the page gap, which is meant for separating page sections, so a header placed there sat 36px from its own tabs while core admin pages leave 12px. `AdminPage` renders the header and then its children one stack gap apart, the way every core admin page does. `actions` places small controls or a status badge beside the title. Put anything the page shows above its tabs, such as a summary, first among the children. Its props are declared once as `IAdminPageProps` in the types package.
+
+```tsx
+<layout.AdminPage title="My Plugin" subtitle="What the page manages">
+    <layout.SubMenu namespace="my-plugin" items={submenuTree} activeUrl={activeUrl} onSelect={selectTab} />
+    {tab === 'settings' && <SettingsPanel />}
+</layout.AdminPage>
+```
 
 ### SubMenu — In-Page Tab Navigation
 
@@ -45,7 +57,7 @@ This is the recommended way to build a plugin's internal navigation: the tab row
 
 The flow has three steps. **Register** each tab as a leaf node in the plugin's *own* menu namespace (not `main`) during a backend lifecycle hook, memory-only, setting `requiresAdmin` yourself — the namespace sits outside the System container, so nothing forces the gate for you. **Fetch** that namespace tree SSR-first in the page's `serverDataFetcher` so it arrives as a prop (no loading flash). **Render** the row with `SubMenu`, providing `onSelect` to drive `activeTab` and `activeUrl` to highlight the current tab. Omitting `onSelect` makes the tabs ordinary navigation links instead.
 
-Place the row where it is stretched across the page, directly in `layout.Page`, a `Stack`, or a `Section`. The row is a size container that takes its width from its host, so a wrapper that sizes to its content leaves it zero wide. On a narrow screen the tabs drop their icons, and when they still do not fit the row folds into "More" while keeping the tab named by `activeUrl` visible. See [Submenu Pattern](../../src/backend/modules/menu/README.md#submenu-pattern-namespaced-tab-rows).
+Place the row where it is stretched across the page: in `layout.AdminPage` on an admin page, or directly in `layout.Page`, a `Stack`, or a `Section`. The row is a size container that takes its width from its host, so a wrapper that sizes to its content leaves it zero wide. On a narrow screen the tabs drop their icons, and when they still do not fit the row folds into "More" while keeping the tab named by `activeUrl` visible. See [Submenu Pattern](../../src/backend/modules/menu/README.md#submenu-pattern-namespaced-tab-rows).
 
 ```tsx
 // Backend (plugin init): register tabs in the plugin's own namespace.
@@ -128,6 +140,14 @@ Six related components matching the `/system/*` admin tables. Compose them to in
 | `Td` | `muted?`, `numeric?`, `colSpan?`, `rowSpan?`, `className?`, `children?` |
 
 `Tr.hasError` applies the error surface tone; `Tr.isExpanded` renders the muted "details drawer" background. A `Tr` with `onClick` also takes keyboard focus and runs the click on Enter or Space, and on such a row `isExpanded` (`true` or `false`) becomes `aria-expanded`; leave `isExpanded` unset on a clickable row that opens something other than its own details. `Th.width="shrink"` sizes a column to its widest value on one line (good for dates, status badges, and action buttons), and the column's cells do not wrap, so leave it off a column whose text should wrap; `"expand"` forces it to fill remaining space. `Td.muted` dims secondary metadata. `Table.stickyHeader` pins the header row inside a scroll box bounded to `--table-sticky-max-height` (70vh default) — use it on any table long enough to scroll its own column labels out of view. While a stacked table's rows are stacked, the box lets go and the entries scroll with the page. Set `numeric` on a `Th` **and** every `Td` beneath it for quantities read down a column: it right-aligns and renders tabular figures so values line up on their least significant digit. Leave it off for text, addresses, and dates.
+
+### Pagination (`ui.Pagination`)
+
+| Component | Props |
+|-----------|-------|
+| `Pagination` | `total`, `pageSize`, `currentPage` (from 1), `onPageChange: (page) => void` (all required), `siblingCount?` (default 1), `className?` |
+
+The core pager: previous and next buttons and a window of page numbers, with long runs collapsed into an ellipsis. Use it for any list fetched one page at a time instead of drawing page buttons by hand. It renders nothing when everything fits on one page, so render it unconditionally, and it calls `onPageChange` only with a valid page different from the current one. On a compact admin page it drops its frame so it sits level with the other controls in a table footer. Its props are declared once as `IPaginationProps` in the types package.
 
 ### Links (`ui.Link`)
 

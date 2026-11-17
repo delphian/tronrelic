@@ -1,29 +1,9 @@
 'use client';
 
 import { useMemo } from 'react';
+import type { IPaginationProps } from '@/types';
 import { cn } from '../../../lib/cn';
 import styles from './Pagination.module.scss';
-
-/**
- * Pagination props interface defining configuration for page navigation controls.
- *
- * Provides control over total items, page size, current page position, and
- * the number of sibling page buttons to display around the current page.
- */
-export interface PaginationProps {
-    /** Total number of items across all pages */
-    total: number;
-    /** Number of items per page */
-    pageSize: number;
-    /** Currently active page number (1-indexed) */
-    currentPage: number;
-    /** Number of page buttons to show on each side of current page */
-    siblingCount?: number;
-    /** Callback invoked when page changes */
-    onPageChange: (page: number) => void;
-    /** Optional className for custom styling */
-    className?: string;
-}
 
 /** Consecutive numbers from start to end (inclusive), for pagination page sequences. */
 function range(start: number, end: number) {
@@ -52,6 +32,9 @@ const DOTS = '…';
  * is made by the `--pagination-*` tokens in `semantic-tokens.scss`, so the
  * component takes no prop for it.
  *
+ * Plugins receive it as `context.ui.Pagination`. Its props are declared once
+ * as `IPaginationProps` in the types package, which this component imports.
+ *
  * @example
  * ```tsx
  * <Pagination
@@ -66,7 +49,7 @@ const DOTS = '…';
  * @param props - Pagination configuration and callbacks
  * @returns Pagination controls or null if unnecessary
  */
-export function Pagination({ total, pageSize, currentPage, siblingCount = 1, onPageChange, className }: PaginationProps) {
+export function Pagination({ total, pageSize, currentPage, siblingCount = 1, onPageChange, className }: IPaginationProps) {
     /**
      * Calculates the optimal pagination range to display.
      *

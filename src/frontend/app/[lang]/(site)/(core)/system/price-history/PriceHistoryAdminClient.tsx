@@ -24,7 +24,7 @@ import { useEffect, useState, useCallback, type ReactNode } from 'react';
 import { RefreshCw, ArrowUpToLine, Save, RotateCcw, ArrowUp, ArrowDown } from 'lucide-react';
 import type { MenuNodeSerialized } from '@/shared';
 import type { IPriceHistoryStats, IPriceHistorySettings, IPriceCoverageDiagnostics, IPriceSourceInfo, IPriceAssetCoverage } from '@/types';
-import { Page, PageHeader, Stack } from '../../../../../../components/layout';
+import { AdminPage, Stack } from '../../../../../../components/layout';
 import { Card } from '../../../../../../components/ui/Card';
 import { Button } from '../../../../../../components/ui/Button';
 import { IconButton } from '../../../../../../components/ui/IconButton';
@@ -455,9 +455,7 @@ export function PriceHistoryAdminClient({ submenuTree, submenuGeneratedAt, initi
     }, [draft, push, loadStats]);
 
     return (
-        <Page>
-            <PageHeader title="Price History" subtitle="Local daily USD price series for portfolio valuation" />
-
+        <AdminPage title="Price History" subtitle="Local daily USD price series for portfolio valuation">
             <MenuNavClient
                 namespace={SUBMENU_NAMESPACE}
                 items={submenuTree}
@@ -690,6 +688,6 @@ export function PriceHistoryAdminClient({ submenuTree, submenuGeneratedAt, initi
                     </Stack>
                 </Stack>
             )}
-        </Page>
+        </AdminPage>
     );
 }

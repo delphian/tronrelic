@@ -59,6 +59,8 @@ export type { IFigureListProps } from './ui/IFigureListProps.js';
 export type { IPriceRailTick } from './ui/IPriceRailTick.js';
 export type { IPriceRailMarker } from './ui/IPriceRailMarker.js';
 export type { IPriceRailProps } from './ui/IPriceRailProps.js';
+export type { IAdminPageProps } from './ui/IAdminPageProps.js';
+export type { IPaginationProps } from './ui/IPaginationProps.js';
 export type { IDatabaseService } from './database/IDatabaseService.js';
 export type { IMigration, IMigrationContext, MigrationTarget } from './database/IMigration.js';
 export type {

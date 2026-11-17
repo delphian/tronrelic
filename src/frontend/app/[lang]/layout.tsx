@@ -300,8 +300,8 @@ async function fetchSSRSession(): Promise<ISSRSession | null> {
  * resolved during SSR.
  *
  * This is the default for the whole site. A page can render at a density of
- * its own: `<RouteDensity>` below wraps the page content and stamps `compact`
- * on every admin page, leaving the header and footer at this value.
+ * its own: `<RouteDensity>` below renders `<main>` and stamps `compact` on it
+ * for every admin page, leaving the header and footer at this value.
  *
  * Valid steps: 'compact' (0.75), 'cozy' (0.875), 'default' (1), 'roomy' (1.125).
  */
@@ -433,15 +433,14 @@ export default async function RootLayout({ children, params }: { children: React
             <WidgetZone name="site-top" widgets={widgetBundle.widgets} layout={widgetBundle.zones['site-top']} route={pathname} params={{}} />
           </header>
           <WidgetZone name="ticker-after" widgets={widgetBundle.widgets} layout={widgetBundle.zones['ticker-after']} route={pathname} params={{}} />
-          <main>
-            {/* Stamps the density of the current path on the page content,
-                so every admin page under /system renders compact. It reads
-                the path in the browser as well as on the server, because
-                this layout does not render again on an in-page navigation. */}
-            <RouteDensity>
-              {children}
-            </RouteDensity>
-          </main>
+          {/* Renders <main> with the density of the current path, so every
+              admin page under /system renders compact, its gutter included.
+              It reads the path in the browser as well as on the server,
+              because this layout does not render again on an in-page
+              navigation. */}
+          <RouteDensity>
+            {children}
+          </RouteDensity>
           <footer>
             <WidgetZone name="footer" widgets={widgetBundle.widgets} layout={widgetBundle.zones['footer']} route={pathname} params={{}} />
             {/* Rendered here rather than as a widget, so withdrawing consent

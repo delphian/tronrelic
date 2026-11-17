@@ -18,7 +18,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { Page, PageHeader, Stack } from '../../../../../../components/layout';
+import { AdminPage, Stack } from '../../../../../../components/layout';
 import { Badge } from '../../../../../../components/ui/Badge';
 import { ClientTime } from '../../../../../../components/ui/ClientTime';
 import { ChevronDown, ChevronRight } from 'lucide-react';
@@ -137,12 +137,11 @@ export default function HooksAdminPage() {
     }
 
     return (
-        <Page>
+        <AdminPage
+            title="Hook System"
+            subtitle="Bird's-eye view of the request and response pipeline."
+        >
             <div className={styles.container}>
-                <PageHeader
-                    title="Hook System"
-                    subtitle="Bird's-eye view of the request and response pipeline."
-                />
                 <Stack gap="lg">
                     <p className={styles.intro}>
                         Each track is a phase of the lifecycle; nodes are the seams core opens for
@@ -254,6 +253,6 @@ export default function HooksAdminPage() {
                     )}
                 </Stack>
             </div>
-        </Page>
+        </AdminPage>
     );
 }

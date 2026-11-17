@@ -11,15 +11,15 @@
  * changes local state instead of navigating, and the address bar is kept as a
  * real deep link.
  *
- * The shell owns the page's single `<Page>` and `<h1>`, so every panel renders
- * sections only. File browsing and upload-policy settings live at
+ * The shell owns the page's single `<AdminPage>` and `<h1>`, so every panel
+ * renders sections only. File browsing and upload-policy settings live at
  * /system/files. The module registers no scheduler jobs, so there is no
  * Schedules tab.
  */
 
 import { useCallback, useState } from 'react';
 import type { MenuNodeSerialized } from '@/shared';
-import { Page, PageHeader, Stack } from '../../../../../../components/layout';
+import { AdminPage, Stack } from '../../../../../../components/layout';
 import { MenuNavClient } from '../../../../../../components/layout/MenuNav/MenuNavClient';
 import { CollectionBrowser } from '../../../../../../modules/database';
 import { SystemLogsMonitor } from '../../../../../../modules/logs';
@@ -102,48 +102,42 @@ export function PagesAdminClient({ submenuTree, submenuGeneratedAt, initialTab }
     }, []);
 
     return (
-        <Page>
-            {/* One Stack holds the header, the tab row, and the active panel so
-                they sit one stack gap apart instead of the page's wider gap. */}
-            <Stack gap="md">
-                <PageHeader
-                    title="Pages"
-                    subtitle="Markdown pages, their translations, and the routes custom pages may not claim."
-                />
+        <AdminPage
+            title="Pages"
+            subtitle="Markdown pages, their translations, and the routes custom pages may not claim."
+        >
+            <MenuNavClient
+                namespace={SUBMENU_NAMESPACE}
+                items={submenuTree}
+                generatedAt={submenuGeneratedAt}
+                ariaLabel="Pages sections"
+                activeUrl={`/system/pages?tab=${activeTab}`}
+                onItemSelect={handleTabSelect}
+            />
 
-                <MenuNavClient
-                    namespace={SUBMENU_NAMESPACE}
-                    items={submenuTree}
-                    generatedAt={submenuGeneratedAt}
-                    ariaLabel="Pages sections"
-                    activeUrl={`/system/pages?tab=${activeTab}`}
-                    onItemSelect={handleTabSelect}
-                />
+            {activeTab === 'pages' && <PagesTab />}
+            {activeTab === 'settings' && <SettingsTab />}
 
-                {activeTab === 'pages' && <PagesTab />}
-                {activeTab === 'settings' && <SettingsTab />}
-
-                {/* Read-only. Pages are managed content: an edit made here
-                    would skip the core content service, its review hold, and
-                    its audit. Pages are changed on the Pages tab. */}
-                {activeTab === 'database' && (
-                    <Stack gap="md">
-                        <CollectionBrowser
-                            prefix={LEGACY_COLLECTION_PREFIX}
-                            title="Page Collections"
-                            allowEdit={false}
-                            allowDelete={false}
-                        />
-                        <CollectionBrowser
-                            prefix={MODULE_COLLECTION_PREFIX}
-                            title="Translation Collections"
-                            allowEdit={false}
-                            allowDelete={false}
-                        />
-                    </Stack>
-                )}
-                {activeTab === 'logs' && <SystemLogsMonitor service={LOG_SERVICE} title="Pages Logs" />}
-            </Stack>
-        </Page>
+            {/* Read-only. Pages are managed content: an edit made here
+                would skip the core content service, its review hold, and
+                its audit. Pages are changed on the Pages tab. */}
+            {activeTab === 'database' && (
+                <Stack gap="md">
+                    <CollectionBrowser
+                        prefix={LEGACY_COLLECTION_PREFIX}
+                        title="Page Collections"
+                        allowEdit={false}
+                        allowDelete={false}
+                    />
+                    <CollectionBrowser
+                        prefix={MODULE_COLLECTION_PREFIX}
+                        title="Translation Collections"
+                        allowEdit={false}
+                        allowDelete={false}
+                    />
+                </Stack>
+            )}
+            {activeTab === 'logs' && <SystemLogsMonitor service={LOG_SERVICE} title="Pages Logs" />}
+        </AdminPage>
     );
 }

@@ -18,7 +18,7 @@ Hardcoded values make theming impossible, because there is no single place to ch
 
 **Container queries, not viewport media queries.** A component sizes itself against the container it was placed in, so it works anywhere. See [ui-responsive-design.md](./ui-responsive-design.md).
 
-**Admin pages render compact.** Every page under `/system` is wrapped in `data-density="compact"`, which tightens spacing and makes a button or form control with no `size` render at a smaller default size. Leave `size` off controls on an admin page so they follow it. See [ui-design-token-layers.md](./ui-design-token-layers.md#density).
+**Admin pages render compact.** Every page under `/system` renders in a `<main data-density="compact">`, which tightens spacing, the page gutter included, makes a button or form control with no `size` render at a smaller default size, and removes the browser's paragraph margins. Leave `size` off controls on an admin page so they follow it, and render the page in `<AdminPage>`, which places the header, tab row, and panel one stack gap apart. See [ui-design-token-layers.md](./ui-design-token-layers.md#density).
 
 **Render on the server first.** The server produces the page with real data, then the browser attaches to that markup and subscribes for live updates. See [react.md](../react/react.md#ssr--live-updates-pattern) and [ui-ssr-hydration.md](./ui-ssr-hydration.md).
 
@@ -30,6 +30,7 @@ Hardcoded values make theming impossible, because there is no single place to ch
 |-----------|-------|---------|
 | `<Page>` | — | Page-level grid whose gap adapts to the viewport |
 | `<PageHeader>` | `title`, `subtitle` | The page title section |
+| `<AdminPage>` | `title`, `subtitle`, `actions` | The shell of an admin page: the header, then the tab row and panel one stack gap apart |
 | `<Stack>` | `gap="sm\|md\|lg"`, `direction` | Flex container with a consistent gap |
 | `<Grid>` | `gap="sm\|md\|lg"`, `columns="2\|3\|responsive"` | Grid layout |
 | `<Section>` | `gap="sm\|md\|lg"` | A content section with standard spacing |
