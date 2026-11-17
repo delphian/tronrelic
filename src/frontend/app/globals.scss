@@ -314,8 +314,17 @@ button:focus-visible {
   box-shadow: var(--focus-shadow);
 }
 
+/* Never wider than its host: when the segments do not fit they wrap onto a
+   second line rather than widening the page. `width: fit-content` keeps the
+   track hugging its segments when a parent would stretch it, which otherwise
+   draws an empty bordered bar across a card. A host that wants one scrolling
+   row instead sets `flex-wrap: nowrap` and `max-width: none` on the control
+   and scrolls a wrapper around it. */
 .segmented-control {
   display: inline-flex;
+  flex-wrap: wrap;
+  width: fit-content;
+  max-width: 100%;
   background: var(--segmented-control-background);
   border: var(--segmented-control-border);
   border-radius: var(--segmented-control-border-radius);

@@ -15,6 +15,14 @@
     overflow-x: auto;
 }
 
+/* The segmented row inside the switcher. The global control wraps its
+   segments to fit its host; here they stay on one line and the switcher
+   above scrolls instead. */
+.switcher_row {
+    flex-wrap: nowrap;
+    max-width: none;
+}
+
 /* One wallet chip's inner content: optional primary star, truncated address,
    and a sync dot. */
 .chip {

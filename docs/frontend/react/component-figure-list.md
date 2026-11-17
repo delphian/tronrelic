@@ -59,7 +59,7 @@ Core and module code imports it from the component folder: `import { FigureList 
 
 ## Gotchas
 
-**Keep the value short.** The value column does not wrap, so the label column can shrink and wrap instead. A long value such as a sentence pushes the label into a narrow strip. Put the explanation in `note` and keep `value` to the figure.
+**Keep the value short.** The value column takes the width of its value first, and the label column shrinks and wraps to make room. The label never narrows below its longest word, so a value wider than the rest of the row, such as several badges, wraps onto more lines instead of covering the label. A long value still pushes the label into a narrow strip, so put the explanation in `note` and keep `value` to the figure.
 
 **Tone is a verdict, not decoration.** Colour only the figures a reader should notice. Colouring every row spends the signal, the same as it does on `StatTile`.
 

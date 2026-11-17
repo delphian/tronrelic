@@ -177,6 +177,7 @@ export function SettingsTab() {
                 ) : (
                     <Stack gap="md">
                         <Field
+                            inline
                             label="Consent handling"
                             htmlFor="consent-enabled"
                             hint={enabled

@@ -30,7 +30,7 @@ import { ClientTime } from '../../components/ui/ClientTime';
 
 `ClientTime` renders a placeholder (`—`) during SSR, then shows the formatted time after mounting on the client. Server and client HTML match perfectly.
 
-**Available formats:** `"time"` (14:30:15, default), `"datetime"` (1/15/2025, 14:30:15), `"date"` (1/15/2025), `"relative"` ("5m ago", "2h ago"), `"short"` (Jan 15, 2025, 14:30).
+**Available formats:** `"time"` (14:30:15, default), `"datetime"` (1/15/2025, 14:30:15), `"date"` (Jan 15, 2025), `"relative"` ("5m ago", "2h ago", then a date like `"date"` after a week), `"short"` (Jan 15, 2025, 14:30). `"date"`, `"short"`, and `"relative"` write the date the same way, so they read consistently on one page.
 
 TronRelic always shows clock times in 24-hour form, never AM/PM. `ClientTime` forces this with `hourCycle: 'h23'` whatever the visitor's locale, so use it rather than calling `toLocaleString()` yourself. Where a component has to format a time directly, such as a chart axis, pass `hourCycle: 'h23'` too. Prefer it to `hour12: false`, which shows midnight as 24:00 in some locales.
 

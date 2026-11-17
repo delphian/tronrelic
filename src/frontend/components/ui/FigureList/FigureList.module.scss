@@ -23,12 +23,15 @@
 
 /*
  * Label and value share the first line; the note spans both columns under
- * them. The value column is auto-sized so a long label wraps instead of
- * pushing the number out of its right-aligned column.
+ * them. The value column is auto-sized, so it takes the width of its value
+ * first and a long label wraps instead of pushing the number out of its
+ * right-aligned column. The label column never narrows below its longest
+ * word: a value too wide for the row, such as a run of badges, wraps onto
+ * more lines instead of covering the label.
  */
 .row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(min-content, 1fr) auto;
     column-gap: var(--gap-sm);
     row-gap: var(--gap-2xs);
     align-items: baseline;
@@ -43,6 +46,9 @@
     line-height: var(--line-height-tight);
 }
 
+/* The value stays on one line while the row has room for it, and wraps only
+   when it does not; `anywhere` lets an unbroken value such as an address
+   break too, rather than running past the row's edge. */
 .value {
     margin: 0;
     color: var(--color-text);
@@ -50,7 +56,7 @@
     font-weight: var(--font-weight-semibold);
     line-height: var(--line-height-tight);
     text-align: right;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
     font-variant-numeric: tabular-nums;
 }
 
