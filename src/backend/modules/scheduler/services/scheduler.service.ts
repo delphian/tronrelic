@@ -9,7 +9,7 @@
  */
 
 import type { ICronHandle, ICronTrigger, IDatabaseService, ISchedulerJobOptions, ISystemLogService } from '@/types';
-import { logger } from '../../../lib/logger.js';
+import { logger as rootLogger } from '../../../lib/logger.js';
 import { SchedulerConfigModel, type SchedulerConfigDoc } from '../database/scheduler-config.model.js';
 import { SchedulerExecutionModel, type SchedulerExecutionDoc } from '../database/scheduler-execution.model.js';
 
@@ -31,8 +31,8 @@ export type CronJobHandler = () => Promise<void> | void;
  * @property logger - Logger for this job's lifecycle and run outcomes. The
  *                    owner's logger when one was passed to `register()`, so a
  *                    failure is filed under the owning module or plugin rather
- *                    than the core `tronrelic` service; the scheduler's own
- *                    logger otherwise.
+ *                    than the scheduler; the scheduler's own logger otherwise,
+ *                    which files it under `tronrelic:scheduler`.
  */
 interface RegisteredJob {
     name: string;
@@ -65,17 +65,18 @@ type SlotKind = 'scheduled' | 'missed';
  *
  * @example
  * // In SchedulerModule.init()
- * SchedulerService.setDependencies(database, new NodeCronTrigger());
+ * SchedulerService.setDependencies(database, new NodeCronTrigger(), moduleLogger);
  *
  * // In SchedulerModule.run()
  * const scheduler = SchedulerService.getInstance();
- * scheduler.register('my-job', '0 * * * *', async () => { ... });
+ * scheduler.register('my-job', '0 * * * *', async () => { ... }, { logger: ownerLogger });
  * await scheduler.start();
  */
 export class SchedulerService {
     private static instance: SchedulerService | null = null;
     private static database: IDatabaseService | null = null;
     private static cronTrigger: ICronTrigger | null = null;
+    private static serviceLogger: ISystemLogService = rootLogger;
 
     private readonly jobs = new Map<string, RegisteredJob>();
     private readonly runningJobs = new Set<string>();
@@ -93,10 +94,23 @@ export class SchedulerService {
      *                      callbacks. Injected so the scheduler does not depend
      *                      on a particular cron library, and so tests can
      *                      deliver exact scheduled times without a real clock.
+     * @param serviceLogger - The scheduler module's own logger. The service
+     *                        writes its own entries through it, and the
+     *                        lifecycle of any job registered without an owner's
+     *                        logger, so they are filed under
+     *                        `tronrelic:scheduler` and reach the Logs tab of
+     *                        `/system/scheduler` rather than the unscoped
+     *                        `tronrelic` service. Defaults to the root logger for
+     *                        callers that have no module logger, such as tests.
      */
-    public static setDependencies(database: IDatabaseService, cronTrigger: ICronTrigger): void {
+    public static setDependencies(
+        database: IDatabaseService,
+        cronTrigger: ICronTrigger,
+        serviceLogger: ISystemLogService = rootLogger
+    ): void {
         SchedulerService.database = database;
         SchedulerService.cronTrigger = cronTrigger;
+        SchedulerService.serviceLogger = serviceLogger;
     }
 
     /**
@@ -110,7 +124,11 @@ export class SchedulerService {
             if (!SchedulerService.database || !SchedulerService.cronTrigger) {
                 throw new Error('SchedulerService.setDependencies() must be called before getInstance()');
             }
-            SchedulerService.instance = new SchedulerService(SchedulerService.database, SchedulerService.cronTrigger);
+            SchedulerService.instance = new SchedulerService(
+                SchedulerService.database,
+                SchedulerService.cronTrigger,
+                SchedulerService.serviceLogger
+            );
         }
         return SchedulerService.instance;
     }
@@ -127,6 +145,7 @@ export class SchedulerService {
         SchedulerService.instance = null;
         SchedulerService.database = null;
         SchedulerService.cronTrigger = null;
+        SchedulerService.serviceLogger = rootLogger;
     }
 
     /**
@@ -136,10 +155,13 @@ export class SchedulerService {
      *
      * @param database - Database service for MongoDB operations
      * @param cronTrigger - Source of scheduled and missed times for each job
+     * @param logger - The scheduler's own logger, for its own entries and for
+     *                 jobs registered without an owner's logger
      */
     private constructor(
         private readonly database: IDatabaseService,
-        private readonly cronTrigger: ICronTrigger
+        private readonly cronTrigger: ICronTrigger,
+        private readonly logger: ISystemLogService
     ) {
         this.database.registerModel(this.CONFIG_COLLECTION, SchedulerConfigModel);
         this.database.registerModel(this.EXECUTION_COLLECTION, SchedulerExecutionModel);
@@ -156,7 +178,8 @@ export class SchedulerService {
      * @param handler - Async function to execute on schedule
      * @param options - Optional per-job settings. `logger` is the owner's logger,
      *                  so this job's start, skip, success, and failure entries
-     *                  land on the owner's Logs tab instead of under `tronrelic`.
+     *                  land on the owner's Logs tab instead of under the
+     *                  scheduler's own `tronrelic:scheduler`.
      * @throws Error if job name is already registered
      */
     register(name: string, defaultSchedule: string, handler: CronJobHandler, options?: ISchedulerJobOptions): void {
@@ -171,7 +194,7 @@ export class SchedulerService {
             handler,
             task: undefined,
             lastSlotMs: 0,
-            logger: options?.logger ?? logger
+            logger: options?.logger ?? this.logger
         });
 
         if (this.started) {
@@ -267,7 +290,7 @@ export class SchedulerService {
             const result = await configModel.deleteMany({ jobName: { $in: names } });
             deleted = result.deletedCount ?? 0;
 
-            logger.info({ jobNames: names, deleted }, 'Deleted scheduler job configuration');
+            this.logger.info({ jobNames: names, deleted }, 'Deleted scheduler job configuration');
         }
 
         return deleted;
@@ -297,7 +320,7 @@ export class SchedulerService {
     private async scheduleJobFromDatabase(name: string): Promise<void> {
         const job = this.jobs.get(name);
         if (!job) {
-            logger.error({ jobName: name }, 'Attempted to schedule unknown job');
+            this.logger.error({ jobName: name }, 'Attempted to schedule unknown job');
             return;
         }
 
@@ -763,6 +786,6 @@ export class SchedulerService {
                 job.task.stop();
             }
         });
-        logger.info('All scheduler jobs stopped');
+        this.logger.info('All scheduler jobs stopped');
     }
 }

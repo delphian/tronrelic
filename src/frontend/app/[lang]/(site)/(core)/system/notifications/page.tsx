@@ -1,62 +1,36 @@
-'use client';
-
 /**
- * @fileoverview /system/notifications — the notification administration page.
+ * @fileoverview /system/notifications server entry.
  *
- * Four tabs: My Preferences (the admin's own opt-outs), Categories and Channels
- * (the global kill switches), and History (the audit feed). Admin-gated by the
- * /system layout; like the other system pages it is a client component that
- * fetches over the cookie-authenticated admin API.
+ * Fetches the page's in-page tab row from the menu service and hands it to the
+ * client shell. The tab row is a namespaced menu (the menu module's Submenu
+ * Pattern), so it inherits per-user gating, ordering, and live `menu:update`
+ * refresh. The visitor's cookies are forwarded so the nodes' `requiresAdmin`
+ * gate resolves for the admin. Admin-gated by the /system layout.
  */
 
-import { useState } from 'react';
-import { Page, PageHeader } from '../../../../../../components/layout';
-import { PreferencesPanel, CategoriesTab, ChannelsTab, HistoryTab } from '../../../../../../modules/notifications';
-import styles from './page.module.scss';
+import { cookies } from 'next/headers';
+import { fetchMenuNamespace } from '../../../../../../modules/menu/server';
+import { NotificationsAdminClient } from './NotificationsAdminClient';
 
-/** The administration tabs. */
-type TabId = 'preferences' | 'categories' | 'channels' | 'history';
-
-const TABS: ReadonlyArray<{ id: TabId; label: string }> = [
-    { id: 'preferences', label: 'My Preferences' },
-    { id: 'categories', label: 'Categories' },
-    { id: 'channels', label: 'Channels' },
-    { id: 'history', label: 'History' }
-];
+/** Namespace holding the page's tab nodes; registered by NotificationsModule. */
+const SUBMENU_NAMESPACE = 'notifications';
 
 /**
- * Notification administration page.
+ * Notifications admin page (server entry).
  *
- * @returns The page.
+ * @param props - Next.js route props.
+ * @param props.searchParams - The `?tab=` deep link, read on the server so a
+ *   refreshed or shared link opens on the selected tab.
+ * @returns The client shell seeded with the tab row.
  */
-export default function NotificationsAdminPage() {
-    const [activeTab, setActiveTab] = useState<TabId>('preferences');
-
-    return (
-        <Page>
-            <PageHeader title="Notifications" subtitle="Silence your own notifications, govern categories and channels, and audit every blast." />
-            <div className={styles.container}>
-                <div className={styles.tabs} role="tablist" aria-label="Notification administration sections">
-                    {TABS.map((tab) => (
-                        <button
-                            key={tab.id}
-                            role="tab"
-                            aria-selected={activeTab === tab.id}
-                            className={activeTab === tab.id ? styles.tab__active : styles.tab}
-                            onClick={() => setActiveTab(tab.id)}
-                        >
-                            {tab.label}
-                        </button>
-                    ))}
-                </div>
-
-                <div className={styles.content}>
-                    {activeTab === 'preferences' && <PreferencesPanel />}
-                    {activeTab === 'categories' && <CategoriesTab />}
-                    {activeTab === 'channels' && <ChannelsTab />}
-                    {activeTab === 'history' && <HistoryTab />}
-                </div>
-            </div>
-        </Page>
-    );
+export default async function NotificationsAdminPage({
+    searchParams
+}: {
+    searchParams: Promise<{ tab?: string }>;
+}) {
+    const [{ roots, generatedAt }, { tab }] = await Promise.all([
+        fetchMenuNamespace(SUBMENU_NAMESPACE, (await cookies()).toString()),
+        searchParams
+    ]);
+    return <NotificationsAdminClient submenuTree={roots} submenuGeneratedAt={generatedAt} initialTab={tab} />;
 }

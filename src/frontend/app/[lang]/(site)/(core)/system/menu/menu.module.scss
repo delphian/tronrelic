@@ -13,17 +13,12 @@
     container-name: menu-admin;
 }
 
-/* Top toolbar: namespace selector on the left, tab switcher on the right. */
+/* Namespace toolbar above the Items and Configuration tabs: label, selector,
+   and the create-namespace button. The tabs themselves are the page's menu
+   tab row, rendered above this toolbar. */
 .toolbar {
     display: flex;
     flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--gap-md);
-}
-
-.toolbar_group {
-    display: flex;
     align-items: center;
     gap: var(--gap-sm);
 }
@@ -242,15 +237,6 @@
 }
 
 @container menu-admin (max-width: #{$breakpoint-mobile-lg}) {
-    .toolbar {
-        flex-direction: column;
-        align-items: stretch;
-    }
-
-    .toolbar_group {
-        flex-wrap: wrap;
-    }
-
     .select {
         flex: 1 1 auto;
         min-width: 0;

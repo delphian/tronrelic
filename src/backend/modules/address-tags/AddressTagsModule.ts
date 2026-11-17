@@ -56,12 +56,18 @@ const SUBMENU_TABS: ReadonlyArray<{ label: string; tab: string; icon: string; or
     // authority behind each tab is the same one /system uses.
     { label: 'Schedules', tab: 'schedules', icon: 'Clock', order: 2 },
     { label: 'Database', tab: 'database', icon: 'Database', order: 3 },
+    // Logs is the obligation every component with an admin page carries. The
+    // module records each human tag change and each source reconcile as a log
+    // entry under `tronrelic:address-tags`, and the scheduler files its job
+    // failures there too, so this tab is where an operator reads what changed
+    // and why a feed went stale without leaving for /system/logs.
+    { label: 'Logs', tab: 'logs', icon: 'ScrollText', order: 4 },
     // Settings sits last, after every tab that reports what the module is
-    // doing. The four before it answer "what state is this module in", which is
+    // doing. The five before it answer "what state is this module in", which is
     // what an operator opens the page for; Settings changes that state and is
     // visited far less often, so putting it at the end keeps the reporting tabs
     // adjacent instead of splitting them around it.
-    { label: 'Settings', tab: 'settings', icon: 'Settings', order: 4 }
+    { label: 'Settings', tab: 'settings', icon: 'Settings', order: 5 }
 ];
 
 /**

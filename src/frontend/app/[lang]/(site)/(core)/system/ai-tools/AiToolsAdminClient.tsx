@@ -3,8 +3,11 @@
 /**
  * @fileoverview Client shell for /system/ai-tools — the AI tool governance dashboard.
  *
- * Holds the interactive surface: the in-page tab row and the four panels (Query —
- * the default — Registry, Activity, Approvals). The tab row is the menu module's
+ * Holds the interactive surface: the in-page tab row and the seven panels (Query —
+ * the default — Registry, Activity, Approvals, Schedules, Database, Logs). The
+ * last three are core components scoped to this module, not panels written for
+ * this page, so the authority behind them is the same one `/system/scheduler`,
+ * `/system/database`, and `/system/logs` use. The tab row is the menu module's
  * Submenu Pattern — a namespaced menu rendered with `MenuNavClient`, not a
  * hand-rolled button array — so it inherits per-user gating, ordering, and live
  * `menu:update` refresh. The server entry (`page.tsx`) fetches that namespace tree
@@ -12,7 +15,7 @@
  * Clicking a tab drives local state via `onItemSelect` rather than navigating;
  * `activeUrl` highlights the active tab since the route is identical across them.
  *
- * The Query tab stays mounted behind the other three rather than being torn
+ * The Query tab stays mounted behind the other tabs rather than being torn
  * down on a tab switch. It holds a live conversation and possibly a stream in
  * flight, and unmounting it discarded both — an operator who glanced at
  * Approvals came back to an empty chat. The other tabs are cheap to rebuild
@@ -36,6 +39,9 @@ import { Badge } from '../../../../../../components/ui/Badge';
 import { MenuNavClient } from '../../../../../../components/layout/MenuNav/MenuNavClient';
 import { getSocket } from '../../../../../../lib/socketClient';
 import { getApprovalsCount } from '../../../../../../modules/ai-tools';
+import { CollectionBrowser } from '../../../../../../modules/database';
+import { SystemLogsMonitor } from '../../../../../../modules/logs';
+import { SchedulerMonitor, type SchedulerJob } from '../../../../../../modules/scheduler';
 import { RegistryTab } from './tabs/RegistryTab';
 import { ActivityTab } from './tabs/ActivityTab';
 import { ApprovalsTab } from './tabs/ApprovalsTab';
@@ -44,17 +50,51 @@ import { writeAiToolsSearchParam } from './tabs/aiToolsUrl';
 import styles from './page.module.scss';
 
 /** The dashboard tabs; the `?tab=` value carried by each submenu node. */
-type TabId = 'query' | 'registry' | 'activity' | 'approvals';
+type TabId = 'query' | 'registry' | 'activity' | 'approvals' | 'schedules' | 'database' | 'logs';
 
 /** The menu namespace the module registers the tab nodes under. */
 const SUBMENU_NAMESPACE = 'ai-tools';
+
+/**
+ * Name prefix shared by every scheduler job the module registers
+ * (`ai-tools:prune-audit` and `ai-tools:run-scheduled-prompts`).
+ *
+ * The Schedules tab filters on the prefix rather than listing job names, so a
+ * job the module adds later appears here without a matching edit to this file.
+ * The literal is repeated from `AiToolsModule.ts` because frontend code cannot
+ * import backend code.
+ */
+const JOB_PREFIX = 'ai-tools:';
+
+/**
+ * Physical MongoDB collection prefix covering the module's six collections:
+ * the invocation audit trail, the approval queue, query history, saved
+ * prompts, static prompt variables, and the audience-scoped system prompts.
+ * The module's tool states, policy overrides, master system prompt, and screen
+ * settings are key-value entries in the shared `_kv` collection, which falls
+ * outside this prefix and stays reachable from `/system/database`.
+ */
+const COLLECTION_PREFIX = 'module_ai-tools_';
+
+/** Log service name the module's `logger.child({ module: 'ai-tools' })` records under. */
+const LOG_SERVICE = 'tronrelic:ai-tools';
 
 /**
  * Narrow an arbitrary `?tab=` string to a known TabId, so the deep-link seeding
  * and the click routing share one source of truth for valid tabs.
  */
 function isTabId(tab: string | undefined): tab is TabId {
-    return tab === 'query' || tab === 'registry' || tab === 'activity' || tab === 'approvals';
+    return tab === 'query' || tab === 'registry' || tab === 'activity' || tab === 'approvals'
+        || tab === 'schedules' || tab === 'database' || tab === 'logs';
+}
+
+/**
+ * Select this module's scheduler jobs for the Schedules tab. A predicate on the
+ * name prefix rather than a fixed list, so the tab keeps showing every job the
+ * module owns when one is added.
+ */
+function isAiToolsJob(job: SchedulerJob): boolean {
+    return job.name.startsWith(JOB_PREFIX);
 }
 
 /**
@@ -210,6 +250,18 @@ export function AiToolsAdminClient({ submenuTree, submenuGeneratedAt, initialTab
                     {activeTab === 'registry' && <RegistryTab onChanged={noop} />}
                     {activeTab === 'activity' && <ActivityTab />}
                     {activeTab === 'approvals' && <ApprovalsTab onChanged={refreshPending} />}
+                    {activeTab === 'schedules' && (
+                        <SchedulerMonitor jobFilter={isAiToolsJob} title="AI Tools Schedules" hideStats />
+                    )}
+                    {/* Editing stays enabled, as on /system/database. Prefer the
+                        Registry and Query tabs for ordinary work, because they go
+                        through the module's services and keep its in-memory
+                        registries in step with what is stored; treat this browser
+                        as the escape hatch for a document those tabs cannot reach. */}
+                    {activeTab === 'database' && (
+                        <CollectionBrowser prefix={COLLECTION_PREFIX} title="AI Tools Collections" />
+                    )}
+                    {activeTab === 'logs' && <SystemLogsMonitor service={LOG_SERVICE} title="AI Tools Logs" />}
                 </div>
             </Section>
         </Page>

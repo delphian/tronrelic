@@ -22,6 +22,29 @@ import { requireAdmin } from '../../api/middleware/admin-auth.js';
 import { createRateLimiter, createAdminRateLimiter } from '../../api/middleware/rate-limit.js';
 
 /**
+ * Menu namespace holding the `/system/menu` tab row. Kept out of `main` so the
+ * tabs never appear in the site navigation; only the page's own
+ * `MenuNavClient` reads it (the Submenu Pattern this module defines).
+ */
+const SUBMENU_NAMESPACE = 'menu';
+
+/**
+ * The page's tab row, declared as menu nodes so it inherits per-user gating,
+ * ordering, and live refresh like every other admin tab row.
+ *
+ * Items and Configuration edit the namespace chosen on the page. Database and
+ * Logs are the tabs every module owning collections and an admin page
+ * carries: this module owns `menu_nodes`, `menu_node_overrides`, and
+ * `menu_namespace_config`, and writes its entries under `tronrelic:menu`.
+ */
+const SUBMENU_TABS: ReadonlyArray<{ label: string; tab: string; icon: string; order: number }> = [
+    { label: 'Items', tab: 'items', icon: 'List', order: 0 },
+    { label: 'Configuration', tab: 'configuration', icon: 'SlidersHorizontal', order: 1 },
+    { label: 'Database', tab: 'database', icon: 'Database', order: 2 },
+    { label: 'Logs', tab: 'logs', icon: 'ScrollText', order: 3 }
+];
+
+/**
  * Menu module dependencies for initialization.
  *
  * All required services for the menu module to function properly, injected
@@ -151,8 +174,10 @@ export class MenuModule implements IModule<IMenuModuleDependencies> {
 
         // Initialize MenuService singleton. Per-user gating reads the viewer
         // from the Better Auth session (resolved by attachAuthSession), so the
-        // service no longer needs the registry for an admin lookup.
-        MenuService.setDependencies(this.database);
+        // service no longer needs the registry for an admin lookup. The
+        // module's logger goes with it so node and configuration changes are
+        // filed under `tronrelic:menu`, where the page's Logs tab reads them.
+        MenuService.setDependencies(this.database, this.logger);
         this.menuService = MenuService.getInstance();
 
         // Initialize MenuService (loads menu tree from database)
@@ -172,6 +197,7 @@ export class MenuModule implements IModule<IMenuModuleDependencies> {
      *   `MAIN_SYSTEM_CONTAINER_ID` so admin items have a stable parent
      *   to register against
      * - Registering the Menu management entry under the System container
+     * - Registering the `/system/menu` tab row in the `menu` namespace
      * - Creating and mounting the admin router
      *
      * By this point, all dependencies are guaranteed to be ready.
@@ -234,6 +260,23 @@ export class MenuModule implements IModule<IMenuModuleDependencies> {
         } catch (error) {
             this.logger.error({ error }, 'Failed to register menu management item');
             throw new Error(`Failed to register menu management item: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+
+        // Register the /system/menu tab row as a namespaced menu (Submenu
+        // Pattern). The nodes are memory-only and live outside the System
+        // container, so its forced `requiresAdmin` does not reach them and the
+        // module sets it per node.
+        for (const tab of SUBMENU_TABS) {
+            await this.menuService.create({
+                namespace: SUBMENU_NAMESPACE,
+                label: tab.label,
+                url: `/system/menu?tab=${tab.tab}`,
+                icon: tab.icon,
+                order: tab.order,
+                parent: null,
+                enabled: true,
+                requiresAdmin: true
+            });
         }
 
         // Create and mount admin router (IoC - module attaches itself to app)

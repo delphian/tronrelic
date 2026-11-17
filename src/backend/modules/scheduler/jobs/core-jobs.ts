@@ -8,7 +8,7 @@
  * @module modules/scheduler/jobs/core-jobs
  */
 
-import type { IDatabaseService } from '@/types';
+import type { IDatabaseService, ISystemLogService } from '@/types';
 import { logger } from '../../../lib/logger.js';
 import { BlockchainService } from '../../blockchain/blockchain.service.js';
 import { TronGridClient } from '../../blockchain/tron-grid.client.js';
@@ -41,13 +41,25 @@ import { SchedulerService } from '../services/scheduler.service.js';
  * - cache:cleanup - Clean expired cache entries every hour
  * - system-logs:cleanup - Clean old system logs every hour
  *
+ * The blockchain jobs pass the blockchain module's logger. The other four have
+ * no module of their own with a Logs tab, so they pass the scheduler module's
+ * logger, which files their run entries under `tronrelic:scheduler` and puts
+ * them on the Logs tab of `/system/scheduler`.
+ *
  * @param scheduler - The scheduler service instance
  * @param database - Database service for job operations
+ * @param schedulerLogger - The scheduler module's logger, which owns the jobs
+ *        here that no other module owns
  */
 export async function registerCoreJobs(
     scheduler: SchedulerService,
-    database: IDatabaseService
+    database: IDatabaseService,
+    schedulerLogger: ISystemLogService
 ): Promise<void> {
+    // The jobs below that belong to no other module record their runs under
+    // the scheduler's own service name.
+    const schedulerJobOptions = { logger: schedulerLogger };
+
     // Register CacheModel for cache cleanup job
     database.registerModel('caches', CacheModel);
 
@@ -76,12 +88,12 @@ export async function registerCoreJobs(
     scheduler.register('chain-parameters:fetch', '*/10 * * * *', async () => {
         const parameters = await chainParametersFetcher.fetch();
         ChainParametersService.getInstance().primeCache(parameters);
-    });
+    }, schedulerJobOptions);
 
     // USDT parameters: every 10 minutes
     scheduler.register('usdt-parameters:fetch', '*/10 * * * *', async () => {
         await usdtParametersFetcher.fetch();
-    });
+    }, schedulerJobOptions);
 
     // Blockchain sync: every 15 seconds, using node-cron's optional leading
     // seconds field (the same 6-field form the address-tags jobs use).
@@ -171,7 +183,7 @@ export async function registerCoreJobs(
     // Cache cleanup: every hour
     scheduler.register('cache:cleanup', '0 * * * *', async () => {
         await database.deleteMany<CacheDoc>('caches', { expiresAt: { $lte: new Date() } });
-    });
+    }, schedulerJobOptions);
 
     // System logs cleanup: every hour
     scheduler.register('system-logs:cleanup', '0 * * * *', async () => {
@@ -189,7 +201,7 @@ export async function registerCoreJobs(
 
         const totalDeleted = deletedByAge + deletedByCount;
         if (totalDeleted > 0) {
-            logger.info({
+            schedulerLogger.info({
                 deletedByAge,
                 deletedByCount,
                 totalDeleted,
@@ -197,7 +209,7 @@ export async function registerCoreJobs(
                 maxCount: config.systemLogsMaxCount
             }, 'System logs cleanup completed');
         }
-    });
+    }, schedulerJobOptions);
 
-    logger.info('Core scheduler jobs registered');
+    schedulerLogger.info('Core scheduler jobs registered');
 }

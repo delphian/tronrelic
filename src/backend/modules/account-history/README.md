@@ -8,7 +8,7 @@ Ingests the full transaction history of operator-tracked TRON accounts into Clic
 |---------|-------|
 | Module id | `account-history` |
 | Module class | `src/backend/modules/account-history/AccountHistoryModule.ts` |
-| Admin page | `/system/account-history` — System-container item `Account History` (order 27); in-page tabs registered as the `account-history` menu namespace (menu module's Submenu Pattern), rendered with `MenuNavClient`. All in `run()`. |
+| Admin page | `/system/account-history` — System-container item `Account History` (order 27); in-page tabs registered as the `account-history` menu namespace (menu module's Submenu Pattern), rendered with `MenuNavClient`, in this order: **Tracked Accounts**, **Tick Activity**, **Ingestion Settings**, **Schedules** (core `SchedulerMonitor` filtered to `account-history:`), **Database** (core `CollectionBrowser` scoped to `module_account-history_`, above core `ClickHouseTableBrowser` scoped by exact name to the four tables below), **Logs** (core `SystemLogsMonitor` scoped to `tronrelic:account-history`, which also receives each job's scheduler failure entry because the jobs register with the module's logger). All in `run()`. |
 | Service registry name | `'account-history'` → `IAccountHistoryService` |
 | Mounted routes | `/api/admin/system/account-history/*` (`createAdminRateLimiter` + `requireAdmin`); `/api/account-history/me/*` (`requireLogin`, ownership-scoped: progress, per-wallet summary, per-wallet transactions) |
 | Auto-enrollment | Registers a `'core'` handler on the `http.walletLinked` hook — a user verifying a wallet auto-enrolls it (`label: 'user-verified'`) |

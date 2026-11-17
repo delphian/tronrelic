@@ -13,9 +13,10 @@ import type {
     MenuNodeOrigin,
     IMenuNodeAdminView,
     IMenuNodeAdminViewWithChildren,
-    IMenuTreeAdminView
+    IMenuTreeAdminView,
+    ISystemLogService
 } from '@/types';
-import { logger } from '../../../lib/logger.js';
+import { logger as rootLogger } from '../../../lib/logger.js';
 import { WebSocketService } from '../../../services/websocket.service.js';
 import { ObjectId } from 'mongodb';
 import type { IMenuNodeDocument, IMenuNamespaceConfigDocument, IMenuNodeOverrideDocument } from '../database/index.js';
@@ -97,9 +98,18 @@ export class MenuService implements IMenuService {
     // open would desync the admin nav across browser tabs without
     // securing anything, so the two enforcements must stay in lock-step.
 
+    /**
+     * Logger every service entry goes through, such as a node being created,
+     * updated, or deleted. The menu module passes its own child logger, so
+     * these entries are filed under `tronrelic:menu` and appear on the Logs
+     * tab of `/system/menu` rather than under the unscoped `tronrelic`.
+     */
+    private readonly logger: ISystemLogService;
+
     /** Private constructor enforcing singleton pattern with dependency injection. */
-    private constructor(database: IDatabaseService) {
+    private constructor(database: IDatabaseService, serviceLogger: ISystemLogService) {
         this.database = database;
+        this.logger = serviceLogger;
     }
 
     /**
@@ -108,10 +118,13 @@ export class MenuService implements IMenuService {
      * Must be called once during application bootstrap before getInstance().
      *
      * @param database - Database service for menu node storage
+     * @param serviceLogger - The menu module's logger, so the service's entries
+     *        land on the module's Logs tab. Defaults to the root logger for
+     *        callers that have no module logger, such as tests.
      */
-    public static setDependencies(database: IDatabaseService): void {
+    public static setDependencies(database: IDatabaseService, serviceLogger: ISystemLogService = rootLogger): void {
         if (!MenuService.instance) {
-            MenuService.instance = new MenuService(database);
+            MenuService.instance = new MenuService(database, serviceLogger);
         }
     }
 
@@ -161,11 +174,11 @@ export class MenuService implements IMenuService {
      */
     public async initialize(): Promise<void> {
         if (this.initialized) {
-            logger.debug('MenuService already initialized, skipping');
+            this.logger.debug('MenuService already initialized, skipping');
             return;
         }
 
-        logger.info('Initializing MenuService...');
+        this.logger.info('Initializing MenuService...');
 
         try {
             // Emit 'init' event - service startup begins
@@ -180,7 +193,7 @@ export class MenuService implements IMenuService {
             await overridesCollection.createIndex(
                 { namespace: 1, url: 1 },
                 { unique: true }
-            ).catch(err => logger.debug({ err }, 'Overrides index already exists'));
+            ).catch(err => this.logger.debug({ err }, 'Overrides index already exists'));
 
             // Hydrate the override-keys cache so admin reads can resolve a
             // node's origin (`plugin` vs `plugin-overridden`) without a
@@ -213,7 +226,7 @@ export class MenuService implements IMenuService {
             // Create default 'Home' root node if menu is empty
             const totalNodes = Array.from(this.menuTree.values()).reduce((sum, ns) => sum + ns.size, 0);
             if (totalNodes === 0) {
-                logger.info('Menu is empty, creating default Home node');
+                this.logger.info('Menu is empty, creating default Home node');
                 await this.createDefaultHomeNode();
             }
 
@@ -226,9 +239,9 @@ export class MenuService implements IMenuService {
             // Emit 'loaded' event - menu tree is fully built and ready for consumption
             await this.emitLifecycleEvent('loaded');
 
-            logger.info({ nodeCount: totalNodes, namespaceCount: this.menuTree.size }, 'MenuService initialized');
+            this.logger.info({ nodeCount: totalNodes, namespaceCount: this.menuTree.size }, 'MenuService initialized');
         } catch (error) {
-            logger.error({ error }, 'Failed to initialize MenuService');
+            this.logger.error({ error }, 'Failed to initialize MenuService');
             throw error;
         }
     }
@@ -276,7 +289,7 @@ export class MenuService implements IMenuService {
             this.subscribers.set(eventType, []);
         }
         this.subscribers.get(eventType)!.push(callback);
-        logger.debug({ eventType }, 'Menu event subscriber registered');
+        this.logger.debug({ eventType }, 'Menu event subscriber registered');
     }
 
     /**
@@ -463,7 +476,7 @@ export class MenuService implements IMenuService {
         // Broadcast WebSocket update
         await this.broadcastTreeUpdate('after:create', created);
 
-        logger.info({ nodeId: created._id, label: created.label }, 'Menu node created');
+        this.logger.info({ nodeId: created._id, label: created.label }, 'Menu node created');
         return created;
     }
 
@@ -650,7 +663,7 @@ export class MenuService implements IMenuService {
         // Broadcast WebSocket update
         await this.broadcastTreeUpdate('after:update', updated);
 
-        logger.info({ nodeId: id, label: updated.label }, 'Menu node updated');
+        this.logger.info({ nodeId: id, label: updated.label }, 'Menu node updated');
         return updated;
     }
 
@@ -725,7 +738,7 @@ export class MenuService implements IMenuService {
         // Broadcast WebSocket update
         await this.broadcastTreeUpdate('after:delete', existing);
 
-        logger.info({ nodeId: id, label: existing.label }, 'Menu node deleted');
+        this.logger.info({ nodeId: id, label: existing.label }, 'Menu node deleted');
     }
 
     /**
@@ -1095,7 +1108,7 @@ export class MenuService implements IMenuService {
             // Broadcast WebSocket update
             await this.broadcastNamespaceConfigUpdate(normalized);
 
-            logger.info({ namespace }, 'Menu namespace configuration updated');
+            this.logger.info({ namespace }, 'Menu namespace configuration updated');
             return normalized;
         } else {
             // Create new config
@@ -1121,7 +1134,7 @@ export class MenuService implements IMenuService {
             // Broadcast WebSocket update
             await this.broadcastNamespaceConfigUpdate(normalized);
 
-            logger.info({ namespace }, 'Menu namespace configuration created');
+            this.logger.info({ namespace }, 'Menu namespace configuration created');
             return normalized;
         }
     }
@@ -1154,7 +1167,7 @@ export class MenuService implements IMenuService {
         // Broadcast WebSocket update with defaults
         await this.broadcastNamespaceConfigUpdate(defaultConfig);
 
-        logger.info({ namespace }, 'Menu namespace configuration deleted');
+        this.logger.info({ namespace }, 'Menu namespace configuration deleted');
     }
 
     /**
@@ -1191,14 +1204,14 @@ export class MenuService implements IMenuService {
 
                 // Stop processing if subscriber halted validation (before:* events only)
                 if (!validation.continue && eventType.startsWith('before:')) {
-                    logger.debug(
+                    this.logger.debug(
                         { eventType, reason: validation.error },
                         'Event processing halted by subscriber'
                     );
                     break;
                 }
             } catch (error) {
-                logger.error(
+                this.logger.error(
                     { eventType, error },
                     'Menu event subscriber threw error'
                 );
@@ -1232,11 +1245,11 @@ export class MenuService implements IMenuService {
                     timestamp: new Date()
                 });
             } catch (error) {
-                logger.error({ eventType, error }, 'Lifecycle event subscriber threw error');
+                this.logger.error({ eventType, error }, 'Lifecycle event subscriber threw error');
             }
         }
 
-        logger.debug({ eventType, subscriberCount: subscribers.length }, `Menu lifecycle event '${eventType}' emitted to backend subscribers`);
+        this.logger.debug({ eventType, subscriberCount: subscribers.length }, `Menu lifecycle event '${eventType}' emitted to backend subscribers`);
     }
 
     /**
@@ -1259,7 +1272,7 @@ export class MenuService implements IMenuService {
             // anonymous visitors. Admin UIs reload via authenticated fetch
             // after each mutation, so the suppression is invisible to them.
             if (ADMIN_NAMESPACES.has(ns)) {
-                logger.debug({ eventType, nodeId: node._id, namespace: ns }, 'Suppressed admin-namespace WebSocket broadcast');
+                this.logger.debug({ eventType, nodeId: node._id, namespace: ns }, 'Suppressed admin-namespace WebSocket broadcast');
                 return;
             }
 
@@ -1281,9 +1294,9 @@ export class MenuService implements IMenuService {
                 }
             });
 
-            logger.debug({ eventType, nodeId: node._id, namespace: ns }, 'Menu refetch signal broadcast via WebSocket');
+            this.logger.debug({ eventType, nodeId: node._id, namespace: ns }, 'Menu refetch signal broadcast via WebSocket');
         } catch (error) {
-            logger.error({ error }, 'Failed to broadcast menu refetch signal');
+            this.logger.error({ error }, 'Failed to broadcast menu refetch signal');
             // Don't throw - WebSocket failure shouldn't break menu operations
         }
     }
@@ -1305,7 +1318,7 @@ export class MenuService implements IMenuService {
 
             return result;
         } catch (error) {
-            logger.error({ error, namespace, url }, 'Failed to load menu node override');
+            this.logger.error({ error, namespace, url }, 'Failed to load menu node override');
             return null;
         }
     }
@@ -1359,9 +1372,9 @@ export class MenuService implements IMenuService {
                 this.overrideKeys.add(this.overrideKey(namespace, updates.url));
             }
 
-            logger.debug({ namespace, url, overrideFields }, 'Menu node override saved');
+            this.logger.debug({ namespace, url, overrideFields }, 'Menu node override saved');
         } catch (error) {
-            logger.error({ error, namespace, url }, 'Failed to save menu node override');
+            this.logger.error({ error, namespace, url }, 'Failed to save menu node override');
         }
     }
 
@@ -1538,9 +1551,9 @@ export class MenuService implements IMenuService {
                 }
             });
 
-            logger.debug({ namespace: config.namespace }, 'Menu namespace config update broadcast via WebSocket');
+            this.logger.debug({ namespace: config.namespace }, 'Menu namespace config update broadcast via WebSocket');
         } catch (error) {
-            logger.error({ error }, 'Failed to broadcast namespace config update');
+            this.logger.error({ error }, 'Failed to broadcast namespace config update');
             // Don't throw - WebSocket failure shouldn't break config operations
         }
     }
@@ -1582,6 +1595,6 @@ export class MenuService implements IMenuService {
         }
         this.menuTree.get(namespace)!.set(normalized._id!, normalized);
 
-        logger.info({ nodeId: normalized._id, namespace }, 'Default Home menu node created');
+        this.logger.info({ nodeId: normalized._id, namespace }, 'Default Home menu node created');
     }
 }

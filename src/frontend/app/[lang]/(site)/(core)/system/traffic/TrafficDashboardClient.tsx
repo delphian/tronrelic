@@ -4,8 +4,12 @@
  * @fileoverview Client shell for /system/traffic.
  *
  * Holds the interactive dashboard surface: the in-page tab row, the global
- * period + bot-filter controls, the live "visitors now" counter, and the six
- * tab panels (analytics, visitors, crawlers, SEO, redirects, settings). The tab
+ * period + bot-filter controls, the live "visitors now" counter, and the ten
+ * tab panels (analytics, visitors, crawlers, SEO, redirects, AI, schedules,
+ * database, logs, settings). Schedules, Database, and Logs are core components
+ * scoped to this module rather than panels written for this page, so the
+ * authority behind them is the same one `/system/scheduler`,
+ * `/system/database`, and `/system/logs` use. The tab
  * row is the menu module's Submenu Pattern — a namespaced menu rendered with
  * `MenuNavClient`, not a hand-rolled button array — so it inherits per-user
  * gating, ordering, and live `menu:update` refresh, and a plugin could
@@ -18,8 +22,8 @@
  * never unknowingly compares different windows. The bot filter reaches Analytics
  * and the Visitors tab's New-visitors view only. Crawlers keeps its own
  * `sinceHours` windows and SEO its delay-shifted GSC windows. The Redirects tab
- * manages admin-curated legacy-URL 301/302 rules and is ungoverned by the period
- * controls.
+ * manages admin-curated legacy-URL 301/302 rules and, like the Schedules,
+ * Database, and Logs tabs, is ungoverned by the period controls.
  */
 
 import { useEffect, useMemo, useState, useCallback } from 'react';
@@ -46,13 +50,61 @@ import {
 } from '../../../../../../modules/traffic';
 import { adminGetLiveVisitors } from '../../../../../../modules/traffic/api';
 import type { AnalyticsPeriod, ICustomDateRange } from '../../../../../../modules/traffic/api';
+import { ClickHouseTableBrowser, CollectionBrowser } from '../../../../../../modules/database';
+import { SystemLogsMonitor } from '../../../../../../modules/logs';
+import { SchedulerMonitor, type SchedulerJob } from '../../../../../../modules/scheduler';
 import styles from './page.module.scss';
 
 /** Tab identifiers for the traffic admin page. */
-type TrafficTab = 'analytics' | 'visitors' | 'crawlers' | 'seo' | 'redirects' | 'ai' | 'settings';
+type TrafficTab = 'analytics' | 'visitors' | 'crawlers' | 'seo' | 'redirects' | 'ai'
+    | 'schedules' | 'database' | 'logs' | 'settings';
 
 /** The menu namespace TrafficModule registers the tab nodes under. */
 const SUBMENU_NAMESPACE = 'traffic';
+
+/**
+ * Name prefixes of the scheduler jobs the module registers.
+ *
+ * Its one job today is `gsc:fetch`, which keeps the `gsc:` prefix because the
+ * scheduler stores an operator's schedule under the job name and a rename would
+ * drop it. `traffic:` covers any job the module adds later under its own id.
+ * The Schedules tab filters on these prefixes rather than listing job names, so
+ * such a job appears without an edit here. The literals are repeated from
+ * `TrafficModule.ts` because frontend code cannot import backend code.
+ */
+const JOB_PREFIXES: readonly string[] = ['gsc:', 'traffic:'];
+
+/**
+ * Physical MongoDB collection prefix covering the module's three collections:
+ * the ignore list, the bot rules, and the redirect rules. The retired
+ * `module_user_gsc_*` collections that held Search Console data before the
+ * ClickHouse archive are deliberately left out: nothing reads or writes them,
+ * they empty themselves through their TTL indexes and are then to be dropped,
+ * and showing them would take a second browser under a prefix the module no
+ * longer writes. The module's Search Console
+ * settings are key-value entries in the shared `_kv` collection, which falls
+ * outside this prefix and stays reachable from `/system/database`.
+ */
+const COLLECTION_PREFIX = 'module_traffic_';
+
+/**
+ * The module's ClickHouse tables, named exactly because module tables share no
+ * naming prefix: the visitor events, the served-redirect hits, and the three
+ * tables of the permanent Search Console archive.
+ */
+const CLICKHOUSE_TABLES = ['traffic_events', 'redirect_events', 'gsc_queries', 'gsc_daily_totals', 'gsc_page_totals'];
+
+/** Log service name the module's `logger.child({ module: 'traffic' })` records under. */
+const LOG_SERVICE = 'tronrelic:traffic';
+
+/**
+ * Select this module's scheduler jobs for the Schedules tab. A predicate on the
+ * name prefixes rather than a fixed list, so the tab keeps showing every job the
+ * module owns when one is added.
+ */
+function isTrafficJob(job: SchedulerJob): boolean {
+    return JOB_PREFIXES.some(prefix => job.name.startsWith(prefix));
+}
 
 /** Tabs governed by the global period picker. */
 const GOVERNED_TABS: ReadonlySet<TrafficTab> = new Set(['analytics', 'visitors']);
@@ -97,7 +149,8 @@ const DASHBOARD_REFRESH_MS = 60_000;
  */
 function isTrafficTab(tab: string | undefined): tab is TrafficTab {
     return tab === 'analytics' || tab === 'visitors' || tab === 'crawlers'
-        || tab === 'seo' || tab === 'redirects' || tab === 'ai' || tab === 'settings';
+        || tab === 'seo' || tab === 'redirects' || tab === 'ai'
+        || tab === 'schedules' || tab === 'database' || tab === 'logs' || tab === 'settings';
 }
 
 /**
@@ -293,6 +346,26 @@ export function TrafficDashboardClient({ submenuTree, submenuGeneratedAt, initia
                         </div>
                     )}
                     {activeTab === 'ai' && <AiToolsPanel />}
+                    {activeTab === 'schedules' && (
+                        <SchedulerMonitor jobFilter={isTrafficJob} title="Traffic Schedules" hideStats />
+                    )}
+                    {/* The ClickHouse browser is read-only, and it renders even
+                        when no table matches: the visitor and Search Console
+                        figures live there, so an empty panel is the sign that
+                        ClickHouse is not configured or a migration has not run.
+                        The MongoDB browser allows edits, as on /system/database;
+                        prefer the Settings and Redirects tabs for ordinary work,
+                        because they go through the module's services. A direct
+                        edit to the ignore list here, for one, is not applied to
+                        the dashboard's exclusion until the list next changes
+                        through Settings or the backend restarts. */}
+                    {activeTab === 'database' && (
+                        <div className={styles.tab_stack}>
+                            <CollectionBrowser prefix={COLLECTION_PREFIX} title="Traffic Collections" />
+                            <ClickHouseTableBrowser tables={CLICKHOUSE_TABLES} title="Traffic Tables" />
+                        </div>
+                    )}
+                    {activeTab === 'logs' && <SystemLogsMonitor service={LOG_SERVICE} title="Traffic Logs" />}
                     {/* Short, independent settings panels side by side when the
                         page is wide enough, stacked otherwise; the bot rules
                         table and editor need the full width, so they sit below. */}

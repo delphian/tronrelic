@@ -289,7 +289,35 @@ describe('NotificationsModule lifecycle', () => {
 
         expect(app.use).toHaveBeenCalledWith('/api/notifications', expect.any(Function));
         expect(registry.has('notifications')).toBe(true);
-        expect(menuService.create).toHaveBeenCalledTimes(1);
+        expect(menuService.create).toHaveBeenCalledWith(expect.objectContaining({
+            namespace: 'main',
+            url: '/system/notifications'
+        }));
+    });
+
+    /**
+     * Guards the admin page's tab row: the page fetches the `notifications`
+     * menu namespace and renders whatever nodes it holds, so a missing node is
+     * a missing tab, and a node without `requiresAdmin` would be visible to
+     * any visitor who reads that namespace.
+     */
+    it('registers the admin tab row in the notifications namespace during run()', async () => {
+        const module = new NotificationsModule();
+        await module.init(deps());
+        await module.run();
+
+        const tabs = menuService.create.mock.calls
+            .map(([node]) => node as { namespace: string; url: string; requiresAdmin?: boolean })
+            .filter((node) => node.namespace === 'notifications');
+        expect(tabs.map((node) => node.url)).toEqual([
+            '/system/notifications?tab=categories',
+            '/system/notifications?tab=channels',
+            '/system/notifications?tab=history',
+            '/system/notifications?tab=preferences',
+            '/system/notifications?tab=database',
+            '/system/notifications?tab=logs'
+        ]);
+        expect(tabs.every((node) => node.requiresAdmin === true)).toBe(true);
     });
 
     it('registers each channel as a content-router sink during run()', async () => {

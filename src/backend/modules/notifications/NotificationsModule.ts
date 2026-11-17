@@ -10,8 +10,8 @@
  *
  * Two-phase lifecycle: `init()` constructs services, ensures indexes, and wires
  * the toast channel; `run()` mounts the admin and user routers, seeds the
- * `/system/notifications` menu entry, registers the toast channel, and publishes
- * the service.
+ * `/system/notifications` menu entry and its tab row, registers the toast
+ * channel, and publishes the service.
  */
 
 import type { Express, Router } from 'express';
@@ -49,6 +49,33 @@ import { createPreferencesRouter } from './api/preferences.routes.js';
 import { AdminController } from './api/admin.controller.js';
 import { createAdminRouter } from './api/admin.routes.js';
 import { NOTIFICATIONS_SERVICE } from './config.js';
+
+/**
+ * Menu namespace holding the `/system/notifications` tab row. Kept out of
+ * `main` so the tabs never appear in the site navigation; only the page's own
+ * `MenuNavClient` reads it (the menu module's Submenu Pattern).
+ */
+const SUBMENU_NAMESPACE = 'notifications';
+
+/**
+ * The page's tab row, declared as menu nodes so it inherits per-user gating,
+ * ordering, and live refresh like every other admin tab row.
+ *
+ * The three admin tabs come first, because governing categories and channels
+ * and reading the audit feed is what an operator opens the page for. My
+ * Preferences follows them, since the same panel is also on `/profile`.
+ * Database and Logs close the row: they are the tabs every module owning
+ * collections and an admin page carries, for the policy and audit collections
+ * and the `tronrelic:notifications` log entries.
+ */
+const SUBMENU_TABS: ReadonlyArray<{ label: string; tab: string; icon: string; order: number }> = [
+    { label: 'Categories', tab: 'categories', icon: 'Tags', order: 0 },
+    { label: 'Channels', tab: 'channels', icon: 'Radio', order: 1 },
+    { label: 'History', tab: 'history', icon: 'History', order: 2 },
+    { label: 'My Preferences', tab: 'preferences', icon: 'UserCog', order: 3 },
+    { label: 'Database', tab: 'database', icon: 'Database', order: 4 },
+    { label: 'Logs', tab: 'logs', icon: 'ScrollText', order: 5 }
+];
 
 /**
  * Dependencies the notifications module needs. A subset of the shared module
@@ -201,8 +228,8 @@ export class NotificationsModule implements IModule<INotificationsModuleDependen
     }
 
     /**
-     * Register the built-in channel, mount routers, seed the admin menu entry,
-     * and publish the service on the registry.
+     * Register the built-in channel, mount routers, seed the admin menu entry
+     * and the page's tab row, and publish the service on the registry.
      */
     async run(): Promise<void> {
         this.logger.info('Running notifications module...');
@@ -263,6 +290,22 @@ export class NotificationsModule implements IModule<INotificationsModuleDependen
             enabled: true
         });
         this.logger.info('Notifications admin menu entry seeded under the System container');
+
+        // The page's tab row as a namespaced menu (Submenu Pattern). The nodes
+        // are memory-only and live outside the System container, so its forced
+        // `requiresAdmin` does not reach them and the module sets it per node.
+        for (const tab of SUBMENU_TABS) {
+            await this.menuService.create({
+                namespace: SUBMENU_NAMESPACE,
+                label: tab.label,
+                url: `/system/notifications?tab=${tab.tab}`,
+                icon: tab.icon,
+                order: tab.order,
+                parent: null,
+                enabled: true,
+                requiresAdmin: true
+            });
+        }
 
         this.logger.info('Notifications module running');
     }
