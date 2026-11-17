@@ -226,6 +226,13 @@ export interface IUIComponents {
      * when off). Use for row-level boolean controls (tool enable/disable,
      * feature flag, notification on/off). Carries `role="switch"` +
      * `aria-checked` so assistive tech reads it as a toggle.
+     *
+     * Name it one of two ways, and the type demands one. `label` draws the
+     * text beside the icon, inside the button, so the words never wrap away
+     * from the switch and clicking them flips it; `aria-label` is then
+     * optional. Without `label` the switch is icon-only and `aria-label` is
+     * required. For a switch with a line of guidance under it, use
+     * `<Field inline label hint>` around an icon-only switch instead.
      */
     Switch: ComponentType<{
         on: boolean;
@@ -242,8 +249,17 @@ export interface IUIComponents {
         className?: string;
         title?: string;
         type?: 'button' | 'submit' | 'reset';
-        'aria-label': string;
-    }>;
+    } & (
+        | {
+            /** Visible text beside the icon; it names the switch. */
+            label: Exclude<React.ReactNode, null | undefined | boolean>;
+            'aria-label'?: string;
+        }
+        | {
+            label?: undefined;
+            'aria-label': string;
+        }
+    )>;
 
     /**
      * SegmentedControl — the compact segmented toggle row every chart toolbar
@@ -363,6 +379,13 @@ export interface IUIComponents {
         /** Why the value was refused; an array renders one line per problem. */
         error?: string | readonly string[];
         required?: boolean;
+        /**
+         * Puts the label and the control on one row, with the control at its
+         * own width and the hint or error underneath. Use it for a `Switch`,
+         * which the default stacked layout stretches into a wide button on a
+         * line of its own, far from its label.
+         */
+        inline?: boolean;
         className?: string;
         /**
          * The id of the element the label should point at. Optional.

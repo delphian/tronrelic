@@ -16,8 +16,19 @@
     max-width: 100%;
 }
 
+/*
+ * The select fills its wrapper as a growing flex item rather than through
+ * `width: 100%`. A percentage width makes a form control count as zero wide
+ * when a table or a grid measures its narrowest size, so a `width="shrink"`
+ * table column squeezed the select until its value was cut off ("interr" for
+ * "internal"). As a flex item at its natural width, the select reports the
+ * width of its widest option to anything that measures it, while
+ * `min-width: 0` still lets it narrow inside a container that really is
+ * smaller than that, as the wrapper's `max-width: 100%` requires.
+ */
 .select {
-    width: 100%;
+    flex: 1 1 auto;
+    min-width: 0;
     appearance: none;
     -webkit-appearance: none;
     -moz-appearance: none;
@@ -39,7 +50,11 @@
     padding: var(--select-padding, var(--input-padding));
     padding-right: var(--padding-xl);
     font-size: var(--input-font-size);
-    line-height: var(--line-height-normal);
+    /* The browser's own line height, which is what <Input> uses, so a select
+       and a text field with the same padding and type are the same height and
+       their labels line up in a form row. A token here made the select about
+       4px taller. */
+    line-height: normal;
     transition: var(--input-transition);
     cursor: pointer;
 }

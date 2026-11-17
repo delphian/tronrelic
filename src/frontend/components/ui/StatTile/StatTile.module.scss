@@ -42,10 +42,13 @@
     padding: var(--stat-tile-padding-sm);
 }
 
+/* `overflow-wrap: anywhere` lets a label with no spaces, such as a disk path,
+   break inside its tile instead of running over the tile beside it. */
 .label {
     display: flex;
     align-items: center;
     gap: var(--gap-2xs);
+    overflow-wrap: anywhere;
     color: var(--stat-tile-label-color);
     font-size: var(--stat-tile-label-font-size);
     font-weight: var(--stat-tile-label-font-weight);

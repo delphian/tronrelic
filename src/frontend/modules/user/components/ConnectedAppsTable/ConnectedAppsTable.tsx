@@ -8,14 +8,16 @@
  * shows the host sign-in results go to, flagging apps that send them only to
  * this computer.
  *
- * On a narrow screen the shared Table stacks each grant into a labelled entry
- * headed by the app. The admin view's extra user column makes seven columns,
- * which do not fit a tablet, so it stacks at tablet width; the profile view's
- * six fit a tablet and stack only below it.
+ * Every MCP client asks for the same two scopes, so the Access column says
+ * "Standard" for them and draws badges only for a grant that differs, and the
+ * hosts are plain text rather than pills. Badges repeated on every row made
+ * the admin view's seven columns too wide to share a line, so each row wrapped
+ * onto two or three. On a phone the shared Table stacks each grant into a
+ * labelled entry headed by the app.
  */
 
 import { Unplug } from 'lucide-react';
-import type { IConnectedApp, IConnectedAppAdminRow } from '@/types';
+import { MCP_OAUTH_SCOPES, type IConnectedApp, type IConnectedAppAdminRow } from '@/types';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../components/ui/Table';
 import { Badge } from '../../../../components/ui/Badge';
 import { Button } from '../../../../components/ui/Button';
@@ -61,6 +63,20 @@ export function connectedAppKey(app: IConnectedAppRow): string {
 }
 
 /**
+ * Decide whether a grant holds exactly the scopes every MCP client requests,
+ * so the table can say so in one word instead of repeating the same badges on
+ * every row. Order does not matter; a missing or extra scope does, because
+ * that is the grant an operator needs to notice.
+ *
+ * @param scopes - The scopes the grant holds.
+ * @returns True when they are exactly {@link MCP_OAUTH_SCOPES}.
+ */
+function hasStandardScopes(scopes: readonly string[]): boolean {
+    const held = new Set(scopes);
+    return held.size === MCP_OAUTH_SCOPES.length && MCP_OAUTH_SCOPES.every(scope => held.has(scope));
+}
+
+/**
  * Render the connected-apps table.
  *
  * @param props - {@link IConnectedAppsTableProps}.
@@ -70,7 +86,7 @@ export function ConnectedAppsTable({ apps, showUser = false, onRevoke, revokingK
     return apps.length === 0 ? (
         <p className={styles.empty}>{emptyMessage}</p>
     ) : (
-        <Table flush stackAt={showUser ? 'tablet' : 'mobile'}>
+        <Table flush stackAt="mobile">
             <Thead>
                 <Tr>
                     <Th>App</Th>
@@ -108,18 +124,20 @@ export function ConnectedAppsTable({ apps, showUser = false, onRevoke, revokingK
                             )}
                             <Td label="Sends sign-in to">
                                 <div className={styles.badge_row}>
-                                    {app.redirectHosts.map(host => (
-                                        <Badge key={host} tone="neutral" size="sm">{host}</Badge>
-                                    ))}
+                                    <span className={styles.hosts}>{app.redirectHosts.join(', ')}</span>
                                     {app.loopbackOnly && <Badge tone="info" size="sm">This computer only</Badge>}
                                 </div>
                             </Td>
                             <Td label="Access">
-                                <div className={styles.badge_row}>
-                                    {app.scopes.map(scope => (
-                                        <Badge key={scope} tone="neutral" size="sm">{scope}</Badge>
-                                    ))}
-                                </div>
+                                {hasStandardScopes(app.scopes) ? (
+                                    <span className={styles.standard_scopes} title={app.scopes.join(', ')}>Standard</span>
+                                ) : (
+                                    <div className={styles.badge_row}>
+                                        {app.scopes.map(scope => (
+                                            <Badge key={scope} tone="neutral" size="sm">{scope}</Badge>
+                                        ))}
+                                    </div>
+                                )}
                             </Td>
                             <Td label="Connected" muted><ClientTime date={app.grantedAt} format="date" /></Td>
                             <Td label="Last used" muted><ClientTime date={app.lastUsedAt} format="relative" fallback="Never" /></Td>

@@ -53,3 +53,24 @@
 .switch--off {
     color: var(--switch-off-color);
 }
+
+/*
+ * A switch with visible text. The icon leads and the words follow inside the
+ * same button, so the pair never splits across lines and the words are part
+ * of the click target. Left-aligned rather than centred, so a switch stretched
+ * by its container keeps its words beside the icon.
+ */
+.switch--labelled {
+    justify-content: flex-start;
+    gap: var(--gap-xs);
+    text-align: start;
+}
+
+/* A button does not inherit the page font, so the label states it. */
+.switch__label {
+    color: var(--switch-label-color);
+    font-family: var(--font-body);
+    font-size: var(--switch-label-font-size);
+    font-weight: var(--switch-label-font-weight);
+    line-height: var(--line-height-tight);
+}

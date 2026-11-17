@@ -20,6 +20,37 @@ interface ClientTimeProps {
 const HOUR_CYCLE_24: Intl.DateTimeFormatOptions = { hourCycle: 'h23' };
 
 /**
+ * The one way a calendar date is written: a short month name, the day, and
+ * the year, as in "Nov 15, 2026".
+ *
+ * Shared by the `date` and `short` formats and by `relative` once an event is
+ * more than a week old, so those three write a date the same way. `date` used
+ * the browser's numeric locale form ("11/15/2026"), which sat beside the
+ * other two on the same page and reads differently in the US and Europe.
+ * `datetime` still uses the locale form.
+ */
+const CALENDAR_DATE: Intl.DateTimeFormatOptions = {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+};
+
+/**
+ * Write a calendar date as one unbreakable unit.
+ *
+ * "Nov 15, 2026" contains spaces, so a narrow table column would break it
+ * across two lines ("Nov 15," over "2026") where the numeric form it replaced
+ * never broke. Joining the parts with non-breaking spaces keeps a date on one
+ * line wherever it is printed, and the column sizes itself to the whole date.
+ *
+ * @param date - The already-validated date to write.
+ * @returns The date as "Nov 15, 2026", with non-breaking spaces.
+ */
+function formatCalendarDate(date: Date): string {
+    return date.toLocaleDateString('en-US', CALENDAR_DATE).replace(/ /g, ' ');
+}
+
+/**
  * Renders a formatted time/date on the client only to avoid SSR hydration mismatches.
  *
  * During SSR, renders a placeholder to prevent timezone-related hydration errors.
@@ -27,7 +58,7 @@ const HOUR_CYCLE_24: Intl.DateTimeFormatOptions = { hourCycle: 'h23' };
  * timezone, always in 24-hour form.
  *
  * @param date - The date to format (Date object, ISO string, null, or undefined)
- * @param format - Format type: 'time' (default), 'datetime', 'date', 'relative', or 'short'
+ * @param format - Format type: 'time' (default), 'datetime', 'date' ("Nov 15, 2026"), 'relative', or 'short'
  * @param fallback - Text to display when date is null/undefined/invalid (defaults to '—')
  * @returns Formatted date component or fallback text
  */
@@ -61,7 +92,7 @@ export function ClientTime({ date, format = 'time', fallback = '—' }: ClientTi
     }
 
     if (format === 'date') {
-        return <span>{dateObj.toLocaleDateString()}</span>;
+        return <span>{formatCalendarDate(dateObj)}</span>;
     }
 
     if (format === 'relative') {
@@ -96,11 +127,7 @@ function formatRelative(date: Date): string {
     if (diffMins < 60) return `${diffMins}m ago`;
     if (diffHours < 24) return `${diffHours}h ago`;
     if (diffDays < 7) return `${diffDays}d ago`;
-    return date.toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric'
-    });
+    return formatCalendarDate(date);
 }
 
 /**
@@ -114,9 +141,7 @@ function formatRelative(date: Date): string {
  */
 function formatShort(date: Date): string {
     return date.toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
+        ...CALENDAR_DATE,
         hour: '2-digit',
         minute: '2-digit',
         ...HOUR_CYCLE_24

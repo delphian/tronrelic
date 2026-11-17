@@ -185,6 +185,21 @@ export interface FieldProps {
     required?: boolean;
 
     /**
+     * Puts the label and the control on one row, with the control at its own
+     * width, and the hint or error on the line underneath.
+     *
+     * Use it for a boolean control such as a `<Switch>`. In the default
+     * stacked layout the field stretches its control to the full width, so a
+     * switch becomes a wide button with its icon in the middle, drawn on its
+     * own line far from the words it belongs to. Inline keeps the switch
+     * beside its label at every width; a long label wraps beside the control
+     * instead of pushing it onto another line.
+     *
+     * @default false
+     */
+    inline?: boolean;
+
+    /**
      * Extra classes for the field wrapper, which is the element that owns the
      * layout — so a width or a grid placement belongs here rather than on the
      * control.
@@ -245,7 +260,9 @@ export interface FieldProps {
  * `<Input>` or `<Textarea>` that is what a form wants, but it does override
  * `<Select>`'s intrinsic width, so a dropdown that sized itself to its options
  * outside a field will fill the field inside one. Set the width on the field
- * itself through `className` when that is not what you want.
+ * itself through `className` when that is not what you want. A boolean control
+ * such as a `<Switch>` takes `inline` instead, which keeps it at its own width
+ * beside the label.
  *
  * @example
  * ```tsx
@@ -277,6 +294,7 @@ export function Field({
     hint,
     error,
     required = false,
+    inline = false,
     className,
     htmlFor
 }: FieldProps) {
@@ -473,28 +491,44 @@ export function Field({
         return described;
     };
 
+    const labelElement = hasLabel && (
+        <label className={styles.label} htmlFor={canAssociateLabel ? controlId : undefined}>
+            {label}
+            {/*
+              * Hidden from assistive technology rather than labelled.
+              * `aria-label` on a plain span is ignored — a span has the
+              * generic role, which does not support an accessible name
+              * — so the asterisk would have been announced as stray
+              * punctuation or skipped. The required state reaches a
+              * screen reader through `aria-required` on the control
+              * instead, which Field injects above.
+              */}
+            {required && (
+                <span className={styles.required} aria-hidden="true">
+                    *
+                </span>
+            )}
+        </label>
+    );
+
     return (
         <div className={cn(styles.field, className)}>
-            {hasLabel && (
-                <label className={styles.label} htmlFor={canAssociateLabel ? controlId : undefined}>
-                    {label}
-                    {/*
-                      * Hidden from assistive technology rather than labelled.
-                      * `aria-label` on a plain span is ignored — a span has the
-                      * generic role, which does not support an accessible name
-                      * — so the asterisk would have been announced as stray
-                      * punctuation or skipped. The required state reaches a
-                      * screen reader through `aria-required` on the control
-                      * instead, which Field injects above.
-                      */}
-                    {required && (
-                        <span className={styles.required} aria-hidden="true">
-                            *
-                        </span>
-                    )}
-                </label>
+            {/*
+              * Inline puts the label and the control in a row of their own,
+              * so the hint and error below cannot widen it and push the
+              * control away from its label.
+              */}
+            {inline ? (
+                <div className={styles.inline_row}>
+                    {labelElement}
+                    {describedChildren()}
+                </div>
+            ) : (
+                <>
+                    {labelElement}
+                    {describedChildren()}
+                </>
             )}
-            {describedChildren()}
             {/*
               * The hint is deliberately kept out of the live region below. A
               * hint is frequently derived from the value as it is typed — the

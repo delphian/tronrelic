@@ -75,7 +75,7 @@ export function WalletSwitcher({ wallets, progressByAddress, activeScope, onSele
     }
     return (
         <div className={styles.switcher}>
-            <div className="segmented-control" role="group" aria-label="Wallet scope">
+            <div className={`segmented-control ${styles.switcher_row}`} role="group" aria-label="Wallet scope">
                 <button
                     type="button"
                     aria-pressed={activeScope === null}

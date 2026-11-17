@@ -32,6 +32,31 @@
     align-items: stretch;
 }
 
+/*
+ * Inline layout for a boolean control: the label and the control share one
+ * row, and the hint and error stay underneath as in the stacked layout. The
+ * row is its own flex container holding only those two, so the width of a
+ * long hint below cannot push the control away from its label, which it does
+ * when all four parts share one grid. The control keeps its own width and
+ * the label shrinks and wraps beside it rather than dropping under it.
+ */
+.inline_row {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
+    min-width: 0;
+}
+
+.inline_row > * {
+    flex: none;
+}
+
+.inline_row > .label {
+    flex: 0 1 auto;
+    min-width: 0;
+    margin-bottom: 0;
+}
+
 .label {
     margin-bottom: var(--field-gap);
     display: inline-flex;

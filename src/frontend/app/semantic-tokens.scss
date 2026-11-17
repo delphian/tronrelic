@@ -336,6 +336,13 @@
     --switch-padding-lg: var(--spacing-2);
     --switch-on-color: var(--color-success);
     --switch-off-color: var(--color-text-muted);
+    /* The visible text a <Switch label> draws beside its icon. Plain text
+       colour rather than the state colour, so the words read the same whether
+       the switch is on or off, at the size of a <Field> label so a labelled
+       switch and a labelled field read as the same kind of control. */
+    --switch-label-color: var(--color-text);
+    --switch-label-font-size: var(--font-size-body-sm);
+    --switch-label-font-weight: var(--font-weight-medium);
 
     /* ========================================================================
      * CARD COMPONENT TOKENS

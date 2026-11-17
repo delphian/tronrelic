@@ -15,10 +15,13 @@
     color: var(--color-text);
 }
 
+/* `break-word` rather than `anywhere`: both break a host too long for the
+   cell, but `anywhere` also lets the table measure the cell as one letter
+   wide, so it squeezed the App column until "claude.com" broke mid-word. */
 .app_meta {
     font-size: var(--font-size-caption);
     color: var(--color-text-muted);
-    overflow-wrap: anywhere;
+    overflow-wrap: break-word;
 }
 
 .badge_row {
@@ -26,6 +29,22 @@
     flex-wrap: wrap;
     gap: var(--badge-gap);
     align-items: center;
+}
+
+/* The redirect hosts, as plain text: they identify where sign-in results go,
+   and pills on every row made the column too wide to share a line. */
+.hosts {
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+    overflow-wrap: break-word;
+}
+
+/* "Standard" for a grant holding exactly the scopes every MCP client asks
+   for; the scopes themselves are in the title. A grant that differs lists
+   its scopes as badges instead, so it stands out from the rows around it. */
+.standard_scopes {
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
 }
 
 /* Header for the actions column: announced to screen readers, not drawn. */
