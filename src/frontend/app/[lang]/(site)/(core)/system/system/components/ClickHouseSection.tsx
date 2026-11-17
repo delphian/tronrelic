@@ -108,25 +108,21 @@ export function ClickHouseSection() {
                             <p className={styles.empty}>ClickHouse is not configured.</p>
                         )}
                     </div>
-
-                    {clickhouse?.connected && (
-                        <div className={styles.block}>
-                            <h4 className={styles.block_title}>Table Browser</h4>
-                            <ClickHouseTableBrowser />
-                        </div>
-                    )}
                 </div>
             </Card>
+            {/* The browser draws its own panel, so it sits beside the health card
+              * rather than inside it. It starts collapsed: unscoped, it lists every
+              * table in every database, which would push the accounts panel below
+              * it far down the tab. */}
+            {clickhouse?.connected && <ClickHouseTableBrowser collapsible title="Table Browser" />}
             {showAccounts && (
                 <Card padding="sm" noBackgroundImage>
                     <ClickHouseAccountsPanel />
                 </Card>
             )}
-            {showAccounts && (
-                <Card padding="sm" noBackgroundImage>
-                    <AccountsModuleRecords />
-                </Card>
-            )}
+            {/* No card around it: its schedule and storage views draw their own
+              * panels, and it puts a card around the logs view itself. */}
+            {showAccounts && <AccountsModuleRecords />}
         </Stack>
     );
 }

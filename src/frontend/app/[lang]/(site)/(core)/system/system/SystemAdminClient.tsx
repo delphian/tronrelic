@@ -138,10 +138,9 @@ export function SystemAdminClient({ submenuTree, submenuGeneratedAt, initialTab,
                   * provider section are independent surfaces with independent save
                   * controls, so they sit as siblings rather than in one shared panel. */}
                 {activeTab === 'config' && <ConfigurationTab />}
+                {/* The monitor draws its own panel, so it needs no card around it. */}
                 {activeTab === 'schedules' && (
-                    <Card padding="sm" noBackgroundImage>
-                        <SchedulerMonitor jobFilter={isPipelineJob} title="Block Pipeline Schedules" hideStats />
-                    </Card>
+                    <SchedulerMonitor jobFilter={isPipelineJob} title="Block Pipeline Schedules" hideStats />
                 )}
                 {activeTab === 'logs' && (
                     <Card padding="sm" noBackgroundImage>

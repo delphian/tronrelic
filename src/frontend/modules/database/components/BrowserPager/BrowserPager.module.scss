@@ -1,0 +1,40 @@
+/**
+ * Styles for the page bar above a collection's documents or a table's rows.
+ *
+ * The bar wraps between its summary and its controls when the two do not fit
+ * one line. The controls themselves never wrap: a pager split across two lines
+ * reads as two unrelated groups of buttons, which is what the old text-labelled
+ * Previous and Next buttons did on a phone.
+ */
+
+.bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    column-gap: var(--gap-sm);
+    row-gap: var(--gap-2xs);
+    padding-bottom: var(--padding-xs);
+    border-bottom: var(--border-width-thin) solid var(--color-border);
+}
+
+.summary {
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.controls {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: var(--gap-2xs);
+}
+
+.position {
+    padding-inline: var(--padding-xs);
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}

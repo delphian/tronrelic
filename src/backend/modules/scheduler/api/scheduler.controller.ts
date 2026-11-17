@@ -122,7 +122,7 @@ export class SchedulerController {
                     schedule: config.schedule,
                     enabled: config.enabled,
                     lastRun,
-                    nextRun: null,
+                    nextRun: safeToISOString(config.nextRun),
                     status: config.enabled ? status : 'never_run',
                     duration,
                     error

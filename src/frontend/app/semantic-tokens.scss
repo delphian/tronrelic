@@ -1003,6 +1003,29 @@
     --segmented-control-active-color: var(--color-on-primary);
 
     /* ========================================================================
+     * PAGINATION TOKENS
+     *
+     * The frame <Pagination> draws around its page buttons, in two sets.
+     * Framed is the public-page look: a muted, bordered bar, so the control
+     * reads as one object beneath the list it pages. Bare draws no frame, so
+     * the buttons sit in a footer row like any other control. An admin table
+     * footer needs bare, because the framed bar was taller than the controls
+     * beside it and the tallest object on a compact page.
+     *
+     * The unsuffixed --pagination-padding, --pagination-background and
+     * --pagination-border name the set in use, which the density setting
+     * selects; see PAGINATION FRAME in the density block below. The framed
+     * padding is declared there as well, because it spaces the buttons from
+     * the frame's edge and so scales with --density.
+     * ======================================================================== */
+
+    --pagination-background-framed: var(--color-surface-muted);
+    --pagination-border-framed: var(--border-width-thin) solid var(--color-border);
+    --pagination-padding-bare: 0;
+    --pagination-background-bare: transparent;
+    --pagination-border-bare: none;
+
+    /* ========================================================================
      * METER/PROGRESS TOKENS
      * ======================================================================== */
 
@@ -1364,6 +1387,25 @@
      * selector list also declares.
      * ------------------------------------------------------------------ */
     --table-stack-label-width: var(--table-stack-label-width-md);
+
+    /* ------------------------------------------------------------------
+     * PAGINATION FRAME
+     *
+     * The frame around the <Pagination> buttons. It points at the framed
+     * set here, and `compact` below points it at the bare set, so a
+     * pagination bar in an admin table footer is no taller than its 34px
+     * buttons. Neither set changes; only the selection moves.
+     *
+     * --pagination-padding-framed is declared here rather than with the
+     * rest of the framed set in the main block because it is spacing and
+     * scales with --density. The selections are declared here for the
+     * same reason as the default control step above: a density step can
+     * only reselect a token that this selector list also declares.
+     * ------------------------------------------------------------------ */
+    --pagination-padding-framed: var(--padding-2xs) var(--padding-sm-md);
+    --pagination-padding: var(--pagination-padding-framed);
+    --pagination-background: var(--pagination-background-framed);
+    --pagination-border: var(--pagination-border-framed);
 }
 
 /* ============================================================================
@@ -1386,9 +1428,10 @@
  * buttons and fields. An unsized button takes its `sm` step, and an unsized
  * form control takes --input-padding-compact with the `sm` type size, which
  * puts a one-line field at about the button's 34px height. It also sets the
- * page title to one smaller heading (see PAGE TITLE SIZE above) and narrows
+ * page title to one smaller heading (see PAGE TITLE SIZE above), narrows
  * the column-name track of stacked table rows (see STACKED TABLE LABEL
- * COLUMN above). The other steps keep the defaults.
+ * COLUMN above), and drops the frame around pagination buttons (see
+ * PAGINATION FRAME above). The other steps keep the defaults.
  * ========================================================================== */
 
 [data-density="compact"] {
@@ -1401,6 +1444,9 @@
     --page-header-title-font-size-min: var(--font-size-heading-md);
     --page-header-title-font-size-max: var(--font-size-heading-md);
     --table-stack-label-width: var(--table-stack-label-width-compact);
+    --pagination-padding: var(--pagination-padding-bare);
+    --pagination-background: var(--pagination-background-bare);
+    --pagination-border: var(--pagination-border-bare);
 }
 [data-density="cozy"]    { --density: 0.875; }
 [data-density="default"] { --density: 1; }

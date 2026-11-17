@@ -108,26 +108,49 @@ export function ClientTime({ date, format = 'time', fallback = '—' }: ClientTi
 }
 
 /**
- * Formats a date as relative time (e.g., "5m ago", "2h ago", "3d ago").
+ * How far ahead of the browser's clock a time can be and still read as "just
+ * now". A server stamps past events with its own clock, which can run a few
+ * seconds ahead of the visitor's, and such an event must not read as upcoming.
+ */
+const CLOCK_SKEW_TOLERANCE_MS = 5_000;
+
+/**
+ * Formats a date as relative time, past ("5m ago", "2h ago", "3d ago") or
+ * future ("in 5m", "in 2h", "in 3d").
  *
- * Suits a column of closely spaced events, where the age matters more than
- * the clock time. Anything older than a week falls back to a plain date.
+ * Suits a column of closely spaced events, where the distance matters more
+ * than the clock time, such as when a job last ran or runs next. Anything more
+ * than a week away in either direction falls back to a plain date.
  *
  * @param date - The already-validated date to describe.
- * @returns The relative age, or a date for anything older than a week.
+ * @returns The relative distance, or a date for anything over a week away.
  */
 function formatRelative(date: Date): string {
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / (1000 * 60));
-    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const diffMs = Date.now() - date.getTime();
+    const isFuture = diffMs < -CLOCK_SKEW_TOLERANCE_MS;
+    const distanceMs = Math.abs(diffMs);
+    const mins = Math.floor(distanceMs / (1000 * 60));
+    const hours = Math.floor(distanceMs / (1000 * 60 * 60));
+    const days = Math.floor(distanceMs / (1000 * 60 * 60 * 24));
 
-    if (diffMins < 1) return 'just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return formatCalendarDate(date);
+    let amount: string | null = null;
+    if (mins < 60) {
+        amount = `${mins}m`;
+    } else if (hours < 24) {
+        amount = `${hours}h`;
+    } else if (days < 7) {
+        amount = `${days}d`;
+    }
+
+    let label: string;
+    if (amount === null) {
+        label = formatCalendarDate(date);
+    } else if (mins < 1) {
+        label = isFuture ? 'in <1m' : 'just now';
+    } else {
+        label = isFuture ? `in ${amount}` : `${amount} ago`;
+    }
+    return label;
 }
 
 /**

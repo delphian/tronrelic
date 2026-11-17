@@ -1,0 +1,134 @@
+/**
+ * Styles for the inventory table both storage browsers draw.
+ *
+ * The shared Table supplies the grid, the row states, and the stacked layout.
+ * What is left here is the chrome it does not supply: the sort button in each
+ * header, the expand control at the start of each row, the name, and the short
+ * summary that replaces the figure columns while rows are stacked.
+ */
+
+@use '../../../../app/breakpoints' as *;
+
+/*
+ * Sort control inside a column header.
+ *
+ * A real <button> so the column can be sorted from the keyboard and is
+ * announced as a control. It inherits the header's own type so the row still
+ * reads as a table head rather than a strip of buttons. Inline-flex keeps it
+ * subject to the header's text-align, which right-aligns it in numeric columns.
+ */
+.sort_button {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    padding: 0;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
+}
+
+.sort_button:hover {
+    color: var(--color-text);
+}
+
+/* Direction glyph on a column that is not the sorted one. Shown so the column
+   reads as sortable, dimmed so it does not compete with the sorted column. */
+.sort_icon_idle {
+    opacity: var(--opacity-35);
+}
+
+/* The expand control and the name in one cell. The name track can narrow to
+   nothing so a long name wraps beside the control instead of pushing the
+   cell past the row's width. */
+.name_cell {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    column-gap: var(--gap-2xs);
+}
+
+.expand_button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--padding-2xs);
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--color-text-muted);
+}
+
+.expand_button:hover {
+    color: var(--color-text);
+}
+
+/*
+ * The name and, while rows are stacked, the summary after it. A wrapping flex
+ * line keeps the summary beside the name when both fit and moves it under the
+ * name, aligned with it, when they do not.
+ */
+.name_line {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: var(--gap-sm);
+    row-gap: var(--gap-2xs);
+    max-width: 100%;
+}
+
+.name {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text);
+    word-break: break-all;
+}
+
+/*
+ * The row's figures as one muted line, such as "64 docs · 17.88 KB · 3
+ * indexes". Hidden at full width, where the columns already show them.
+ */
+.entry_summary {
+    display: none;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-caption);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Each figure stays on one line, so the summary only wraps at a separator and
+   never splits "17.88 KB" from its unit. */
+.entry_summary_part {
+    white-space: nowrap;
+}
+
+.detail_row {
+    background: var(--color-surface-muted);
+}
+
+/*
+ * While rows are stacked, the figures move onto the entry's heading line as
+ * the summary, and the figure cells are hidden. Labelled fields would take one
+ * line each on a phone, which made every collection four lines tall.
+ *
+ * `table` is the container the shared Table declares on its wrapper, so this
+ * query measures the same width the stacking does. The breakpoint must match
+ * the `stackAt` value set in InventoryTable.tsx: `mobile` is
+ * $breakpoint-mobile-lg. If the two disagree, a width appears where the rows
+ * are stacked with no figures at all, or show the figures twice.
+ *
+ * The figure cells carry no `label`, which is what lets this rule hide them.
+ * The Table gives a labelled cell `display: grid` from a much more specific
+ * selector while stacked, and an unlabelled one no display of its own.
+ */
+@container table (max-width: #{$breakpoint-mobile-lg}) {
+    .entry_summary {
+        display: block;
+    }
+
+    .figure_cell {
+        display: none;
+    }
+}

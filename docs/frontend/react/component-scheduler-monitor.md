@@ -1,18 +1,38 @@
 # SchedulerMonitor Component
 
-Admin diagnostic table for BullMQ scheduled jobs. Lives in `src/frontend/modules/scheduler/`. Mounted in production at `/system/scheduler` via `app/[lang]/(site)/(core)/system/scheduler/page.tsx`.
+Admin table of the scheduler's jobs, with inline controls for each one. Lives in `src/frontend/modules/scheduler/`. It is the whole of `/system/scheduler` (`app/[lang]/(site)/(core)/system/scheduler/page.tsx`) and the Schedules tab on every module and plugin admin page that owns a job.
 
 ## Why This Matters
 
-Scheduled jobs fail silently — a stalled `blockchain:sync` or stale `markets:refresh` can go unnoticed for hours. SchedulerMonitor surfaces last-run status, error text, next-run time, and inline enable/schedule controls, so operators can diagnose and recover without redeploying.
+Scheduled jobs fail silently — a stalled `blockchain:sync` or stale `markets:refresh` can go unnoticed for hours. SchedulerMonitor puts failed jobs at the top with the first line of their error, shows when each job last ran, and lets an operator change a schedule, switch a job off, or run it now without redeploying.
 
 ## How It Works
 
-The component fetches `getSchedulerStatus()` and `getSchedulerHealth()` in parallel on mount, renders a stats bar plus an expandable job table, and re-fetches every 10 s via `setInterval` (cleared on unmount). Toggling enabled or editing the schedule field PATCHes `/admin/system/scheduler/job/:jobName` and re-fetches; per-job feedback clears after 3 s.
+On mount the component fetches `getSchedulerStatus()`, and re-fetches every 10 s through `setInterval`, which is cleared on unmount. It calls `getSchedulerHealth()` alongside only when it will show the success rate, which is on the unfiltered monitor with stats showing. Toggling a job or editing its schedule PATCHes `/admin/system/scheduler/job/:jobName` and re-fetches; the result message in that job's details row clears after 3 s.
 
-The schedule input is **uncontrolled** — it commits its `defaultValue` on blur or Enter. Cron validation is a 5-field syntactic check (`schedule.split(/\s+/).length === 5`); semantic validity is the backend's problem.
+**Panel.** The monitor draws one core `<Panel>`, the same card and header row the storage browsers on a Database tab draw, so a Schedules tab and a Database tab on one page look alike. `title` is the panel's `<h3>` title in every state, including loading, and is "Scheduled Jobs" when omitted. The meta line beside it gives the job count and, when the rows drop a shared namespace (see Names below), states that namespace once. Do not wrap the monitor in a `<Card>` of its own, which would draw a card inside a card.
 
-The stats bar is **conditional**: `Total` and `Enabled` always show; `Running` and `Failed` only render when nonzero; `Success Rate` only renders when the health endpoint responded. Three different environments can produce three different stat-bar layouts — that's by design.
+**Stats strip.** A `<StatGrid size="sm">` of `<StatTile size="sm" surface={false}>`, unboxed because the panel is already the card. `Total` and `Enabled` always show, and `Running` and `Failed` only when nonzero, all counted over the jobs on screen. `Success rate` is the health endpoint's figure, successful runs over every run recorded in `scheduler_executions` for all jobs together. The status response carries nothing per job to scope it with, so it only appears when `jobFilter` is unset.
+
+**Row order.** Failed jobs first, then the rest, each group in the order the scheduler reported it. Running jobs are not lifted, because a job runs for a few seconds at a time and ranking it would move rows up and back down between refreshes. While a schedule input has focus a refresh keeps the order on screen, because moving the row that holds the focused input would take focus away mid-edit and could commit a half-typed schedule.
+
+**Names.** When `jobFilter` is set and every listed name starts with the same namespace ending in a colon, such as `markets:`, the rows drop it and show `refresh` instead of `markets:refresh`. The panel's meta line states the namespace once, and the full name is in the name's tooltip and in the details row. The unfiltered page always shows full names, because there the namespace is what tells one component's jobs from another's.
+
+**Columns.**
+
+| Column | Shows |
+|--------|-------|
+| Job | Expand toggle and name. A failed job adds the first line of its error under the name, cut off with an ellipsis, with the full text in its tooltip and in the details row |
+| Enabled | On/off switch |
+| Schedule | The cron expression as an editable input, monospace, every row the width of the longest schedule on screen plus one character, between 14 and 24 characters. A longer expression scrolls inside the field and shows whole in its tooltip, because sizing every row to it took the width the job names needed |
+| Status | Badge |
+| Last run | Relative time, or "Never" |
+| Next run | Relative time such as "in 10m" (`ClientTime format="relative"`), narrow enough to leave the job names their width at tablet size. The status endpoint takes it from the live cron task, so a disabled job shows none; the column is left out when no job on screen has one |
+| Run | Run now |
+
+**Narrow widths.** The table passes `flush`, so it runs to the panel's edges, and `stackAt="mobile"`, so at 768px and below each job becomes a labelled entry. The Enabled and Run cells carry no `label`: the switch, coming straight after the job cell, shares the entry's first line with the name, and the run button sits at the end of the entry's last line. On a phone the schedule input fills its field instead of keeping its desktop width.
+
+The schedule input is **uncontrolled** — it commits its `defaultValue` on blur or Enter. Cron validation only checks for five or six whitespace-separated fields; semantic validity is the backend's problem.
 
 ## Props
 
@@ -24,32 +44,28 @@ place — that is what let the plugin-facing declaration drift (see Gotchas).
 ```typescript
 interface ISchedulerMonitorProps {
     jobFilter?: string[] | ((job: ISchedulerJobStatus) => boolean);  // Names or predicate; omit to show all
-    title?: string;                                                  // Section title; defaults to 'Scheduled Jobs'
-    hideStats?: boolean;                                             // Hide the stats bar (e.g. when embedding)
+    title?: string;                                                  // Panel title; 'Scheduled Jobs' when omitted
+    hideStats?: boolean;                                             // Hide the stats strip
 }
 ```
 
 ## Example
 
-The canonical mount, copied from `app/[lang]/(site)/(core)/system/scheduler/page.tsx`:
+The unfiltered mount, from `app/[lang]/(site)/(core)/system/scheduler/page.tsx`, where the panel takes the default title:
 
 ```tsx
-'use client';
-import { SchedulerMonitor } from '../../../../modules/scheduler';
-
-export default function SchedulerMonitorPage() {
-    return <SchedulerMonitor />;
-}
+<Page>
+    <PageHeader title="Scheduler" subtitle="Every scheduled job, its cron schedule, and its last run." />
+    <SchedulerMonitor />
+</Page>
 ```
 
-Filtered embedding (e.g. on a market-jobs panel):
+A Schedules tab, filtered by name prefix so a job registered later appears without a change to the page:
 
 ```tsx
-<SchedulerMonitor
-    jobFilter={['markets:refresh']}                           // or: (job) => job.name.startsWith('markets:')
-    title="Market Jobs"
-    hideStats
-/>
+const isMarketsJob = (job: SchedulerJob) => job.name.startsWith('markets:');
+
+<SchedulerMonitor jobFilter={isMarketsJob} title="Market Schedules" hideStats />
 ```
 
 ## Gotchas
@@ -72,7 +88,7 @@ Filtered embedding (e.g. on a market-jobs panel):
 
 ```tsx
 const { system } = context;
-<system.SchedulerMonitor jobFilter={['my-plugin:refresh']} title="My Plugin Schedules" hideStats />
+<system.SchedulerMonitor jobFilter={(job) => job.name.startsWith('my-plugin:')} title="My Plugin Schedules" hideStats />
 ```
 
 Pulling `SchedulerMonitor` across the workspace by relative path instead violates the plugin-isolation rule in [plugins-frontend-context.md](../../plugins/plugins-frontend-context.md). Falling back to `context.api` against `/admin/system/scheduler/...` is only warranted when you need controls this component does not offer.
@@ -82,8 +98,9 @@ Pulling `SchedulerMonitor` across the workspace by relative path instead violate
 | Endpoint | Method | Used by |
 |----------|--------|---------|
 | `/admin/system/scheduler/status` | GET | Initial load + 10 s refresh |
-| `/admin/system/scheduler/health` | GET | Initial load + 10 s refresh |
+| `/admin/system/scheduler/health` | GET | Initial load + 10 s refresh, only when `jobFilter` is unset and stats show |
 | `/admin/system/scheduler/job/:jobName` | PATCH | Toggle / schedule edit |
+| `/admin/system/scheduler/job/:jobName/run` | POST | Run now |
 
 Full endpoint reference: [system-api-scheduler.md](../../system/system-api-scheduler.md). Cron syntax + operations runbook: [system-scheduler-operations.md](../../system/system-scheduler-operations.md).
 
@@ -92,8 +109,8 @@ Full endpoint reference: [system-api-scheduler.md](../../system/system-api-sched
 - [ ] Caller is a client component and inside the global provider tree (`useSystemAuth` will throw otherwise)
 - [ ] Visitor is `Verified` and a member of the `admin` group, or `ADMIN_API_TOKEN` is set in backend `.env` and a service token is provided
 - [ ] No `token` prop passed — the component has none; admin authority is the session cookie
-- [ ] `jobFilter` strings are exact, case-sensitive job names — typos render an empty state, not an error
-- [ ] If embedding, pass `hideStats` to suppress the global stats bar
+- [ ] `jobFilter` strings are exact, case-sensitive job names — typos render an empty state, not an error. Prefer a prefix predicate
+- [ ] `title` names the component when the monitor is a tab, and the host does not wrap the monitor in a `<Card>`
 
 ## Further Reading
 

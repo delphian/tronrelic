@@ -61,19 +61,23 @@ export interface IClickHouseTableBrowserProps {
     prefix?: string;
 
     /**
-     * Heading rendered above the table list. There is no default — omit it and
-     * the component renders no heading at all.
-     *
-     * This differs deliberately from the collection browser, which always
-     * labels its list. That browser puts its heading inside a card below a
-     * separate overview card, so the label distinguishes two panels. This one
-     * puts the heading at the very top, where an embedding page has usually
-     * already supplied a heading of its own (the system console's ClickHouse
-     * section does exactly that), and a built-in default would read as a
-     * duplicate. Pass a title only when the surrounding page would otherwise
-     * leave the scope ambiguous.
+     * Title of the browser's panel, on the header row beside the summary.
+     * Defaults to "Tables". The browser draws its own panel, the same as the
+     * collection browser, so both read as one kind of surface on a Database
+     * tab. In the collapsible form the title is also the control that opens
+     * the browser.
      */
     title?: string;
+
+    /**
+     * Whether to render the browser behind a disclosure heading that starts
+     * closed. Defaults to false, the always-expanded form. Set it where the
+     * inventory is one surface among several — the unscoped system console lists
+     * every table in every database. A closed browser does not request its
+     * statistics until opened, unless `hideWhenEmpty` is also set, which needs the
+     * table count to decide whether to render at all.
+     */
+    collapsible?: boolean;
 
     /**
      * Hides the component entirely when no table matches `prefix`, instead of

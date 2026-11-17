@@ -46,6 +46,12 @@ const DOTS = '…';
  * Returns null when pagination is unnecessary (total items fit on one page), making
  * it safe to always render without conditional logic.
  *
+ * The frame around the buttons follows the page density. A public page draws
+ * them in a muted, bordered bar; a compact admin page draws no frame, so the
+ * control is no taller than the other controls in a table footer. The choice
+ * is made by the `--pagination-*` tokens in `semantic-tokens.scss`, so the
+ * component takes no prop for it.
+ *
  * @example
  * ```tsx
  * <Pagination

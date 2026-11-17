@@ -4,27 +4,32 @@
  * ClickHouse table browser component for the system console.
  *
  * Mirrors CollectionBrowser (the MongoDB equivalent) so admins get the
- * same expand-then-paginate experience for analytical tables. Differences
- * from the Mongo browser: rows have no stable `_id`, so expansion uses
- * the row's position in the page; deletion is not exposed because
- * `ALTER TABLE ... DELETE` is async and dangerous in ClickHouse — viewing
- * is the only operation needed for ops debugging.
+ * same expand-then-paginate experience for analytical tables, and shares its
+ * panel, inventory table, and page bar so the two look the same when they sit
+ * one above the other. Differences from the Mongo browser: rows have no stable
+ * `_id`, so expansion uses the row's position in the page; deletion is not
+ * exposed because `ALTER TABLE ... DELETE` is async and dangerous in
+ * ClickHouse — viewing is the only operation needed for ops debugging.
  *
  * The inventory is a real table with sortable columns for the same reason the
  * Mongo browser is: row count and stored size are quantities an operator
  * compares across tables — which one is eating disk, which one explains a slow
- * query — and a column of right-aligned figures answers that by scanning, where
- * badges scattered along each row do not.
+ * query — and a column of right-aligned figures answers that by scanning.
  *
  * Unscoped, this is the universal browser and lists every database except
  * ClickHouse's own, so a table outside the application database — the `tron`
  * chain data, for one — is named with its database (`tron.block`) while the
  * application's own tables keep their bare names. Scoped by plugin or by table
- * names, the server keeps the list inside the application database.
+ * names, the server keeps the list inside the application database. Scoped by
+ * plugin, every table starts with `plugin_<id>_`, so the rows leave that
+ * prefix out and the header states it once.
+ *
+ * `collapsible` puts the inventory behind a closed disclosure, as on the Mongo
+ * browser, for a page where the unscoped listing would push everything below
+ * it off screen.
  */
 
-import { useState, useEffect, useCallback, useMemo, Fragment } from 'react';
-import { Button } from '../../../../components/ui/Button';
+import { useState, useEffect, useCallback, useMemo, Fragment, type ReactNode } from 'react';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../components/ui/Table';
 import { CopyButton } from '../../../../components/ui/CopyButton';
 import type { IClickHouseTableBrowserProps } from '@/types';
@@ -35,14 +40,15 @@ import type { IClickHouseTableBrowserProps } from '@/types';
 // A type-only import from the barrel is erased and does not have this cost.
 import { pluginPrefix } from '@/types/plugin/pluginPrefix';
 import { formatBytes } from '../../../../lib/format';
-import {
-    AlertCircle,
-    ArrowDown,
-    ArrowUp,
-    ArrowUpDown,
-    ChevronDown,
-    ChevronRight
-} from 'lucide-react';
+import { AlertCircle, ChevronDown, ChevronRight } from 'lucide-react';
+import { BrowserPanel, type IBrowserSummary } from '../BrowserPanel';
+import { BrowserPager } from '../BrowserPager';
+import { InventoryTable, InventoryRow } from '../InventoryTable';
+import { useInventorySort } from '../../hooks/useInventorySort';
+import { stripNamePrefix } from '../../lib/stripNamePrefix';
+import { formatCount } from '../../lib/formatCount';
+import type { IInventoryColumn } from '../../types/IInventoryColumn';
+import type { IInventorySort } from '../../types/IInventorySort';
 import styles from './ClickHouseTableBrowser.module.scss';
 
 interface ITableStat {
@@ -66,7 +72,8 @@ function tableKey(table: ITableStat): string {
 }
 
 /**
- * The name an operator reads for a table.
+ * The full name an operator reads for a table, before any scope prefix is
+ * removed for display.
  *
  * A table in the application database keeps its bare name, so the list looks
  * as it always has for the tables most operators come here for; a table in any
@@ -80,34 +87,14 @@ function tableLabel(table: ITableStat, applicationDatabase: string): string {
 /** A column the table inventory can be ranked by. */
 type TableSortKey = 'name' | 'rowCount' | 'sizeBytes' | 'engine';
 
-/** Which way a sorted column runs. */
-type SortDirection = 'asc' | 'desc';
-
-/**
- * The column the inventory is ranked by, and the direction it runs in.
- */
-interface ITableSort {
-    /** The ranked column. */
-    key: TableSortKey;
-    /** `asc` puts the smallest first, `desc` the largest. */
-    direction: SortDirection;
-}
-
 /**
  * The sortable columns of the table inventory.
  *
- * `initialDirection` is what a first click on a column produces. The numeric
- * columns open descending because the question an operator brings here is
- * nearly always "what is biggest", and making them click twice to reach that
- * would be a step for nothing. The text columns open ascending, which is plain
- * alphabetical order.
+ * The numeric columns open descending because the question an operator brings
+ * here is nearly always "what is biggest". The text columns open ascending,
+ * which is plain alphabetical order.
  */
-const TABLE_COLUMNS: ReadonlyArray<{
-    key: TableSortKey;
-    label: string;
-    numeric: boolean;
-    initialDirection: SortDirection;
-}> = [
+const TABLE_COLUMNS: ReadonlyArray<IInventoryColumn<TableSortKey>> = [
     { key: 'name', label: 'Table', numeric: false, initialDirection: 'asc' },
     { key: 'rowCount', label: 'Rows', numeric: true, initialDirection: 'desc' },
     { key: 'sizeBytes', label: 'Size', numeric: true, initialDirection: 'desc' },
@@ -115,7 +102,7 @@ const TABLE_COLUMNS: ReadonlyArray<{
 ];
 
 /** Where the inventory rests before the operator sorts it: alphabetical by name. */
-const DEFAULT_SORT: ITableSort = { key: 'name', direction: 'asc' };
+const DEFAULT_SORT: IInventorySort<TableSortKey> = { key: 'name', direction: 'asc' };
 
 /**
  * Order two tables by the active column.
@@ -132,7 +119,7 @@ const DEFAULT_SORT: ITableSort = { key: 'name', direction: 'asc' };
  * @param sort - The active column and direction.
  * @returns Negative, zero, or positive per the `Array.prototype.sort` contract.
  */
-function compareTables(a: ITableStat, b: ITableStat, sort: ITableSort): number {
+function compareTables(a: ITableStat, b: ITableStat, sort: IInventorySort<TableSortKey>): number {
     let ordering: number;
     if (sort.key === 'name') {
         ordering = tableKey(a).localeCompare(tableKey(b));
@@ -174,14 +161,14 @@ interface IPaginatedRows {
  * is absent.
  * @param prefix - Deprecated literal prefix, honoured only when `pluginId` and
  * `tables` are both absent so existing callers keep working while they migrate.
- * @param title - Heading above the list. Omitted by default because the
- * embedding page — the system console included — usually supplies its own, and
- * a built-in heading would read as a duplicate.
+ * @param title - Title of the browser's panel; "Tables" when omitted. In the
+ * collapsible form it doubles as the control that opens the browser.
  * @param hideWhenEmpty - Render nothing when no table matches, rather than an
  * empty panel that reads as missing data.
+ * @param collapsible - Whether to start closed behind a disclosure heading.
  */
 export function ClickHouseTableBrowser(props: IClickHouseTableBrowserProps) {
-    const { pluginId, tables, prefix, title, hideWhenEmpty = false } = props;
+    const { pluginId, tables, prefix, title, hideWhenEmpty = false, collapsible = false } = props;
 
     /**
      * Whether the caller asked for plugin scoping at all, as opposed to what
@@ -210,8 +197,9 @@ export function ClickHouseTableBrowser(props: IClickHouseTableBrowserProps) {
      */
     const tablesKey = Array.isArray(tables) ? tables.join('\n') : '';
     /**
-     * The prefix used for filtering and for the empty-state message, plus the
-     * reason it could not be derived when the caller supplied an unusable id.
+     * The prefix used for filtering, for the empty-state message, and for
+     * shortening the listed names, plus the reason it could not be derived when
+     * the caller supplied an unusable id.
      *
      * A `pluginId` the caller supplied but that is blank or undefined must not
      * fall back to `prefix`. Falling back sends no `?prefix=` at all, and the
@@ -246,8 +234,15 @@ export function ClickHouseTableBrowser(props: IClickHouseTableBrowserProps) {
         }
         return result;
     }, [scopesByPluginId, pluginId, scopesByTables, tablesKey, prefix]);
+
+    // Disclosure state for the collapsible form. Declared unconditionally, and
+    // read through `isCollapsed` below, so the always-expanded form runs the
+    // same hooks in the same order.
+    const [collapsed, setCollapsed] = useState(true);
+    const isCollapsed = collapsible && collapsed;
+
     const [stats, setStats] = useState<IClickHouseStats | null>(null);
-    const [sort, setSort] = useState<ITableSort>(DEFAULT_SORT);
+    const { sort, toggleSort } = useInventorySort(TABLE_COLUMNS, DEFAULT_SORT);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [expandedTable, setExpandedTable] = useState<string | null>(null);
@@ -255,6 +250,12 @@ export function ClickHouseTableBrowser(props: IClickHouseTableBrowserProps) {
     const [loadingRows, setLoadingRows] = useState(false);
     const [expandedRowKey, setExpandedRowKey] = useState<string | null>(null);
 
+    /**
+     * Load table statistics for the browser's scope.
+     *
+     * The scope travels as query parameters so the server filters in SQL, and
+     * an embedded caller never receives the wider table list.
+     */
     const fetchStats = useCallback(async () => {
         // An unusable plugin id stops the request outright. Querying without a
         // prefix would return the whole deployment's inventory, which is the
@@ -268,8 +269,6 @@ export function ClickHouseTableBrowser(props: IClickHouseTableBrowserProps) {
 
         try {
             setLoading(true);
-            // The scope travels as query parameters so the server filters in
-            // SQL — an embedded caller never receives the wider table list.
             let query = '';
             if (scope.tables) {
                 query = `?${scope.tables.map((name) => `tables=${encodeURIComponent(name)}`).join('&')}`;
@@ -328,9 +327,23 @@ export function ClickHouseTableBrowser(props: IClickHouseTableBrowserProps) {
         }
     }, []);
 
+    // A closed browser does not fetch, as on the Mongo browser, unless
+    // `hideWhenEmpty` is set. That option has to know whether any table
+    // matches before it can decide to render nothing, and the request is one
+    // read of `system.tables`, so it runs while closed rather than leaving a
+    // disclosure on screen that vanishes when the operator opens it.
+    const shouldFetchStats = !isCollapsed || hideWhenEmpty;
+
+    /**
+     * Fetch the statistics once the browser needs them, and again when its
+     * scope changes. Opening a browser that already fetched while closed does
+     * not refetch, because `shouldFetchStats` stays true across the change.
+     */
     useEffect(() => {
-        void fetchStats();
-    }, [fetchStats]);
+        if (shouldFetchStats) {
+            void fetchStats();
+        }
+    }, [shouldFetchStats, fetchStats]);
 
     /**
      * Open a table's row panel, or close it if it is the open one.
@@ -358,36 +371,17 @@ export function ClickHouseTableBrowser(props: IClickHouseTableBrowserProps) {
         setExpandedRowKey((prev) => (prev === rowKey ? null : rowKey));
     };
 
-    /**
-     * Rank a column, or flip it if it is already the ranked one.
-     *
-     * Table expansion is keyed by database and name rather than position, so an open table
-     * stays open across a re-sort and the operator does not lose the rows they
-     * were reading.
-     *
-     * @param key - The column the operator clicked.
-     */
-    const toggleSort = useCallback((key: TableSortKey) => {
-        setSort((previous) => {
-            if (previous.key === key) {
-                return { key, direction: previous.direction === 'asc' ? 'desc' : 'asc' };
-            }
-
-            const column = TABLE_COLUMNS.find((candidate) => candidate.key === key);
-            return { key, direction: column?.initialDirection ?? 'desc' };
-        });
-    }, []);
-
+    /** The inventory in the order the active sort asks for, copied so state is never sorted in place. */
     const sortedTables = useMemo(
         () => [...(stats?.tables ?? [])].sort((a, b) => compareTables(a, b, sort)),
         [stats?.tables, sort]
     );
 
     /**
-     * Every database the listing covers, for the overview line. A scoped
-     * listing covers only the application database; the universal one names
-     * each database it found, so an operator can see the chain data is there
-     * without scrolling for it.
+     * Every database the listing covers, for the header's summary line. A
+     * scoped listing covers only the application database; the universal one
+     * names each database it found, so an operator can see the chain data is
+     * there without scrolling for it.
      */
     const databaseNames = useMemo(() => {
         const names = new Set((stats?.tables ?? []).map((table) => table.database));
@@ -397,18 +391,118 @@ export function ClickHouseTableBrowser(props: IClickHouseTableBrowserProps) {
         return [...names].sort((a, b) => a.localeCompare(b));
     }, [stats?.tables, stats?.dbName]);
 
-    if (loading) {
-        return <p className={styles.empty}>Loading ClickHouse statistics…</p>;
-    }
+    // The header's summary line. Kept once the statistics have loaded, so a
+    // browser closed again after being opened still says what it holds.
+    const summary: IBrowserSummary | null = stats === null ? null : {
+        databases: databaseNames,
+        prefix: scope.prefix,
+        count: stats.tables.length,
+        singular: 'table',
+        plural: 'tables',
+        totalSize: stats.totalSize
+    };
 
-    // Deliberately ahead of the hideWhenEmpty check below, and it overrides it.
-    // hideWhenEmpty means "this plugin stores nothing in ClickHouse, so say
-    // nothing" — it does not mean "stay quiet when the caller misconfigured the
-    // scope". A bad pluginId that rendered nothing would look identical to a
-    // plugin with no tables, which is the silent failure this component's
-    // pluginId prop exists to remove, so it is reported even here.
-    if (error) {
-        return (
+    /**
+     * Build the row panel shown beneath an open table.
+     *
+     * Only the open table calls this, so `rows` always belongs to it.
+     *
+     * @param table - The open table.
+     * @returns The page bar and the page's rows, or the loading or empty
+     * message in their place.
+     */
+    const renderRows = (table: ITableStat): ReactNode => (
+        <div className={styles.rows_panel}>
+            {loadingRows && <p className={styles.message}>Loading rows…</p>}
+            {!loadingRows && rows === null && <p className={styles.message}>No rows loaded.</p>}
+            {!loadingRows && rows !== null && (
+                <>
+                    <BrowserPager
+                        summary={formatCount(rows.total, 'row', 'rows')}
+                        page={rows.page}
+                        totalPages={Math.max(1, rows.totalPages)}
+                        canFirst={rows.page > 1}
+                        canPrevious={rows.hasPrevPage}
+                        canNext={rows.hasNextPage}
+                        canLast={rows.hasNextPage}
+                        onFirst={() => void fetchRows(table, 1)}
+                        onPrevious={() => void fetchRows(table, rows.page - 1)}
+                        onNext={() => void fetchRows(table, rows.page + 1)}
+                        onLast={() => void fetchRows(table, rows.totalPages)}
+                    />
+                    {rows.rows.length === 0 ? (
+                        <p className={styles.message}>Table is empty.</p>
+                    ) : (
+                        <Table variant="compact">
+                            <Thead>
+                                <Tr>
+                                    <Th width="shrink" aria-label="Expand" />
+                                    <Th>Row</Th>
+                                    <Th>Preview</Th>
+                                    <Th width="shrink" aria-label="Actions" />
+                                </Tr>
+                            </Thead>
+                            <Tbody>
+                                {rows.rows.map((row, index) => {
+                                    const rowKey = `${rows.page}_${index}`;
+                                    const isOpen = expandedRowKey === rowKey;
+                                    const rowJson = JSON.stringify(row, null, 2);
+                                    const preview = buildPreview(row);
+                                    return (
+                                        <Fragment key={rowKey}>
+                                            <Tr
+                                                isExpanded={isOpen}
+                                                onClick={() => toggleRow(rowKey)}
+                                            >
+                                                <Td muted>
+                                                    {isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                                                </Td>
+                                                <Td muted>
+                                                    <code className={styles.row_index}>
+                                                        {(rows.page - 1) * rows.limit + index + 1}
+                                                    </code>
+                                                </Td>
+                                                <Td>
+                                                    <code className={styles.row_preview}>{preview}</code>
+                                                </Td>
+                                                <Td>
+                                                    <div onClick={(e) => e.stopPropagation()}>
+                                                        <CopyButton
+                                                            value={rowJson}
+                                                            aria-label="Copy row JSON"
+                                                        />
+                                                    </div>
+                                                </Td>
+                                            </Tr>
+                                            {isOpen && (
+                                                <Tr className={styles.row_detail}>
+                                                    <Td colSpan={4}>
+                                                        <pre className={styles.row_json}>{rowJson}</pre>
+                                                    </Td>
+                                                </Tr>
+                                            )}
+                                        </Fragment>
+                                    );
+                                })}
+                            </Tbody>
+                        </Table>
+                    )}
+                </>
+            )}
+        </div>
+    );
+
+    // What the panel shows beneath its header. Every state keeps the header,
+    // because in the collapsible form the heading is the disclosure control:
+    // dropping it with a failed request would leave an error on screen the
+    // operator could no longer close.
+    let body: ReactNode = null;
+    if (isCollapsed) {
+        body = null;
+    } else if (loading) {
+        body = <p className={styles.message}>Loading ClickHouse statistics…</p>;
+    } else if (error) {
+        body = (
             <div className="alert alert--danger" role="alert">
                 <span className={styles.error_inline}>
                     <AlertCircle size={14} aria-hidden="true" />
@@ -416,237 +510,87 @@ export function ClickHouseTableBrowser(props: IClickHouseTableBrowserProps) {
                 </span>
             </div>
         );
-    }
-
-    if (!stats) {
-        return <p className={styles.empty}>No ClickHouse statistics available.</p>;
+    } else if (!stats) {
+        body = <p className={styles.message}>No ClickHouse statistics available.</p>;
+    } else if (sortedTables.length === 0) {
+        let emptyMessage = 'No tables found';
+        if (scope.tables) {
+            emptyMessage = `No tables found for ${scope.tables.join(', ')}`;
+        } else if (typeof scope.prefix === 'string' && scope.prefix.length > 0) {
+            emptyMessage = `No tables found for ${scope.prefix}`;
+        }
+        body = <p className={styles.message}>{emptyMessage}</p>;
+    } else {
+        const applicationDatabase = stats.dbName;
+        body = (
+            <InventoryTable
+                columns={TABLE_COLUMNS}
+                sort={sort}
+                onSort={toggleSort}
+                rowCount={sortedTables.length}
+            >
+                {sortedTables.map((table) => {
+                    const key = tableKey(table);
+                    const fullLabel = tableLabel(table, applicationDatabase);
+                    const isTableOpen = expandedTable === key;
+                    return (
+                        <InventoryRow
+                            key={key}
+                            name={fullLabel}
+                            label={stripNamePrefix(fullLabel, scope.prefix)}
+                            expanded={isTableOpen}
+                            onToggle={() => toggleTable(table)}
+                            figures={[
+                                {
+                                    key: 'rowCount',
+                                    value: table.rowCount.toLocaleString(),
+                                    summary: formatCount(table.rowCount, 'row', 'rows'),
+                                    numeric: true
+                                },
+                                {
+                                    key: 'sizeBytes',
+                                    value: formatBytes(table.sizeBytes),
+                                    summary: formatBytes(table.sizeBytes),
+                                    numeric: true
+                                },
+                                {
+                                    key: 'engine',
+                                    value: table.engine,
+                                    summary: table.engine,
+                                    className: styles.engine_cell
+                                }
+                            ]}
+                        >
+                            {isTableOpen ? renderRows(table) : null}
+                        </InventoryRow>
+                    );
+                })}
+            </InventoryTable>
+        );
     }
 
     // An embedded caller that stores nothing in ClickHouse should render
     // nothing at all — an empty ClickHouse panel reads as "data is missing"
     // rather than "this plugin has no ClickHouse tables".
-    if (hideWhenEmpty && sortedTables.length === 0) {
-        return null;
-    }
+    //
+    // An error overrides this. hideWhenEmpty means "this plugin stores nothing
+    // in ClickHouse, so say nothing" — it does not mean "stay quiet when the
+    // caller misconfigured the scope". A bad pluginId that rendered nothing
+    // would look identical to a plugin with no tables, which is the silent
+    // failure this component's pluginId prop exists to remove, so it is
+    // reported even here.
+    const hidden = hideWhenEmpty && !loading && !error && stats !== null && sortedTables.length === 0;
 
-    return (
-        <div className={styles.browser}>
-            {title !== undefined && <h3 className={styles.section_title}>{title}</h3>}
-            <p className={styles.overview}>
-                <code className={styles.db_name}>{databaseNames.join(', ')}</code>
-                <span className={styles.overview_meta}>
-                    {stats.tables.length} {stats.tables.length === 1 ? 'table' : 'tables'} ·{' '}
-                    {formatBytes(stats.totalSize)} total
-                </span>
-            </p>
-
-            {sortedTables.length === 0 ? (
-                <p className={styles.empty}>
-                    {scope.tables
-                        ? `No tables found for ${scope.tables.join(', ')}`
-                        : typeof scope.prefix === 'string' && scope.prefix.length > 0
-                            ? `No tables found for ${scope.prefix}`
-                            : 'No tables found'}
-                </p>
-            ) : (
-                /* Stacks on a phone, where the size, row and engine columns
-                   left the table name a few dozen pixels. Stacked, the toggle
-                   and the name share the heading line, the figures are named,
-                   and a sort picker stands in for the hidden sortable headers.
-                   The nested row list keeps its own layout. */
-                <Table
-                    variant="compact"
-                    stackAt="mobile"
-                    stackedSort={{ columns: TABLE_COLUMNS, active: sort.key, direction: sort.direction, onSort: toggleSort }}
-                >
-                    <Thead>
-                        <Tr>
-                            <Th width="shrink" aria-label="Expand" />
-                            {TABLE_COLUMNS.map((column) => {
-                                const isSorted = sort.key === column.key;
-                                return (
-                                    <Th
-                                        key={column.key}
-                                        width={column.numeric ? 'shrink' : 'expand'}
-                                        numeric={column.numeric}
-                                        aria-sort={
-                                            isSorted
-                                                ? (sort.direction === 'asc' ? 'ascending' : 'descending')
-                                                : 'none'
-                                        }
-                                    >
-                                        <button
-                                            type="button"
-                                            className={styles.sort_button}
-                                            onClick={() => toggleSort(column.key)}
-                                        >
-                                            {column.label}
-                                            {isSorted
-                                                ? (sort.direction === 'asc'
-                                                    ? <ArrowUp size={14} aria-hidden="true" />
-                                                    : <ArrowDown size={14} aria-hidden="true" />)
-                                                : (
-                                                    <ArrowUpDown
-                                                        size={14}
-                                                        aria-hidden="true"
-                                                        className={styles.sort_icon_idle}
-                                                    />
-                                                )}
-                                        </button>
-                                    </Th>
-                                );
-                            })}
-                        </Tr>
-                    </Thead>
-                    <Tbody>
-                        {sortedTables.map((table) => {
-                            const key = tableKey(table);
-                            const label = tableLabel(table, stats.dbName);
-                            const isTableOpen = expandedTable === key;
-                            return (
-                                <Fragment key={key}>
-                                    <Tr
-                                        isExpanded={isTableOpen}
-                                        className={styles.table_row}
-                                        onClick={() => toggleTable(table)}
-                                        // The expand button in the first cell is the keyboard's
-                                        // way in, so the row stays out of the tab order.
-                                        tabIndex={-1}
-                                    >
-                                        <Td muted>
-                                            {/* The row itself is clickable for pointer users; this button is
-                                              * what makes the same toggle reachable by keyboard, so it stops
-                                              * the click from also firing the row handler and undoing itself. */}
-                                            <button
-                                                type="button"
-                                                className={styles.expand_button}
-                                                aria-expanded={isTableOpen}
-                                                aria-label={`${isTableOpen ? 'Collapse' : 'Expand'} ${label}`}
-                                                onClick={(event) => {
-                                                    event.stopPropagation();
-                                                    toggleTable(table);
-                                                }}
-                                            >
-                                                {isTableOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                                            </button>
-                                        </Td>
-                                        <Td>
-                                            <code className={styles.table_name}>{label}</code>
-                                        </Td>
-                                        <Td label="Rows" muted numeric>{table.rowCount.toLocaleString()}</Td>
-                                        <Td label="Size" muted numeric className={styles.size_cell}>{formatBytes(table.sizeBytes)}</Td>
-                                        <Td label="Engine" muted className={styles.engine_cell}>{table.engine}</Td>
-                                    </Tr>
-
-                                    {isTableOpen && (
-                                        <Tr className={styles.rows_row}>
-                                            <Td colSpan={TABLE_COLUMNS.length + 1}>
-                                                <div className={styles.rows_panel}>
-                                                    {loadingRows ? (
-                                                        <p className={styles.empty}>Loading rows…</p>
-                                                    ) : rows ? (
-                                                        <>
-                                                            <div className={styles.rows_header}>
-                                                                <span>
-                                                                    Showing {rows.rows.length} of {rows.total.toLocaleString()} rows
-                                                                </span>
-                                                                <div className={styles.pagination}>
-                                                                    <Button
-                                                                        variant="ghost"
-                                                                        size="xs"
-                                                                        disabled={!rows.hasPrevPage}
-                                                                        onClick={() => void fetchRows(table, rows.page - 1)}
-                                                                    >
-                                                                        Previous
-                                                                    </Button>
-                                                                    <span className={styles.page_info}>
-                                                                        Page {rows.page} of {rows.totalPages}
-                                                                    </span>
-                                                                    <Button
-                                                                        variant="ghost"
-                                                                        size="xs"
-                                                                        disabled={!rows.hasNextPage}
-                                                                        onClick={() => void fetchRows(table, rows.page + 1)}
-                                                                    >
-                                                                        Next
-                                                                    </Button>
-                                                                </div>
-                                                            </div>
-                                                            <div className={styles.rows_list}>
-                                                                {rows.rows.length === 0 ? (
-                                                                    <p className={styles.empty}>Table is empty.</p>
-                                                                ) : (
-                                                                    <Table variant="compact">
-                                                                        <Thead>
-                                                                            <Tr>
-                                                                                <Th width="shrink" aria-label="Expand" />
-                                                                                <Th>Row</Th>
-                                                                                <Th>Preview</Th>
-                                                                                <Th width="shrink" aria-label="Actions" />
-                                                                            </Tr>
-                                                                        </Thead>
-                                                                        <Tbody>
-                                                                            {rows.rows.map((row, index) => {
-                                                                                const rowKey = `${rows.page}_${index}`;
-                                                                                const isOpen = expandedRowKey === rowKey;
-                                                                                const rowJson = JSON.stringify(row, null, 2);
-                                                                                const preview = buildPreview(row);
-                                                                                return (
-                                                                                    <Fragment key={rowKey}>
-                                                                                        <Tr
-                                                                                            isExpanded={isOpen}
-                                                                                            onClick={() => toggleRow(rowKey)}
-                                                                                            className={styles.row}
-                                                                                        >
-                                                                                            <Td muted>
-                                                                                                {isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                                                                                            </Td>
-                                                                                            <Td muted>
-                                                                                                <code className={styles.row_index}>
-                                                                                                    {(rows.page - 1) * rows.limit + index + 1}
-                                                                                                </code>
-                                                                                            </Td>
-                                                                                            <Td>
-                                                                                                <code className={styles.row_preview}>{preview}</code>
-                                                                                            </Td>
-                                                                                            <Td>
-                                                                                                <div onClick={(e) => e.stopPropagation()}>
-                                                                                                    <CopyButton
-                                                                                                        value={rowJson}
-                                                                                                        aria-label="Copy row JSON"
-                                                                                                    />
-                                                                                                </div>
-                                                                                            </Td>
-                                                                                        </Tr>
-                                                                                        {isOpen && (
-                                                                                            <Tr className={styles.row_detail}>
-                                                                                                <Td colSpan={4}>
-                                                                                                    <pre className={styles.row_json}>{rowJson}</pre>
-                                                                                                </Td>
-                                                                                            </Tr>
-                                                                                        )}
-                                                                                    </Fragment>
-                                                                                );
-                                                                            })}
-                                                                        </Tbody>
-                                                                    </Table>
-                                                                )}
-                                                            </div>
-                                                        </>
-                                                    ) : (
-                                                        <p className={styles.empty}>No rows loaded.</p>
-                                                    )}
-                                                </div>
-                                            </Td>
-                                        </Tr>
-                                    )}
-                                </Fragment>
-                            );
-                        })}
-                    </Tbody>
-                </Table>
-            )}
-        </div>
+    return hidden ? null : (
+        <BrowserPanel
+            title={title ?? 'Tables'}
+            collapsible={collapsible}
+            collapsed={collapsed}
+            onToggle={() => setCollapsed(previous => !previous)}
+            summary={summary}
+        >
+            {body}
+        </BrowserPanel>
     );
 }
 
@@ -657,17 +601,26 @@ export function ClickHouseTableBrowser(props: IClickHouseTableBrowserProps) {
  */
 function buildPreview(row: Record<string, unknown>): string {
     const entries = Object.entries(row).slice(0, 3);
-    if (entries.length === 0) return '(empty row)';
-    return entries
-        .map(([key, value]) => `${key}=${formatPreviewValue(value)}`)
-        .join('  ');
+    return entries.length === 0
+        ? '(empty row)'
+        : entries.map(([key, value]) => `${key}=${formatPreviewValue(value)}`).join('  ');
 }
 
+/**
+ * Shorten one column value for the row preview, so a long string or a nested
+ * object cannot stretch the preview past one line. The expanded JSON view
+ * shows the value in full.
+ */
 function formatPreviewValue(value: unknown): string {
-    if (value === null || value === undefined) return '∅';
-    if (typeof value === 'string') {
-        return value.length > 32 ? `"${value.slice(0, 29)}…"` : `"${value}"`;
+    let preview: string;
+    if (value === null || value === undefined) {
+        preview = '∅';
+    } else if (typeof value === 'string') {
+        preview = value.length > 32 ? `"${value.slice(0, 29)}…"` : `"${value}"`;
+    } else if (typeof value === 'object') {
+        preview = '{…}';
+    } else {
+        preview = String(value);
     }
-    if (typeof value === 'object') return '{…}';
-    return String(value);
+    return preview;
 }

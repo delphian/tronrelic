@@ -44,15 +44,10 @@ export interface ICollectionBrowserProps {
     allowDelete?: boolean;
 
     /**
-     * Heading for the collection list. Omitted by default, because the
-     * embedding page usually supplies its own and a built-in heading would read
-     * as a duplicate. Set it when the surrounding page would otherwise leave
-     * the scope ambiguous.
-     *
-     * In the collapsible form this heading is also the control that opens the
-     * browser, so set it there even when the surrounding page has a label of its
-     * own; otherwise the disclosure falls back to the generic word
-     * "Collections".
+     * Title of the browser's panel, on the header row beside the summary.
+     * Defaults to "Collections". The browser draws its own panel, so place it
+     * directly on the page or tab rather than inside a card. In the
+     * collapsible form the title is also the control that opens the browser.
      */
     title?: string;
 

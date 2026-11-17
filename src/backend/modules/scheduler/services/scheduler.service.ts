@@ -729,21 +729,26 @@ export class SchedulerService {
     }
 
     /**
-     * Get configuration for all registered jobs.
+     * Get configuration for all registered jobs, with when each runs next.
      *
-     * @returns Array of job configurations
+     * The next run comes from the live cron task, so a disabled job, which has
+     * no task, reports null rather than a time it will not run at.
+     *
+     * @returns Array of job configurations, each with its next scheduled time
      */
     getAllJobConfigs(): Array<{
         name: string;
         schedule: string;
         enabled: boolean;
         defaultSchedule: string;
+        nextRun: Date | null;
     }> {
         return Array.from(this.jobs.values()).map(job => ({
             name: job.name,
             schedule: job.currentSchedule,
             enabled: job.enabled,
-            defaultSchedule: job.defaultSchedule
+            defaultSchedule: job.defaultSchedule,
+            nextRun: job.task ? job.task.nextRun() : null
         }));
     }
 

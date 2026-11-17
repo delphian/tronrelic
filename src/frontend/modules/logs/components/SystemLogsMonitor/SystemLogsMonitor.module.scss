@@ -25,8 +25,8 @@
     font-size: var(--font-size-heading-sm);
 }
 
-/* Chips on the left, the other controls pushed to the right; wraps onto a
- * second line rather than squeezing either group. */
+/* Chips on the left, the service filter and auto-refresh pushed to the right;
+ * wraps onto a second line rather than squeezing either group. */
 .toolbar {
     display: flex;
     flex-wrap: wrap;
@@ -160,6 +160,22 @@
     color: var(--color-text-muted);
 }
 
+/* Page size and "Clear all", with a wider gap than the footer's own so the
+ * button that deletes every service's logs does not read as part of the
+ * page-size control beside it. */
+.footer_actions {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-md);
+}
+
+/* Alone in the footer, which happens in the unscoped view when the current
+ * filter matches nothing, the actions keep to the right edge where they sit
+ * when the range and page controls are shown. */
+.footer_actions:only-child {
+    margin-left: auto;
+}
+
 .entry_title {
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -212,13 +228,24 @@
     }
 }
 
+/* Phone width: the service filter and auto-refresh share one full-width line
+ * instead of the service filter taking a line of its own above the refresh
+ * control. The service select takes whatever width auto-refresh leaves and
+ * clips a long service name. It needs `min-width: 0` to do that, because a
+ * select otherwise refuses to be narrower than its widest option. */
 @container system-logs-monitor (max-width: #{$breakpoint-mobile-md}) {
     .controls {
         width: 100%;
+        flex-wrap: nowrap;
     }
 
     .service_select {
-        flex: 1 1 auto;
+        flex: 1 1 0;
+        min-width: 0;
         max-width: none;
+    }
+
+    .refresh {
+        flex: none;
     }
 }

@@ -168,8 +168,8 @@ Core admin components for the tabs a plugin's admin page offers: Schedules, Data
 | Component | Props |
 |-----------|-------|
 | `SchedulerMonitor` | `jobFilter?: string[] \| (job) => boolean`, `title?`, `hideStats?` |
-| `CollectionBrowser` | `prefix?`, `title?`, `allowEdit?` (default true), `allowDelete?` (default true) |
-| `ClickHouseTableBrowser` | `pluginId?`, `tables?` (exact names, for core modules; a plugin uses `pluginId`), `title?`, `hideWhenEmpty?`, `prefix?` (deprecated) |
+| `CollectionBrowser` | `prefix?`, `title?`, `allowEdit?` (default true), `allowDelete?` (default true), `collapsible?` |
+| `ClickHouseTableBrowser` | `pluginId?`, `tables?` (exact names, for core modules; a plugin uses `pluginId`), `title?`, `hideWhenEmpty?`, `collapsible?`, `prefix?` (deprecated) |
 | `SystemLogsMonitor` | `service?`, `title?` |
 | `AiToolSchemaView` | `schema` — the `inputSchema` from an `IAiToolInfo` |
 
@@ -177,7 +177,7 @@ Core admin components for the tabs a plugin's admin page offers: Schedules, Data
 
 There is **no `token` prop** on any of them. Admin authority is the visitor's Better Auth session cookie, so a passed token is silently ignored and gates nothing.
 
-`SchedulerMonitor` renders job status, enable/disable controls, and schedule edits. Scope it with a predicate testing your job-name prefix (`(job) => job.name.startsWith('my-plugin:')`) rather than a fixed list such as `['my-plugin:refresh']`, so a job you register later appears without a matching edit here. Pass `hideStats` when embedding it as one tab among several, because the stats bar reports platform-wide totals that misrepresent the handful of jobs on screen.
+`SchedulerMonitor` renders job status, enable/disable controls, and schedule edits. Scope it with a predicate testing your job-name prefix (`(job) => job.name.startsWith('my-plugin:')`) rather than a fixed list such as `['my-plugin:refresh']`, so a job you register later appears without a matching edit here. It draws its own titled panel, so place it directly in the tab rather than inside a `ui.Card`. With a predicate, the rows drop the namespace every listed job shares, and the panel's meta line states it once. Pass `hideStats` when the strip of counts adds nothing beside the table; its counts cover only the jobs on screen.
 
 `CollectionBrowser` lists MongoDB collections and pages their documents; `ClickHouseTableBrowser` does the same for ClickHouse tables and is read-only, because a ClickHouse delete is an asynchronous `ALTER TABLE` whose effect is not immediately visible. Both filter server-side, so a scoped page never receives another plugin's inventory. Scope the collection browser with `prefix="plugin_<id>_"`, and the table browser with `pluginId` — it derives the same prefix itself, which survives a rename that a hand-written string would not. Set `hideWhenEmpty` on the table browser when your plugin may store nothing in ClickHouse, so it renders nothing instead of an empty panel implying missing data.
 

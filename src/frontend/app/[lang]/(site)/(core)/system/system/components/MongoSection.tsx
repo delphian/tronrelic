@@ -88,9 +88,12 @@ export function MongoSection() {
             <Card padding="sm" noBackgroundImage>
                 <MongoHealth />
             </Card>
-            <Card padding="sm" noBackgroundImage>
-                <Browser />
-            </Card>
+            {/* The browser draws its own panel, so it sits beside the other cards
+              * rather than inside one. It starts collapsed: this view is unscoped,
+              * so it lists every collection in the deployment, and expanded it
+              * would bury the migration log under a hundred rows. Closed, it also
+              * holds back the statistics request, one collStats per collection. */}
+            <CollectionBrowser collapsible title="Collection Browser" />
             <Card padding="sm" noBackgroundImage>
                 <Migrations />
             </Card>
@@ -513,24 +516,3 @@ function Migrations() {
         </div>
     );
 }
-
-/**
- * Collection browser card body.
- *
- * The browser is collapsed here and supplies its own heading, which doubles as
- * the control that opens it. This view is unscoped, so the table lists every
- * collection in the deployment — expanded, it buries the migration log beneath
- * it and forces a scroll past a hundred rows to reach anything else on the tab.
- * Closed, it also holds back the statistics request, which costs one `collStats`
- * command per collection.
- *
- * @returns The collection browser card body.
- */
-function Browser() {
-    return (
-        <div className={styles.block}>
-            <CollectionBrowser collapsible title="Collection Browser" />
-        </div>
-    );
-}
-

@@ -97,6 +97,15 @@ at your own admin actions instead. `ClickHouseTableBrowser` has no write
 counterpart by design, and accepts `hideWhenEmpty` so a plugin with no
 ClickHouse tables renders nothing rather than an empty panel.
 
+Each browser draws its own panel card: the `title` you pass, or "Collections"
+and "Tables" when you pass none, followed on the same line by a summary of the
+database, the shared name prefix, the number of collections or tables, and
+their total size. A scoped browser lists each name without the prefix, so the
+summary is the one place `plugin_<id>_` appears. Place the browsers directly on
+the tab rather than inside a `Card`, which would draw a second box around the
+panel. Both accept `collapsible`, which starts the browser closed behind its
+title, for a page where it is one surface among several.
+
 Both stores put a plugin's data in the same namespace, `plugin_<id>_`, with
 your identifier embedded exactly as the manifest declares it. Plugin
 `my-plugin` stores its documents under `plugin_my-plugin_` and its ClickHouse

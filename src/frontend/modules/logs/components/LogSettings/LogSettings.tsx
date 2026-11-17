@@ -42,8 +42,11 @@ const LEVEL_OPTIONS: ReadonlyArray<{ value: LogLevelName; label: string; help: s
  *
  * Laid out as one compact row (name and what the selected level keeps on the
  * left, the dropdown and Save on the right) because an operator changes it
- * rarely and it should not compete with the entries above it. A successful
- * save confirms with a toast; a failed read or save shows an inline alert.
+ * rarely and it should not compete with the entries above it. The dropdown
+ * and Save carry no `size`, so they take the default step of the page's
+ * density and match the height of the other controls on the page. A
+ * successful save confirms with a toast; a failed read or save shows an
+ * inline alert.
  *
  * **Data flow:** reads `GET /api/admin/system/config/system` on mount, and
  * `PATCH`es `logLevel` on save. The backend applies the new level to the
@@ -154,7 +157,6 @@ export function LogSettings() {
 
             <div className={styles.form}>
                 <Select
-                    size="sm"
                     aria-labelledby={headingId}
                     value={selectedLevel}
                     onChange={e => setSelectedLevel(e.target.value as LogLevelName)}
@@ -166,7 +168,6 @@ export function LogSettings() {
                 </Select>
                 <Button
                     variant="primary"
-                    size="sm"
                     onClick={handleSave}
                     loading={saving}
                     disabled={loading || !hasChanges}

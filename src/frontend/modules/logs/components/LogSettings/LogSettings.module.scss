@@ -34,9 +34,11 @@
     letter-spacing: var(--letter-spacing-normal);
 }
 
+/* No prose width cap. At caption size --max-width-prose is about 380px, which
+   wraps this one-sentence help onto a second line while the rest of the row
+   stands empty. Uncapped, it wraps only when the row runs out of room. */
 .help {
     margin: 0;
-    max-width: var(--max-width-prose);
     font-size: var(--font-size-body-xs);
     color: var(--color-text-muted);
 }

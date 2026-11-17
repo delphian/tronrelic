@@ -21,4 +21,16 @@ export interface ICronHandle {
      * handle is not restarted; the scheduler asks the trigger for a new one.
      */
     stop(): void;
+
+    /**
+     * The next time this schedule will fire, so an operator can see when a
+     * job runs next without working it out from the cron expression.
+     *
+     * Computed by the trigger from the live schedule rather than stored, so
+     * it is always current after a reschedule.
+     *
+     * @returns The next scheduled time, or null when the trigger cannot say,
+     *          such as after `stop()`.
+     */
+    nextRun(): Date | null;
 }

@@ -14,6 +14,7 @@
 
 import { useState } from 'react';
 import { Stack } from '../../../../components/layout';
+import { Card } from '../../../../components/ui/Card';
 import { SegmentedControl } from '../../../../components/ui/SegmentedControl';
 import { ClickHouseTableBrowser, CollectionBrowser } from '../../../database';
 import { SystemLogsMonitor } from '../../../logs';
@@ -46,7 +47,12 @@ const isAccountsJob = (job: SchedulerJob): boolean => job.name.startsWith(JOB_PR
 /**
  * Show the module's schedule, storage, or logs, one at a time.
  *
- * @returns The section body, meant to sit inside a card.
+ * The scheduler monitor and the storage browsers draw their own panels, so
+ * this section sits directly on the page rather than inside a card, which
+ * would nest one card in another. The logs monitor draws no surface of its
+ * own, so its view is the one wrapped in a card here.
+ *
+ * @returns The view switcher and the selected view.
  */
 export function AccountsModuleRecords() {
     const [view, setView] = useState<RecordView>('schedule');
@@ -73,7 +79,11 @@ export function AccountsModuleRecords() {
                         <ClickHouseTableBrowser tables={TABLES} title="Daily usage" />
                     </Stack>
                 )}
-                {view === 'logs' && <SystemLogsMonitor service={LOG_SERVICE} title="Account logs" />}
+                {view === 'logs' && (
+                    <Card padding="sm" noBackgroundImage>
+                        <SystemLogsMonitor service={LOG_SERVICE} title="Account logs" />
+                    </Card>
+                )}
             </div>
         </Stack>
     );

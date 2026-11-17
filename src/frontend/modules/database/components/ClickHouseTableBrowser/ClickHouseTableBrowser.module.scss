@@ -1,155 +1,28 @@
 /**
  * ClickHouseTableBrowser styles.
  *
- * The inventory is a data table, not a list of disclosure panels, for the same
- * reason the Mongo CollectionBrowser's is: row count and stored size are
- * quantities an operator compares across tables, and a sorted column can be
- * scanned down where badges strung along each row cannot. What is left here is
- * the chrome the table primitive does not supply — the sort affordance in each
- * header, the expand control in the row, and the row panel that unfolds beneath
- * a table.
- */
-
-@use '../../../../app/breakpoints' as *;
-
-.browser {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-xs);
-    container-type: inline-size;
-    container-name: clickhouse-browser;
-}
-
-.overview {
-    margin: 0;
-    display: inline-flex;
-    align-items: baseline;
-    gap: var(--gap-sm);
-    font-size: var(--font-size-caption);
-    color: var(--color-text-muted);
-    flex-wrap: wrap;
-}
-
-.db_name {
-    font-family: var(--font-mono);
-    color: var(--color-text);
-    font-weight: var(--font-weight-semibold);
-}
-
-.overview_meta {
-    color: var(--color-text-subtle);
-}
-
-/*
- * Sort affordance inside a column header.
+ * The panel, its header, the inventory table, and the page bar are shared with
+ * the Mongo CollectionBrowser and styled where they live (BrowserPanel,
+ * InventoryTable, BrowserPager). What is left here is the engine column, which
+ * has a type of its own, and the row panel that opens beneath a table: the row
+ * previews and the JSON view.
  *
- * A real <button> so the column is operable by keyboard and announced as
- * actionable; it inherits the header's own typography so the row still reads as
- * a table head rather than a strip of controls. Inline-flex keeps it subject to
- * the header's text-align, which is what right-aligns it in numeric columns.
+ * Uses Layer 2 tokens from semantic-tokens.scss only, so every gap and size
+ * follows the compact density of the admin pages this browser sits on.
  */
-.sort_button {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--gap-2xs);
-    padding: 0;
-    background: none;
-    border: none;
-    cursor: pointer;
-    color: inherit;
-    font: inherit;
-    letter-spacing: inherit;
-    text-transform: inherit;
-}
 
-.sort_button:hover {
-    color: var(--color-text);
-}
-
-/* Idle direction glyph — present so the column reads as sortable, dimmed so it
-   does not compete with the arrow on the column actually being sorted. */
-.sort_icon_idle {
-    opacity: var(--opacity-35);
-}
-
-.table_row {
-    cursor: pointer;
-}
-
-.expand_button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: var(--padding-2xs);
-    background: none;
-    border: none;
-    cursor: pointer;
-    color: var(--color-text-muted);
-}
-
-.expand_button:hover {
-    color: var(--color-text);
-}
-
-.table_name {
-    font-family: var(--font-mono);
-    font-size: var(--font-size-body-sm);
-    color: var(--color-text);
-    word-break: break-all;
-}
-
-/* A formatted size reads as one quantity ("17.06 GB"); letting the unit wrap to
- * its own line splits that quantity in two and doubles the row's height. */
-.size_cell {
-    white-space: nowrap;
-}
-
-/* Engine names are single long tokens (REPLACINGMERGETREE) that a break-all
-   rule elsewhere would happily split mid-word into something unreadable. */
+/* Engine names are single long tokens (ReplacingMergeTree) that would break
+   mid-word into something unreadable if the column were allowed to wrap. */
 .engine_cell {
     white-space: nowrap;
     font-family: var(--font-mono);
     font-size: var(--font-size-caption);
 }
 
-.rows_row {
-    background: var(--color-surface-muted);
-}
-
 .rows_panel {
     display: flex;
     flex-direction: column;
-    gap: var(--gap-xs);
-}
-
-.rows_header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
     gap: var(--gap-sm);
-    flex-wrap: wrap;
-    font-size: var(--font-size-caption);
-    color: var(--color-text-muted);
-}
-
-.pagination {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--gap-xs);
-}
-
-.page_info {
-    font-family: var(--font-mono);
-    font-size: var(--font-size-caption);
-    color: var(--color-text-subtle);
-}
-
-.rows_list {
-    overflow-x: auto;
-}
-
-.row {
-    cursor: pointer;
 }
 
 .row_index {
@@ -169,8 +42,14 @@
     background: var(--color-surface-muted);
 }
 
+/*
+ * A row's full JSON. Capped at the code-block height and scrolled inside, so a
+ * wide row cannot push the rest of the page out of view.
+ */
 .row_json {
     margin: 0;
+    max-height: var(--code-block-max-height);
+    overflow: auto;
     padding: var(--padding-sm);
     font-family: var(--font-mono);
     font-size: var(--font-size-caption);
@@ -179,33 +58,16 @@
     border-radius: var(--radius-xs);
     white-space: pre-wrap;
     word-break: break-word;
-    max-height: 320px;
-    overflow-y: auto;
 }
 
-.empty {
+.message {
     margin: 0;
     color: var(--color-text-muted);
-    font-size: var(--font-size-caption);
+    font-size: var(--font-size-body-sm);
 }
 
 .error_inline {
     display: inline-flex;
     align-items: center;
     gap: var(--gap-xs);
-}
-
-@container clickhouse-browser (max-width: #{$breakpoint-mobile-md}) {
-    .rows_header {
-        flex-direction: column;
-        align-items: flex-start;
-    }
-}
-
-/* Optional heading, rendered only when an embedding page supplies a title. */
-.section_title {
-    margin: 0 0 var(--gap-sm);
-    font-size: var(--font-size-heading-sm);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text);
 }

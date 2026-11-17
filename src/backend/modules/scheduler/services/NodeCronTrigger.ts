@@ -67,7 +67,12 @@ export class NodeCronTrigger implements ICronTrigger {
              */
             stop: (): void => {
                 void task.destroy();
-            }
+            },
+            /**
+             * Ask node-cron for the next matching time. Version 4 computes it
+             * from the expression, so the answer follows a reschedule at once.
+             */
+            nextRun: (): Date | null => task.getNextRun()
         };
     }
 }
