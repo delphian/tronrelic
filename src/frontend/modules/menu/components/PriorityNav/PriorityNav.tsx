@@ -149,6 +149,15 @@ interface IOverflowMeasurement {
      * separates it from the primary row.
      */
     moreButtonSpace: number;
+
+    /**
+     * The same width with the folded active item's label taken off, which is
+     * the width the button has once that item is back in the row. The fitting
+     * rule decides on this width so the split does not depend on resize
+     * history: the label the button is carrying right now would otherwise
+     * make the room beside it look smaller than it will actually be.
+     */
+    unlabelledMoreButtonSpace: number;
 }
 
 /**
@@ -192,11 +201,19 @@ function countLeadingItemsThatFit(itemWidths: number[], itemGap: number, room: n
  * active item is wider than the whole room beside the button, it cannot be
  * shown and the plain leading split is kept.
  *
+ * Whether it fits is asked against the button's unlabelled width, because
+ * the button only carries the active item's label while that item is folded.
+ * Deciding on the labelled width would make folding self-reinforcing: the
+ * label it adds widens the same button whose width the next pass reserves,
+ * so the row would keep the item folded at a width that can display it. Only
+ * once the item is known to stay folded is the wider labelled width reserved
+ * for the leading split.
+ *
  * @param measurement - Widths read from the DOM in one measurement pass
  * @returns The display positions of the items that remain visible
  */
 function chooseVisibleItems(measurement: IOverflowMeasurement): Set<number> {
-    const { itemWidths, activeIndex, itemGap, availableWidth, moreButtonSpace } = measurement;
+    const { itemWidths, activeIndex, itemGap, availableWidth, moreButtonSpace, unlabelledMoreButtonSpace } = measurement;
     const totalWidth = itemWidths.reduce((sum, width) => sum + width, 0)
         + itemGap * Math.max(itemWidths.length - 1, 0);
 
@@ -204,17 +221,23 @@ function chooseVisibleItems(measurement: IOverflowMeasurement): Set<number> {
     let keepActive = false;
 
     if (totalWidth > availableWidth + FIT_TOLERANCE_PX) {
-        const roomBesideMoreButton = availableWidth - moreButtonSpace;
-        visibleCount = countLeadingItemsThatFit(itemWidths, itemGap, roomBesideMoreButton);
-
+        const roomBesideUnlabelledButton = availableWidth - unlabelledMoreButtonSpace;
+        const leadingFitCount = countLeadingItemsThatFit(itemWidths, itemGap, roomBesideUnlabelledButton);
         const activeWidth = activeIndex >= 0 ? itemWidths[activeIndex] : undefined;
-        if (activeWidth !== undefined && activeIndex >= visibleCount && activeWidth <= roomBesideMoreButton + FIT_TOLERANCE_PX) {
-            keepActive = true;
-            visibleCount = countLeadingItemsThatFit(
-                itemWidths.slice(0, activeIndex),
-                itemGap,
-                roomBesideMoreButton - activeWidth - itemGap
-            );
+
+        if (activeWidth !== undefined && activeIndex >= leadingFitCount) {
+            if (activeWidth <= roomBesideUnlabelledButton + FIT_TOLERANCE_PX) {
+                keepActive = true;
+                visibleCount = countLeadingItemsThatFit(
+                    itemWidths.slice(0, activeIndex),
+                    itemGap,
+                    roomBesideUnlabelledButton - activeWidth - itemGap
+                );
+            } else {
+                visibleCount = countLeadingItemsThatFit(itemWidths, itemGap, availableWidth - moreButtonSpace);
+            }
+        } else {
+            visibleCount = leadingFitCount;
         }
     }
 
@@ -283,6 +306,7 @@ export function PriorityNav({
 
     const dropdownRef = useRef<HTMLDivElement>(null);
     const moreButtonRef = useRef<HTMLButtonElement>(null);
+    const moreLabelRef = useRef<HTMLSpanElement>(null);
 
     /**
      * Track mount state so the dropdown portal only renders in the browser,
@@ -390,13 +414,23 @@ export function PriorityNav({
             const itemElements = Array.from(
                 primary.querySelectorAll<HTMLElement>(':scope > [data-priority-nav-id]')
             );
+            const containerGap = parseFloat(containerStyle.columnGap) || 0;
+            const moreButton = moreButtonRef.current;
+            const moreButtonWidth = moreButton?.getBoundingClientRect().width ?? 0;
+            // The button carries the active item's label only while that item
+            // is folded, so the label and the gap before it come off the width
+            // the fitting rule decides on.
+            const moreLabelSpace = moreButton && moreLabelRef.current
+                ? moreLabelRef.current.getBoundingClientRect().width
+                    + (parseFloat(getComputedStyle(moreButton).columnGap) || 0)
+                : 0;
             const measurement: IOverflowMeasurement = {
                 itemWidths: itemElements.map((element) => element.getBoundingClientRect().width),
                 activeIndex: itemElements.findIndex((element) => element.hasAttribute('data-priority-nav-active')),
                 itemGap: parseFloat(getComputedStyle(primary).columnGap) || 0,
                 availableWidth,
-                moreButtonSpace: (moreButtonRef.current?.getBoundingClientRect().width ?? 0)
-                    + (parseFloat(containerStyle.columnGap) || 0)
+                moreButtonSpace: moreButtonWidth + containerGap,
+                unlabelledMoreButtonSpace: moreButtonWidth - moreLabelSpace + containerGap
             };
             container.classList.remove(styles.measuring);
 
@@ -575,7 +609,7 @@ export function PriorityNav({
                 >
                     <MoreHorizontal size={20} />
                     {foldedActiveLabel && (
-                        <span className={styles.more_label}>{foldedActiveLabel}</span>
+                        <span ref={moreLabelRef} className={styles.more_label}>{foldedActiveLabel}</span>
                     )}
                     <span className={styles.more_count}>
                         {finalOverflowItems.length}
