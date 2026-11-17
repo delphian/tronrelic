@@ -40,6 +40,7 @@ import { AccountPicker } from '../components/ui/AccountPicker';
 import { AddressSelector } from '../components/ui/AddressSelector';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../components/ui/Table';
 import { SiteLink } from '../components/ui/SiteLink';
+import { Pagination } from '../components/ui/Pagination';
 import { useModal as useModalHook } from '../components/ui/ModalProvider';
 import { useToast as useToastHook } from '../components/ui/ToastProvider';
 import { LineChart } from '../features/charts/components/LineChart';
@@ -49,7 +50,7 @@ import { CollectionBrowser, ClickHouseTableBrowser } from '../modules/database';
 import { SystemLogsMonitor } from '../modules/logs';
 import { AiToolSchemaView } from '../modules/ai-tools';
 import { ContentTranslations, TranslationStatusBadges } from '../modules/content';
-import { Page, PageHeader, Stack, Grid, Section } from '../components/layout';
+import { Page, PageHeader, AdminPage, Stack, Grid, Section } from '../components/layout';
 // Imported by direct path, not the layout barrel: the barrel is kept
 // client-safe and excludes MenuNav (MenuNavSSR pulls next/headers). SubMenu
 // wraps only the client-safe MenuNavClient, so importing the file directly
@@ -423,12 +424,14 @@ export function FrontendPluginContextProvider({ children }: { children: React.Re
             Tr,
             Th,
             Td,
-            Link: SiteLink
+            Link: SiteLink,
+            Pagination
         };
 
         const layout: ILayoutComponents = {
             Page,
             PageHeader,
+            AdminPage,
             Stack,
             Grid,
             Section,
@@ -554,12 +557,14 @@ export function createPluginContext(pluginId: string): IFrontendPluginContext {
         Tr,
         Th,
         Td,
-        Link: SiteLink
+        Link: SiteLink,
+        Pagination
     };
 
     const layout: ILayoutComponents = {
         Page,
         PageHeader,
+        AdminPage,
         Stack,
         Grid,
         Section,

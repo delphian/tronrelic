@@ -1,7 +1,7 @@
 /**
  * RouteDensity Barrel Export
  *
- * The density wrapper the root layout places around every page, the hook
+ * The `<main>` element the root layout renders every page in, the hook
  * overlays use to match the page they were opened from, and the rule both
  * share.
  */

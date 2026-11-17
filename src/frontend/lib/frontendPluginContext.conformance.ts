@@ -62,8 +62,10 @@ import type { Tr as Impl_Tr } from '../components/ui/Table';
 import type { Th as Impl_Th } from '../components/ui/Table';
 import type { Td as Impl_Td } from '../components/ui/Table';
 import type { SiteLink as Impl_Link } from '../components/ui/SiteLink';
+import type { Pagination as Impl_Pagination } from '../components/ui/Pagination';
 import type { Page as Impl_Page } from '../components/layout';
 import type { PageHeader as Impl_PageHeader } from '../components/layout';
+import type { AdminPage as Impl_AdminPage } from '../components/layout';
 import type { Stack as Impl_Stack } from '../components/layout';
 import type { Grid as Impl_Grid } from '../components/layout';
 import type { Section as Impl_Section } from '../components/layout';
@@ -130,10 +132,12 @@ type _Conformance_Tr = AssertConformant<NoPhantomProps<ComponentProps<IUICompone
 type _Conformance_Th = AssertConformant<NoPhantomProps<ComponentProps<IUIComponents['Th']>, ComponentProps<typeof Impl_Th>>>;
 type _Conformance_Td = AssertConformant<NoPhantomProps<ComponentProps<IUIComponents['Td']>, ComponentProps<typeof Impl_Td>>>;
 type _Conformance_Link = AssertConformant<NoPhantomProps<ComponentProps<IUIComponents['Link']>, ComponentProps<typeof Impl_Link>>>;
+type _Conformance_Pagination = AssertConformant<NoPhantomProps<ComponentProps<IUIComponents['Pagination']>, ComponentProps<typeof Impl_Pagination>>>;
 
 // ILayoutComponents
 type _Conformance_Page = AssertConformant<NoPhantomProps<ComponentProps<ILayoutComponents['Page']>, ComponentProps<typeof Impl_Page>>>;
 type _Conformance_PageHeader = AssertConformant<NoPhantomProps<ComponentProps<ILayoutComponents['PageHeader']>, ComponentProps<typeof Impl_PageHeader>>>;
+type _Conformance_AdminPage = AssertConformant<NoPhantomProps<ComponentProps<ILayoutComponents['AdminPage']>, ComponentProps<typeof Impl_AdminPage>>>;
 type _Conformance_Stack = AssertConformant<NoPhantomProps<ComponentProps<ILayoutComponents['Stack']>, ComponentProps<typeof Impl_Stack>>>;
 type _Conformance_Grid = AssertConformant<NoPhantomProps<ComponentProps<ILayoutComponents['Grid']>, ComponentProps<typeof Impl_Grid>>>;
 type _Conformance_Section = AssertConformant<NoPhantomProps<ComponentProps<ILayoutComponents['Section']>, ComponentProps<typeof Impl_Section>>>;

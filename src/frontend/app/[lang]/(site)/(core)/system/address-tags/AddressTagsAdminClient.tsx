@@ -24,7 +24,7 @@
 
 import { useCallback, useState } from 'react';
 import type { MenuNodeSerialized } from '@/shared';
-import { Page, PageHeader, Stack } from '../../../../../../components/layout';
+import { AdminPage } from '../../../../../../components/layout';
 import { MenuNavClient } from '../../../../../../components/layout/MenuNav/MenuNavClient';
 import { CollectionBrowser } from '../../../../../../modules/database';
 import { SchedulerMonitor, type SchedulerJob } from '../../../../../../modules/scheduler';
@@ -144,51 +144,45 @@ export function AddressTagsAdminClient({ submenuTree, submenuGeneratedAt, initia
     }, []);
 
     return (
-        <Page>
-            {/* One Stack holds the header, tab row, and active panel so they
-                sit one stack gap apart instead of the page's wider gap. */}
-            <Stack gap="md">
-                <PageHeader
-                    title="Address Tags"
-                    subtitle="Create, rename, and remove text tags attached to TRON wallet addresses, and manage the machine sources that assert sanctions and freeze tags."
+        <AdminPage
+            title="Address Tags"
+            subtitle="Create, rename, and remove text tags attached to TRON wallet addresses, and manage the machine sources that assert sanctions and freeze tags."
+        >
+            <MenuNavClient
+                namespace={SUBMENU_NAMESPACE}
+                items={submenuTree}
+                generatedAt={submenuGeneratedAt}
+                ariaLabel="Address tags sections"
+                activeUrl={`/system/address-tags?tab=${activeTab}`}
+                onItemSelect={handleTabSelect}
+            />
+
+            {activeTab === 'tags' && <AddressTagsManager />}
+            {activeTab === 'sources' && <SourcesTab />}
+            {activeTab === 'settings' && <SettingsTab />}
+            {activeTab === 'schedules' && (
+                <SchedulerMonitor
+                    jobFilter={isAddressTagsJob}
+                    title="Address Tags Schedules"
+                    hideStats
                 />
+            )}
 
-                <MenuNavClient
-                    namespace={SUBMENU_NAMESPACE}
-                    items={submenuTree}
-                    generatedAt={submenuGeneratedAt}
-                    ariaLabel="Address tags sections"
-                    activeUrl={`/system/address-tags?tab=${activeTab}`}
-                    onItemSelect={handleTabSelect}
+            {/* Editing and deletion stay enabled: a tag document is a
+              * standalone `(address, tag)` row that nothing else derives
+              * from, so a correction here strands no other data. Prefer the
+              * Tags tab for ordinary work, because it goes through the
+              * service and keeps the `active` liveness flag consistent with
+              * the `manual` claim and the `sources` array; treat this
+              * browser as the escape hatch for a document that surface
+              * cannot reach, such as one still missing its provenance
+              * fields before the 001 migration runs. */}
+            {activeTab === 'database' && (
+                <CollectionBrowser
+                    prefix={COLLECTION_PREFIX}
+                    title="Address Tags Collections"
                 />
-
-                {activeTab === 'tags' && <AddressTagsManager />}
-                {activeTab === 'sources' && <SourcesTab />}
-                {activeTab === 'settings' && <SettingsTab />}
-                {activeTab === 'schedules' && (
-                    <SchedulerMonitor
-                        jobFilter={isAddressTagsJob}
-                        title="Address Tags Schedules"
-                        hideStats
-                    />
-                )}
-
-                {/* Editing and deletion stay enabled: a tag document is a
-                  * standalone `(address, tag)` row that nothing else derives
-                  * from, so a correction here strands no other data. Prefer the
-                  * Tags tab for ordinary work, because it goes through the
-                  * service and keeps the `active` liveness flag consistent with
-                  * the `manual` claim and the `sources` array; treat this
-                  * browser as the escape hatch for a document that surface
-                  * cannot reach, such as one still missing its provenance
-                  * fields before the 001 migration runs. */}
-                {activeTab === 'database' && (
-                    <CollectionBrowser
-                        prefix={COLLECTION_PREFIX}
-                        title="Address Tags Collections"
-                    />
-                )}
-            </Stack>
-        </Page>
+            )}
+        </AdminPage>
     );
 }

@@ -20,7 +20,7 @@
 
 import { useCallback, useState } from 'react';
 import type { MenuNodeSerialized } from '@/shared';
-import { Page, PageHeader, Stack } from '../../../../../../components/layout';
+import { AdminPage } from '../../../../../../components/layout';
 import { MenuNavClient } from '../../../../../../components/layout/MenuNav/MenuNavClient';
 import { CollectionBrowser } from '../../../../../../modules/database';
 import { SystemLogsMonitor } from '../../../../../../modules/logs';
@@ -104,42 +104,36 @@ export function UsersAdminClient({ submenuTree, submenuGeneratedAt, initialTab, 
     }, []);
 
     return (
-        <Page>
-            {/* One Stack holds the header, the tab row, and the active panel so
-                they sit one stack gap apart instead of the page's wider gap. */}
-            <Stack gap="md">
-                <PageHeader
-                    title="Users"
-                    subtitle="Accounts, user groups, and the sign-in records and storage behind them."
+        <AdminPage
+            title="Users"
+            subtitle="Accounts, user groups, and the sign-in records and storage behind them."
+        >
+            <MenuNavClient
+                namespace={SUBMENU_NAMESPACE}
+                items={submenuTree}
+                generatedAt={submenuGeneratedAt}
+                ariaLabel="Users sections"
+                activeUrl={`/system/users?tab=${activeTab}`}
+                onItemSelect={handleTabSelect}
+            />
+
+            {activeTab === 'users' && <UsersMonitor initialSelectedUserId={initialUserId} />}
+            {activeTab === 'groups' && <GroupsManager />}
+            {activeTab === 'sign-ups' && <SignupProtectionTab />}
+
+            {/* Read-only. These collections hold accounts, sessions, and
+                OAuth grants, and a hand edit can grant the admin group or
+                break every session. Accounts and groups are changed on the
+                Users and Groups tabs, which go through the services. */}
+            {activeTab === 'database' && (
+                <CollectionBrowser
+                    prefix={COLLECTION_PREFIX}
+                    title="Identity Collections"
+                    allowEdit={false}
+                    allowDelete={false}
                 />
-
-                <MenuNavClient
-                    namespace={SUBMENU_NAMESPACE}
-                    items={submenuTree}
-                    generatedAt={submenuGeneratedAt}
-                    ariaLabel="Users sections"
-                    activeUrl={`/system/users?tab=${activeTab}`}
-                    onItemSelect={handleTabSelect}
-                />
-
-                {activeTab === 'users' && <UsersMonitor initialSelectedUserId={initialUserId} />}
-                {activeTab === 'groups' && <GroupsManager />}
-                {activeTab === 'sign-ups' && <SignupProtectionTab />}
-
-                {/* Read-only. These collections hold accounts, sessions, and
-                    OAuth grants, and a hand edit can grant the admin group or
-                    break every session. Accounts and groups are changed on the
-                    Users and Groups tabs, which go through the services. */}
-                {activeTab === 'database' && (
-                    <CollectionBrowser
-                        prefix={COLLECTION_PREFIX}
-                        title="Identity Collections"
-                        allowEdit={false}
-                        allowDelete={false}
-                    />
-                )}
-                {activeTab === 'logs' && <SystemLogsMonitor service={LOG_SERVICE} title="Identity Logs" />}
-            </Stack>
-        </Page>
+            )}
+            {activeTab === 'logs' && <SystemLogsMonitor service={LOG_SERVICE} title="Identity Logs" />}
+        </AdminPage>
     );
 }

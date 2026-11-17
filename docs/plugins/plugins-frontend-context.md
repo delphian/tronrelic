@@ -11,7 +11,7 @@ Direct imports from `src/frontend/` break Next.js module resolution and couple p
 ```typescript
 interface IFrontendPluginContext {
     pluginId: string;              // namespacing for events and API routes
-    layout: ILayoutComponents;     // Page, PageHeader, Stack, Grid, Section, SubMenu
+    layout: ILayoutComponents;     // Page, PageHeader, AdminPage, Stack, Grid, Section, SubMenu
     ui: IUIComponents;             // Card, Panel, FigureList, Badge, Button, CopyButton, IconButton, Switch, Input, Select, Textarea, Skeleton, StatTile, StatGrid, ClientTime, Tooltip, TronAddress, TronTransactionId, IconPickerModal, ConfirmDialog, AccountPicker, AddressSelector, Table family, Link
     charts: IChartComponents;      // LineChart, BarChart, PriceRail
     system: ISystemComponents;     // SchedulerMonitor, CollectionBrowser, ClickHouseTableBrowser, SystemLogsMonitor, AiToolSchemaView, ContentTranslations, TranslationStatusBadges (admin)

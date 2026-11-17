@@ -131,6 +131,23 @@
     line-height: var(--line-height-relaxed);
 }
 
+/* The preview shows rendered Markdown on an admin page, where the compact
+ * density removes the browser's paragraph margins. Without its own margin
+ * the paragraphs would run together and the preview would no longer show
+ * where one ends. The outer margins are trimmed so the first and last
+ * paragraphs sit on the panel's padding. */
+.preview p {
+    margin-block: var(--gap-sm-md);
+}
+
+.preview p:first-child {
+    margin-top: 0;
+}
+
+.preview p:last-child {
+    margin-bottom: 0;
+}
+
 @container content-translations (max-width: #{$breakpoint-tablet}) {
     .field_row--wide {
         grid-template-columns: minmax(0, 1fr);

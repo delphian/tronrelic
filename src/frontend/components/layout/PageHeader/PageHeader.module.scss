@@ -31,7 +31,10 @@
 
 .subtitle {
     margin: 0;
-    font-size: var(--font-size-body-lg);
+    /* Density-selected like the title: secondary body text on a compact
+       page, emphasized body text elsewhere. See PAGE TITLE SIZE in
+       semantic-tokens.scss. */
+    font-size: var(--page-header-subtitle-font-size);
     color: var(--color-text-muted);
 }
 

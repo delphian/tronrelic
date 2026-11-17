@@ -32,6 +32,7 @@
 // Layout primitives
 export { Page } from './Page';
 export { PageHeader } from './PageHeader';
+export { AdminPage } from './AdminPage';
 export { Stack } from './Stack';
 export { Grid } from './Grid';
 export { Section } from './Section';
