@@ -3,19 +3,20 @@
 /**
  * Menu administration page styles.
  *
- * Compact, table-driven layout for managing menu items and namespace
- * configuration. Component-specific helpers only — design tokens,
- * Card/Button/Input/Switch/Table styling come from the shared layer.
+ * Page-local layout only: the namespace toolbar, the items table's label and
+ * URL cells, the Configuration tab's two-column panel grid, and the modal
+ * forms. Cards, panels, fields, controls, and the table itself come from the
+ * shared components.
+ *
+ * --menu-number-input-width is a page-scoped sizing token rather than a core
+ * one, because only this page's number fields use it: room for a count of a
+ * few digits, its placeholder, and the browser's step arrows. It is declared
+ * on the Configuration tab and on the modal form, because the modals render
+ * outside the page.
  */
 
-.container {
-    container-type: inline-size;
-    container-name: menu-admin;
-}
-
-/* Namespace toolbar above the Items and Configuration tabs: label, selector,
-   and the create-namespace button. The tabs themselves are the page's menu
-   tab row, rendered above this toolbar. */
+/* Namespace toolbar above the Items and Configuration tabs: the labelled
+   selector and the create-namespace button. */
 .toolbar {
     display: flex;
     flex-wrap: wrap;
@@ -23,86 +24,62 @@
     gap: var(--gap-sm);
 }
 
-.toolbar_label {
-    font-size: var(--font-size-caption);
-    font-weight: var(--font-weight-semibold);
-    letter-spacing: var(--letter-spacing-wide);
-    text-transform: uppercase;
-    color: var(--color-text-muted);
-}
-
-/* Width modifiers forwarded to the shared <Select> wrapper; appearance, focus,
- * and disabled styling are owned by the Select component. */
-.select {
-    min-width: 12rem;
-}
-
-.select_full {
-    width: 100%;
-}
-
-/* Items section header — count + create button. */
-.items_header {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--gap-md);
-}
-
-.items_count {
-    font-size: var(--font-size-caption);
-    letter-spacing: var(--letter-spacing-wide);
-    text-transform: uppercase;
-    color: var(--color-text-muted);
-}
-
+/* Empty namespace: one muted line inside the Items panel, not a box of its
+   own inside the panel's box. */
 .empty_state {
-    padding: var(--card-padding-md);
-    text-align: center;
+    margin: 0;
     color: var(--color-text-muted);
-    background: var(--color-surface);
-    border: var(--border-width-thin) dashed var(--color-border);
-    border-radius: var(--radius-md);
+    font-size: var(--font-size-body-sm);
 }
 
-/* Label cell: chevron + icon-name pill + label. */
+/* Label cell: the icon, then the label. Children are indented by one icon
+   width plus the gap per level, so a child's icon sits under its parent's
+   label and the hierarchy reads without a chevron or a Parent column. The
+   depth arrives as --menu-item-depth on the element. A block-level flex box
+   rather than an inline one, so the label is not lifted by the space a line
+   box keeps below its baseline and centres on the row like the other cells. */
 .label_cell {
-    display: inline-flex;
+    display: flex;
     align-items: center;
     gap: var(--gap-sm);
     min-width: 0;
+    padding-inline-start: calc(var(--menu-item-depth, 0) * (var(--icon-size-xs) + var(--gap-sm)));
 }
 
-.depth_chevron {
-    color: var(--color-text-subtle);
-    flex-shrink: 0;
-}
-
-.icon_pill {
+/* The icon slot keeps its width even when a node has no icon, or before the
+   icon chunk has loaded, so every label starts at the same place. */
+.label_icon {
     display: inline-flex;
-    align-items: center;
-    padding: 0 var(--gap-xs);
-    font-family: var(--font-mono);
-    font-size: var(--font-size-caption);
+    flex: none;
+    width: var(--icon-size-xs);
     color: var(--color-text-muted);
-    background: var(--color-surface-elevated);
-    border-radius: var(--radius-xs);
 }
 
 .label_text {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-/* URL text — monospace and clipped to one line. It sits on a span inside the
-   cell rather than on the cell itself, because the stacked layout makes the
-   cell a grid and an ellipsis needs a block box of its own to clip against. */
+/* The URL column's body cells. `max-width: 0` stops a cell's text from
+   counting toward the column's width, so a long URL never widens the table;
+   the column takes the space the other columns leave (`width="expand"` on its
+   header) and the URL is clipped where that space ends. While the rows are
+   stacked the shared table rules give every cell `max-width: 100%` with a
+   more specific selector, which replaces this, so the URL then fills its
+   field instead. */
+.url_td {
+    max-width: 0;
+}
+
+/* URL text — monospace and clipped to one line with an ellipsis. It is a
+   block of its own because the stacked layout makes the cell a grid, and an
+   ellipsis needs a block box to clip against. */
 .url_cell {
-    display: inline-block;
-    max-width: 18rem;
-    vertical-align: bottom;
+    display: block;
+    min-width: 0;
+    max-width: 100%;
     font-family: var(--font-mono);
     font-size: var(--font-size-caption);
     overflow: hidden;
@@ -116,44 +93,76 @@
     justify-content: flex-end;
 }
 
+/* Configuration tab. The wrapper is the size container and the grid inside it
+   responds, since an element cannot query its own width. Two columns of
+   panels while the tab is wider than a large phone, one below that. */
+.config_layout {
+    --menu-number-input-width: 8rem;
+
+    container-type: inline-size;
+    container-name: menu-config;
+}
+
+.config_grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--grid-gap-sm);
+}
+
+@container menu-config (min-width: #{$breakpoint-mobile-lg}) {
+    .config_grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+/* Reset and Save, right under the panels and at their own width. */
+.config_actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--gap-sm);
+}
+
+/* Short fields side by side, each at its own width, wrapping when the panel
+   or modal is too narrow for them. */
+.field_row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: var(--gap-md);
+}
+
+/* A control that sizes to its content, such as a dropdown of a few short
+   choices. Field stretches its control across the field by default; leaving
+   the cross-axis alignment to the item keeps that decision here. */
+.intrinsic {
+    align-self: flex-start;
+}
+
+/* A number of a few digits takes a narrow fixed width instead of the whole
+   panel. Two classes, so it wins over the Input's own full-width rule
+   whatever order the two stylesheets load in. */
+.config_layout .number_input,
+.form .number_input {
+    width: var(--menu-number-input-width);
+}
+
 /* Forms used inside modals (create / edit / namespace). */
 .form {
+    --menu-number-input-width: 8rem;
+
     display: flex;
     flex-direction: column;
     gap: var(--gap-md);
 }
 
-.field {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-2xs);
+/* The URL field takes the room the order field leaves beside it. */
+.field_grow {
+    flex: 1 1 var(--max-width-xs);
     min-width: 0;
 }
 
-.field label,
-.field_label {
-    font-size: var(--font-size-caption);
-    font-weight: var(--font-weight-semibold);
-    letter-spacing: var(--letter-spacing-wide);
-    text-transform: uppercase;
-    color: var(--color-text-muted);
-}
-
-.field_hint {
-    font-size: var(--font-size-caption);
-    color: var(--color-text-subtle);
-}
-
-.field_required {
-    color: var(--color-danger);
-}
-
-.field_row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: var(--gap-md);
-}
-
+/* The icon name and the Browse button on one row. */
 .icon_field {
     display: flex;
     align-items: center;
@@ -165,54 +174,43 @@
     min-width: 0;
 }
 
-.inline_toggle {
-    display: inline-flex;
-    align-items: center;
+/* The visibility settings: a plain group with no border of its own, its
+   legend styled like a field label. */
+.fieldset {
+    display: flex;
+    flex-direction: column;
     gap: var(--gap-sm);
-    font-size: var(--font-size-body);
-    color: var(--color-text);
+    margin: 0;
+    padding: 0;
+    border: none;
+    min-width: 0;
+}
+
+.legend {
+    padding: 0;
+    margin-bottom: var(--field-gap);
+    font-size: var(--field-label-font-size);
+    font-weight: var(--field-label-font-weight);
+    color: var(--field-label-color);
+}
+
+/* Standing guidance under a group of controls that no single Field wraps,
+   in the same type as a Field hint. */
+.hint {
+    margin: 0;
+    font-size: var(--field-message-font-size);
+    line-height: var(--line-height-normal);
+    color: var(--field-hint-color);
+}
+
+/* One switch per user group, wrapping across the modal. */
+.group_switches {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-xs) var(--gap-md);
 }
 
 .form_footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--gap-sm);
-    padding-top: var(--gap-sm);
-    border-top: var(--border-width-thin) solid var(--color-border);
-}
-
-/* Configuration tab — compact field groups. */
-.config_group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-sm);
-    padding: var(--card-padding-sm);
-    background: var(--color-surface);
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
-}
-
-.config_group_header {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-2xs);
-}
-
-.config_group_title {
-    margin: 0;
-    font-size: var(--font-size-heading-sm);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text);
-}
-
-.config_group_subtitle {
-    margin: 0;
-    font-size: var(--font-size-body-sm);
-    color: var(--color-text-muted);
-    line-height: var(--line-height-normal);
-}
-
-.config_actions {
     display: flex;
     justify-content: flex-end;
     gap: var(--gap-sm);
@@ -226,32 +224,4 @@
     text-align: center;
     color: var(--color-text-muted);
     font-size: var(--font-size-body);
-}
-
-/* Tablet and below: the items table has stacked (its own `stackAt`), so the
-   URL may use the whole value track of its entry instead of a fixed cap. */
-@container menu-admin (max-width: #{$breakpoint-tablet}) {
-    .url_cell {
-        max-width: 100%;
-    }
-}
-
-@container menu-admin (max-width: #{$breakpoint-mobile-lg}) {
-    .select {
-        flex: 1 1 auto;
-        min-width: 0;
-    }
-
-    .field_row {
-        grid-template-columns: 1fr;
-    }
-
-    .form_footer,
-    .config_actions {
-        flex-direction: column-reverse;
-
-        > * {
-            width: 100%;
-        }
-    }
 }

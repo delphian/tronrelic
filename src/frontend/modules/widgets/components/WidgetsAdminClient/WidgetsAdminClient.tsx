@@ -18,13 +18,12 @@
 
 import { useCallback, useState } from 'react';
 import type { MenuNodeSerialized } from '@/shared';
-import { Page } from '../../../../components/layout';
+import { AdminPage } from '../../../../components/layout';
 import { MenuNavClient } from '../../../../components/layout/MenuNav/MenuNavClient';
 import { CollectionBrowser } from '../../../database';
 import { SystemLogsMonitor } from '../../../logs';
 import type { IWidgetsAdminData } from '../../types/IWidgetsAdminData';
 import { PlacementsWorkbench } from '../PlacementsWorkbench';
-import styles from './WidgetsAdminClient.module.scss';
 
 /** The page's tab ids; the `?tab=` value carried by each submenu node. */
 type TabId = 'placements' | 'database' | 'logs';
@@ -76,7 +75,8 @@ export interface IWidgetsAdminClientProps {
 }
 
 /**
- * Widgets admin shell: the page heading, the tab row, and the active panel.
+ * Widgets admin shell: the page header, the tab row, and the active panel,
+ * held one stack gap apart by the shared admin page shell.
  *
  * @param props - See {@link IWidgetsAdminClientProps}.
  * @returns The page.
@@ -95,24 +95,18 @@ export function WidgetsAdminClient({ submenuTree, submenuGeneratedAt, initialTab
     }, []);
 
     return (
-        <Page>
-            {/* The System container around this page contributes navigation and
-                no heading of its own, so without this the document would open
-                at the workbench's <h2> and skip a level, leaving a screen
-                reader with nothing that names the page. Kept visually hidden
-                because a visible title only repeated the active tab. */}
-            <h1 className={styles.sr_only}>Widgets</h1>
-
-            <div className={styles.submenu}>
-                <MenuNavClient
-                    namespace={SUBMENU_NAMESPACE}
-                    items={submenuTree}
-                    generatedAt={submenuGeneratedAt}
-                    ariaLabel="Widgets sections"
-                    activeUrl={`/system/widgets?tab=${activeTab}`}
-                    onItemSelect={handleTabSelect}
-                />
-            </div>
+        <AdminPage
+            title="Widgets"
+            subtitle="Which widgets each zone of the site shows, and on which pages."
+        >
+            <MenuNavClient
+                namespace={SUBMENU_NAMESPACE}
+                items={submenuTree}
+                generatedAt={submenuGeneratedAt}
+                ariaLabel="Widgets sections"
+                activeUrl={`/system/widgets?tab=${activeTab}`}
+                onItemSelect={handleTabSelect}
+            />
 
             <div>
                 {/* Hidden rather than unmounted while another tab is open. The
@@ -131,6 +125,6 @@ export function WidgetsAdminClient({ submenuTree, submenuGeneratedAt, initialTab
                 )}
                 {activeTab === 'logs' && <SystemLogsMonitor service={LOG_SERVICE} title="Widget Logs" />}
             </div>
-        </Page>
+        </AdminPage>
     );
 }

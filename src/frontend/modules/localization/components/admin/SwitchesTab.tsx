@@ -135,12 +135,16 @@ export function SwitchesTab() {
                 {!stats && !error && <div className={styles.placeholder}>Loading switches…</div>}
                 {stats && (
                     <Stack gap="md">
+                        {/* The tiles share the panel's card, so they draw no
+                            box of their own, and the chart's one series needs
+                            no legend: the first tile already names it. */}
                         <StatGrid size="sm">
-                            <StatTile size="sm" label="Switches" value={COUNT.format(stats.total)} />
-                            <StatTile size="sm" label="Into a translation" value={COUNT.format(split.away)} />
-                            <StatTile size="sm" label="Back to English" value={COUNT.format(split.back)} />
+                            <StatTile size="sm" surface={false} label="Switches" value={COUNT.format(stats.total)} />
+                            <StatTile size="sm" surface={false} label="Into a translation" value={COUNT.format(split.away)} />
+                            <StatTile size="sm" surface={false} label="Back to English" value={COUNT.format(split.back)} />
                             <StatTile
                                 size="sm"
+                                surface={false}
                                 label="Busiest day"
                                 value={busiest ? COUNT.format(busiest.count) : '—'}
                                 note={busiest?.day}
@@ -149,6 +153,7 @@ export function SwitchesTab() {
                         <BarChart
                             series={series}
                             height={220}
+                            showLegend={false}
                             integerTicks
                             xAxisFormatter={date => AXIS_DATE.format(date)}
                             tooltipDateFormatter={date => AXIS_DATE.format(date)}

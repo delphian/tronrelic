@@ -20,7 +20,8 @@
  * instead of a bar under every editor. Ctrl+Enter (Cmd+Enter on a Mac) saves
  * the row being edited, so a translator can work down the page from the
  * keyboard. When more than one editor holds unsaved text, Save all in the
- * panel header saves them together in one request.
+ * panel header saves them together in one request. The pager sits in the
+ * panel header too, so the table can run to the panel's edges.
  *
  * The Suggest buttons ask the AI model chosen on the Settings tab for a
  * translation and place it in the editor, one row at a time or every missing
@@ -124,6 +125,30 @@ function needsSuggestion(row: ITranslationRow, draft: string | undefined): boole
 function editorRows(source: string, draft: string): number {
     const length = Math.max(source.length, draft.length);
     return Math.min(EDITOR_MAX_ROWS, Math.max(1, Math.ceil(length / EDITOR_CHARS_PER_LINE)));
+}
+
+/**
+ * Say where a key was rendered in a few words, so the key cell is no taller
+ * than the editor beside it. A list of the paths themselves wraps that cell to
+ * three or four lines, because a key is usually remembered on several pages
+ * and one of them may be a 34-character account address, so the paths go in
+ * the tooltip instead. The backend keeps only a key's most recent paths, so
+ * the count is of those.
+ *
+ * @param row - The key's row, carrying its origin and remembered paths.
+ * @returns The short text for the key cell, and the tooltip listing the paths
+ *          when there are any.
+ */
+function describeSeenOn(row: ITranslationRow): { text: string; title?: string } {
+    let text = 'not seen on a page yet';
+    let title: string | undefined;
+    if (row.origin === 'manual') {
+        text = 'added by hand';
+    } else if (row.routes.length > 0) {
+        text = `seen on ${row.routes.length} ${row.routes.length === 1 ? 'page' : 'pages'}`;
+        title = `Most recently seen on:\n${row.routes.join('\n')}`;
+    }
+    return { text, title };
 }
 
 /**
@@ -520,16 +545,19 @@ export function TranslationsTab({ initialRoute }: ITranslationsTabProps) {
         const draft = drafts[rowId(row)];
         return draft !== undefined && hasSavableDraft(row, draft);
     });
-    // The pager renders nothing for a single page. Only then is the table the
-    // last thing in the panel and free to run to its edges.
-    const paged = total > PAGE_SIZE;
 
+    // The pager sits in the header with the other controls, so the table is
+    // always the last thing in the panel and runs to its edges. The wrapper
+    // lets the controls wrap onto a second line in a narrow panel. The pager
+    // shows no neighbouring pages beside the current one: with the default
+    // one on each side it is wider than a phone and wraps its last arrow onto
+    // a line of its own.
     return (
         <Panel
             title="Translations"
             meta={languages.length > 0 ? `${total} keys match. Ctrl+Enter saves a row.` : undefined}
             actions={(
-                <>
+                <div className={styles.header_actions}>
                     {pendingSaveRows.length > 1 && (
                         <Button
                             size="sm"
@@ -567,7 +595,10 @@ export function TranslationsTab({ initialRoute }: ITranslationsTabProps) {
                             Suggest page ({pageSuggestionRows.length})
                         </Button>
                     )}
-                </>
+                    {languages.length > 0 && (
+                        <Pagination total={total} pageSize={PAGE_SIZE} currentPage={page} siblingCount={0} onPageChange={setPage} />
+                    )}
+                </div>
             )}
         >
             {adding && (
@@ -679,7 +710,7 @@ export function TranslationsTab({ initialRoute }: ITranslationsTabProps) {
                             No keys match. Keys appear here the first time the site renders them.
                         </div>
                     ) : (
-                        <Table variant="compact" flush={!paged} className={`${styles.stack_table} ${styles.translation_table}`}>
+                        <Table variant="compact" flush className={`${styles.stack_table} ${styles.translation_table}`}>
                             <Thead>
                                 <Tr>
                                     <Th className={styles.col_key}>Key</Th>
@@ -694,21 +725,18 @@ export function TranslationsTab({ initialRoute }: ITranslationsTabProps) {
                                     const draft = drafts[id] ?? saved;
                                     const busy = busyId === id || savingAll;
                                     const canSave = !busy && hasSavableDraft(row, draft);
+                                    const seenOn = describeSeenOn(row);
                                     return (
                                         <Tr key={id}>
-                                            <Td data-label="Key">
+                                            <Td className={styles.cell_key}>
                                                 <div className={`${styles.cell_primary} ${styles.mono}`}>{row.key}</div>
                                                 <div className={styles.cell_inline}>
                                                     <Badge size="xs" tone={STATUS_TONE[row.status]}>{row.status}</Badge>
                                                     <span className={styles.cell_meta}>{row.namespace}</span>
-                                                    <span className={styles.cell_meta}>
-                                                        {row.origin === 'manual'
-                                                            ? 'added by hand'
-                                                            : `seen on ${row.routes.slice(0, 3).join(', ') || 'no page yet'}`}
-                                                    </span>
+                                                    <span className={styles.cell_meta} title={seenOn.title}>{seenOn.text}</span>
                                                 </div>
                                             </Td>
-                                            <Td data-label={`English / ${languageName}`}>
+                                            <Td className={styles.cell_text} data-label={`English / ${languageName}`}>
                                                 <div className={styles.text_stack}>
                                                     <div className={styles.source_text} lang="en">{row.source}</div>
                                                     <Textarea
@@ -724,7 +752,7 @@ export function TranslationsTab({ initialRoute }: ITranslationsTabProps) {
                                                     />
                                                 </div>
                                             </Td>
-                                            <Td data-label="Actions">
+                                            <Td className={styles.cell_actions}>
                                                 <div className={styles.actions}>
                                                     <Button
                                                         size="xs"
@@ -775,7 +803,6 @@ export function TranslationsTab({ initialRoute }: ITranslationsTabProps) {
                             </Tbody>
                         </Table>
                     )}
-                    <Pagination total={total} pageSize={PAGE_SIZE} currentPage={page} onPageChange={setPage} />
                 </>
             )}
         </Panel>

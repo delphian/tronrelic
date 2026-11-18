@@ -5,7 +5,9 @@
  *
  * Holds what the AI translation buttons on the Translations tab send with
  * every request: the system prompt, where an administrator keeps the site's
- * tone and glossary, and the provider and model that run the request. Keeping
+ * tone and the rules that hold in every language, and the provider and model
+ * that run the request. The prompt editor is sized to the text it holds by
+ * `promptEditorRows`, shared with core's content translation panel. Keeping
  * them here rather than asking on each click means every suggestion follows
  * the same terms and runs on a model the administrator chose deliberately.
  *
@@ -34,10 +36,8 @@ import {
     type IAiProviderModels
 } from '../../../ai-tools';
 import { getLocalizationSettings, updateLocalizationSettings } from '../../api/client';
+import { promptEditorRows } from './promptEditorRows';
 import styles from './LocalizationAdmin.module.scss';
-
-/** Rows the system prompt editor shows; a glossary needs room. */
-const PROMPT_ROWS = 12;
 
 /** The automatic choice: the active provider with its default model. */
 const AUTOMATIC_CHOICE: IAiModelChoice = { providerId: null, model: null };
@@ -108,7 +108,9 @@ export function SettingsTab() {
     );
 
     // Save sits in the panel header, beside the "Saved 2h ago" line it updates,
-    // rather than on a line of its own under a twelve-row editor.
+    // rather than on a line of its own under the editor. Guidance for a single
+    // language, such as its glossary, is explained once, in the prompt dialog
+    // each language opens from the Languages tab.
     return (
         <Panel
             title="AI translation"
@@ -148,12 +150,12 @@ export function SettingsTab() {
                     <Field
                         label="System prompt"
                         htmlFor="localization-system-prompt"
-                        hint="Sent ahead of every Suggest request on the Translations tab, whatever the language. Put the site's tone and rules that hold in every language here. A glossary for one language, such as: TRON is always 波场, belongs in that language's translation prompt on the Languages tab. Suggestions fill the editors; nothing is saved until you save the row."
+                        hint="Sent with every Suggest request on the Translations tab, whatever the language."
                     >
                         <Textarea
                             id="localization-system-prompt"
                             size="sm"
-                            rows={PROMPT_ROWS}
+                            rows={promptEditorRows(systemPrompt)}
                             value={systemPrompt}
                             onChange={event => setSystemPrompt(event.target.value)}
                         />

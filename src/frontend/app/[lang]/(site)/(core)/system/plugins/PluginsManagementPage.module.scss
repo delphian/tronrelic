@@ -1,112 +1,59 @@
 /**
  * Plugins Management Page Styles
  *
- * Compact table-based layout for plugin management with toggle switches,
- * expandable details rows, and inline action buttons.
- * Uses semantic tokens from semantic-tokens.css for consistency.
- * Layout handled by Page and Stack components from components/layout/.
+ * The plugin table's own pieces: the plugin cell with its expand toggle,
+ * title, and id, version, and description or error line; the settings link
+ * and its slot in the Actions column; the details row; and the load alert and
+ * empty state. The header is AdminPage, the table is the shared Table, and
+ * the badges and buttons are the shared components, so none of those is
+ * styled here. Uses Layer 2 tokens from semantic-tokens.scss.
  */
 
 @use '../../../../../breakpoints' as *;
 
-/* Alert Messages */
-.alert_error,
-.alert_success {
+/* Shown in place of the table when the plugin list could not be read. */
+.alert_error {
     display: flex;
     align-items: center;
     gap: var(--gap-sm);
     padding: var(--padding-sm-md);
     border-radius: var(--radius-md);
     font-size: var(--font-size-body-sm);
-}
-
-.alert_error {
     background: var(--alert-danger-background);
     border: var(--border-width-thin) solid var(--alert-danger-border);
     color: var(--alert-danger-color);
 }
 
-.alert_success {
-    background: var(--alert-success-background);
-    border: var(--border-width-thin) solid var(--alert-success-border);
-    color: var(--alert-success-color);
-}
-
-/* Compact Stats Bar — wraps so the figures never run past a phone's edge. */
-.stats_bar {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--gap-sm-md);
-    padding: var(--padding-sm-md);
-    background: var(--card-background);
-    border-radius: var(--radius-md);
-    border: var(--card-border);
-}
-
-.stat {
-    display: flex;
-    align-items: baseline;
-    gap: var(--gap-xs);
-}
-
-.stat_value {
-    font-size: var(--font-size-heading-md);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text);
-}
-
-.stat_label {
-    font-size: var(--font-size-caption);
-    color: var(--color-text-muted);
-    text-transform: uppercase;
-    letter-spacing: var(--letter-spacing-wide);
-}
-
-.stat_success {
-    color: var(--color-success);
-}
-
-.stat_primary {
-    color: var(--color-primary);
-}
-
-.stat_danger {
-    color: var(--color-danger);
-}
-
-.stat_divider {
-    width: var(--border-width-thin);
-    height: var(--gap-lg);
-    background: var(--color-border);
+/* The failing-plugin count in the header's subtitle. */
+.subtitle_danger {
+    color: var(--color-danger-text);
 }
 
 /* Table Cell Overrides */
-.th_enabled {
-    text-align: center;
-}
-
-.cell_expand {
-    text-align: center;
-}
-
-.cell_version {
-    font-family: var(--font-mono);
-}
-
-.cell_status {
-    white-space: nowrap;
-}
-
+.th_enabled,
 .cell_enabled {
     text-align: center;
 }
 
+.th_actions,
 .cell_actions {
     text-align: right;
 }
 
+/* Plugin cell: the expand toggle beside the title, and the id line under the
+   title. The text track never narrows below its longest unbroken part, so the
+   table cannot measure the cell as the chevron alone and squeeze the title. */
+.plugin_cell {
+    display: grid;
+    grid-template-columns: auto minmax(min-content, 1fr);
+    align-items: center;
+    column-gap: var(--gap-xs);
+}
+
+/* Centred against both text lines. In the title's row alone, the 24px toggle
+   made that row taller than the title and every row 6px taller than needed. */
 .expand_btn {
+    grid-row: 1 / span 2;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -125,22 +72,16 @@
     color: var(--color-text);
 }
 
-.cell_name {
-    padding-left: 0;
-}
-
-.plugin_name {
+.plugin_title {
     display: flex;
     align-items: center;
     gap: var(--gap-xs);
-    font-weight: var(--font-weight-medium);
-    color: var(--color-text);
+    min-width: 0;
 }
 
-.plugin_id {
-    font-size: var(--font-size-caption);
-    color: var(--color-text-muted);
-    font-family: var(--font-mono);
+.plugin_name {
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text);
 }
 
 .error_icon {
@@ -148,18 +89,47 @@
     flex-shrink: 0;
 }
 
-.version {
-    font-size: var(--font-size-body-sm);
-    color: var(--color-text-muted);
+/* The second line: the id and version, then the description or the error,
+   which takes whatever the line has left and ends in an ellipsis. */
+.plugin_meta {
+    grid-column: 2;
+    display: flex;
+    align-items: center;
+    column-gap: var(--gap-sm);
+    min-width: 0;
+}
+
+.plugin_id {
+    flex: none;
     font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+    white-space: nowrap;
 }
 
-.cell_enabled {
-    text-align: center;
+/* A table sizes each column from its content first, so a line that does not
+   wrap would widen the Plugin column to the whole description. `contain:
+   inline-size` gives the line no width of its own when the cell is measured,
+   so the column is sized by the title and id alone, and the line then fills
+   the width the cell ends up with. The full text is in its title and in the
+   details row. */
+.plugin_description,
+.plugin_error {
+    flex: 1 1 0;
+    min-width: 0;
+    contain: inline-size;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--font-size-body-xs);
 }
 
-.cell_actions {
-    text-align: right;
+.plugin_description {
+    color: var(--color-text-muted);
+}
+
+.plugin_error {
+    color: var(--color-danger-text);
 }
 
 .action_buttons {
@@ -169,12 +139,20 @@
     gap: var(--button-gap);
 }
 
+/* Holds the settings link's place on a row whose plugin has no settings page,
+   so the uninstall buttons form one column. */
+.settings_slot {
+    display: inline-flex;
+    width: var(--icon-size-xl);
+    height: var(--icon-size-xl);
+}
+
 .settings_link {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: var(--icon-size-xl);
-    height: var(--icon-size-xl);
+    width: 100%;
+    height: 100%;
     border-radius: var(--radius-sm);
     color: var(--color-text-muted);
     transition: all var(--transition-fast);
@@ -186,12 +164,6 @@
 }
 
 /* Details Row */
-.details_row td {
-    padding: 0;
-    border-bottom: var(--border-width-thin) solid var(--color-border-subtle);
-    background: var(--color-surface-muted);
-}
-
 .details_content {
     padding: var(--padding-sm-md);
     display: grid;
@@ -271,5 +243,43 @@
     background: var(--card-background);
 }
 
-/* Narrow widths are handled by the shared Table's `stackAt="mobile"`, which
-   keeps Version and Status as labelled lines instead of hiding them. */
+/* Stacked rows. The page passes `stackAt="mobile"` and the shared Table
+ * declares `container-name: table`, so this query matches exactly while the
+ * rows are stacked, as the scheduler monitor's own does.
+ *
+ * No cell is labelled, so each plugin is one entry: the plugin cell on the
+ * first line, and the switch and buttons together on the line under it.
+ *
+ * The description or error measures its full text again here, so the plugin
+ * cell, which the shared Table sizes from its content, claims the whole first
+ * line on every entry. Left contained, the cell was only as wide as its title
+ * and id, the switch and buttons fitted beside a short id and not beside a
+ * long one, and the entries alternated between one layout and the other. The
+ * description or error then sits on its own line under the id, at the cell's
+ * full width. The text track's minimum drops to zero here, or the uncontained
+ * line's full width would become the track's minimum and run past the entry's
+ * edge.
+ *
+ * The shared Table moves closing buttons to the end of the line only after a
+ * labelled field, so the switch pushes itself and the buttons after it to the
+ * entry's right edge. A margin has no effect on a table cell, so this changes
+ * nothing while the rows are a table. */
+@container table (max-width: #{$breakpoint-mobile-lg}) {
+    .cell_enabled {
+        margin-inline-start: auto;
+    }
+
+    .plugin_cell {
+        grid-template-columns: auto minmax(0, 1fr);
+    }
+
+    .plugin_meta {
+        flex-wrap: wrap;
+    }
+
+    .plugin_description,
+    .plugin_error {
+        flex-basis: 100%;
+        contain: none;
+    }
+}

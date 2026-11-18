@@ -9,3 +9,4 @@ export { TranslationsTab } from './TranslationsTab';
 export { SettingsTab } from './SettingsTab';
 export { SwitchesTab } from './SwitchesTab';
 export { SuggestionSummary } from './SuggestionSummary';
+export { promptEditorRows } from './promptEditorRows';

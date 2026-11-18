@@ -116,6 +116,15 @@ export function PlacementsWorkbench({ initial }: IPlacementsWorkbenchProps) {
         return map;
     }, [workbench.placements]);
 
+    // The zone snapshot lists every host the backend knows, including one no
+    // zone is registered on yet (admin pages, today). A track with no zones
+    // has nothing to show or drop onto, so the board leaves it out rather
+    // than drawing a heading with nothing under it.
+    const tracksWithZones = useMemo(
+        () => (workbench.zones?.tracks ?? []).filter(track => track.zones.length > 0),
+        [workbench.zones]
+    );
+
     const defaultRoutes = useMemo(
         () => (workbench.selectedRoute ? [workbench.selectedRoute] : []),
         [workbench.selectedRoute]
@@ -255,65 +264,67 @@ export function PlacementsWorkbench({ initial }: IPlacementsWorkbenchProps) {
             onDragEnd={handleDragEnd}
             onDragCancel={() => setDraggingTypeId(null)}
         >
-            <div className={styles.workbench}>
-                <aside className={styles.sidebar}>
-                    <PagePicker
-                        value={workbench.selectedRoute}
-                        options={workbench.pageOptions}
-                        onChange={workbench.setSelectedRoute}
-                        onAddPath={workbench.addCustomPath}
-                    />
-                    <WidgetLibrary
-                        types={workbench.types}
-                        counts={counts}
-                        onAdd={(typeId) => openCreate({ typeId })}
-                        disabled={!ready}
-                    />
-                </aside>
+            <div className={styles.frame}>
+                <div className={styles.workbench}>
+                    <aside className={styles.sidebar}>
+                        <PagePicker
+                            value={workbench.selectedRoute}
+                            options={workbench.pageOptions}
+                            onChange={workbench.setSelectedRoute}
+                            onAddPath={workbench.addCustomPath}
+                        />
+                        <WidgetLibrary
+                            types={workbench.types}
+                            counts={counts}
+                            onAdd={(typeId) => openCreate({ typeId })}
+                            disabled={!ready}
+                        />
+                    </aside>
 
-                <div className={styles.board}>
-                    {workbench.loadError && (
-                        <div className={styles.error} role="alert">
-                            <AlertCircle size={16} aria-hidden />
-                            <span className={styles.error_text}>{workbench.loadError}</span>
-                            <Button variant="secondary" size="sm" onClick={() => { void workbench.reload(); }}>
-                                Try again
-                            </Button>
-                        </div>
-                    )}
-
-                    {ready && workbench.zones?.tracks.map(track => (
-                        <section key={track.id} className={styles.track} aria-labelledby={`track-${track.id}`}>
-                            <div className={styles.track_header}>
-                                <h2 id={`track-${track.id}`} className={styles.track_title}>{track.label}</h2>
-                                <span className={styles.track_note}>{trackNote(track.id)}</span>
+                    <div className={styles.board}>
+                        {workbench.loadError && (
+                            <div className={styles.error} role="alert">
+                                <AlertCircle size={16} aria-hidden />
+                                <span className={styles.error_text}>{workbench.loadError}</span>
+                                <Button variant="secondary" size="sm" onClick={() => { void workbench.reload(); }}>
+                                    Try again
+                                </Button>
                             </div>
-                            <div className={styles.zones}>
-                                {track.zones.map(zone => (
-                                    <ZoneBoard
-                                        key={zone.id}
-                                        zone={zone}
-                                        placements={placementsByZone.get(zone.id) ?? []}
-                                        types={workbench.types}
-                                        busyId={workbench.busyId}
-                                        pageScoped={workbench.selectedRoute !== null}
-                                        placementInView={workbench.placementInView}
-                                        onToggleEnabled={(p, next) => { void workbench.toggleEnabled(p, next); }}
-                                        onEdit={openEdit}
-                                        onSetWidth={(p, weight) => { void workbench.setWidth(p, weight); }}
-                                        onLayoutChange={(zoneId, config) => { void workbench.setZoneLayout(zoneId, config); }}
-                                        onMoveWithinList={workbench.moveWithinList}
-                                        onMoveOutOfGroup={workbench.moveOutOfGroup}
-                                        onAddWidget={(zoneId) => openCreate({ zoneId })}
-                                    />
-                                ))}
-                            </div>
-                        </section>
-                    ))}
+                        )}
 
-                    {ready && (workbench.zones?.tracks.length ?? 0) === 0 && (
-                        <p className={styles.no_zones}>No zones are registered, so there is nowhere to place a widget.</p>
-                    )}
+                        {ready && tracksWithZones.map(track => (
+                            <section key={track.id} className={styles.track} aria-labelledby={`track-${track.id}`}>
+                                <div className={styles.track_header}>
+                                    <h2 id={`track-${track.id}`} className={styles.track_title}>{track.label}</h2>
+                                    <span className={styles.track_note}>{trackNote(track.id)}</span>
+                                </div>
+                                <div className={styles.zones}>
+                                    {track.zones.map(zone => (
+                                        <ZoneBoard
+                                            key={zone.id}
+                                            zone={zone}
+                                            placements={placementsByZone.get(zone.id) ?? []}
+                                            types={workbench.types}
+                                            busyId={workbench.busyId}
+                                            pageScoped={workbench.selectedRoute !== null}
+                                            placementInView={workbench.placementInView}
+                                            onToggleEnabled={(p, next) => { void workbench.toggleEnabled(p, next); }}
+                                            onEdit={openEdit}
+                                            onSetWidth={(p, weight) => { void workbench.setWidth(p, weight); }}
+                                            onLayoutChange={(zoneId, config) => { void workbench.setZoneLayout(zoneId, config); }}
+                                            onMoveWithinList={workbench.moveWithinList}
+                                            onMoveOutOfGroup={workbench.moveOutOfGroup}
+                                            onAddWidget={(zoneId) => openCreate({ zoneId })}
+                                        />
+                                    ))}
+                                </div>
+                            </section>
+                        ))}
+
+                        {ready && tracksWithZones.length === 0 && (
+                            <p className={styles.no_zones}>No zones are registered, so there is nowhere to place a widget.</p>
+                        )}
+                    </div>
                 </div>
             </div>
 

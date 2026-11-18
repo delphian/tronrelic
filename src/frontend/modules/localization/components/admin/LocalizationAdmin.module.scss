@@ -163,11 +163,69 @@
     overflow-wrap: anywhere;
 }
 
-.badge_row {
-    display: flex;
-    flex-wrap: wrap;
+/*
+ * One set of translation counts on the Languages tab: translated, stale, and
+ * missing as three numbers in the colours the Translations tab gives those
+ * statuses. The words are written once, in the column header or the legend
+ * line, rather than in every cell, where they made each count column several
+ * hundred pixels wide. Tabular figures keep the numbers from shifting as they
+ * change.
+ */
+.progress {
+    display: inline-flex;
     gap: var(--gap-2xs);
-    align-items: center;
+    align-items: baseline;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.progress_translated {
+    color: var(--color-success-text);
+}
+
+.progress_stale {
+    color: var(--color-warning-text);
+}
+
+.progress_missing {
+    color: var(--color-text-muted);
+}
+
+/* A zero carries no signal, so it steps back whatever its status. */
+.progress_zero {
+    color: var(--color-text-subtle);
+}
+
+.progress_separator {
+    color: var(--color-text-subtle);
+}
+
+/* The key to the counts, under the column name in the header row. Normal
+   case, so it reads as a key to the column rather than a second heading. */
+.th_legend {
+    display: block;
+    text-transform: none;
+    letter-spacing: var(--letter-spacing-normal);
+}
+
+/*
+ * The same key as a line above the table, for when the table stacks its rows
+ * and hides the header that carries it. Queried against the panel because the
+ * line sits outside the table's own container. The panel's content box is a
+ * card padding narrower than the flush table, so the line appears slightly
+ * before the table stacks rather than after, which only repeats the key.
+ */
+.progress_key {
+    display: none;
+    margin: 0;
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+@container panel (max-width: #{$breakpoint-mobile-lg}) {
+    .progress_key {
+        display: block;
+    }
 }
 
 /* Language switches inside the add-route form. */
@@ -206,6 +264,50 @@
     align-items: center;
 }
 
+/* The language code inside a routes grid cell. The column header names the
+   language at full width, so the code shows only once the header is hidden. */
+.route_cell_code {
+    display: none;
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-medium);
+    letter-spacing: var(--letter-spacing-wide);
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+}
+
+/* A language that is not enabled yet, which the header marks "off". */
+.route_cell_code_off {
+    color: var(--color-text-subtle);
+}
+
+/*
+ * The routes grid below the width at which the shared Table stacks it
+ * (`stackAt="mobile"`, so the breakpoint here must stay the same). None of the
+ * grid's cells carries a `label`, because a labelled cell takes a whole line on
+ * a phone and a route has a cell for every language: one line each made a
+ * route about 330px tall. Unlabelled cells instead flow along the entry's
+ * wrapping row, so the language cells, each showing its code, switch, and
+ * count, sit several to a line under the pattern.
+ *
+ * The pattern takes a full line so every route's language cells start at the
+ * left edge. The shared Table's stacked rules give a cell no width, so
+ * `width: 100%` here is what its flex basis resolves to. The actions move to
+ * the end of the last line.
+ */
+@container table (max-width: #{$breakpoint-mobile-lg}) {
+    .route_heading_cell {
+        width: 100%;
+    }
+
+    .route_cell_code {
+        display: inline;
+    }
+
+    .route_actions_cell {
+        margin-inline-start: auto;
+    }
+}
+
 /* Row actions sit on one line at the row's end. */
 .actions {
     display: flex;
@@ -213,6 +315,17 @@
     align-items: center;
     justify-content: flex-end;
     white-space: nowrap;
+}
+
+/* A panel header's buttons and pager, wrapping onto a second line when the
+   panel is too narrow for them, so the pager never widens the page. */
+.header_actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-xs);
+    align-items: center;
+    justify-content: flex-end;
+    min-width: 0;
 }
 
 /* Cancel and save buttons at the foot of a dialog, such as the language
@@ -274,42 +387,69 @@
 }
 
 /*
- * The translation table stacks its rows on a phone with each column name
- * above its value. The languages and routes tables use the shared Table's
- * `stackAt` instead, which puts the name beside the value. This table is the
- * exception because its main cell holds the translation editor: a name column
- * beside it would leave a 360px phone about 200px of editor, while a name above
- * it lets the editor take the row's full width. Reacts to the shared Table's
- * own container width, so it is correct in a slide-over too.
+ * The translation table stacks its rows on a phone. The languages and routes
+ * tables use the shared Table's `stackAt` instead. This table is the exception
+ * because each entry needs the row's buttons on the key's line and the editor
+ * on a line of its own below them, and the shared layout can only put a row's
+ * last cell at the end of its last line. Reacts to the shared Table's own
+ * container width, so it is correct in a slide-over too.
+ *
+ * Each entry is a two-column grid: the key heads it with the buttons at the
+ * right, and the English with its editor takes the full width underneath. Only
+ * the editor's cell carries a `data-label`, which names the language above the
+ * editor; the key needs no caption and the buttons carry their own labels.
  */
 @container table (max-width: #{$breakpoint-mobile-lg}) {
+    .stack_table,
+    .stack_table tbody {
+        display: block;
+    }
+
     .stack_table thead {
         display: none;
     }
 
     .stack_table tr {
-        display: block;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-areas:
+            'key actions'
+            'text text';
+        column-gap: var(--gap-sm);
         padding: var(--padding-sm);
         border-bottom: var(--border-width-thin) solid var(--color-border);
+    }
+
+    .stack_table tr:last-child {
+        border-bottom: none;
     }
 
     .stack_table td {
         display: block;
         width: auto;
+        min-width: 0;
         padding: var(--padding-2xs) 0;
         border-bottom: none;
     }
 
-    .stack_table td::before {
+    .stack_table .cell_key {
+        grid-area: key;
+    }
+
+    .stack_table .cell_text {
+        grid-area: text;
+    }
+
+    .stack_table .cell_actions {
+        grid-area: actions;
+    }
+
+    .stack_table td[data-label]::before {
         content: attr(data-label);
         display: block;
         margin-bottom: var(--gap-2xs);
         font-size: var(--font-size-caption);
         font-weight: var(--font-weight-semibold);
         color: var(--color-text-muted);
-    }
-
-    .stack_table .actions {
-        justify-content: flex-start;
     }
 }

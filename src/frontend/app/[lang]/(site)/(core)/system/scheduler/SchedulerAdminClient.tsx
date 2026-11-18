@@ -10,19 +10,23 @@
  * rather than navigating, with the address bar kept as a real deep link.
  *
  * The Jobs panel is the unscoped `SchedulerMonitor`, the same component module
- * pages embed with a `jobFilter`. The Database and Logs panels are core
- * components scoped to this module, so an operator diagnosing a job that never
- * fired can read its stored config, its execution records, and the
- * scheduler's own entries without leaving the page.
+ * pages embed with a `jobFilter`, under a search box and status choice that
+ * build that filter here, because the unscoped list runs to about fifty jobs.
+ * The Database and Logs panels are core components scoped to this module, so
+ * an operator diagnosing a job that never fired can read its stored config,
+ * its execution records, and the scheduler's own entries without leaving the
+ * page.
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import type { MenuNodeSerialized } from '@/shared';
 import { AdminPage } from '../../../../../../components/layout';
 import { MenuNavClient } from '../../../../../../components/layout/MenuNav/MenuNavClient';
 import { CollectionBrowser } from '../../../../../../modules/database';
 import { SystemLogsMonitor } from '../../../../../../modules/logs';
 import { SchedulerMonitor } from '../../../../../../modules/scheduler';
+import { buildJobFilter, type JobStatusFilter } from './buildJobFilter';
+import { JobFilterBar } from './JobFilterBar';
 
 /** The page's tab ids; the `?tab=` value carried by each submenu node. */
 type TabId = 'jobs' | 'database' | 'logs';
@@ -85,6 +89,15 @@ interface ISchedulerAdminClientProps {
  */
 export function SchedulerAdminClient({ submenuTree, submenuGeneratedAt, initialTab }: ISchedulerAdminClientProps) {
     const [activeTab, setActiveTab] = useState<TabId>(isTabId(initialTab) ? initialTab : 'jobs');
+    const [jobQuery, setJobQuery] = useState('');
+    const [jobStatus, setJobStatus] = useState<JobStatusFilter>('all');
+
+    // Rebuilt only when the filter changes, so the monitor receives the same
+    // predicate across its own re-renders. Typing sends no request: the
+    // monitor filters the list it already holds, and refetches only when the
+    // filter is first set or cleared, which switches its success rate off or
+    // back on.
+    const jobFilter = useMemo(() => buildJobFilter(jobQuery, jobStatus), [jobQuery, jobStatus]);
 
     /**
      * Switch to the clicked tab and keep the address bar a real deep link.
@@ -108,7 +121,17 @@ export function SchedulerAdminClient({ submenuTree, submenuGeneratedAt, initialT
                 onItemSelect={handleTabSelect}
             />
 
-            {activeTab === 'jobs' && <SchedulerMonitor />}
+            {activeTab === 'jobs' && (
+                <>
+                    <JobFilterBar
+                        query={jobQuery}
+                        status={jobStatus}
+                        onQueryChange={setJobQuery}
+                        onStatusChange={setJobStatus}
+                    />
+                    <SchedulerMonitor jobFilter={jobFilter} />
+                </>
+            )}
 
             {/* Read-only. A running job keeps its schedule and enabled state
               * in memory and reads its stored config only when it is
