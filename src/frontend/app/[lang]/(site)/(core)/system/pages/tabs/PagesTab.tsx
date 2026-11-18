@@ -71,6 +71,13 @@ interface IPagesListResponse {
 type PageListFilter = 'all' | 'published' | 'drafts' | 'pending' | 'deleted';
 
 /**
+ * Loads one page of the list. Named so the loader can be typed before it is
+ * defined, which it needs because it calls itself to recover from a page
+ * number that ran past the end of the results.
+ */
+type PageListLoader = (nextPage: number, nextSearch: string, nextFilter: PageListFilter) => Promise<void>;
+
+/**
  * Render a translated page body for the translation editor's preview, through
  * the same endpoint the page editor uses so the two previews cannot disagree.
  *
@@ -216,11 +223,18 @@ export function PagesTab() {
      * Fetch one page of the list for a search and filter and show it, with
      * the counts above it.
      *
+     * A page number chosen before the request can be past the end of the
+     * results by the time the answer arrives, because a save, a deletion, or
+     * another admin's change can take rows out of the current filter. The pager
+     * hides itself once the remaining rows fit one page, so showing that empty
+     * page would leave the rest of the list unreachable. The loader therefore
+     * asks for the last page that still exists instead of showing nothing.
+     *
      * @param nextPage - The page to show, counting from 1.
      * @param nextSearch - The search text the rows must match, or blank.
      * @param nextFilter - The status filter.
      */
-    const load = useCallback(async (nextPage: number, nextSearch: string, nextFilter: PageListFilter): Promise<void> => {
+    const load: PageListLoader = useCallback(async (nextPage: number, nextSearch: string, nextFilter: PageListFilter): Promise<void> => {
         const request = ++latestRequest.current;
         setLoading(true);
         try {
@@ -231,7 +245,10 @@ export function PagesTab() {
                 throw new Error(`Failed to fetch pages: ${response.statusText}`);
             }
             const data: IPagesListResponse = await response.json();
-            if (request === latestRequest.current) {
+            const isPastEnd = data.pages.length === 0 && data.total > 0 && (nextPage - 1) * PAGE_SIZE >= data.total;
+            if (request === latestRequest.current && isPastEnd) {
+                void load(Math.ceil(data.total / PAGE_SIZE), nextSearch, nextFilter);
+            } else if (request === latestRequest.current) {
                 setPages(data.pages);
                 setTotal(data.total);
                 setStats(data.stats);
