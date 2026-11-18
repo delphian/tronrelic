@@ -3,52 +3,10 @@
  *
  * Admin tab listing user groups with create/edit/delete affordances and
  * a colocated form rendered inside the shared ModalProvider. The list is the
- * shared Table, which stacks each group into a labelled entry on a phone, so
- * nothing here hides a column to make the rest fit.
- *
- * The container carries no padding: the page shell already provides the
- * gutter, and a second one here left this tab out of line with the others and
- * cost a phone width it needs.
+ * shared Panel and Table, which stacks each group into a labelled entry on a
+ * phone, so the rules here only cover what sits inside the table's cells and
+ * the group form.
  */
-
-@use '../../../../../app/breakpoints' as *;
-
-.container {
-    container-type: inline-size;
-    container-name: groups-manager;
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-lg);
-}
-
-.header {
-    display: flex;
-    flex-direction: row;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: var(--gap-md);
-}
-
-.title {
-    font-size: var(--font-size-heading-lg);
-    font-weight: var(--font-weight-bold);
-    color: var(--color-text);
-    margin: 0;
-}
-
-.subtitle {
-    font-size: var(--font-size-body-sm);
-    color: var(--color-text-muted);
-    margin: var(--gap-2xs) 0 0 0;
-    max-width: var(--max-width-prose);
-}
-
-.error_card {
-    border-color: var(--color-danger);
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-sm);
-}
 
 .slug_cell {
     display: inline-flex;
@@ -63,15 +21,10 @@
     color: var(--color-text);
 }
 
-.description {
-    color: var(--color-text-muted);
-    max-width: var(--max-width-sm);
-}
-
 .actions {
     display: inline-flex;
     align-items: center;
-    gap: var(--gap-xs);
+    gap: var(--gap-2xs);
     white-space: nowrap;
 }
 
@@ -107,13 +60,4 @@
     display: flex;
     justify-content: flex-end;
     gap: var(--gap-sm);
-}
-
-/* Phone width: the New Group button drops below the heading instead of
-   squeezing the description beside it. */
-@container groups-manager (max-width: #{$breakpoint-mobile-lg}) {
-    .header {
-        flex-direction: column;
-        align-items: stretch;
-    }
 }

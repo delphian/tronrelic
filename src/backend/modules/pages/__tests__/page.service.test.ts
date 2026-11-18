@@ -370,9 +370,34 @@ describe('PageService', () => {
 
         it('decorates listed pages with review state', async () => {
             await service.createPage(makePageMarkdown({ title: 'Held', slug: '/held' }), serviceToken);
-            const pages = await service.listPages({ curation: 'pending' });
+            const { pages, total } = await service.listPages({ curation: 'pending' });
             expect(pages).toHaveLength(1);
+            expect(total).toBe(1);
             expect(pages[0].curation).toBe('pending');
+        });
+
+        it('returns one page at a time with the total across every page', async () => {
+            for (const n of [1, 2, 3]) {
+                await service.createPage(makePageMarkdown({ title: `P${n}`, slug: `/p${n}` }), curator);
+            }
+
+            const first = await service.listPages({ limit: 2, skip: 0 });
+            const second = await service.listPages({ limit: 2, skip: 2 });
+
+            expect(first.pages).toHaveLength(2);
+            expect(second.pages).toHaveLength(1);
+            expect([first.total, second.total]).toEqual([3, 3]);
+            const listed = [...first.pages, ...second.pages].map((page) => page.slug).sort();
+            expect(listed).toEqual(['/p1', '/p2', '/p3']);
+        });
+
+        it('bounds a page size a caller did not validate', async () => {
+            await service.createPage(makePageMarkdown({ title: 'P1', slug: '/p1' }), curator);
+
+            const { pages, total } = await service.listPages({ limit: Number.NaN, skip: -5 });
+
+            expect(pages).toHaveLength(1);
+            expect(total).toBe(1);
         });
     });
 

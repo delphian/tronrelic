@@ -1,18 +1,32 @@
 'use client';
 
+/**
+ * @fileoverview Channels tab of /system/notifications: the global switch for
+ * every registered delivery transport (toast today; email and push later).
+ *
+ * Drawn as the same compact table in a panel as the Categories tab, with the
+ * switch beside each channel's name. The channel id is an internal key, so it
+ * appears only as the name's hover text. Switching a channel off suppresses it
+ * for every category and every user. Client component behind the admin-gated
+ * page.
+ */
+
 import { useCallback, useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
+import { Panel } from '../../../components/ui/Panel';
+import { Switch } from '../../../components/ui/Switch';
+import { Table, Thead, Tbody, Tr, Th, Td } from '../../../components/ui/Table';
 import { getAdminChannels, setAdminChannel, type IAdminChannel } from '../api/notifications.api';
+import { RowLabel } from './RowLabel';
 import styles from './admin.module.scss';
+
+/** What the switches do, stated once beside the panel title. */
+const PANEL_META = 'Switching a channel off stops it for every category and every user.';
 
 /**
  * Admin Channels tab — the global channel kill switches.
  *
- * Lists every registered delivery transport (toast today; email/push later)
- * with a toggle that enables or disables it platform-wide. Disabling a channel
- * suppresses it for every category and every user. Client component behind the
- * admin-gated `/system/notifications` page.
- *
- * @returns The channels admin list.
+ * @returns The channels panel.
  */
 export function ChannelsTab(): React.ReactElement {
     const [channels, setChannels] = useState<IAdminChannel[]>([]);
@@ -20,6 +34,7 @@ export function ChannelsTab(): React.ReactElement {
     const [error, setError] = useState<string | null>(null);
     const [busyId, setBusyId] = useState<string | null>(null);
 
+    /** Read every registered channel with its current enable state. */
     const load = useCallback(async (): Promise<void> => {
         try {
             setChannels(await getAdminChannels());
@@ -30,12 +45,14 @@ export function ChannelsTab(): React.ReactElement {
         }
     }, []);
 
+    /** Load the channels once the tab opens. */
     useEffect(() => {
         void load();
     }, [load]);
 
     /**
-     * Toggle a channel's global enable state, updating local rows optimistically.
+     * Toggle a channel's global enable state, updating the row once the
+     * server accepts the change.
      *
      * @param id - Channel id.
      * @param enabled - New enable state.
@@ -53,33 +70,45 @@ export function ChannelsTab(): React.ReactElement {
         }
     }, []);
 
+    let content: ReactNode;
     if (loading) {
-        return <p className={styles.placeholder}>Loading channels…</p>;
-    }
-    if (channels.length === 0) {
-        return <p className={styles.placeholder}>No channels registered.</p>;
+        content = <p className={styles.placeholder}>Loading channels…</p>;
+    } else if (channels.length === 0) {
+        content = <p className={styles.placeholder}>No channels registered.</p>;
+    } else {
+        content = (
+            <Table variant="compact" flush>
+                <Thead>
+                    <Tr>
+                        <Th>Channel</Th>
+                    </Tr>
+                </Thead>
+                <Tbody>
+                    {channels.map((channel) => (
+                        <Tr key={channel.id}>
+                            <Td>
+                                <div className={`${styles.toggle_label} ${styles.toggle_label_single}`}>
+                                    <Switch
+                                        size="sm"
+                                        on={channel.enabled}
+                                        disabled={busyId === channel.id}
+                                        onChange={(next) => void onToggle(channel.id, next)}
+                                        aria-label={`${channel.label} for everyone`}
+                                    />
+                                    <RowLabel name={channel.label} nameTitle={`Channel id: ${channel.id}`} />
+                                </div>
+                            </Td>
+                        </Tr>
+                    ))}
+                </Tbody>
+            </Table>
+        );
     }
 
     return (
-        <div className={styles.list}>
+        <Panel title="Channels" meta={PANEL_META}>
             {error && <p className={styles.error} role="alert">{error}</p>}
-            {channels.map((channel) => (
-                <div key={channel.id} className={styles.row}>
-                    <div className={styles.row_main}>
-                        <div className={styles.row_title}>{channel.label}</div>
-                        <div className={styles.row_desc}>{channel.id}</div>
-                    </div>
-                    <label className={styles.toggle}>
-                        <input
-                            type="checkbox"
-                            checked={channel.enabled}
-                            disabled={busyId === channel.id}
-                            onChange={(e) => void onToggle(channel.id, e.target.checked)}
-                        />
-                        <span>{channel.enabled ? 'Enabled' : 'Disabled'}</span>
-                    </label>
-                </div>
-            ))}
-        </div>
+            {content}
+        </Panel>
     );
 }

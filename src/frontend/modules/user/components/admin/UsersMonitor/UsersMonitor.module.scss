@@ -1,75 +1,24 @@
 /**
  * UsersMonitor Styles
  *
- * The Users tab of /system/users: header, search and refresh controls, the
- * account table, and pagination. The table itself is the shared Table, which
- * stacks each account into a labelled entry at tablet width and below; the
- * rules here only cover what sits around it and inside its cells.
+ * The Users tab of /system/users: the search box in the panel header, the
+ * sortable column headers, the cells of the account table, and the pager under
+ * it. The panel and the table are the shared components; the rules here only
+ * cover what sits inside their header and cells.
  *
- * The container carries no padding of its own. The page shell and <main>
- * already provide the gutter, and a second one here cost a phone about 48px of
- * width on each side and pushed this tab out of line with the other tabs.
+ * The stacked rules below query the container named `table`, which is the
+ * shared Table's own wrapper, so they switch at exactly the width at which the
+ * table stacks its rows (`stackAt="mobile"`, 768px).
  */
 
 @use '../../../../../app/breakpoints' as *;
 
-.container {
-    container-type: inline-size;
-    container-name: users-monitor;
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-lg);
-}
-
-.header {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-xs);
-}
-
-.title {
-    font-size: var(--font-size-heading-lg);
-    font-weight: var(--font-weight-bold);
-    color: var(--color-text);
-    margin: 0;
-}
-
-.subtitle {
-    font-size: var(--font-size-body-sm);
-    color: var(--color-text-muted);
-    margin: 0;
-    max-width: var(--max-width-prose);
-}
-
-.controls {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: var(--gap-md);
-    flex-wrap: wrap;
-}
-
-.search_box {
-    display: flex;
-    gap: var(--input-group-gap);
-    align-items: center;
-    flex: 1;
-    max-width: var(--max-width-sm);
-}
-
-.search_input {
-    flex: 1;
+/* The search box in the panel header. It takes up to the small max width and
+   shrinks with the header on a phone instead of pushing the refresh button
+   past the panel's edge. */
+.search {
+    flex: 0 1 var(--max-width-xs);
     min-width: 0;
-}
-
-.loading,
-.empty {
-    padding: var(--card-padding-lg);
-    text-align: center;
-    color: var(--color-text-muted);
-    background: var(--color-surface-muted);
-    border-radius: var(--radius-md);
-    border: var(--border-width-thin) solid var(--color-border);
 }
 
 /* Sortable column headers: the whole label is the click target, styled like
@@ -125,7 +74,8 @@
     text-decoration: underline;
 }
 
-.wallet_tick {
+.wallet_mark {
+    display: inline-flex;
     color: var(--color-success);
     vertical-align: middle;
 }
@@ -136,60 +86,28 @@
     gap: var(--badge-gap);
 }
 
-.actions_cell {
-    white-space: nowrap;
-}
-
-/* The row's buttons. They wrap instead of forcing the table wider when the
-   column is narrow. */
 .row_actions {
     display: flex;
-    flex-wrap: wrap;
-    gap: var(--button-gap);
+    justify-content: flex-end;
+    gap: var(--gap-2xs);
 }
 
-.pagination {
+/* The pager sits under the panel, at its end. */
+.footer {
     display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    align-items: center;
-    gap: var(--gap-md);
-    padding: var(--card-padding-sm) 0;
+    justify-content: flex-end;
 }
 
-.page_info {
-    font-size: var(--font-size-body-sm);
-    color: var(--color-text-muted);
-    text-align: center;
-}
-
-/* Tablet and below: the table has stacked, so make the email read as the
-   entry's heading and set the actions off as the entry's last line. The
-   table shows its own sort picker. */
-@container users-monitor (max-width: #{$breakpoint-tablet}) {
+/* Stacked: the email reads as the entry's heading, and the dash that says
+   "no wallet" is dropped, because the heading line shows no column name to
+   explain it. */
+@container table (max-width: #{$breakpoint-mobile-lg}) {
     .email_button {
         font-size: var(--font-size-body);
         font-weight: var(--font-weight-semibold);
     }
 
-    .row_actions {
-        margin-top: var(--gap-sm);
-    }
-}
-
-/* Phone width: search spans the row, with Refresh beneath it. */
-@container users-monitor (max-width: #{$breakpoint-mobile-md}) {
-    .controls {
-        flex-direction: column;
-        align-items: stretch;
-    }
-
-    .search_box {
-        max-width: none;
-    }
-
-    .page_info {
-        order: -1;
-        flex-basis: 100%;
+    .no_wallet {
+        display: none;
     }
 }

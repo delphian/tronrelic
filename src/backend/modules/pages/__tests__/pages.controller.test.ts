@@ -69,8 +69,8 @@ describe('PagesController', () => {
     });
 
     describe('listPages', () => {
-        it('returns pages with stats', async () => {
-            mockService.listPages.mockResolvedValue([{ _id: '1' }]);
+        it('returns one page of pages with their total and the stats', async () => {
+            mockService.listPages.mockResolvedValue({ pages: [{ _id: '1' }], total: 26 });
             mockService.getPageStats.mockResolvedValue({ total: 1, published: 1, drafts: 0 });
 
             const req = createMockRequest();
@@ -79,8 +79,27 @@ describe('PagesController', () => {
 
             expect(res.json).toHaveBeenCalledWith({
                 pages: [{ _id: '1' }],
+                total: 26,
                 stats: { total: 1, published: 1, drafts: 0 }
             });
+        });
+
+        it('passes paging and filters through, and drops a blank search', async () => {
+            mockService.listPages.mockResolvedValue({ pages: [], total: 0 });
+            mockService.getPageStats.mockResolvedValue({ total: 0, published: 0, drafts: 0 });
+
+            await controller.listPages(createMockRequest({
+                query: { limit: '25', skip: '50', published: 'false', curation: 'pending', search: '   ' }
+            }), createMockResponse());
+
+            expect(mockService.listPages).toHaveBeenCalledWith(expect.objectContaining({
+                limit: 25,
+                skip: 50,
+                published: false,
+                curation: 'pending',
+                search: undefined,
+                deleted: false
+            }));
         });
 
         it('returns 500 when the service throws', async () => {

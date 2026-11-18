@@ -74,12 +74,29 @@
     color: var(--color-text);
 }
 
-/* Side by side once each lane can have a comfortable width; a single lane
- * fills the row. */
+/* One lane above the other on a narrow sheet. Each lane keeps its own height
+ * rather than stretching to its neighbour's, so a lane with one destination
+ * does not become a tall empty box. */
 .lanes {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--max-width-xs)), 1fr));
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
     gap: var(--gap-sm);
+}
+
+/* Side by side once the sheet is wide enough. The first lane (Private, which
+ * usually holds one destination) is sized to its content up to two fifths of
+ * the row, and the second (Public, which holds most of them) takes the rest,
+ * so long destination names fit instead of being cut at an even split. A
+ * single lane spans the row. */
+@container review-sheet (min-width: #{$breakpoint-mobile-md}) {
+    .lanes {
+        grid-template-columns: fit-content(40%) minmax(0, 1fr);
+    }
+
+    .lane:only-child {
+        grid-column: 1 / -1;
+    }
 }
 
 .lane {
@@ -144,12 +161,22 @@
 }
 
 /* Long destination names (Telegram channel titles) truncate to one line; the
- * full name is in the element's title. */
+ * full name is in the element's title. The name does not grow, so the reach
+ * note follows it rather than sitting at the far end of a wide lane. */
 .option_label {
-    flex: 1 1 auto;
+    flex: 0 1 auto;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Where the destination's reach differs from its lane heading: quiet text at
+ * the end of the row, kept whole so the name truncates before it does. */
+.option_reach {
+    flex: 0 0 auto;
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
     white-space: nowrap;
 }
 

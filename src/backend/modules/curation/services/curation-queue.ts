@@ -12,15 +12,34 @@
 import type {
     CurationItemStatus,
     IContentChangeSet,
+    ICurationHistoryListOptions,
     ICurationSinkOutcome,
     ICurationItem,
     ICurationPreview,
     IDatabaseService,
     ISystemLogService
 } from '@/types';
+import { CURATION_DECISIONS } from '@/types';
 
 /** Physical collection name (modules prefix `module_<id>_` manually). */
 const COLLECTION = 'module_curation_curations';
+
+/** Most decided items one history read returns, whatever the caller asks for. */
+const MAX_HISTORY_PAGE = 100;
+
+/**
+ * Hold a paging number to a whole number within bounds, so a read never runs
+ * unbounded or with a negative skip even when the caller passed a bad value.
+ *
+ * @param value - The number the caller asked for.
+ * @param min - The smallest value allowed, also used for a value that is not finite.
+ * @param max - The largest value allowed.
+ * @returns The bounded whole number.
+ */
+function clampInteger(value: number, min: number, max: number): number {
+    const whole = Number.isFinite(value) ? Math.trunc(value) : min;
+    return Math.min(max, Math.max(min, whole));
+}
 
 /**
  * The optional parts of a decision, written in the same atomic update as the
@@ -63,12 +82,19 @@ export class CurationQueue {
     /**
      * Create the collection's indexes. Called once during module init.
      *
+     * `{ status, decidedAt }` serves the history unfiltered or filtered by
+     * decision. `{ typeId, status, decidedAt }` serves it filtered by content
+     * type, newest decision first, and its `{ typeId, status }` prefix serves
+     * every lookup by type and status. It replaced a two-field
+     * `{ typeId, status }` index, which a deployment created before the change
+     * still holds and can drop.
+     *
      * @returns Resolves when all indexes exist.
      */
     async ensureIndexes(): Promise<void> {
         await this.database.createIndex(COLLECTION, { id: 1 }, { unique: true });
         await this.database.createIndex(COLLECTION, { status: 1, createdAt: -1 });
-        await this.database.createIndex(COLLECTION, { typeId: 1, status: 1 });
+        await this.database.createIndex(COLLECTION, { typeId: 1, status: 1, decidedAt: -1 });
         await this.database.createIndex(COLLECTION, { status: 1, decidedAt: -1 });
     }
 
@@ -120,23 +146,62 @@ export class CurationQueue {
     }
 
     /**
-     * List closed envelopes (approved, rejected, or dismissed), most-recently-closed
-     * first, for the curation history view. The records were never discarded — a decision
-     * mutates an item in place rather than deleting it (see `resolve`) — so this is
-     * the audit half of the queue: who decided what, and when. Sorted by `decidedAt`
-     * so the freshest decisions lead, backed by the `{ status, decidedAt }` index.
+     * List one page of closed envelopes (approved, rejected, or dismissed),
+     * most-recently-closed first, with the number matching across every page.
+     * The records were never discarded — a decision mutates an item in place
+     * rather than deleting it (see `resolve`) — so this is the audit half of the
+     * queue: who decided what, and when.
      *
-     * @param limit - Maximum envelopes to return (default 100, capped at 500).
-     * @returns The decided envelopes, newest decision first.
+     * The history grows without bound, so it is read one page at a time. The
+     * sort is `decidedAt` alone so the `{ status, decidedAt }` and
+     * `{ typeId, status, decidedAt }` indexes supply the order; a tiebreaker
+     * outside the index would make MongoDB sort every decided item in memory.
+     *
+     * @param options - Paging and filters. `limit` is held to 1–100 and `skip`
+     *   to zero or more, so a caller that skipped validation still gets a
+     *   bounded read.
+     * @returns The page of decided envelopes, newest decision first, and the
+     *   number of envelopes the filters match.
      */
-    async listHistory(limit = 100): Promise<ICurationItem[]> {
-        const capped = Math.min(Math.max(1, limit), 500);
+    async listHistory(options: ICurationHistoryListOptions): Promise<{ items: ICurationItem[]; total: number }> {
+        const limit = clampInteger(options.limit, 1, MAX_HISTORY_PAGE);
+        const skip = clampInteger(options.skip, 0, Number.MAX_SAFE_INTEGER);
+        const filter: Record<string, unknown> = {
+            status: options.decision ?? { $in: [...CURATION_DECISIONS] }
+        };
+        if (options.typeId) {
+            filter.typeId = options.typeId;
+        }
         const collection = this.database.getCollection<ICurationItem>(COLLECTION);
-        return collection
-            .find({ status: { $in: ['approved', 'rejected', 'dismissed'] } })
-            .sort({ decidedAt: -1 })
-            .limit(capped)
+        const [items, total] = await Promise.all([
+            collection.find(filter).sort({ decidedAt: -1 }).skip(skip).limit(limit).toArray(),
+            collection.countDocuments(filter)
+        ]);
+        return { items, total };
+    }
+
+    /**
+     * List the content type of every decided envelope, once each, so the
+     * history's type filter offers only types that have decisions, including
+     * types whose owning plugin has since been removed.
+     *
+     * Read on every history request. Decided items run to thousands rather
+     * than millions, and the `{ status, decidedAt }` index narrows the match to
+     * decided items, so the grouping costs milliseconds.
+     *
+     * @returns The distinct type ids, in no particular order.
+     */
+    async listHistoryTypeIds(): Promise<string[]> {
+        const collection = this.database.getCollection<ICurationItem>(COLLECTION);
+        const rows = await collection
+            .aggregate<{ _id: unknown }>([
+                { $match: { status: { $in: [...CURATION_DECISIONS] } } },
+                { $group: { _id: '$typeId' } }
+            ])
             .toArray();
+        return rows
+            .map((row) => row._id)
+            .filter((typeId): typeId is string => typeof typeId === 'string' && typeId.length > 0);
     }
 
     /**

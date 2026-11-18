@@ -1,124 +1,25 @@
-.container {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-md);
-}
+/**
+ * Styles for the Settings tab: the width of the pattern field and its
+ * monospace face. The panel, the label, the hint, and the error come from the
+ * shared Panel and Field.
+ */
 
-.error {
-    color: var(--color-danger);
-    margin: 0;
-}
-
-.success {
-    color: var(--color-success);
-    margin: 0;
-}
-
-.form {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-lg);
-}
-
+/* Route patterns run to about 20 characters, so a field across the whole
+ * panel was mostly empty. The cap leaves room for the longest pattern and the
+ * hint under it. */
 .field {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-sm);
+    max-width: var(--max-width-md);
 }
 
-.label {
-    font-size: var(--font-size-body-lg);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text);
+/* At its own width under the field, rather than stretched across the panel's
+ * column or pushed to the far end of the header, away from what it saves. */
+.save {
+    align-self: flex-start;
 }
 
-.description {
-    margin: 0;
-    font-size: var(--font-size-body-sm);
-    color: var(--color-text-muted);
-    line-height: 1.5;
-}
-
-/* Shared <Textarea> supplies width, padding, border, radius, background,
- * focus ring, and placeholder color via the input tokens. Only the
- * monospace face (so regex patterns align) is layered on here. */
+/* The shared <Textarea> supplies width, padding, border, radius, background,
+ * focus ring, and placeholder colour through the input tokens. Only the
+ * monospace face, so regex patterns line up, is layered on here. */
 .textarea {
-    font-family: 'Monaco', 'Courier New', monospace;
-}
-
-.code_input {
-    font-family: 'Monaco', 'Courier New', monospace;
-    font-size: var(--font-size-body-sm);
-}
-
-.select {
-    padding: var(--padding-sm) var(--padding-sm-md);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    background: var(--color-surface);
-    color: var(--color-text);
-    font-size: var(--font-size-body-sm);
-    cursor: pointer;
-    transition: border-color var(--transition-base);
-}
-
-.select:not(:disabled):hover {
-    border-color: var(--color-primary);
-}
-
-.select:focus {
-    outline: none;
-    border-color: var(--color-primary);
-}
-
-.select:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-}
-
-.actions {
-    display: flex;
-    justify-content: flex-start;
-    padding-top: var(--padding-md);
-    border-top: 1px solid var(--color-border);
-}
-
-.section_title {
-    margin: 0 0 var(--gap-md) 0;
-    font-size: var(--font-size-body-lg);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text);
-}
-
-.settings_display {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-sm-md);
-}
-
-/* Wraps so a long value drops under its label on a phone instead of
-   squeezing it. */
-.setting_row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--gap-xs) var(--gap-md);
-    justify-content: space-between;
-    align-items: center;
-    padding: var(--padding-sm) 0;
-    border-bottom: 1px solid var(--color-border);
-}
-
-.setting_row:last-child {
-    border-bottom: none;
-}
-
-.setting_label {
-    font-size: var(--font-size-body-sm);
-    color: var(--color-text-muted);
-}
-
-.setting_value {
-    font-size: var(--font-size-body-sm);
-    font-weight: var(--font-weight-medium);
-    color: var(--color-text);
+    font-family: var(--font-mono);
 }

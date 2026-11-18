@@ -1,59 +1,106 @@
 @use '../../../../../app/breakpoints' as *;
 
-// Shared by the cap form and the domain rule form. Each lays its fields out in
-// one row on a wide panel and stacks them on a narrow one, with its save button
-// on a row of its own underneath, so field hints of different lengths never
-// push the button out of line.
+// Shared by the cap form and the domain rule form. Each puts its fields and
+// its save button on one row, with a line describing the chosen mode or action
+// under the row. Every field spans four grid rows (label, control, hint, error)
+// through `subgrid`, so the controls line up on row two whatever message a
+// field shows under its control, and the save button sits on that row too. A
+// narrow panel stacks the fields instead.
 
 // The wrapper is the container the query below measures; an element cannot
-// query its own size, so the grid itself declares none.
+// query its own size, so the form itself declares none.
 .form_container {
     container-type: inline-size;
     container-name: signup-form;
 }
 
-.form_grid {
+// The add-rule form sits above the rules table, so a rule under it marks
+// where the form ends and the list begins.
+.form_container__divided {
+    padding-bottom: var(--padding-sm);
+    border-bottom: var(--border-width-thin) solid var(--color-border-subtle);
+}
+
+.form_row {
     display: grid;
-    gap: var(--gap-md);
-    align-items: start;
+    grid-template-rows: repeat(4, auto);
+    column-gap: var(--gap-sm);
+    justify-content: start;
 }
 
-.form_grid__cap {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+// Two classes, so this outranks the Field's own `display: flex` whatever
+// order the stylesheets load in.
+.form_row > .form_field {
+    display: grid;
+    grid-row: span 4;
+    grid-template-rows: subgrid;
 }
 
-/* Domain, action, code budget, budget window (hour or day), note. */
-.form_grid__rule {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.7fr) minmax(0, 0.7fr) minmax(0, 1.4fr);
+// Mode, the hourly maximum, then Save.
+.form_row__cap {
+    grid-template-columns: minmax(9rem, 14rem) minmax(7rem, 10rem) auto;
 }
 
-.form_actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--form-footer-gap);
+// Domain, action, note, then Save.
+.form_row__rule {
+    grid-template-columns: minmax(9rem, 14rem) minmax(6rem, 8rem) minmax(10rem, 1fr) auto;
+    justify-content: stretch;
+}
+
+// Domain, action, code budget, budget window, note, then Save.
+.form_row__rule_slow {
+    grid-template-columns: minmax(9rem, 14rem) minmax(6rem, 8rem) minmax(4rem, 6rem) minmax(8rem, 10rem) minmax(10rem, 1fr) auto;
+    justify-content: stretch;
+}
+
+// On the controls' row, in the last column. Both placed explicitly, because
+// an item with only a row set is placed before the fields and would take the
+// first column.
+.form_submit {
+    grid-row: 2;
+    grid-column: -2 / -1;
+    align-self: center;
+    justify-self: start;
+}
+
+// The description of the chosen mode or action, under the whole row. Its
+// width is contained so a long description wraps under the fields instead
+// of widening the button's column to fit it on one line.
+.form_help {
+    grid-row: 5;
+    grid-column: 1 / -1;
+    contain: inline-size;
+    margin: var(--field-gap) 0 0;
+    font-size: var(--field-message-font-size);
+    line-height: var(--line-height-normal);
+    color: var(--field-hint-color);
 }
 
 .row_actions {
     display: flex;
-    gap: var(--button-gap);
+    gap: var(--gap-2xs);
     justify-content: flex-end;
 }
 
-/* Tablet: five rule fields in one row leave each about 150px, too narrow for
-   their hints, so the rule form takes two columns with the note across both. */
-@container signup-form (max-width: #{$breakpoint-tablet}) {
-    .form_grid__rule {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .form_grid__rule > :last-child {
-        grid-column: 1 / -1;
-    }
-}
-
+// Below 768px the row cannot hold its fields, so they stack, with the
+// description and then the save button under them.
 @container signup-form (max-width: #{$breakpoint-mobile-lg}) {
-    .form_grid__cap,
-    .form_grid__rule {
-        grid-template-columns: minmax(0, 1fr);
+    .form_row {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        gap: var(--gap-sm);
+    }
+
+    .form_row > .form_field {
+        display: flex;
+    }
+
+    .form_help {
+        margin: 0;
+    }
+
+    .form_submit {
+        align-self: flex-start;
     }
 }

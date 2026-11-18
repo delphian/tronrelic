@@ -8,6 +8,8 @@ import type {
     IPageContent,
     IPageEditProposal,
     IPageEditProposalResult,
+    IPageListOptions,
+    IPageListPage,
     IPageProposal,
     IPageProposalResult,
     IPageSettings,
@@ -72,6 +74,12 @@ const PUBLIC_LIST_DEFAULT_LIMIT = 20;
 
 /** Most pages one `listPublicPages` call returns, whatever the caller asks for. */
 const PUBLIC_LIST_MAX_LIMIT = 100;
+
+/** Pages returned by the admin `listPages` when the caller does not say how many. */
+const ADMIN_LIST_DEFAULT_LIMIT = 50;
+
+/** Most pages one admin `listPages` call returns, whatever the caller asks for. */
+const ADMIN_LIST_MAX_LIMIT = 100;
 
 /**
  * Turn an optional paging argument into a whole number from `min` to `max`.
@@ -671,24 +679,20 @@ export class PageService implements IPageService {
     }
 
     /**
-     * List pages for the admin view, latest edits, newest first. A review-state
-     * filter asks core for the matching ids first, since review state lives
-     * only in core's collection.
+     * List one page of pages for the admin view, latest edits, newest first,
+     * with the number matching across every page so the list can draw its
+     * pager. A review-state filter asks core for the matching ids first, since
+     * review state lives only in core's collection.
      *
-     * @param options - Filters and paging.
-     * @returns The matching pages, decorated with review state.
+     * @param options - Filters and paging. `limit` is held to 1–100 (default
+     *   50) and `skip` to zero or more, so a bad query value never reaches the
+     *   cursor as `NaN` or a negative number.
+     * @returns The matching pages, decorated with review state, and their total.
      */
-    async listPages(
-        options: {
-            published?: boolean;
-            search?: string;
-            curation?: ContentCurationState;
-            deleted?: boolean;
-            limit?: number;
-            skip?: number;
-        } = {}
-    ): Promise<IPage[]> {
-        const { published, search, curation, deleted = false, limit = 50, skip = 0 } = options;
+    async listPages(options: IPageListOptions = {}): Promise<IPageListPage> {
+        const { published, search, curation, deleted = false } = options;
+        const limit = clampInteger(options.limit, ADMIN_LIST_DEFAULT_LIMIT, 1, ADMIN_LIST_MAX_LIMIT);
+        const skip = clampInteger(options.skip, 0, 0, Number.MAX_SAFE_INTEGER);
 
         // `{ deletedAt: null }` matches both a null marker and a document that
         // predates the field, which is exactly "live".
@@ -708,14 +712,17 @@ export class PageService implements IPageService {
             query.contentId = { $in: await this.listContentIds(curation, deleted) };
         }
 
-        const docs = await this.pagesCollection
-            .find(query)
-            .sort({ createdAt: -1 })
-            .limit(limit)
-            .skip(skip)
-            .toArray();
+        const [docs, total] = await Promise.all([
+            this.pagesCollection
+                .find(query)
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(limit)
+                .toArray(),
+            this.pagesCollection.countDocuments(query)
+        ]);
 
-        return this.decorate(docs);
+        return { pages: await this.decorate(docs), total };
     }
 
     /**

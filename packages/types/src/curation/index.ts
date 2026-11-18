@@ -27,3 +27,8 @@ export type {
     ICurationTypeInfo,
     ICurationHoldInput
 } from './ICurationService.js';
+export { CURATION_DECISIONS } from './CURATION_DECISIONS.js';
+export type { CurationDecision } from './CurationDecision.js';
+export type { ICurationHistoryListOptions } from './ICurationHistoryListOptions.js';
+export type { ICurationHistoryTypeOption } from './ICurationHistoryTypeOption.js';
+export type { ICurationHistoryPage } from './ICurationHistoryPage.js';

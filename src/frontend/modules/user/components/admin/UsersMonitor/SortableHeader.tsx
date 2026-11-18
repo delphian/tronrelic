@@ -30,20 +30,28 @@ interface ISortableHeaderProps {
 
     /** Asks the table to sort by this header's column. */
     onSort: (field: AccountSortField) => void;
+
+    /**
+     * Size the column to its widest value on one line, for short values such
+     * as a badge or a date, so the spare width goes to the text columns and
+     * the value never breaks across two lines.
+     */
+    shrink?: boolean;
 }
 
 /**
  * Render a sortable `<th>`, showing an arrow for the active column.
  *
- * @param props - The column, its label, the current sort, and the sort callback.
+ * @param props - The column, its label, the current sort, the sort callback,
+ *        and whether the column shrinks to its values.
  * @returns The header cell.
  */
-export function SortableHeader({ field, label, sortBy, sortDirection, onSort }: ISortableHeaderProps) {
+export function SortableHeader({ field, label, sortBy, sortDirection, onSort, shrink = false }: ISortableHeaderProps) {
     const active = field === sortBy;
     const ariaSort = active ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none';
     const Icon = !active ? ArrowUpDown : sortDirection === 'asc' ? ArrowUp : ArrowDown;
     return (
-        <Th aria-sort={ariaSort}>
+        <Th aria-sort={ariaSort} width={shrink ? 'shrink' : undefined}>
             <button
                 type="button"
                 className={active ? `${styles.sort_button} ${styles.sort_button__active}` : styles.sort_button}

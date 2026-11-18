@@ -201,7 +201,7 @@ A deleted account cannot sign in again. `databaseHooks.session.create.before` in
 
 ## User Detail Panel
 
-The Users tab of `/system/users` lists accounts in a table that sorts on every column (`ACCOUNT_SORT_FIELDS`: email, name, status, primary wallet, groups, created, last seen). The Wallet column shows only a tick when a primary wallet is set; the address is in the detail panel. Clicking an email or **Details** opens the panel, a slide-over (`UserDetailPanel` in `src/frontend/modules/user/components/admin/`) showing the account, the admin note editor, wallets, live sessions, connected apps, and the sign-in events naming the account's email, with older events paged on request.
+The Users tab of `/system/users` lists accounts in a table that sorts on every column (`ACCOUNT_SORT_FIELDS`: email, name, status, primary wallet, groups, created, last seen), searched by email or name from the panel header and paged 20 at a time. The Wallet column shows only a wallet mark when a primary wallet is set; the address is in the detail panel. Each row's actions are two icon buttons, for group membership and deletion. Clicking an email opens the panel, a slide-over (`UserDetailPanel` in `src/frontend/modules/user/components/admin/`) showing the account, the admin note editor, wallets, live sessions, connected apps, and the newest 10 sign-in events naming the account's email, with older events paged on request. Sessions and events show each browser as a short summary such as "Safari 19 · macOS", with the full User-Agent in the cell's tooltip.
 
 | Piece | How it works |
 |-------|--------------|

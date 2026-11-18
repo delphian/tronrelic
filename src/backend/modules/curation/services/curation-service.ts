@@ -29,6 +29,9 @@ import type {
     ICurationSinkSelection,
     ICurationEditPatch,
     ICurationEligibleSink,
+    ICurationHistoryListOptions,
+    ICurationHistoryPage,
+    ICurationHistoryTypeOption,
     ICurationHoldInput,
     ICurationItem,
     ICurationService,
@@ -343,18 +346,35 @@ export class CurationService implements ICurationService {
     }
 
     /**
-     * List closed envelopes (approved/rejected/dismissed) newest-first for the history view.
+     * List one page of closed envelopes (approved/rejected/dismissed) newest-first for
+     * the history view, with the number matching the filters and the content types
+     * the type filter can offer.
+     *
      * Unlike `listPending`, these are returned with their cached preview rather than
      * a live `describe()`: history records what was decided at decision time, so the
      * snapshot frozen into the envelope is the faithful view — re-deriving from the
-     * owner's current record could misrepresent a past decision.
+     * owner's current record could misrepresent a past decision. Live delivery state
+     * is overlaid onto the returned page only, so one batch lookup covers the rows
+     * on screen however long the history grows.
      *
-     * @param limit - Maximum envelopes to return.
-     * @returns The decided envelopes.
+     * @param options - Paging and filters; the admin route validates them first.
+     * @returns The page, its total, and the decided content types, labelled from
+     *   the registry where the type is still registered.
      */
-    async listHistory(limit?: number): Promise<ICurationItem[]> {
-        const items = await this.queue.listHistory(limit);
-        return this.overlayHistorySinks(items);
+    async listHistory(options: ICurationHistoryListOptions): Promise<ICurationHistoryPage> {
+        const [page, typeIds] = await Promise.all([
+            this.queue.listHistory(options),
+            this.queue.listHistoryTypeIds()
+        ]);
+        const labels = new Map(this.listTypes().map((info) => [info.typeId, info.label]));
+        const types = typeIds
+            .map((typeId): ICurationHistoryTypeOption => ({ typeId, label: labels.get(typeId) ?? typeId }))
+            .sort((a, b) => a.label.localeCompare(b.label) || a.typeId.localeCompare(b.typeId));
+        return {
+            items: await this.overlayHistorySinks(page.items),
+            total: page.total,
+            types
+        };
     }
 
     /**

@@ -11,7 +11,6 @@
 
 import { Globe, Lock, type LucideIcon } from 'lucide-react';
 import { useId } from 'react';
-import { Badge } from '../../../../../../../components/ui/Badge';
 import { Button } from '../../../../../../../components/ui/Button';
 import { cn } from '../../../../../../../lib/cn';
 import type { ICurationEligibleSink } from '../../../../../../../modules/curation';
@@ -51,9 +50,33 @@ interface ISinkLaneProps {
 }
 
 /**
- * One lane of destinations, each a labelled checkbox with its reach shown as
- * a badge. The lane is a named group so a screen reader announces "Public"
- * before the options inside it.
+ * Say what a destination's reach adds to its lane's heading, or nothing when
+ * the heading already says it all. The Private lane note covers admins and
+ * internal systems, so only a destination signed-in users can see needs a
+ * word. The Public lane note covers both "anyone on TronRelic" and "leaves
+ * TronRelic", so every public destination says which of the two it is. The
+ * full reach pair repeated on every row read as noise and squeezed the
+ * destination names.
+ *
+ * @param kind - The lane the destination sits in.
+ * @param reach - The destination's reach, as the content router reports it.
+ * @returns A short phrase, or null when the lane heading is enough.
+ */
+function reachNote(kind: LaneKind, reach: ICurationEligibleSink['reach']): string | null {
+    let note: string | null = null;
+    if (kind === 'public') {
+        note = reach.egress === 'external' ? 'external' : 'on site';
+    } else if (reach.audience === 'user') {
+        note = 'signed-in users';
+    }
+    return note;
+}
+
+/**
+ * One lane of destinations, each a labelled checkbox with a short muted note
+ * where its reach differs from what the lane heading says. The lane is a
+ * named group so a screen reader announces "Public" before the options inside
+ * it.
  *
  * @param props - See {@link ISinkLaneProps}.
  * @returns The lane.
@@ -71,6 +94,7 @@ function SinkLane({ kind, sinks, selected, disabled, onToggle }: ISinkLaneProps)
             <p className={styles.lane_note}>{note}</p>
             {sinks.map(sink => {
                 const name = sink.label ?? sink.sinkId;
+                const note = reachNote(kind, sink.reach);
                 return (
                     <label key={sink.sinkId} className={styles.option}>
                         <input
@@ -80,9 +104,7 @@ function SinkLane({ kind, sinks, selected, disabled, onToggle }: ISinkLaneProps)
                             onChange={() => onToggle(sink.sinkId)}
                         />
                         <span className={styles.option_label} title={name}>{name}</span>
-                        <Badge tone={isPublic ? 'warning' : 'neutral'} size="xs">
-                            {sink.reach.egress}/{sink.reach.audience}
-                        </Badge>
+                        {note && <span className={styles.option_reach}>{note}</span>}
                     </label>
                 );
             })}

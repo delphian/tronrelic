@@ -4,20 +4,26 @@
  * @fileoverview The Users tab of `/system/users`: the searchable, sortable
  * account directory and the per-account actions.
  *
- * At full width the directory is a table whose column headers sort it. On a
- * tablet or phone the shared table stacks each account into a labelled entry,
- * with the email as the entry's heading and the actions as its last line, and
- * the table's own sort picker (`stackedSort`) replaces the hidden headers.
- * Both widths drive one sort state.
+ * The directory is one panel. Its header carries the account count, the search
+ * box, and a refresh button, and the table runs to the panel's edges. The email
+ * opens the detail panel, so each row's actions are two icon buttons, for group
+ * membership and deletion, and the table fits a 1024px window. It stacks into
+ * labelled entries only below 768px, where the email, the status badge, and
+ * the wallet mark share each entry's heading line, and the table's own sort
+ * picker (`stackedSort`) replaces the hidden headers. Both widths drive one
+ * sort state.
  */
 
-import React, { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, PanelRightOpen, RotateCcw, Trash2, Users as UsersIcon } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { RefreshCcw, RotateCcw, Trash2, Users as UsersIcon, Wallet } from 'lucide-react';
 import type { AccountSortDirection, AccountSortField } from '@/types';
-import { Button } from '../../../../../components/ui/Button';
+import { Stack } from '../../../../../components/layout';
+import { Panel } from '../../../../../components/ui/Panel';
 import { Input } from '../../../../../components/ui/Input';
+import { IconButton } from '../../../../../components/ui/IconButton';
 import { Badge } from '../../../../../components/ui/Badge';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
+import { Pagination } from '../../../../../components/ui/Pagination';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
 import { useModal } from '../../../../../components/ui/ModalProvider';
 import { useToast } from '../../../../../components/ui/ToastProvider';
@@ -32,19 +38,37 @@ import styles from './UsersMonitor.module.scss';
 const PAGE_SIZE = 20;
 
 /**
+ * How long typing must pause before the search is sent, so a search is one
+ * request for the finished text rather than one per keystroke.
+ */
+const SEARCH_DELAY_MS = 300;
+
+/**
  * The sortable columns in table order. One list feeds the column headers, the
  * stacked-row sort picker, and each cell's stacked label, so the three never
  * name a column differently.
+ *
+ * Status and Wallet come straight after Email because their cells carry no
+ * stacked label: the table puts unlabelled cells that open a row on the
+ * stacked entry's heading line, so on a phone the badge and the wallet mark
+ * sit beside the address instead of taking a line each.
  */
 const SORT_COLUMNS: ReadonlyArray<{ key: AccountSortField; label: string }> = [
     { key: 'email', label: 'Email' },
-    { key: 'name', label: 'Name' },
     { key: 'status', label: 'Verified' },
     { key: 'primaryWallet', label: 'Wallet' },
+    { key: 'name', label: 'Name' },
     { key: 'groups', label: 'Groups' },
     { key: 'createdAt', label: 'Created' },
     { key: 'lastSeenAt', label: 'Last seen' }
 ];
+
+/**
+ * Columns whose values are short and must stay on one line, such as a badge
+ * or a date. They take only the width their widest value needs and hand the
+ * rest to the email, name, and group columns.
+ */
+const SHRINK_COLUMNS: ReadonlySet<AccountSortField> = new Set<AccountSortField>(['status', 'primaryWallet', 'createdAt', 'lastSeenAt']);
 
 /** Each sortable column's name keyed by field, for the stacked cell labels. */
 const COLUMN_LABEL = Object.fromEntries(SORT_COLUMNS.map(column => [column.key, column.label])) as Record<AccountSortField, string>;
@@ -68,24 +92,30 @@ const FIRST_SORT_DIRECTION: Record<AccountSortField, AccountSortDirection> = {
 type AccountRow = IAccountRow;
 
 /**
+ * Describe how many accounts the list holds, for the panel header.
+ *
+ * @param total - Accounts matching the search, across every page.
+ * @param search - The search the accounts match, or blank for the whole directory.
+ * @returns A phrase such as "2,876 accounts" or "3 accounts matching "petrov"".
+ */
+function describeCount(total: number, search: string): string {
+    const counted = `${total.toLocaleString('en-US')} ${total === 1 ? 'account' : 'accounts'}`;
+    return search ? `${counted} matching "${search}"` : counted;
+}
+
+/**
  * UsersMonitor
  *
  * Admin directory of Better Auth accounts. Lists accounts with search by
- * email/name and a sort on every column, shows verification status, whether a
- * primary wallet is set, group membership, and when each account was last
+ * email or name and a sort on every column, shows verification status, whether
+ * a primary wallet is set, group membership, and when each account was last
  * seen, and opens the per-user detail panel, the group-membership editor, or
  * the delete dialog per account.
  *
- * Account-count and wallet-adoption overviews live in the Analytics tab
- * (`AnalyticsDashboard`); first-touch and per-page traffic analytics moved to
- * the Traffic tab (`VisitorsExplorer`). This view focuses on
- * the account list.
- *
  * Client-only admin tool: `/system/users` is admin-gated via the Better Auth
- * session cookie, so the SSR + Live Updates pattern does not apply — the
- * loading state on the table is the user-triggered search/pagination case
- * the pattern explicitly permits. Mirrors the established approach in
- * `UserGroupsForm` / `GroupForm`.
+ * session cookie, so the SSR + Live Updates pattern does not apply. The
+ * loading state is the user-triggered search and pagination case the pattern
+ * explicitly permits.
  *
  * @param props.initialSelectedUserId - An account to open in the detail panel
  *   on arrival, from the page's `?user=` deep link, so another admin page (such
@@ -98,19 +128,26 @@ export function UsersMonitor({ initialSelectedUserId }: { initialSelectedUserId?
     const [loading, setLoading] = useState(true);
     const [page, setPage] = useState(1);
     const [search, setSearch] = useState('');
-    const [searchInput, setSearchInput] = useState('');
+    const [searchDraft, setSearchDraft] = useState('');
     const [sortBy, setSortBy] = useState<AccountSortField>('createdAt');
     const [sortDirection, setSortDirection] = useState<AccountSortDirection>('desc');
     const [selectedUserId, setSelectedUserId] = useState<string | null>(initialSelectedUserId ?? null);
+    const latestRequest = useRef(0);
 
     const { open: openModal, close: closeModal } = useModal();
     const { push: pushToast } = useToast();
 
     /**
-     * Load the current page in the current sort. A failure is shown as a
-     * toast, so an admin is not left looking at a stale page that seems current.
+     * Load the current page in the current sort and search. A failure is shown
+     * as a toast, so an admin is not left looking at a stale page that seems
+     * current.
+     *
+     * Requests are numbered, and only the answer to the newest one is shown,
+     * so a slow answer to an earlier search or page cannot replace the rows of
+     * the one asked for after it.
      */
     const fetchAccounts = useCallback(async () => {
+        const request = ++latestRequest.current;
         setLoading(true);
         try {
             const data = await fetchAccountPage({
@@ -120,12 +157,18 @@ export function UsersMonitor({ initialSelectedUserId }: { initialSelectedUserId?
                 sortBy,
                 sortDirection
             });
-            setAccounts(data.accounts);
-            setTotal(data.total);
+            if (request === latestRequest.current) {
+                setAccounts(data.accounts);
+                setTotal(data.total);
+            }
         } catch (error) {
-            pushToast({ tone: 'danger', title: 'Could not load accounts', description: error instanceof Error ? error.message : String(error) });
+            if (request === latestRequest.current) {
+                pushToast({ tone: 'danger', title: 'Could not load accounts', description: error instanceof Error ? error.message : String(error) });
+            }
         } finally {
-            setLoading(false);
+            if (request === latestRequest.current) {
+                setLoading(false);
+            }
         }
     }, [page, search, sortBy, sortDirection, pushToast]);
 
@@ -145,9 +188,37 @@ export function UsersMonitor({ initialSelectedUserId }: { initialSelectedUserId?
         setPage(1);
     }, [sortBy]);
 
+    /** Load a page whenever the page, sort, or search changes. */
     useEffect(() => {
-        fetchAccounts();
+        void fetchAccounts();
     }, [fetchAccounts]);
+
+    /**
+     * Apply the typed search once typing pauses, from the first page, since
+     * the old page number means nothing for new results. A draft that matches
+     * the search already applied sends nothing.
+     *
+     * @returns Cleanup that cancels a search still waiting for the pause.
+     */
+    useEffect(() => {
+        const next = searchDraft.trim();
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        if (next !== search) {
+            timer = setTimeout(
+                /** Apply the finished search and go back to page one. */
+                () => {
+                    setSearch(next);
+                    setPage(1);
+                },
+                SEARCH_DELAY_MS
+            );
+        }
+        return () => {
+            if (timer !== undefined) {
+                clearTimeout(timer);
+            }
+        };
+    }, [searchDraft, search]);
 
     /**
      * Open the membership editor modal for an account. The save handler PUTs
@@ -241,240 +312,183 @@ export function UsersMonitor({ initialSelectedUserId }: { initialSelectedUserId?
         });
     }, [openModal, closeModal, pushToast, fetchAccounts]);
 
-    /** Apply the typed search and return to the first page of results. */
-    const handleSearch = () => {
-        setPage(1);
-        setSearch(searchInput);
-    };
-
-    /** Drop the search so the full directory shows again from page one. */
-    const handleClearSearch = () => {
-        setSearchInput('');
-        setSearch('');
-        setPage(1);
-    };
-
-    /**
-     * Run the search on Enter, so the field works like a search box without
-     * reaching for the button.
-     *
-     * @param e - The key event from the search field.
-     */
-    const handleKeyDown = (e: React.KeyboardEvent) => {
-        if (e.key === 'Enter') {
-            handleSearch();
-        }
-    };
-
-    const totalPages = total > 0 ? Math.ceil(total / PAGE_SIZE) : 1;
+    let body: ReactNode;
+    if (accounts.length === 0) {
+        body = (
+            <p className="text-muted">
+                {loading ? 'Loading accounts…' : search ? `No accounts match "${search}".` : 'No accounts yet.'}
+            </p>
+        );
+    } else {
+        body = (
+            <Table
+                variant="compact"
+                flush
+                stackAt="mobile"
+                stackedSort={{ columns: SORT_COLUMNS, active: sortBy, direction: sortDirection, onSort: handleSort }}
+            >
+                <Thead>
+                    <Tr>
+                        {SORT_COLUMNS.map(column => (
+                            <SortableHeader
+                                key={column.key}
+                                field={column.key}
+                                label={column.label}
+                                sortBy={sortBy}
+                                sortDirection={sortDirection}
+                                onSort={handleSort}
+                                shrink={SHRINK_COLUMNS.has(column.key)}
+                            />
+                        ))}
+                        <Th width="shrink" aria-label="Actions" />
+                    </Tr>
+                </Thead>
+                <Tbody>
+                    {accounts.map(account => (
+                        <Tr key={account.id}>
+                            {/* No label on the first three cells: stacked, they
+                                share the entry's heading line. The email is a
+                                real button, so the keyboard reaches the detail
+                                panel through it. */}
+                            <Td className={styles.email_cell}>
+                                <button
+                                    type="button"
+                                    className={styles.email_button}
+                                    onClick={() => setSelectedUserId(account.id)}
+                                    aria-label={`Open details for ${account.email}`}
+                                >
+                                    {account.email}
+                                </button>
+                            </Td>
+                            <Td>
+                                {account.deletedAt ? (
+                                    <Badge tone="danger" size="sm">Deleted</Badge>
+                                ) : account.emailVerified ? (
+                                    <Badge tone="success" size="sm">Verified</Badge>
+                                ) : (
+                                    <Badge tone="neutral" size="sm">Unverified</Badge>
+                                )}
+                            </Td>
+                            <Td>
+                                {/* The address itself is in the detail panel; the
+                                    table only says whether one is set. The dash
+                                    is dropped while stacked, where the column
+                                    name is not shown to explain it. */}
+                                {account.primaryWallet ? (
+                                    <span className={styles.wallet_mark} role="img" aria-label="Primary wallet set" title="Primary wallet set">
+                                        <Wallet size={16} aria-hidden="true" />
+                                    </span>
+                                ) : (
+                                    <span className={`text-muted ${styles.no_wallet}`} aria-label="No primary wallet">—</span>
+                                )}
+                            </Td>
+                            <Td label={COLUMN_LABEL.name}>{account.name || <span className="text-muted">—</span>}</Td>
+                            <Td label={COLUMN_LABEL.groups}>
+                                {(account.groups ?? []).length === 0 ? (
+                                    <span className="text-muted">—</span>
+                                ) : (
+                                    <div className={styles.group_chips}>
+                                        {account.groups.map((groupId) => (
+                                            <Badge key={groupId} tone="info" size="sm">
+                                                <code>{groupId}</code>
+                                            </Badge>
+                                        ))}
+                                    </div>
+                                )}
+                            </Td>
+                            <Td label={COLUMN_LABEL.createdAt}><ClientTime date={account.createdAt} format="short" /></Td>
+                            <Td label={COLUMN_LABEL.lastSeenAt}>
+                                {account.lastSeenAt ? (
+                                    <ClientTime date={account.lastSeenAt} format="relative" />
+                                ) : (
+                                    <span className="text-muted">Never</span>
+                                )}
+                            </Td>
+                            {/* No label: stacked, the icons close the entry. A
+                                deleted account holds no groups, so it offers no
+                                membership editor. It keeps a revocation action,
+                                because a deletion whose session, group, or
+                                connected-app revocation failed leaves the account
+                                marked while its existing sessions and connected
+                                apps still work, and repeating the request is how
+                                the service finishes it. */}
+                            <Td>
+                                <div className={styles.row_actions}>
+                                    {account.deletedAt ? (
+                                        <IconButton
+                                            variant="primary"
+                                            title="Revoke again"
+                                            aria-label={`Re-run revocation for ${account.email}`}
+                                            onClick={() => openDeleteModal(account)}
+                                        >
+                                            <RotateCcw size={16} aria-hidden="true" />
+                                        </IconButton>
+                                    ) : (
+                                        <>
+                                            <IconButton
+                                                variant="primary"
+                                                title="Manage groups"
+                                                aria-label={`Manage groups for ${account.email}`}
+                                                onClick={() => openGroupsModal(account)}
+                                            >
+                                                <UsersIcon size={16} aria-hidden="true" />
+                                            </IconButton>
+                                            <IconButton
+                                                variant="danger"
+                                                title="Delete"
+                                                aria-label={`Delete ${account.email}`}
+                                                onClick={() => openDeleteModal(account)}
+                                            >
+                                                <Trash2 size={16} aria-hidden="true" />
+                                            </IconButton>
+                                        </>
+                                    )}
+                                </div>
+                            </Td>
+                        </Tr>
+                    ))}
+                </Tbody>
+            </Table>
+        );
+    }
 
     return (
-        <div className={styles.container}>
-            <header className={styles.header}>
-                {/* h2: the /system/users shell owns the page's single h1. */}
-                <h2 className={styles.title}>User Accounts</h2>
-                <p className={styles.subtitle}>
-                    Better Auth accounts — search by email or name, sort by any column, and open an account for its sessions, sign-in history, and admin note
-                </p>
-            </header>
-
-            <div className={styles.controls}>
-                <div className={styles.search_box}>
-                    <Input
-                        type="text"
-                        className={styles.search_input}
-                        placeholder="Search by email or name…"
-                        value={searchInput}
-                        onChange={(e) => setSearchInput(e.target.value)}
-                        onKeyDown={handleKeyDown}
-                        aria-label="Search accounts"
-                    />
-                    <Button onClick={handleSearch} size="sm">
-                        Search
-                    </Button>
-                    {search && (
-                        <Button onClick={handleClearSearch} size="sm" variant="ghost">
-                            Clear
-                        </Button>
-                    )}
-                </div>
-                <Button onClick={fetchAccounts} size="sm" variant="ghost">
-                    Refresh
-                </Button>
-            </div>
-
-            {loading ? (
-                <div className={styles.loading}>Loading accounts…</div>
-            ) : accounts.length === 0 ? (
-                <div className={styles.empty}>
-                    {search ? `No accounts found matching "${search}"` : 'No accounts found'}
-                </div>
-            ) : (
-                <>
-                    <Table
-                        stackAt="tablet"
-                        stackedSort={{ columns: SORT_COLUMNS, active: sortBy, direction: sortDirection, onSort: handleSort }}
-                    >
-                        <Thead>
-                            <Tr>
-                                {SORT_COLUMNS.map(column => (
-                                    <SortableHeader
-                                        key={column.key}
-                                        field={column.key}
-                                        label={column.label}
-                                        sortBy={sortBy}
-                                        sortDirection={sortDirection}
-                                        onSort={handleSort}
-                                    />
-                                ))}
-                                <Th>Actions</Th>
-                            </Tr>
-                        </Thead>
-                        <Tbody>
-                            {accounts.map((account) => (
-                                <Tr key={account.id}>
-                                    {/* No label: the email is the heading of a stacked entry. */}
-                                    <Td className={styles.email_cell}>
-                                        <button
-                                            type="button"
-                                            className={styles.email_button}
-                                            onClick={() => setSelectedUserId(account.id)}
-                                            aria-label={`Open details for ${account.email}`}
-                                        >
-                                            {account.email}
-                                        </button>
-                                    </Td>
-                                    <Td label={COLUMN_LABEL.name}>{account.name || <span className="text-muted">—</span>}</Td>
-                                    <Td label={COLUMN_LABEL.status}>
-                                        {account.deletedAt ? (
-                                            <Badge tone="danger">Deleted</Badge>
-                                        ) : account.emailVerified ? (
-                                            <Badge tone="success">Verified</Badge>
-                                        ) : (
-                                            <Badge tone="neutral">Unverified</Badge>
-                                        )}
-                                    </Td>
-                                    <Td label={COLUMN_LABEL.primaryWallet}>
-                                        {/* The address itself is in the detail panel; the
-                                            table only says whether one is set. */}
-                                        {account.primaryWallet ? (
-                                            <CheckCircle2
-                                                size={16}
-                                                className={styles.wallet_tick}
-                                                role="img"
-                                                aria-label="Primary wallet set"
-                                            />
-                                        ) : (
-                                            <span className="text-muted" aria-label="No primary wallet">—</span>
-                                        )}
-                                    </Td>
-                                    <Td label={COLUMN_LABEL.groups}>
-                                        {(account.groups ?? []).length === 0 ? (
-                                            <span className="text-muted">—</span>
-                                        ) : (
-                                            <div className={styles.group_chips}>
-                                                {account.groups.map((groupId) => (
-                                                    <Badge key={groupId} tone="info">
-                                                        <code>{groupId}</code>
-                                                    </Badge>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </Td>
-                                    <Td label={COLUMN_LABEL.createdAt}><ClientTime date={account.createdAt} format="short" /></Td>
-                                    <Td label={COLUMN_LABEL.lastSeenAt}>
-                                        {account.lastSeenAt ? (
-                                            <ClientTime date={account.lastSeenAt} format="relative" />
-                                        ) : (
-                                            <span className="text-muted">Never</span>
-                                        )}
-                                    </Td>
-                                    {/* No label: the actions take the full last line of a stacked entry. */}
-                                    <Td className={styles.actions_cell}>
-                                        {/* A deleted account holds no groups, so it offers no
-                                            membership editor. It keeps a revocation action because
-                                            a deletion whose session, group, or connected-app
-                                            revocation failed leaves the account marked while its
-                                            existing sessions and connected apps still work, and
-                                            repeating the request is how the service finishes it. */}
-                                        {account.deletedAt ? (
-                                            <div className={styles.row_actions}>
-                                                <Button
-                                                    size="sm"
-                                                    variant="ghost"
-                                                    onClick={() => setSelectedUserId(account.id)}
-                                                    aria-label={`Open details for ${account.email}`}
-                                                >
-                                                    <PanelRightOpen size={14} aria-hidden="true" /> Details
-                                                </Button>
-                                                <Button
-                                                    size="sm"
-                                                    variant="secondary"
-                                                    onClick={() => openDeleteModal(account)}
-                                                    aria-label={`Re-run revocation for ${account.email}`}
-                                                >
-                                                    <RotateCcw size={14} aria-hidden="true" /> Revoke again
-                                                </Button>
-                                            </div>
-                                        ) : (
-                                            <div className={styles.row_actions}>
-                                                <Button
-                                                    size="sm"
-                                                    variant="ghost"
-                                                    onClick={() => setSelectedUserId(account.id)}
-                                                    aria-label={`Open details for ${account.email}`}
-                                                >
-                                                    <PanelRightOpen size={14} aria-hidden="true" /> Details
-                                                </Button>
-                                                <Button
-                                                    size="sm"
-                                                    variant="secondary"
-                                                    onClick={() => openGroupsModal(account)}
-                                                    aria-label={`Manage groups for ${account.email}`}
-                                                >
-                                                    <UsersIcon size={14} aria-hidden="true" /> Groups
-                                                </Button>
-                                                <Button
-                                                    size="sm"
-                                                    variant="danger"
-                                                    onClick={() => openDeleteModal(account)}
-                                                    aria-label={`Delete ${account.email}`}
-                                                >
-                                                    <Trash2 size={14} aria-hidden="true" /> Delete
-                                                </Button>
-                                            </div>
-                                        )}
-                                    </Td>
-                                </Tr>
-                            ))}
-                        </Tbody>
-                    </Table>
-
-                    <div className={styles.pagination}>
-                        <Button
-                            onClick={() => setPage(page - 1)}
-                            disabled={page <= 1}
-                            size="sm"
-                            variant="ghost"
+        <Stack gap="md">
+            <Panel
+                title="Accounts"
+                meta={loading ? 'Loading…' : describeCount(total, search)}
+                actions={(
+                    <>
+                        <div className={styles.search}>
+                            <Input
+                                type="search"
+                                value={searchDraft}
+                                onChange={event => setSearchDraft(event.target.value)}
+                                placeholder="Search by email or name"
+                                aria-label="Search accounts by email or name"
+                            />
+                        </div>
+                        <IconButton
+                            title="Refresh"
+                            aria-label="Refresh accounts"
+                            disabled={loading}
+                            onClick={() => void fetchAccounts()}
                         >
-                            Previous
-                        </Button>
-                        <span className={styles.page_info}>
-                            Page {page} of {totalPages} ({total.toLocaleString()} {total === 1 ? 'account' : 'accounts'})
-                        </span>
-                        <Button
-                            onClick={() => setPage(page + 1)}
-                            disabled={page >= totalPages}
-                            size="sm"
-                            variant="ghost"
-                        >
-                            Next
-                        </Button>
-                    </div>
-                </>
+                            <RefreshCcw size={16} aria-hidden="true" />
+                        </IconButton>
+                    </>
+                )}
+            >
+                {body}
+            </Panel>
+
+            {total > PAGE_SIZE && (
+                <div className={styles.footer}>
+                    <Pagination total={total} pageSize={PAGE_SIZE} currentPage={page} onPageChange={setPage} />
+                </div>
             )}
 
             <UserDetailPanel userId={selectedUserId} onClose={() => setSelectedUserId(null)} />
-        </div>
+        </Stack>
     );
 }

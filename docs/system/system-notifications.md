@@ -100,7 +100,7 @@ Indexes (including the 90-day audit TTL on `createdAt`, `AUDIT_RETENTION_DAYS` i
 
 ### Admin and user surfaces
 
-Admins get `/system/notifications` with three tabs: **Categories** (enable/disable each, see its source and per-channel defaults), **Channels** (globally enable/disable a transport), and **History** (the audit feed, filterable by category, source, and time). Each tab is backed by an admin-gated REST route under the module.
+Admins get `/system/notifications` with three tabs: **Categories** (enable/disable each, see its source and per-channel defaults), **Channels** (globally enable/disable a transport), and **History** (the audit feed, 25 rows a page, filterable by category and source). History has no time filter; the 90-day audit retention bounds how far back it reaches. Each tab is backed by an admin-gated REST route under the module.
 
 Users get a preferences panel at `/profile` (any logged-in user), mirrored as a **My Preferences** tab on `/system/notifications` for admins — one shared `PreferencesPanel` listing every user-configurable category whose default audience includes the user, with a per-channel toggle and a global mute. A user is not offered a toggle for a category that can never reach them, so an ordinary user does not see admin-only categories. It writes identity's `module_user_settings` (`notifications` namespace); the pipeline reads it at dispatch.
 

@@ -85,7 +85,7 @@ export type {
     IClickHouseReader,
     IClickHouseReadResult
 } from './clickhouse/index.js';
-export type { IPage, IPageContent, IPublicPage, IPageSettings, IPageService, IPageEditProposal, IPageEditProposalResult, IPageProposal, IPageProposalResult, IMarkdownService, IFrontmatterData, IParsedMarkdown, IPublicPageRender, IPublicPageTranslationMetadata, IPageTranslationService } from './pages/index.js';
+export type { IPage, IPageContent, IPublicPage, IPageSettings, IPageService, IPageListOptions, IPageListPage, IPageEditProposal, IPageEditProposalResult, IPageProposal, IPageProposalResult, IMarkdownService, IFrontmatterData, IParsedMarkdown, IPublicPageRender, IPublicPageTranslationMetadata, IPageTranslationService } from './pages/index.js';
 export type { IStorageProvider, IStorageObjectStat, IFileService, IFileRecord, IFileSource, IFileUploadOptions, IFileListFilter, IVariantOptions, IVariantFit, IFileVariant, ICropRegion, ICropOptions, IFilesSettings, IFilesSettingsService } from './files/index.js';
 export { FILE_SOURCE_KINDS, FileValidationError, FileSizeExceededError } from './files/index.js';
 export type { IModule, IModuleMetadata } from './module/index.js';
@@ -304,8 +304,13 @@ export type {
     ICurationEligibleSink,
     ICurationSinkSelection,
     ICurationSinkOutcome,
-    CurationSinkStatus
+    CurationSinkStatus,
+    CurationDecision,
+    ICurationHistoryListOptions,
+    ICurationHistoryTypeOption,
+    ICurationHistoryPage
 } from './curation/index.js';
+export { CURATION_DECISIONS } from './curation/index.js';
 export { SYNDICATION_SERVICE, SYNDICATION_LEG_STATUSES } from './syndication/index.js';
 export type {
     SyndicationLegStatus,

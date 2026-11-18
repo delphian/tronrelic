@@ -5,11 +5,14 @@
  * `/system/users`: where new accounts stand against it now, and the form that
  * sets its mode and hourly maximum.
  *
- * The reading sits beside the form because the right maximum depends on what
- * a normal hour looks like, and the 24-hour count is what shows that.
+ * The reading sits above the form because the right maximum depends on what
+ * a normal hour looks like, and the 24-hour count is what shows that. The
+ * mode is not repeated as a figure, because the Mode field already shows it.
+ * The two fields and the save button share one row, with the description of
+ * the chosen mode under it.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { RefreshCcw, Save } from 'lucide-react';
 import type { ISignupProtectionReport, SignupCapMode } from '@/types';
 import { SIGNUP_PROTECTION_LIMITS } from '@/types';
@@ -25,19 +28,15 @@ import { useToast } from '../../../../../components/ui/ToastProvider';
 import { saveSignupCap } from '../../../api/sign-up-protection.api';
 import styles from './SignupProtectionTab.module.scss';
 
-/** What each mode does, shown as the mode field's hint. */
+/** What each mode does, shown under the form as the mode field's description. */
 const MODE_HINTS: Record<SignupCapMode, string> = {
-    off: 'Off. New accounts are not counted against the cap and no alert is sent.',
-    alert: 'Alert only. Admins are notified once an hour while the cap is reached, and nobody is refused.',
-    enforce: 'Enforce. Admins are notified, and new accounts are refused until the count for the last hour falls below the cap. Existing accounts can always sign in.'
+    off: 'Off: new accounts are not counted against the cap and no alert is sent.',
+    alert: 'Alert only: admins are notified once an hour while the cap is reached, and nobody is refused.',
+    enforce: 'Enforce: admins are notified, and new accounts are refused until the count for the last hour falls below the cap. Existing accounts can always sign in.'
 };
 
-/** Short label for each mode, for the reading above the form. */
-const MODE_LABELS: Record<SignupCapMode, string> = {
-    off: 'Off',
-    alert: 'Alert only',
-    enforce: 'Enforce'
-};
+/** Id of the mode description, which the mode field points at with `aria-describedby`. */
+const MODE_HELP_ID = 'signup-cap-mode-help';
 
 /**
  * Check the hourly maximum the admin typed.
@@ -88,21 +87,31 @@ export function SignupCapPanel({ report, onReport, onRefresh, refreshing }: ISig
         setMaxPerHour(String(savedCap.maxPerHour));
     }, [savedCap.mode, savedCap.maxPerHour]);
 
-    /** Save the mode and the maximum together, since the form edits both. */
-    const handleSave = useCallback(async () => {
-        setSaving(true);
-        try {
-            onReport(await saveSignupCap({ mode, maxPerHour: Number(maxPerHour) }));
-            push({ tone: 'success', title: 'Sign-up cap saved' });
-        } catch (error) {
-            push({ tone: 'danger', title: 'Could not save the sign-up cap', description: error instanceof Error ? error.message : String(error) });
-        } finally {
-            setSaving(false);
-        }
-    }, [maxPerHour, mode, onReport, push]);
-
     const error = maxPerHourError(maxPerHour);
     const dirty = mode !== savedCap.mode || maxPerHour.trim() !== String(savedCap.maxPerHour);
+    const canSave = dirty && error === undefined;
+
+    /**
+     * Save the mode and the maximum together, since the form edits both. A
+     * submission while nothing changed or the maximum is invalid sends nothing.
+     *
+     * @param event - The form submission, whose default page reload is stopped.
+     */
+    const handleSave = useCallback(async (event: FormEvent) => {
+        event.preventDefault();
+        if (canSave) {
+            setSaving(true);
+            try {
+                onReport(await saveSignupCap({ mode, maxPerHour: Number(maxPerHour) }));
+                push({ tone: 'success', title: 'Sign-up cap saved' });
+            } catch (caught) {
+                push({ tone: 'danger', title: 'Could not save the sign-up cap', description: caught instanceof Error ? caught.message : String(caught) });
+            } finally {
+                setSaving(false);
+            }
+        }
+    }, [canSave, maxPerHour, mode, onReport, push]);
+
     const { cap } = report;
     const reachedTone = savedCap.mode === 'enforce' ? 'danger' : 'warning';
 
@@ -111,7 +120,7 @@ export function SignupCapPanel({ report, onReport, onRefresh, refreshing }: ISig
             title="Sign-up cap"
             meta="New accounts in any 60 minutes, by every sign-in method"
             actions={
-                <Button size="sm" variant="ghost" loading={refreshing} onClick={onRefresh} icon={<RefreshCcw size={16} />}>
+                <Button variant="ghost" loading={refreshing} onClick={onRefresh} icon={<RefreshCcw size={16} />}>
                     Refresh
                 </Button>
             }
@@ -120,58 +129,57 @@ export function SignupCapPanel({ report, onReport, onRefresh, refreshing }: ISig
                 <StatGrid size="sm">
                     <StatTile
                         size="sm"
+                        surface={false}
                         label="Last 60 minutes"
                         value={cap.createdLastHour.toLocaleString('en-US')}
                         note={savedCap.mode === 'off' ? 'Cap is off' : `Cap ${savedCap.maxPerHour.toLocaleString('en-US')}${cap.reached ? ', reached' : ''}`}
                         tone={cap.reached ? reachedTone : 'neutral'}
                     />
-                    <StatTile size="sm" label="Last 24 hours" value={cap.createdLast24Hours.toLocaleString('en-US')} note="New accounts" />
+                    <StatTile size="sm" surface={false} label="Last 24 hours" value={cap.createdLast24Hours.toLocaleString('en-US')} note="New accounts" />
                     <StatTile
                         size="sm"
+                        surface={false}
                         label="Last alert"
                         value={cap.lastAlertAt ? <ClientTime date={cap.lastAlertAt} format="relative" /> : 'None'}
                         note="Within the last hour"
                     />
-                    <StatTile size="sm" label="Mode" value={MODE_LABELS[savedCap.mode]} />
                 </StatGrid>
 
                 <div className={styles.form_container}>
-                    <div className={`${styles.form_grid} ${styles.form_grid__cap}`}>
-                        <Field label="Mode" htmlFor="signup-cap-mode" hint={MODE_HINTS[mode]}>
-                            <Select id="signup-cap-mode" size="sm" value={mode} onChange={event => setMode(event.target.value as SignupCapMode)}>
+                    <form className={`${styles.form_row} ${styles.form_row__cap}`} aria-label="Sign-up cap settings" onSubmit={event => void handleSave(event)}>
+                        <Field label="Mode" className={styles.form_field}>
+                            <Select
+                                id="signup-cap-mode"
+                                value={mode}
+                                aria-describedby={MODE_HELP_ID}
+                                onChange={event => setMode(event.target.value as SignupCapMode)}
+                            >
                                 <option value="off">Off</option>
                                 <option value="alert">Alert only</option>
                                 <option value="enforce">Enforce</option>
                             </Select>
                         </Field>
-                        <Field
-                            label="New accounts per hour"
-                            htmlFor="signup-cap-max"
-                            error={error}
-                            hint="The cap is reached when this many accounts were created in the last 60 minutes."
-                        >
+                        <Field label="New accounts per hour" error={error} className={styles.form_field}>
                             <Input
                                 id="signup-cap-max"
-                                size="sm"
                                 inputMode="numeric"
                                 value={maxPerHour}
                                 invalid={error !== undefined}
                                 onChange={event => setMaxPerHour(event.target.value)}
                             />
                         </Field>
-                    </div>
-                </div>
-                <div className={styles.form_actions}>
-                    <Button
-                        size="sm"
-                        variant="primary"
-                        loading={saving}
-                        disabled={!dirty || error !== undefined}
-                        onClick={() => void handleSave()}
-                        icon={<Save size={16} />}
-                    >
-                        Save cap
-                    </Button>
+                        <p id={MODE_HELP_ID} className={styles.form_help}>{MODE_HINTS[mode]}</p>
+                        <Button
+                            type="submit"
+                            variant="primary"
+                            loading={saving}
+                            disabled={!canSave}
+                            icon={<Save size={16} />}
+                            className={styles.form_submit}
+                        >
+                            Save cap
+                        </Button>
+                    </form>
                 </div>
             </Stack>
         </Panel>

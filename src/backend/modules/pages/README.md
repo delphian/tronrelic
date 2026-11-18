@@ -80,7 +80,7 @@ modules/pages/
 
 ## Admin Page
 
-`/system/pages` has four tabs: **Pages** (the list and editor), **Settings** (the route blacklist), **Database**, and **Logs**. The tab row is the menu module's Submenu Pattern: `run()` registers one memory-only node per tab in the `pages` namespace (`PAGES_ADMIN_SUBMENU_NAMESPACE`), each with `requiresAdmin: true` because the namespace sits outside the System container, and `PagesAdminClient.tsx` renders them with `MenuNavClient`. The `?tab=` query parameter deep-links a tab.
+`/system/pages` has four tabs: **Pages** (the page counts, then the list paged on the server 25 at a time with its search and status filter, and the editor it opens), **Settings** (the route blacklist), **Database**, and **Logs**. The tab row is the menu module's Submenu Pattern: `run()` registers one memory-only node per tab in the `pages` namespace (`PAGES_ADMIN_SUBMENU_NAMESPACE`), each with `requiresAdmin: true` because the namespace sits outside the System container, and `PagesAdminClient.tsx` renders them with `MenuNavClient`. The `?tab=` query parameter deep-links a tab.
 
 The Database tab shows two read-only collection browsers, because the storage has two naming schemes: the `page` prefix reaches `pages` and `page_settings`, which predate the `module_<id>_` convention, and `module_pages_` reaches the translated text. Editing is off because a change made there would skip the core content service. The Logs tab shows entries under `tronrelic:pages`. The module registers no scheduler jobs, so there is no Schedules tab.
 
@@ -116,7 +116,7 @@ Parses frontmatter using `gray-matter` and renders markdown to HTML through the 
 
 Admin REST API at `/api/admin/pages` (gated by `requireAdmin`):
 
-- `GET /` — list pages with stats, optional `published`/`search`/`curation`/`deleted`/`limit`/`skip` filters
+- `GET /` — one page of pages, newest first, as `{ pages, total, stats }`, where `total` counts the pages the filters match across every page (for the pager) and `stats` holds the counts above the list. Optional `published`/`search`/`curation`/`deleted` filters and `limit` (held to 1–100, default 50) and `skip` paging; the admin page asks for 25 at a time. The service contract is `IPageService.listPages(IPageListOptions)` → `IPageListPage`
 - `GET /:id` — single page by content id, latest edit
 - `POST /` — create page from frontmatter+markdown
 - `PATCH /:id` — update page

@@ -8,9 +8,11 @@
  */
 
 import type {
+    CurationDecision,
     IContentChangeSet,
     ICurationPreview,
     ICurationEligibleSink,
+    ICurationHistoryTypeOption,
     ICurationSinkOutcome,
     ICurationSinkSelection
 } from '@/types';
@@ -18,7 +20,14 @@ import type {
 /** Base path for every curation admin endpoint. */
 const BASE = '/api/admin/system/curation';
 
-export type { ICurationEligibleSink, ICurationSinkOutcome, ICurationSinkSelection } from '@/types';
+export type {
+    CurationDecision,
+    ICurationEligibleSink,
+    ICurationHistoryTypeOption,
+    ICurationSinkOutcome,
+    ICurationSinkSelection
+} from '@/types';
+export { CURATION_DECISIONS } from '@/types';
 
 /**
  * Parse a fetch response, throwing a descriptive error on a non-2xx status so
@@ -81,15 +90,45 @@ export async function listCurations(): Promise<ICurationItemView[]> {
 }
 
 /**
- * List closed curation items (approved/rejected/dismissed), most recent first.
- * The pending queue answers "what needs me now?"; this answers "what was decided,
- * when, and by whom?" — the records persist after a decision, this surfaces them.
- *
- * @returns The decided curation envelopes, newest decision first.
+ * Decided items the History tab shows per page. The backend allows up to 100;
+ * 25 keeps a page of two-line rows within about two screens.
  */
-export async function listCurationHistory(): Promise<ICurationItemView[]> {
-    const data = await parse<{ curations: ICurationItemView[] }>(await fetch(`${BASE}/curations/history`), 'load curation history');
-    return data.curations;
+export const CURATION_HISTORY_PAGE_SIZE = 25;
+
+/** One page of the curation history, as `GET /curations/history` returns it. */
+export interface ICurationHistoryPageView {
+    /** The page of decided items, newest decision first. */
+    curations: ICurationItemView[];
+    /** Decided items matching the filters across every page, for the pager. */
+    total: number;
+    /** Every content type with a decided item, sorted by label, for the type filter. */
+    types: ICurationHistoryTypeOption[];
+}
+
+/**
+ * List one page of closed curation items (approved/rejected/dismissed), most
+ * recent decision first. The pending queue answers "what needs me now?"; this
+ * answers "what was decided, when, and by whom?" — the records persist after a
+ * decision, and the history is paged and filtered on the server because it is
+ * never pruned.
+ *
+ * @param page - The page to load, counting from 1.
+ * @param decision - Only items closed with this status; blank for every decision.
+ * @param typeId - Only items of this content type; blank for every type.
+ * @returns The page, its total, and the type filter's options.
+ */
+export async function listCurationHistory(page: number, decision: CurationDecision | '', typeId: string): Promise<ICurationHistoryPageView> {
+    const params = new URLSearchParams({
+        limit: String(CURATION_HISTORY_PAGE_SIZE),
+        skip: String((page - 1) * CURATION_HISTORY_PAGE_SIZE)
+    });
+    if (decision) {
+        params.set('decision', decision);
+    }
+    if (typeId) {
+        params.set('typeId', typeId);
+    }
+    return parse<ICurationHistoryPageView>(await fetch(`${BASE}/curations/history?${params}`), 'load curation history');
 }
 
 /**

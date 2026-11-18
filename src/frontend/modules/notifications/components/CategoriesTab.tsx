@@ -1,19 +1,49 @@
 'use client';
 
+/**
+ * @fileoverview Categories tab of /system/notifications: the global switch for
+ * every registered notification category.
+ *
+ * Each category is one row of a compact table inside a panel: the switch
+ * beside the category's name and description, then the source that fires it
+ * and the channels it reaches by default. Switching a category off suppresses
+ * it for every user before personal preferences are read. Client component
+ * behind the admin-gated page.
+ */
+
 import { useCallback, useEffect, useState } from 'react';
-import { Badge } from '../../../components/ui/Badge';
+import type { ReactNode } from 'react';
+import { Panel } from '../../../components/ui/Panel';
+import { Switch } from '../../../components/ui/Switch';
+import { Table, Thead, Tbody, Tr, Th, Td } from '../../../components/ui/Table';
 import { getAdminCategories, setAdminCategory, type IAdminCategory } from '../api/notifications.api';
+import { RowLabel } from './RowLabel';
 import styles from './admin.module.scss';
+
+/** What the switches do, stated once beside the panel title. */
+const PANEL_META = 'Switching a category off stops it for every user, whatever their own preferences say.';
+
+/**
+ * List the channels a category reaches by default, marking the ones it leaves
+ * off so an admin can tell a channel the category never uses from one a user
+ * has to opt into.
+ *
+ * @param defaults - The category's per-channel defaults, keyed by channel id.
+ * @returns The channel ids as comma-separated text.
+ */
+function renderChannels(defaults: Record<string, boolean>): ReactNode {
+    return Object.entries(defaults).map(([channelId, on], index) => (
+        <span key={channelId} className={on ? undefined : styles.channel_off} title={on ? undefined : 'Off unless a user turns it on'}>
+            {index > 0 && ', '}
+            {on ? channelId : `${channelId} (off)`}
+        </span>
+    ));
+}
 
 /**
  * Admin Categories tab — the global category kill switches.
  *
- * Lists every registered notification category with its source, supported
- * channels, and a toggle that enables or disables it for everyone. Disabling a
- * category here suppresses it before per-user preferences are consulted. Client
- * component behind the admin-gated `/system/notifications` page.
- *
- * @returns The categories admin list.
+ * @returns The categories panel.
  */
 export function CategoriesTab(): React.ReactElement {
     const [categories, setCategories] = useState<IAdminCategory[]>([]);
@@ -21,6 +51,7 @@ export function CategoriesTab(): React.ReactElement {
     const [error, setError] = useState<string | null>(null);
     const [busyId, setBusyId] = useState<string | null>(null);
 
+    /** Read every registered category with its current enable state. */
     const load = useCallback(async (): Promise<void> => {
         try {
             setCategories(await getAdminCategories());
@@ -31,12 +62,14 @@ export function CategoriesTab(): React.ReactElement {
         }
     }, []);
 
+    /** Load the categories once the tab opens. */
     useEffect(() => {
         void load();
     }, [load]);
 
     /**
-     * Toggle a category's global enable state, updating local rows optimistically.
+     * Toggle a category's global enable state, updating the row once the
+     * server accepts the change.
      *
      * @param id - Category id.
      * @param enabled - New enable state.
@@ -54,39 +87,49 @@ export function CategoriesTab(): React.ReactElement {
         }
     }, []);
 
+    let content: ReactNode;
     if (loading) {
-        return <p className={styles.placeholder}>Loading categories…</p>;
-    }
-    if (categories.length === 0) {
-        return <p className={styles.placeholder}>No categories registered.</p>;
+        content = <p className={styles.placeholder}>Loading categories…</p>;
+    } else if (categories.length === 0) {
+        content = <p className={styles.placeholder}>No categories registered.</p>;
+    } else {
+        content = (
+            <Table variant="compact" flush stackAt="mobile">
+                <Thead>
+                    <Tr>
+                        <Th>Category</Th>
+                        <Th width="shrink">Source</Th>
+                        <Th width="shrink">Channels</Th>
+                    </Tr>
+                </Thead>
+                <Tbody>
+                    {categories.map((category) => (
+                        <Tr key={category.id}>
+                            <Td>
+                                <div className={styles.toggle_label}>
+                                    <Switch
+                                        size="sm"
+                                        on={category.enabled}
+                                        disabled={busyId === category.id}
+                                        onChange={(next) => void onToggle(category.id, next)}
+                                        aria-label={`${category.label} for everyone`}
+                                    />
+                                    <RowLabel name={category.label} description={category.description} />
+                                </div>
+                            </Td>
+                            <Td label="Source">{category.source}</Td>
+                            <Td label="Channels">{renderChannels(category.channelDefaults)}</Td>
+                        </Tr>
+                    ))}
+                </Tbody>
+            </Table>
+        );
     }
 
     return (
-        <div className={styles.list}>
+        <Panel title="Categories" meta={PANEL_META}>
             {error && <p className={styles.error} role="alert">{error}</p>}
-            {categories.map((category) => (
-                <div key={category.id} className={styles.row}>
-                    <div className={styles.row_main}>
-                        <div className={styles.row_title}>{category.label}</div>
-                        <div className={styles.row_desc}>{category.description}</div>
-                        <div className={styles.badges}>
-                            <Badge tone="neutral">{category.source}</Badge>
-                            {Object.keys(category.channelDefaults).map((ch) => (
-                                <Badge key={ch} tone="info">{ch}</Badge>
-                            ))}
-                        </div>
-                    </div>
-                    <label className={styles.toggle}>
-                        <input
-                            type="checkbox"
-                            checked={category.enabled}
-                            disabled={busyId === category.id}
-                            onChange={(e) => void onToggle(category.id, e.target.checked)}
-                        />
-                        <span>{category.enabled ? 'Enabled' : 'Disabled'}</span>
-                    </label>
-                </div>
-            ))}
-        </div>
+            {content}
+        </Panel>
     );
 }

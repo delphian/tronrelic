@@ -3,9 +3,9 @@
 /**
  * @fileoverview Client shell for /system/curation — the central curation queue.
  *
- * Holds the page's interactive frame: a visually hidden page heading, the live
- * count of items waiting for review, the in-page tab row, and the active panel
- * (Pending, History, Database, or Logs). The Database panel is the core
+ * Holds the page's interactive frame: the `AdminPage` header, the in-page tab
+ * row with the live count of items waiting for review at its end, and the
+ * active panel (Pending, History, Database, or Logs). The Database panel is the core
  * collection browser scoped to this module's collections, the same one
  * `/system/database` uses, and the Logs panel is the core log viewer scoped to
  * this module's entries, the same one `/system/logs` uses, so an operator never
@@ -18,13 +18,14 @@
  * Clicking a tab changes local state through `onItemSelect` rather than
  * navigating, and rewrites the address in place so `?tab=` stays a real deep
  * link. A menu node cannot carry a live number, so the waiting count sits in a
- * badge above the tab row. It refreshes on the `curation:changed` WebSocket
- * signal; the count itself always comes from the admin-gated REST endpoint.
+ * badge at the right end of the tab row's line rather than on a row of its
+ * own. It refreshes on the `curation:changed` WebSocket signal; the count
+ * itself always comes from the admin-gated REST endpoint.
  */
 
 import { useCallback, useEffect, useState } from 'react';
 import type { MenuNodeSerialized } from '@/shared';
-import { Page, Section } from '../../../../../../components/layout';
+import { AdminPage } from '../../../../../../components/layout';
 import { Badge } from '../../../../../../components/ui/Badge';
 import { MenuNavClient } from '../../../../../../components/layout/MenuNav/MenuNavClient';
 import { getSocket } from '../../../../../../lib/socketClient';
@@ -141,50 +142,39 @@ export function CurationAdminClient({ submenuTree, submenuGeneratedAt, initialTa
     }, []);
 
     return (
-        <Page>
-            {/* The System layout supplies navigation but no heading, so this
-                names the page for screen readers. It stays visually hidden
-                because a visible title would only repeat the menu entry and
-                the active tab. */}
-            <h1 className={styles.sr_only}>Curation</h1>
-
-            {/* The waiting count, the tab row, and the panel share one Section
-                so the space between them is a section gap. As separate children
-                of Page they would each be spaced by the page gap, which is meant
-                for separating major page blocks and left the count floating far
-                above the tabs it describes. */}
-            <Section gap="md">
-                {pending > 0 && (
-                    <div className={styles.summary}>
-                        <Badge tone="warning" size="sm">{pending} waiting for review</Badge>
-                    </div>
-                )}
-
-                <MenuNavClient
-                    namespace={SUBMENU_NAMESPACE}
-                    items={submenuTree}
-                    generatedAt={submenuGeneratedAt}
-                    ariaLabel="Curation sections"
-                    activeUrl={`/system/curation?tab=${activeTab}`}
-                    onItemSelect={handleTabSelect}
-                />
-
-                <div className={styles.content}>
-                    {activeTab === 'pending' && <PendingTab onChanged={refreshPending} />}
-                    {activeTab === 'history' && <HistoryTab />}
-
-                    {/* Read-only on purpose. A decided item is the permanent
-                        audit record of who approved what and where it went, and
-                        the module offers no delete route for that reason; a
-                        pending item must change only through the decision gate.
-                        Editing or deleting documents here would bypass both. */}
-                    {activeTab === 'database' && (
-                        <CollectionBrowser prefix={COLLECTION_PREFIX} allowEdit={false} allowDelete={false} />
-                    )}
-
-                    {activeTab === 'logs' && <SystemLogsMonitor service={LOG_SERVICE} title="Curation Logs" />}
+        <AdminPage
+            title="Curation"
+            subtitle="Everything held for human review across the platform, and every decision made on it."
+        >
+            <div className={styles.tab_row}>
+                <div className={styles.submenu}>
+                    <MenuNavClient
+                        namespace={SUBMENU_NAMESPACE}
+                        items={submenuTree}
+                        generatedAt={submenuGeneratedAt}
+                        ariaLabel="Curation sections"
+                        activeUrl={`/system/curation?tab=${activeTab}`}
+                        onItemSelect={handleTabSelect}
+                    />
                 </div>
-            </Section>
-        </Page>
+                {pending > 0 && (
+                    <Badge tone="warning" size="sm" className={styles.waiting}>{pending} waiting for review</Badge>
+                )}
+            </div>
+
+            {activeTab === 'pending' && <PendingTab onChanged={refreshPending} />}
+            {activeTab === 'history' && <HistoryTab />}
+
+            {/* Read-only on purpose. A decided item is the permanent audit
+                record of who approved what and where it went, and the module
+                offers no delete route for that reason; a pending item must
+                change only through the decision gate. Editing or deleting
+                documents here would bypass both. */}
+            {activeTab === 'database' && (
+                <CollectionBrowser prefix={COLLECTION_PREFIX} allowEdit={false} allowDelete={false} />
+            )}
+
+            {activeTab === 'logs' && <SystemLogsMonitor service={LOG_SERVICE} title="Curation Logs" />}
+        </AdminPage>
     );
 }
