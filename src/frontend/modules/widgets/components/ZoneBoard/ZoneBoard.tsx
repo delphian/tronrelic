@@ -318,11 +318,13 @@ export function ZoneBoard({
 
             <SortableContext id={zone.id} items={itemIds} strategy={verticalListSortingStrategy}>
                 <div ref={setNodeRef} className={styles.rows}>
+                    {/* An empty zone keeps a one-line dashed outline so it still
+                        reads as a place to drop a widget. It states only that the
+                        zone is empty: how to add one is said once, above the
+                        library, rather than repeated in every empty zone. */}
                     {topLevel.length === 0 ? (
                         <p className={styles.empty}>
-                            {pageScoped
-                                ? 'Nothing renders here on this page. Drag a widget from the library or press Add widget.'
-                                : 'No site-wide widgets here. Drag a widget from the library or press Add widget.'}
+                            {pageScoped ? 'Nothing here on this page' : 'No site-wide widgets'}
                         </p>
                     ) : (
                         <>

@@ -5,10 +5,12 @@
  *
  * Holds what every content translation Suggest request sends, whatever the
  * content type: the system prompt, where an administrator keeps the site's
- * tone and a glossary, and the provider and model that run the request. It
- * sits on the localization Settings tab next to the interface text settings,
- * and keeps its own values because articles and short interface strings
- * usually want different instructions and often a different model.
+ * tone and the rules that hold in every language, and the provider and model
+ * that run the request. It sits on the localization Settings tab next to the
+ * interface text settings, and keeps its own values because articles and
+ * short interface strings usually want different instructions and often a
+ * different model. Its prompt editor is sized by the localization module's
+ * `promptEditorRows`, so the two editors on that tab grow alike.
  */
 
 import { useCallback, useEffect, useState } from 'react';
@@ -27,11 +29,9 @@ import {
     type IAiModelChoice,
     type IAiProviderModels
 } from '../../../ai-tools';
+import { promptEditorRows } from '../../../localization';
 import { getTranslationSettings, updateTranslationSettings } from '../../api/client';
 import styles from './ContentTranslationSettings.module.scss';
-
-/** Rows the system prompt editor shows; a glossary needs room. */
-const PROMPT_ROWS = 12;
 
 /**
  * The model choice and system prompt for content translation suggestions.
@@ -138,12 +138,12 @@ export function ContentTranslationSettings() {
                 <Field
                     label="System prompt"
                     htmlFor="content-translation-system-prompt"
-                    hint="Sent ahead of every content translation Suggest request, whatever the language. Put the site's tone and rules that hold in every language here; a glossary for one language belongs in that language's translation prompt on the Languages tab. A suggestion fills the editor; nothing is saved until you save the translation."
+                    hint="Sent with every content translation Suggest request, whatever the language."
                 >
                     <Textarea
                         id="content-translation-system-prompt"
                         size="sm"
-                        rows={PROMPT_ROWS}
+                        rows={promptEditorRows(systemPrompt)}
                         value={systemPrompt}
                         onChange={(event) => setSystemPrompt(event.target.value)}
                     />

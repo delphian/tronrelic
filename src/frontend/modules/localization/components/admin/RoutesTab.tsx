@@ -11,7 +11,9 @@
  * The count turns amber when the route is published and still has gaps,
  * because that is the case where visitors are reading English on a translated
  * page. "Show keys" opens the Translations tab filtered to that route, which
- * is the quickest way to fill the gaps.
+ * is the quickest way to fill the gaps. On a phone each route becomes its
+ * pattern line with the language cells, each naming its code, wrapping several
+ * to a line beneath it.
  *
  * Fetches its own data on mount, as every `/system` manager does.
  *
@@ -271,9 +273,13 @@ export function RoutesTab({ onShowKeys }: IRoutesTabProps) {
                 <div className={styles.placeholder}>No routes yet, so every page is English only.</div>
             ) : (
                 /* One column per language, so the width grows with every
-                   language added. Each route stacks into an entry headed by
-                   its pattern below tablet width, with one line per language. */
-                <Table variant="compact" flush stackAt="tablet">
+                   language added; with eight it still fits a tablet. On a
+                   phone each route stacks into its pattern line followed by a
+                   wrapping row of language cells. No cell carries a `label`,
+                   which would give every language a line of its own; each
+                   cell shows its language code instead (see the routes grid
+                   rules in the stylesheet). */
+                <Table variant="compact" flush stackAt="mobile">
                     <Thead>
                         <Tr>
                             <Th>Route</Th>
@@ -291,7 +297,7 @@ export function RoutesTab({ onShowKeys }: IRoutesTabProps) {
                     <Tbody>
                         {routes.map(route => (
                             <Tr key={route.id}>
-                                <Td>
+                                <Td className={styles.route_heading_cell}>
                                     <div className={styles.cell_inline}>
                                         <span className={`${styles.cell_primary} ${styles.mono}`}>{route.pattern}</span>
                                         <span className={styles.cell_meta}>{route.keyCount} keys</span>
@@ -302,8 +308,17 @@ export function RoutesTab({ onShowKeys }: IRoutesTabProps) {
                                     const missing = route.missingByLanguage[language.code] ?? 0;
                                     const description = describeMissing(missing, published, language.name);
                                     return (
-                                        <Td key={language.code} label={language.name}>
+                                        <Td key={language.code}>
                                             <span className={styles.route_cell}>
+                                                {/* The switch's own label names the language for
+                                                    assistive technology, so the code is visual only. */}
+                                                <span
+                                                    className={language.enabled ? styles.route_cell_code : `${styles.route_cell_code} ${styles.route_cell_code_off}`}
+                                                    title={language.enabled ? language.name : `${language.name}, not enabled yet`}
+                                                    aria-hidden="true"
+                                                >
+                                                    {language.code}
+                                                </span>
                                                 <Switch
                                                     size="sm"
                                                     on={published}
@@ -319,7 +334,7 @@ export function RoutesTab({ onShowKeys }: IRoutesTabProps) {
                                         </Td>
                                     );
                                 })}
-                                <Td>
+                                <Td className={styles.route_actions_cell}>
                                     <div className={styles.actions}>
                                         <IconButton
                                             size="sm"

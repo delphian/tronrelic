@@ -22,7 +22,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { RefreshCcw, Save } from 'lucide-react';
 import type { IConsentPageviewStats, IConsentSettings } from '@/types';
 import { GOOGLE_ADS_CONVERSION_LABEL_PATTERN, GOOGLE_ADS_ID_PATTERN } from '@/types';
-import { Stack } from '../../../../components/layout';
+import { Grid, Stack } from '../../../../components/layout';
 import { Panel } from '../../../../components/ui/Panel';
 import { Button } from '../../../../components/ui/Button';
 import { Input } from '../../../../components/ui/Input';
@@ -34,6 +34,7 @@ import { ConfirmDialog } from '../../../../components/ui/ConfirmDialog';
 import { useModal } from '../../../../components/ui/ModalProvider';
 import { useToast } from '../../../../components/ui/ToastProvider';
 import { getConsentPageviewStats, getConsentSettings, renewConsent, updateConsentSettings } from '../../api/client';
+import styles from './SettingsTab.module.scss';
 
 /** Days of anonymous page views the tab shows. */
 const PAGEVIEW_WINDOW_DAYS = 30;
@@ -161,7 +162,6 @@ export function SettingsTab() {
                 meta={settings?.updatedAt ? <>Saved <ClientTime date={settings.updatedAt} format="relative" /></> : 'Never saved'}
                 actions={settings && (
                     <Button
-                        size="sm"
                         variant="primary"
                         loading={saving}
                         disabled={!dirty || idError !== undefined || labelError !== undefined}
@@ -186,70 +186,75 @@ export function SettingsTab() {
                         >
                             <Switch id="consent-enabled" on={enabled} onChange={setEnabled} aria-label="Consent handling" />
                         </Field>
-                        <Field
-                            label="Google Ads tag id"
-                            htmlFor="consent-google-ads-id"
-                            hint="From Google Ads → Tools → Google tag. Leave empty to keep the tag off the site."
-                            error={idError}
-                        >
-                            <Input
-                                id="consent-google-ads-id"
-                                size="sm"
-                                value={googleAdsId}
-                                placeholder="AW-123456789"
-                                invalid={idError !== undefined}
-                                onChange={event => setGoogleAdsId(event.target.value)}
-                            />
-                        </Field>
-                        <Field
-                            label="Conversion label"
-                            htmlFor="consent-conversion-label"
-                            hint="The label of the conversion action counted when a visitor follows an affiliate link. Leave empty to load the tag without recording conversions."
-                            error={labelError}
-                        >
-                            <Input
-                                id="consent-conversion-label"
-                                size="sm"
-                                value={conversionLabel}
-                                invalid={labelError !== undefined}
-                                onChange={event => setConversionLabel(event.target.value)}
-                            />
-                        </Field>
+                        <div className={styles.field_grid}>
+                            <Field
+                                label="Google Ads tag id"
+                                htmlFor="consent-google-ads-id"
+                                hint="From Google Ads → Tools → Google tag. Leave empty to keep the tag off the site."
+                                error={idError}
+                            >
+                                <Input
+                                    id="consent-google-ads-id"
+                                    value={googleAdsId}
+                                    placeholder="AW-123456789"
+                                    invalid={idError !== undefined}
+                                    onChange={event => setGoogleAdsId(event.target.value)}
+                                />
+                            </Field>
+                            <Field
+                                label="Conversion label"
+                                htmlFor="consent-conversion-label"
+                                hint="The conversion counted when a visitor follows an affiliate link. Leave empty to load the tag without recording conversions."
+                                error={labelError}
+                            >
+                                <Input
+                                    id="consent-conversion-label"
+                                    value={conversionLabel}
+                                    invalid={labelError !== undefined}
+                                    onChange={event => setConversionLabel(event.target.value)}
+                                />
+                            </Field>
+                        </div>
                     </Stack>
                 )}
             </Panel>
 
-            <Panel
-                title="Ask everyone again"
-                meta={settings ? `Policy version ${settings.policyVersion}` : undefined}
-                actions={settings && (
-                    <Button size="sm" variant="secondary" loading={renewing} onClick={handleRenew} icon={<RefreshCcw size={16} />}>
-                        Ask again
-                    </Button>
-                )}
-            >
-                <p className="text-muted">
-                    A visitor&apos;s answer counts only for the policy version they answered. Raise it after the Privacy
-                    Policy changes in a way visitors should agree to afresh. Answers also expire after twelve months.
-                </p>
-            </Panel>
+            {/* Two short panels share a row while there is room for both, and
+                stack on a phone. */}
+            <Grid columns="responsive" gap="sm">
+                <Panel
+                    title="Ask everyone again"
+                    meta={settings ? `Policy version ${settings.policyVersion}` : undefined}
+                >
+                    {/* The explanation is the button's hint, so a screen reader
+                        reads it with the button rather than as loose text. */}
+                    {settings && (
+                        <Field
+                            inline
+                            hint="A visitor's answer counts only for the policy version they answered, and for twelve months. Raise the version after the Privacy Policy changes in a way visitors should agree to afresh."
+                        >
+                            <Button variant="secondary" loading={renewing} onClick={handleRenew} icon={<RefreshCcw size={16} />}>
+                                Ask again
+                            </Button>
+                        </Field>
+                    )}
+                </Panel>
 
-            <Panel title="Page views without analytics consent" meta={`Last ${PAGEVIEW_WINDOW_DAYS} days`}>
-                <Stack gap="sm">
-                    <p className="text-muted">
-                        Counted with no visitor identifier, so they are missing from the traffic dashboard. This is how much
-                        traffic the dashboard cannot see.
-                    </p>
+                <Panel
+                    title="Page views without analytics consent"
+                    meta="Counted with no visitor identifier, so the traffic dashboard does not see them."
+                >
                     <FigureList
                         label="Page views without analytics consent"
+                        columns="single"
                         rows={stats ? [
                             { key: 'total', label: `Last ${stats.days} days`, value: stats.total.toLocaleString('en-US') },
                             { key: 'today', label: 'Today (UTC)', value: today.toLocaleString('en-US') }
                         ] : []}
                     />
                     {!stats && !loading && <p className="text-muted">Page view counts could not be loaded.</p>}
-                </Stack>
-            </Panel>
+                </Panel>
+            </Grid>
         </Stack>
     );
 }

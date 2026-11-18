@@ -1,6 +1,6 @@
 # SchedulerMonitor Component
 
-Admin table of the scheduler's jobs, with inline controls for each one. Lives in `src/frontend/modules/scheduler/`. It is the whole of `/system/scheduler` (`app/[lang]/(site)/(core)/system/scheduler/page.tsx`) and the Schedules tab on every module and plugin admin page that owns a job.
+Admin table of the scheduler's jobs, with inline controls for each one. Lives in `src/frontend/modules/scheduler/`. It is the Jobs tab of `/system/scheduler` (`app/[lang]/(site)/(core)/system/scheduler/SchedulerAdminClient.tsx`) and the Schedules tab on every module and plugin admin page that owns a job.
 
 ## Why This Matters
 
@@ -51,13 +51,13 @@ interface ISchedulerMonitorProps {
 
 ## Example
 
-The unfiltered mount, from `app/[lang]/(site)/(core)/system/scheduler/page.tsx`, where the panel takes the default title:
+The Jobs tab of `/system/scheduler`, from `SchedulerAdminClient.tsx`, where the panel takes the default title. A search box and a status choice above it build the predicate, and `buildJobFilter` returns `undefined` while neither is set, so the default view keeps the success rate:
 
 ```tsx
-<Page>
-    <PageHeader title="Scheduler" subtitle="Every scheduled job, its cron schedule, and its last run." />
-    <SchedulerMonitor />
-</Page>
+const jobFilter = useMemo(() => buildJobFilter(jobQuery, jobStatus), [jobQuery, jobStatus]);
+
+<JobFilterBar query={jobQuery} status={jobStatus} onQueryChange={setJobQuery} onStatusChange={setJobStatus} />
+<SchedulerMonitor jobFilter={jobFilter} />
 ```
 
 A Schedules tab, filtered by name prefix so a job registered later appears without a change to the page:

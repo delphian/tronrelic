@@ -13,7 +13,9 @@
  * The tab is one panel. The add form opens from the panel header and sits
  * above the table, and the consequences of switching a language on or off are
  * stated in the toast that confirms the switch, where the administrator reads
- * them at the moment they apply.
+ * them at the moment they apply. Each count column shows three numbers in the
+ * status colours, with the words written once in its header, so the table
+ * fits a tablet and stacks only on a phone.
  *
  * Like the other `/system` managers it fetches its own data on mount: the
  * SSR + Live Updates rule covers public pages, and admin surfaces are exempt
@@ -22,7 +24,7 @@
  * @module modules/localization/components/admin/LanguagesTab
  */
 
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { Fragment, useCallback, useEffect, useState, type FormEvent } from 'react';
 import { MessageSquareText, Plus, Trash2 } from 'lucide-react';
 import type { ILanguageSummary, ITranslationProgress, LanguageDirection } from '@/types';
 import { Panel } from '../../../../components/ui/Panel';
@@ -32,7 +34,6 @@ import { Input } from '../../../../components/ui/Input';
 import { Select } from '../../../../components/ui/Select';
 import { Field } from '../../../../components/ui/Field';
 import { Switch } from '../../../../components/ui/Switch';
-import { Badge } from '../../../../components/ui/Badge';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../components/ui/Table';
 import { ConfirmDialog } from '../../../../components/ui/ConfirmDialog';
 import { useToast } from '../../../../components/ui/ToastProvider';
@@ -48,22 +49,86 @@ const EMPTY_FORM = { code: '', name: '', nativeName: '', direction: 'ltr' as Lan
 /** Element id of the add form, referenced by the header button's `aria-controls`. */
 const ADD_FORM_ID = 'localization-add-language';
 
+/** Thousands separators fixed to one locale, so every admin reads the same digits. */
+const COUNT = new Intl.NumberFormat('en');
+
 /**
- * Show one set of translation counts as badges. The table shows two sets per
- * language, one for the routes published in it and one for every key, so the
- * badges are drawn by one component to keep the two columns alike.
+ * The three counts in the order the legend names them, each with the class
+ * that colours it. One list, so the legend and every cell cannot disagree
+ * about which number is which.
+ */
+const PROGRESS_PARTS: ReadonlyArray<{ status: keyof ITranslationProgress; className: string }> = [
+    { status: 'translated', className: styles.progress_translated },
+    { status: 'stale', className: styles.progress_stale },
+    { status: 'missing', className: styles.progress_missing }
+];
+
+/** What the On published routes counts cover, for that column's tooltip. */
+const PUBLISHED_ROUTES_TITLE = 'Keys rendered on routes published in the language, the same keys the Routes tab counts';
+
+/** What the All keys counts cover, for that column's tooltip. */
+const ALL_KEYS_TITLE = 'Every key the site has reported, including text seen only on pages not yet published in the language';
+
+/**
+ * Name the three counts in their colours. The column headers carry it, and so
+ * does a line above the table once the rows stack and the headers are hidden,
+ * so the words appear once rather than in every cell.
+ *
+ * @returns The coloured "translated / stale / missing" key.
+ */
+function ProgressLegend() {
+    return (
+        <span className={styles.progress}>
+            {PROGRESS_PARTS.map((part, index) => (
+                <Fragment key={part.status}>
+                    {index > 0 && <span className={styles.progress_separator} aria-hidden="true">/</span>}
+                    <span className={part.className}>{part.status}</span>
+                </Fragment>
+            ))}
+        </span>
+    );
+}
+
+/**
+ * Show one set of translation counts as three numbers in the status colours.
+ * The table shows two sets per language, one for the routes published in it
+ * and one for every key, so one component draws both to keep them alike. Each
+ * number carries its word as visually hidden text, so a screen reader hears
+ * "1,206 translated" rather than a bare figure.
  *
  * @param props.progress - The translated, stale, and missing counts to show.
- * @returns The badge row; stale and missing are left out when zero.
+ * @returns The counts; a zero is drawn quietly rather than left out, so each
+ *          number stays in the place the legend gives it.
  */
-function ProgressBadges({ progress }: { progress: ITranslationProgress }) {
+function ProgressFigures({ progress }: { progress: ITranslationProgress }) {
     return (
-        <div className={styles.badge_row}>
-            <Badge size="xs" tone="success">{progress.translated} translated</Badge>
-            {progress.stale > 0 && <Badge size="xs" tone="warning">{progress.stale} stale</Badge>}
-            {progress.missing > 0 && <Badge size="xs" tone="neutral">{progress.missing} missing</Badge>}
-        </div>
+        <span className={styles.progress}>
+            {PROGRESS_PARTS.map((part, index) => {
+                const value = progress[part.status];
+                const text = `${COUNT.format(value)} ${part.status}`;
+                return (
+                    <Fragment key={part.status}>
+                        {index > 0 && <span className={styles.progress_separator} aria-hidden="true">/</span>}
+                        <span className={value === 0 ? styles.progress_zero : part.className} title={text}>
+                            {COUNT.format(value)}
+                            <span className={styles.visually_hidden}> {part.status}</span>
+                        </span>
+                    </Fragment>
+                );
+            })}
+        </span>
     );
+}
+
+/**
+ * Sum up the language list for the panel's meta line.
+ *
+ * @param languages - The configured languages.
+ * @returns A short line such as "8 languages · 5 enabled".
+ */
+function describeLanguages(languages: ILanguageSummary[]): string {
+    const enabled = languages.filter(language => language.enabled).length;
+    return `${languages.length} ${languages.length === 1 ? 'language' : 'languages'} · ${enabled} enabled`;
 }
 
 /**
@@ -240,7 +305,7 @@ export function LanguagesTab() {
     return (
         <Panel
             title="Languages"
-            meta="English is always on and needs no setup. All keys includes text seen only on pages not yet published in the language"
+            meta={!loading && !empty ? describeLanguages(languages) : undefined}
             actions={!empty && (
                 <Button
                     size="sm"
@@ -307,81 +372,94 @@ export function LanguagesTab() {
             ) : empty ? (
                 <div className={styles.placeholder}>No languages yet. Add the first one above.</div>
             ) : (
-                /* Six columns, two of them badge groups, do not fit a tablet,
-                   so each language stacks into an entry headed by its name. */
-                <Table variant="compact" flush stackAt="tablet">
-                    <Thead>
-                        <Tr>
-                            <Th>Language</Th>
-                            <Th>On published routes</Th>
-                            <Th>All keys</Th>
-                            <Th width="shrink">Direction</Th>
-                            <Th width="shrink">Enabled</Th>
-                            <Th width="shrink"><span className={styles.visually_hidden}>Actions</span></Th>
-                        </Tr>
-                    </Thead>
-                    <Tbody>
-                        {languages.map(language => (
-                            <Tr key={language.code}>
-                                <Td>
-                                    <div className={styles.cell_inline}>
-                                        <span className={styles.cell_primary} lang={language.code}>{language.nativeName}</span>
-                                        <span className={styles.cell_meta}>{language.name}</span>
-                                        <span className={`${styles.cell_meta} ${styles.mono}`}>{language.code}</span>
-                                    </div>
-                                </Td>
-                                <Td label="On published routes">
-                                    <ProgressBadges progress={language.publishedRoutes} />
-                                </Td>
-                                <Td label="All keys">
-                                    <ProgressBadges progress={language} />
-                                </Td>
-                                <Td label="Direction">
-                                    <Select
-                                        size="xs"
-                                        value={language.direction}
-                                        disabled={busyCode === language.code}
-                                        onChange={event => void handleDirection(language, event.target.value as LanguageDirection)}
-                                        aria-label={`Script direction for ${language.name}`}
-                                    >
-                                        <option value="ltr">Left to right</option>
-                                        <option value="rtl">Right to left</option>
-                                    </Select>
-                                </Td>
-                                <Td label="Enabled">
-                                    <Switch
-                                        size="sm"
-                                        on={language.enabled}
-                                        disabled={busyCode === language.code}
-                                        onChange={next => void handleToggle(language, next)}
-                                        aria-label={`${language.enabled ? 'Disable' : 'Enable'} ${language.name}`}
-                                    />
-                                </Td>
-                                <Td>
-                                    <div className={styles.actions}>
-                                        <IconButton
-                                            size="sm"
-                                            variant={language.translationPrompt === '' ? 'ghost' : 'primary'}
-                                            onClick={() => handleEditPrompt(language)}
-                                            aria-label={`${language.translationPrompt === '' ? 'Add' : 'Edit'} the translation prompt for ${language.name}`}
-                                            title={language.translationPrompt === '' ? 'No translation prompt yet' : 'Has a translation prompt'}
-                                        >
-                                            <MessageSquareText size={14} />
-                                        </IconButton>
-                                        <IconButton
-                                            size="sm"
-                                            variant="danger"
-                                            onClick={() => handleDelete(language)}
-                                            aria-label={`Delete ${language.name}`}
-                                        >
-                                            <Trash2 size={14} />
-                                        </IconButton>
-                                    </div>
-                                </Td>
+                <>
+                    <p className={styles.progress_key}>Counts: <ProgressLegend /></p>
+                    {/* The counts are numbers rather than worded badges, so
+                        the six columns fit a tablet and the rows stack only on
+                        a phone. The Enabled switch and the actions carry no
+                        `label`, so once stacked the switch shares the name's
+                        line and the buttons end the entry's last line. */}
+                    <Table variant="compact" flush stackAt="mobile">
+                        <Thead>
+                            <Tr>
+                                <Th>Language</Th>
+                                <Th width="shrink">Enabled</Th>
+                                <Th title={PUBLISHED_ROUTES_TITLE}>
+                                    On published routes
+                                    <span className={styles.th_legend}><ProgressLegend /></span>
+                                </Th>
+                                <Th title={ALL_KEYS_TITLE}>
+                                    All keys
+                                    <span className={styles.th_legend}><ProgressLegend /></span>
+                                </Th>
+                                <Th width="shrink">Direction</Th>
+                                <Th width="shrink"><span className={styles.visually_hidden}>Actions</span></Th>
                             </Tr>
-                        ))}
-                    </Tbody>
-                </Table>
+                        </Thead>
+                        <Tbody>
+                            {languages.map(language => (
+                                <Tr key={language.code}>
+                                    <Td>
+                                        <div className={styles.cell_inline}>
+                                            <span className={styles.cell_primary} lang={language.code}>{language.nativeName}</span>
+                                            <span className={styles.cell_meta}>{language.name}</span>
+                                            <span className={`${styles.cell_meta} ${styles.mono}`}>{language.code}</span>
+                                        </div>
+                                    </Td>
+                                    <Td>
+                                        <Switch
+                                            size="sm"
+                                            on={language.enabled}
+                                            disabled={busyCode === language.code}
+                                            onChange={next => void handleToggle(language, next)}
+                                            aria-label={`${language.enabled ? 'Disable' : 'Enable'} ${language.name}`}
+                                            title={language.enabled ? 'Enabled for visitors' : 'Not enabled for visitors'}
+                                        />
+                                    </Td>
+                                    <Td label="Published routes">
+                                        <ProgressFigures progress={language.publishedRoutes} />
+                                    </Td>
+                                    <Td label="All keys">
+                                        <ProgressFigures progress={language} />
+                                    </Td>
+                                    <Td label="Direction">
+                                        <Select
+                                            size="xs"
+                                            value={language.direction}
+                                            disabled={busyCode === language.code}
+                                            onChange={event => void handleDirection(language, event.target.value as LanguageDirection)}
+                                            aria-label={`Script direction for ${language.name}`}
+                                        >
+                                            <option value="ltr">Left to right</option>
+                                            <option value="rtl">Right to left</option>
+                                        </Select>
+                                    </Td>
+                                    <Td>
+                                        <div className={styles.actions}>
+                                            <IconButton
+                                                size="sm"
+                                                variant={language.translationPrompt === '' ? 'ghost' : 'primary'}
+                                                onClick={() => handleEditPrompt(language)}
+                                                aria-label={`${language.translationPrompt === '' ? 'Add' : 'Edit'} the translation prompt for ${language.name}`}
+                                                title={language.translationPrompt === '' ? 'No translation prompt yet' : 'Has a translation prompt'}
+                                            >
+                                                <MessageSquareText size={14} />
+                                            </IconButton>
+                                            <IconButton
+                                                size="sm"
+                                                variant="danger"
+                                                onClick={() => handleDelete(language)}
+                                                aria-label={`Delete ${language.name}`}
+                                            >
+                                                <Trash2 size={14} />
+                                            </IconButton>
+                                        </div>
+                                    </Td>
+                                </Tr>
+                            ))}
+                        </Tbody>
+                    </Table>
+                </>
             )}
         </Panel>
     );

@@ -6,9 +6,17 @@
 
 @use '../../../../app/breakpoints' as *;
 
-.workbench {
+/* The size container the collapse rule below measures. It is an element
+   around the grid rather than the grid itself, because a container query
+   never matches the element that declares the container: declared on
+   .workbench, the rule that turns the grid into one column never applied,
+   and the page grew wider than a phone screen. */
+.frame {
     container-type: inline-size;
     container-name: placements-workbench;
+}
+
+.workbench {
     display: grid;
     grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
     gap: var(--gap-lg);
@@ -118,7 +126,10 @@
     color: var(--color-text-muted);
 }
 
-@container placements-workbench (max-width: #{$breakpoint-tablet}) {
+/* One column only below the large-phone width. Down to that width the board
+   still has room for a zone's title and row controls beside the 240px
+   sidebar, and keeping two columns keeps the library in reach. */
+@container placements-workbench (max-width: #{$breakpoint-mobile-lg}) {
     .workbench {
         grid-template-columns: minmax(0, 1fr);
     }

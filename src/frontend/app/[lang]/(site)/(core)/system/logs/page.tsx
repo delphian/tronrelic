@@ -1,31 +1,34 @@
 'use client';
 
-import { Page, Section } from '../../../../../../components/layout';
+/**
+ * @fileoverview /system/logs: every saved log entry across the deployment,
+ * with the backend's recording level beneath it. Admin-gated by the /system
+ * layout.
+ *
+ * The page wraps one shared monitor, as /system/scheduler and /system/plugins
+ * do, and like them it opens on a visible compact header so the operator can
+ * see which page they are on. The viewer loads its data after mount, so the
+ * page itself has nothing to fetch on the server.
+ */
+
+import { AdminPage } from '../../../../../../components/layout';
 import { SystemLogsMonitor, LogSettings } from '../../../../../../modules/logs';
-import styles from './page.module.scss';
 
 /**
- * System logs page: every saved log entry across the deployment, with the
- * backend's recording level beneath it. Admin-gated by the /system layout.
+ * System logs page.
  *
- * The viewer loads its data after mount, so the page itself has nothing to
- * fetch on the server. Laid out like the curation admin page: a visually
- * hidden heading, then one Section so the viewer and the settings row are
- * spaced by a section gap rather than the much larger page gap.
+ * `AdminPage` supplies the page's `h1` and places the viewer and the settings
+ * row one stack gap apart, the spacing the page used before it had a visible
+ * header. The subtitle leaves out the recording level, whose row names
+ * itself, so it stays one line on a phone.
  *
  * @returns The logs page.
  */
 export default function SystemLogsPage() {
     return (
-        <Page>
-            {/* The System layout supplies navigation but no heading, so this
-                names the page for screen readers without repeating the menu
-                entry on screen. */}
-            <h1 className={styles.sr_only}>System logs</h1>
-            <Section gap="md">
-                <SystemLogsMonitor />
-                <LogSettings />
-            </Section>
-        </Page>
+        <AdminPage title="Logs" subtitle="Saved entries from every service, newest first.">
+            <SystemLogsMonitor />
+            <LogSettings />
+        </AdminPage>
     );
 }

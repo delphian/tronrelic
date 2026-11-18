@@ -1,0 +1,16 @@
+/**
+ * Settings tab of /system/consent.
+ *
+ * The Google Ads id and the conversion label are short values, so they share a
+ * row instead of each taking a full-width line. Columns are at least the
+ * extra-small width token wide, the same field grid the /system/system
+ * configuration forms use, and `min()` keeps a single column inside a
+ * container narrower than that, so the two fields stack on a phone.
+ */
+
+.field_grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--max-width-xs)), 1fr));
+    align-items: start;
+    gap: var(--gap-md);
+}

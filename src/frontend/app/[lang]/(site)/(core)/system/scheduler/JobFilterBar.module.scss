@@ -1,0 +1,20 @@
+/**
+ * Styles for the Jobs tab's filter row: the search box and the status choice
+ * on one line, the status choice wrapping under the search box when the row
+ * is too narrow for both. Uses Layer 2 tokens from semantic-tokens.scss.
+ */
+
+.filter_bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-sm) var(--gap-sm-md);
+}
+
+/* The search box takes the room the status choice leaves, up to a width that
+   still reads as a search box rather than a form-wide field. Below its basis
+   it takes the whole line and the status choice wraps under it. */
+.search {
+    flex: 1 1 var(--max-width-xs);
+    max-width: var(--max-width-sm);
+}

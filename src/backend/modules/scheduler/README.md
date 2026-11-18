@@ -8,7 +8,7 @@
 
 | Tab | Panel | Scope |
 |-----|-------|-------|
-| **Jobs** | Core `SchedulerMonitor`, unscoped | Every job on the deployment |
+| **Jobs** | Core `SchedulerMonitor`, under a search box and an All / Failed / Running / Disabled choice that build its `jobFilter` in the browser (`buildJobFilter.ts`) | Every job on the deployment, narrowed by name or state. With nothing selected the filter is unset, so the monitor keeps the deployment-wide success rate |
 | **Database** | Core `CollectionBrowser`, read-only | Prefix `scheduler_`: `scheduler_configs` and `scheduler_executions`, which predate the `module_<id>_` convention |
 | **Logs** | Core `SystemLogsMonitor` | Service `tronrelic:scheduler` |
 

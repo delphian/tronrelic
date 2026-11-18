@@ -143,13 +143,18 @@
     border: var(--border-width-medium) dashed var(--color-primary);
 }
 
+/* One line high: a dashed outline is enough to mark the drop target. The
+   rows list around it is the zone's droppable, and the workbench resolves a
+   drop to the nearest target, so a drop near the outline still lands in the
+   zone. */
 .empty {
     margin: 0;
-    padding: var(--padding-sm);
+    padding: var(--padding-2xs) var(--padding-sm);
     border: var(--border-width-thin) dashed var(--color-border-strong);
     border-radius: var(--radius-sm);
-    color: var(--color-text-muted);
-    font-size: var(--font-size-body-sm);
+    color: var(--color-text-subtle);
+    font-size: var(--font-size-caption);
+    line-height: var(--line-height-normal);
     text-align: center;
 }
 
