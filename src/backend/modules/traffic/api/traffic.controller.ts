@@ -765,7 +765,7 @@ export class TrafficController {
             res.status(400).json({ error: 'ValidationError', message: parsed.error });
         } else {
             try {
-                const result = await this.gscService.getKeywords(parsed.window, limit);
+                const result = await this.gscService.getKeywords(parsed.window, { limit });
                 res.json({ window: parsed.window, limit, ...result });
             } catch (error) {
                 this.logger.error({ err: error }, 'Failed to fetch GSC keywords');
@@ -789,7 +789,7 @@ export class TrafficController {
             res.status(400).json({ error: 'ValidationError', message: parsed.error });
         } else {
             try {
-                const result = await this.gscService.getPages(parsed.window, limit);
+                const result = await this.gscService.getPages(parsed.window, { limit });
                 res.json({ window: parsed.window, limit, ...result });
             } catch (error) {
                 this.logger.error({ err: error }, 'Failed to fetch GSC pages');
@@ -820,7 +820,7 @@ export class TrafficController {
             res.status(400).json({ error: 'ValidationError', message: parsed.error });
         } else {
             try {
-                const result = await this.gscService.getKeywordPagePairs(parsed.window, limit);
+                const result = await this.gscService.getKeywordPagePairs(parsed.window, { limit });
                 res.json({ window: parsed.window, limit, ...result });
             } catch (error) {
                 this.logger.error({ err: error }, 'Failed to fetch GSC keyword-page pairs');

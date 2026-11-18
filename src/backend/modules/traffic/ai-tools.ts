@@ -48,9 +48,10 @@
  * audience, new visitors, redirects) take the global picker's presets up to
  * `90d` plus an explicit `startDate`/`endDate` pair, so a model can reproduce
  * exactly what an operator has on screen — including a custom range. The
- * raw-hours reads (crawlers, search performance) keep a 30-day ceiling, matching
- * the per-tab pickers on the Crawlers and SEO tabs and the `sinceHours` clamp the
- * REST layer applies to the same reads.
+ * crawler reads keep a 30-day ceiling, matching the Crawlers tab's picker and
+ * the `sinceHours` clamp the REST layer applies to the same reads. The search
+ * performance tool reads the permanent Search Console archive, so it reaches
+ * back to the first archived day.
  */
 
 import type {
@@ -65,7 +66,7 @@ import type {
 } from '@/types';
 import type { GscService } from './services/gsc.service.js';
 import type { GscWindowRequest } from './services/GscWindowRequest.js';
-import type { GscGranularity } from './services/IGscArchive.js';
+import type { GscGranularity, GscRankSort, IGscQueryRankedReadOptions } from './services/IGscArchive.js';
 import { parseGscDayRange } from './services/parseGscDay.js';
 import type { RedirectService } from './services/redirect.service.js';
 import type { INewVisitorOrigin, ITrafficEventFilter, TrafficService } from './services/traffic.service.js';
@@ -220,6 +221,215 @@ const SEO_KEYWORD_MATCHES = ['exact', 'contains'] as const;
  * regular expression in a `contains` match.
  */
 const MAX_SEO_KEYWORD_LENGTH = 200;
+
+/** Views of the SEO tool that rank rows, and so take `sort`, `offset`, and the row filters. */
+const SEO_RANKED_VIEWS: readonly string[] = ['keywords', 'pages', 'keyword-pages'];
+
+/**
+ * Views of the SEO tool whose rows carry the search query, and so take
+ * `keyword`: "keyword-history" requires it, and the two ranked views filter by
+ * it. "pages" reads the page totals, which hold no query.
+ */
+const SEO_KEYWORD_VIEWS: readonly string[] = ['keywords', 'keyword-pages', 'keyword-history'];
+
+/** Arguments only the SEO tool's ranked views accept. */
+const SEO_RANKED_ARGS = ['sort', 'offset', 'minImpressions', 'minPosition', 'maxPosition', 'page', 'pathPrefix'] as const;
+
+/** Orders the SEO tool's ranked views accept. */
+const SEO_SORTS: readonly GscRankSort[] = ['clicks', 'impressions', 'position'];
+
+/** Default order for the ranked views: most clicks first, as on the SEO tab. */
+const DEFAULT_SEO_SORT: GscRankSort = 'clicks';
+
+/**
+ * Deepest row the SEO tool's ranked views skip to. Every page of a ranking
+ * costs the same aggregation, so the cap only bounds how many calls a model
+ * spends walking one list; a filter reaches the rows it wants far sooner.
+ */
+const MAX_SEO_OFFSET = 10000;
+
+/**
+ * Highest position filter the SEO tool accepts. Search Console reports
+ * positions past 100 for rarely shown queries, so anything above this is a
+ * mistake rather than a real bound.
+ */
+const MAX_SEO_POSITION = 1000;
+
+/** A ranked view's options after validation, with the order and starting row always set. */
+type ResolvedSeoRankedOptions = IGscQueryRankedReadOptions & { sort: GscRankSort; offset: number };
+
+/**
+ * Read the SEO tool's `keyword` argument, trimmed.
+ *
+ * @param value - Raw argument from the model.
+ * @param required - True for "keyword-history", which charts one keyword and
+ *   so cannot run without one; the ranked views treat it as an optional filter.
+ * @returns The trimmed keyword, or undefined when it is optional and absent.
+ */
+function resolveSeoKeyword(value: unknown, required: boolean): string | undefined {
+    let keyword: string | undefined;
+    if (value !== undefined && value !== null) {
+        keyword = typeof value === 'string' ? value.trim() : '';
+        if (!keyword || keyword.length > MAX_SEO_KEYWORD_LENGTH) {
+            throw new Error(`Parameter "keyword" must be non-empty text of at most ${MAX_SEO_KEYWORD_LENGTH} characters.`);
+        }
+    } else if (required) {
+        throw new Error(`View "keyword-history" requires a non-empty "keyword" of at most ${MAX_SEO_KEYWORD_LENGTH} characters.`);
+    }
+    return keyword;
+}
+
+/**
+ * Read an optional SEO position bound.
+ *
+ * Position 1 is the top search result, so a bound below 1 can only match
+ * nothing, and the model would then report an empty ranking as a finding.
+ *
+ * @param value - Raw argument from the model.
+ * @param name - Argument name, used in the error message.
+ * @returns The bound, or undefined when the argument is absent.
+ */
+function resolveSeoPosition(value: unknown, name: string): number | undefined {
+    let position: number | undefined;
+    if (value !== undefined && value !== null) {
+        position = Number(value);
+        if (!Number.isFinite(position) || position < 1 || position > MAX_SEO_POSITION) {
+            throw new Error(
+                `Parameter "${name}" must be a number from 1 to ${MAX_SEO_POSITION}, where 1 is the top search result. ` +
+                `Got: ${String(value)}`
+            );
+        }
+    }
+    return position;
+}
+
+/**
+ * Read the SEO tool's `page` argument as a landing-page path.
+ *
+ * Rows report full URLs such as "https://tronrelic.com/blog", and a model
+ * naturally copies one back, so a full URL is cut down to its path; the
+ * archive compares paths, so either form finds the same page. The scheme and
+ * host are cut off as text rather than parsed with `URL`, because `URL`
+ * percent-encodes the path and would then miss a URL Google reported
+ * unencoded.
+ *
+ * @param value - Raw argument from the model.
+ * @returns The path, or undefined when the argument is absent.
+ */
+function resolveSeoPagePath(value: unknown): string | undefined {
+    let pagePath: string | undefined;
+    if (value !== undefined && value !== null && value !== '') {
+        const text = String(value).trim();
+        const hadHost = /^https?:\/\//i.test(text);
+        pagePath = text.replace(/^https?:\/\/[^/?#]*/i, '').replace(/[?#].*$/, '');
+        if (hadHost && pagePath === '') {
+            pagePath = '/';
+        }
+        if (!pagePath.startsWith('/') || pagePath.length > MAX_PATH_PREFIX_LENGTH) {
+            throw new Error(
+                'Parameter "page" must be a path starting with "/", such as "/resource-markets", or a full URL copied ' +
+                `from a row's "page" field, at most ${MAX_PATH_PREFIX_LENGTH} characters. Got: ${text.slice(0, MAX_PATH_PREFIX_LENGTH)}`
+            );
+        }
+    }
+    return pagePath;
+}
+
+/**
+ * Read the SEO tool's ordering, paging, and filter arguments for a ranked view.
+ *
+ * Each one is re-validated here because the schema is only a hint. A filter
+ * that could only match nothing, such as an inverted position range, is
+ * rejected rather than run, because the model would report the empty result
+ * as a finding.
+ *
+ * @param input - The tool's raw input.
+ * @param limit - The row cap already resolved by {@link resolveLimit}.
+ * @returns The options to hand to the search-performance reads.
+ */
+function resolveSeoRankedOptions(input: Record<string, unknown>, limit: number): ResolvedSeoRankedOptions {
+    const sort = resolveEnumArg(input.sort, SEO_SORTS, 'sort', DEFAULT_SEO_SORT)!;
+    const offset = input.offset === undefined || input.offset === null ? 0 : Number(input.offset);
+    if (!Number.isInteger(offset) || offset < 0 || offset > MAX_SEO_OFFSET) {
+        throw new Error(
+            `Parameter "offset" must be a whole number from 0 to ${MAX_SEO_OFFSET}. To reach rows further down, ` +
+            'narrow with minImpressions, minPosition/maxPosition, page, pathPrefix, or keyword instead.'
+        );
+    }
+    const options: ResolvedSeoRankedOptions = { sort, limit, offset };
+
+    if (input.minImpressions !== undefined && input.minImpressions !== null) {
+        const minImpressions = Number(input.minImpressions);
+        if (!Number.isSafeInteger(minImpressions) || minImpressions < 1) {
+            throw new Error(`Parameter "minImpressions" must be a whole number of at least 1. Got: ${String(input.minImpressions)}`);
+        }
+        options.minImpressions = minImpressions;
+    }
+
+    const minPosition = resolveSeoPosition(input.minPosition, 'minPosition');
+    const maxPosition = resolveSeoPosition(input.maxPosition, 'maxPosition');
+    if (minPosition !== undefined && maxPosition !== undefined && minPosition > maxPosition) {
+        throw new Error(`Parameter "minPosition" (${minPosition}) must not be greater than "maxPosition" (${maxPosition}).`);
+    }
+    if (minPosition !== undefined) {
+        options.minPosition = minPosition;
+    }
+    if (maxPosition !== undefined) {
+        options.maxPosition = maxPosition;
+    }
+
+    const pagePath = resolveSeoPagePath(input.page);
+    const pathPrefix = resolvePathPrefix(input.pathPrefix);
+    if (pagePath !== undefined && pathPrefix !== undefined) {
+        throw new Error('Pass either "page" (one landing page) or "pathPrefix" (a section of the site), not both.');
+    }
+    if (pagePath !== undefined) {
+        options.pagePath = pagePath;
+    }
+    if (pathPrefix !== undefined) {
+        options.pathPrefix = pathPrefix;
+    }
+
+    const keyword = resolveSeoKeyword(input.keyword, false);
+    if (keyword !== undefined) {
+        options.keyword = keyword;
+        options.match = resolveEnumArg(input.match, SEO_KEYWORD_MATCHES, 'match', 'exact');
+    } else if (input.match !== undefined) {
+        throw new Error('Parameter "match" needs a "keyword" to match against.');
+    }
+    return options;
+}
+
+/**
+ * List the filters a ranked read applied, under the argument names the model
+ * sent, so the response says what it was narrowed by.
+ *
+ * @param options - The resolved options.
+ * @returns Only the filters that were set.
+ */
+function describeSeoFilters(options: ResolvedSeoRankedOptions): Record<string, unknown> {
+    const filters: Record<string, unknown> = {};
+    if (options.minImpressions !== undefined) {
+        filters.minImpressions = options.minImpressions;
+    }
+    if (options.minPosition !== undefined) {
+        filters.minPosition = options.minPosition;
+    }
+    if (options.maxPosition !== undefined) {
+        filters.maxPosition = options.maxPosition;
+    }
+    if (options.pagePath !== undefined) {
+        filters.page = options.pagePath;
+    }
+    if (options.pathPrefix !== undefined) {
+        filters.pathPrefix = options.pathPrefix;
+    }
+    if (options.keyword !== undefined) {
+        filters.keyword = options.keyword;
+        filters.match = options.match;
+    }
+    return filters;
+}
 
 /** Views {@link AI_TOOL_NAMES.redirects} can return. */
 const REDIRECT_VIEWS = ['analytics', 'rules'] as const;
@@ -1246,14 +1456,31 @@ function buildTools(
         name: AI_TOOL_NAMES.seo,
         title: 'Get search performance',
         description:
-            'Read TronRelic\'s Google Search Console performance. Views: "keywords" (top search queries with clicks, ' +
+            'Read TronRelic\'s Google Search Console performance. Views: "keywords" (search queries with clicks, ' +
             'impressions, CTR, and average position), "pages" (per-page click/impression totals, including pages that were ' +
             'impressed but got zero clicks), "keyword-pages" (which page each query surfaced — the query→page pair with ' +
             'its own clicks, impressions, CTR, and position), "keywords-by-day" (site-wide click/impression totals per ' +
             'bucket plus only the top keywords of each bucket), "keyword-history" (ONE keyword\'s series — pass `keyword`), ' +
             '"status" (whether GSC credentials are configured, when data was last fetched, and `history`: the first and ' +
             'last archived day, which is how far back every other view can reach). ' +
-            'Use for "what are we ranking for", "which pages get search traffic", or "is our search traffic growing". ' +
+            'Use for "what are we ranking for", "which pages get search traffic", "which pages or posts should we update", ' +
+            'or "is our search traffic growing". ' +
+            `RANKED VIEWS ("keywords", "pages", "keyword-pages") return one page of at most ${MAX_BUCKETS} rows per call, but ` +
+            'the archive keeps every query Google reported, so one page is rarely the whole answer. Every ranked response ' +
+            'carries `total` (rows matching the window and filters), `returned`, `hasMore`, and `nextOffset`; while hasMore ' +
+            'is true, call again with `offset` set to nextOffset and the same other arguments to read the next page, and ' +
+            'never describe one page as the full list. `sort` sets the order: "clicks" (default, most first), "impressions" ' +
+            '(most first), or "position" (best average position first); ties fall to the other figure. On a low-traffic ' +
+            'site most queries have zero clicks, so for content work sort by "impressions": a row with many impressions ' +
+            'and few clicks at an average position of about 5 to 20 is a page Google already shows for that query, where ' +
+            'an update is most likely to lift clicks. Narrow rather than paging deep: `minImpressions` keeps rows with at ' +
+            'least that many impressions in the window; `minPosition` and `maxPosition` keep rows whose average position ' +
+            'falls in that range (1 is the top result); `page` keeps one landing page, given as a path such as ' +
+            '"/resource-markets" or a full URL copied from a row; `pathPrefix` keeps a section such as "/blog/" or "/zh/". ' +
+            'On "keywords" and "keyword-pages", `keyword` keeps matching queries (`match` "exact" by default, or "contains" ' +
+            'for every query holding the text). Filters apply to totals over the whole window, and with `page` or ' +
+            '`pathPrefix` the "keywords" view sums each query over the matching pages only. `filters` in the response ' +
+            'lists what was applied. ' +
             'HISTORY: data is kept permanently, so windows reach back to history.firstDate. `period` goes up to "365d", ' +
             'and "all" covers every archived day; for a specific stretch such as one past month, pass `startDate` and ' +
             '`endDate` (YYYY-MM-DD, together; they override `period`). To compare two periods, call once per period. ' +
@@ -1264,11 +1491,13 @@ function buildTools(
             'per bucket in the window (date, clicks, impressions, ctr, position, preliminary), zero-filled, plus window ' +
             'totals and matchedQueries. `match` "exact" (default) is that one query; "contains" sums every query holding ' +
             'the keyword, which suits a low-volume site where each phrasing earns only an impression or two — check ' +
-            'matchedQueries to see what was summed. position is null in a bucket with no impressions; do not plot it as 0. ' +
+            'matchedQueries to see what was summed. matchedQueries names only the most-shown variants and gives no ' +
+            'figures for them; to list every variant with its own figures, use "keywords" with `keyword` and match "contains". ' +
+            'position is null in a bucket with no impressions; do not plot it as 0. ' +
             'Do not use "keywords-by-day" for one keyword: it keeps only each bucket\'s top rows, so a missing bucket there ' +
             'does not mean zero. ' +
-            'Use "keyword-pages" for "which query brings traffic to THIS page" or "what does this page rank for" — the ' +
-            'pairing "keywords" and "pages" each lose by aggregating the other dimension away. It reads the same ' +
+            'Use "keyword-pages" with `page` for "which queries bring traffic to THIS page" or "what does this page rank ' +
+            'for" — the pairing "keywords" and "pages" each lose by aggregating the other dimension away. It reads the same ' +
             'query-dimensioned cache as "keywords", so it carries the same anonymization and its clicks will not ' +
             'reconcile with "pages" either. ' +
             'Google delays and anonymizes this data: the window covered lags roughly 3 days behind today, and rare queries ' +
@@ -1315,17 +1544,55 @@ function buildTools(
                     type: 'integer',
                     minimum: 1,
                     maximum: MAX_BUCKETS,
-                    description: `Max rows to return. Defaults to ${DEFAULT_BUCKETS}, capped at ${MAX_BUCKETS}. Ignored by views "status" and "keyword-history" (which always returns one point per bucket). For view "keywords-by-day" this is the total keyword budget spread across the buckets (at least one keyword per bucket), not a per-bucket count.`
+                    description: `Max rows per call. Defaults to ${DEFAULT_BUCKETS}, capped at ${MAX_BUCKETS}; on the ranked views, read further rows with \`offset\`. Ignored by views "status" and "keyword-history" (which always returns one point per bucket). For view "keywords-by-day" this is the total keyword budget spread across the buckets (at least one keyword per bucket), not a per-bucket count.`
+                },
+                sort: {
+                    type: 'string',
+                    enum: [...SEO_SORTS],
+                    description: `Only for views "keywords", "pages", and "keyword-pages". "clicks" (default) is most clicks first, "impressions" most impressions first, "position" best average position first.`
+                },
+                offset: {
+                    type: 'integer',
+                    minimum: 0,
+                    maximum: MAX_SEO_OFFSET,
+                    description: `Only for views "keywords", "pages", and "keyword-pages". Rows to skip; set it to the previous response's nextOffset while hasMore is true, keeping every other argument the same. At most ${MAX_SEO_OFFSET}.`
+                },
+                minImpressions: {
+                    type: 'integer',
+                    minimum: 1,
+                    description: 'Only for the ranked views. Keep rows with at least this many impressions over the whole window.'
+                },
+                minPosition: {
+                    type: 'number',
+                    minimum: 1,
+                    maximum: MAX_SEO_POSITION,
+                    description: 'Only for the ranked views. Keep rows whose average position over the window is at least this (1 is the top result), e.g. 5 to skip queries already at the top.'
+                },
+                maxPosition: {
+                    type: 'number',
+                    minimum: 1,
+                    maximum: MAX_SEO_POSITION,
+                    description: 'Only for the ranked views. Keep rows whose average position over the window is at most this, e.g. 20 for the first two result pages.'
+                },
+                page: {
+                    type: 'string',
+                    maxLength: MAX_PATH_PREFIX_LENGTH,
+                    description: 'Only for the ranked views. Keep one landing page: its exact path, such as "/resource-markets", or a full URL copied from a row\'s "page" field. Cannot be combined with pathPrefix.'
+                },
+                pathPrefix: {
+                    type: 'string',
+                    maxLength: MAX_PATH_PREFIX_LENGTH,
+                    description: 'Only for the ranked views. Keep landing pages whose path starts with this, such as "/blog/" or "/zh/". Must start with "/". Cannot be combined with page.'
                 },
                 keyword: {
                     type: 'string',
                     maxLength: MAX_SEO_KEYWORD_LENGTH,
-                    description: `Required for view "keyword-history" and rejected by every other view. The search query to chart, e.g. "tron energy rental". Matched case-insensitively; at most ${MAX_SEO_KEYWORD_LENGTH} characters.`
+                    description: `Required for view "keyword-history", where it is the search query to chart, e.g. "tron energy rental". On views "keywords" and "keyword-pages" it is an optional filter keeping matching queries. Rejected by every other view. Matched case-insensitively; at most ${MAX_SEO_KEYWORD_LENGTH} characters.`
                 },
                 match: {
                     type: 'string',
                     enum: [...SEO_KEYWORD_MATCHES],
-                    description: 'Only for view "keyword-history". "exact" (default) charts that one query; "contains" sums every query holding the keyword.'
+                    description: 'Only with `keyword`. "exact" (default) is that one query; "contains" is every query holding the keyword.'
                 }
             },
             required: ['view'],
@@ -1333,11 +1600,12 @@ function buildTools(
         },
         inputExamples: [
             { view: 'keywords' },
-            { view: 'pages', period: '30d', limit: 25 },
-            { view: 'keyword-pages', period: '7d', limit: 30 },
-            { view: 'keywords-by-day', period: '30d' },
+            { view: 'keywords', period: '90d', sort: 'impressions', minPosition: 5, maxPosition: 20, limit: 50 },
+            { view: 'keywords', period: '90d', sort: 'impressions', limit: 50, offset: 50 },
+            { view: 'keywords', period: '365d', keyword: 'energy', match: 'contains', sort: 'impressions' },
+            { view: 'keyword-pages', period: '90d', page: '/resource-markets', sort: 'impressions', limit: 50 },
+            { view: 'pages', period: '30d', pathPrefix: '/blog/', sort: 'impressions', minImpressions: 10 },
             { view: 'keywords-by-day', period: 'all', granularity: 'month' },
-            { view: 'keyword-history', keyword: 'tronrelic', period: '365d' },
             { view: 'keyword-history', keyword: 'tron energy', match: 'contains', startDate: '2025-03-01', endDate: '2025-03-31' },
             { view: 'status' }
         ],
@@ -1350,11 +1618,19 @@ function buildTools(
             const { window, period } = resolveSeoWindow(input);
             const limit = resolveLimit(input.limit);
 
-            // Rejected rather than ignored outside keyword-history, so a model
-            // that passes a keyword to "keywords" learns the ranking was not
-            // filtered instead of narrating it as if it were.
-            if (view !== 'keyword-history' && (input.keyword !== undefined || input.match !== undefined)) {
-                throw new Error('Parameters "keyword" and "match" apply only to view "keyword-history".');
+            // Rejected rather than ignored on views that would not use them, so
+            // a model that passes a keyword to "pages" or a sort to
+            // "keywords-by-day" learns the answer was not filtered or ordered by
+            // it instead of narrating it as if it were.
+            if (!SEO_KEYWORD_VIEWS.includes(view) && (input.keyword !== undefined || input.match !== undefined)) {
+                throw new Error('Parameters "keyword" and "match" apply only to views "keywords", "keyword-pages", and "keyword-history".');
+            }
+            const strayRankedArgs = SEO_RANKED_ARGS.filter(name => input[name] !== undefined);
+            if (!SEO_RANKED_VIEWS.includes(view) && strayRankedArgs.length > 0) {
+                throw new Error(
+                    `Parameters ${strayRankedArgs.map(name => `"${name}"`).join(', ')} apply only to views ` +
+                    '"keywords", "pages", and "keyword-pages".'
+                );
             }
 
             // Rejected outside the series views for the same reason: a bucket
@@ -1370,27 +1646,43 @@ function buildTools(
                 granularity = input.granularity as GscGranularity;
             }
 
-            let data: unknown;
+            let result: Record<string, unknown>;
             if (view === 'keyword-history') {
-                const keyword = typeof input.keyword === 'string' ? input.keyword.trim() : '';
-                if (!keyword || keyword.length > MAX_SEO_KEYWORD_LENGTH) {
-                    throw new Error(`View "keyword-history" requires a non-empty "keyword" of at most ${MAX_SEO_KEYWORD_LENGTH} characters.`);
+                const keyword = resolveSeoKeyword(input.keyword, true)!;
+                const match = resolveEnumArg(input.match, SEO_KEYWORD_MATCHES, 'match', 'exact')!;
+                result = { view, period, limit, data: await gscService.getKeywordHistory(keyword, window, match, granularity) };
+            } else if (SEO_RANKED_VIEWS.includes(view)) {
+                const options = resolveSeoRankedOptions(input, limit);
+                // Every read gets the row cap explicitly. The admin panel reads
+                // keyword-page pairs uncapped, because it exists to account for
+                // every pair, and the service treats an omitted limit that way;
+                // a model's context window cannot absorb that.
+                let ranked: { total: number; returned: number; data: unknown };
+                if (view === 'keywords') {
+                    const { total, ...data } = await gscService.getKeywords(window, options);
+                    ranked = { total, returned: data.keywords.length, data };
+                } else if (view === 'pages') {
+                    const { total, ...data } = await gscService.getPages(window, options);
+                    ranked = { total, returned: data.pages.length, data };
+                } else {
+                    const { total, ...data } = await gscService.getKeywordPagePairs(window, options);
+                    ranked = { total, returned: data.pairs.length, data };
                 }
-                const match = input.match === undefined ? 'exact' : String(input.match);
-                if (!(SEO_KEYWORD_MATCHES as readonly string[]).includes(match)) {
-                    throw new Error(`Parameter "match" must be one of: ${SEO_KEYWORD_MATCHES.join(', ')}. Got: ${match}`);
-                }
-                data = await gscService.getKeywordHistory(keyword, window, match as (typeof SEO_KEYWORD_MATCHES)[number], granularity);
-            } else if (view === 'keywords') {
-                data = await gscService.getKeywords(window, limit);
-            } else if (view === 'pages') {
-                data = await gscService.getPages(window, limit);
-            } else if (view === 'keyword-pages') {
-                // The admin panel renders this view uncapped, because it exists
-                // to account for every pair. A model's context window cannot
-                // absorb that, so the row cap is passed explicitly here — the
-                // service treats an omitted limit as "all pairs".
-                data = await gscService.getKeywordPagePairs(window, limit);
+                const nextOffset = options.offset + ranked.returned;
+                const hasMore = nextOffset < ranked.total;
+                result = {
+                    view,
+                    period,
+                    limit,
+                    sort: options.sort,
+                    offset: options.offset,
+                    filters: describeSeoFilters(options),
+                    total: ranked.total,
+                    returned: ranked.returned,
+                    hasMore,
+                    nextOffset: hasMore ? nextOffset : null,
+                    data: ranked.data
+                };
             } else if (view === 'keywords-by-day') {
                 // `limit` is documented as a TOTAL keyword budget, but the
                 // service lists its second argument per bucket, and the bucket
@@ -1400,20 +1692,16 @@ function buildTools(
                 // the trend stays readable.
                 const trend = await gscService.getKeywordTrend(window, limit, granularity);
                 const perBucket = Math.max(1, Math.floor(limit / Math.max(1, trend.buckets.length)));
-                data = {
+                const data = {
                     ...trend,
                     buckets: trend.buckets.map(bucket => ({ ...bucket, keywords: bucket.keywords.slice(0, perBucket) }))
                 };
+                result = { view, period, limit, data };
             } else {
-                data = await gscService.getStatus();
+                result = { view, period, limit, data: await gscService.getStatus() };
             }
 
-            return {
-                view,
-                period,
-                limit,
-                data
-            };
+            return result;
         }
     };
 
