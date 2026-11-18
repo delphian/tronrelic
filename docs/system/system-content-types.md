@@ -38,7 +38,7 @@ The split is deliberate: generic operate-on-own-record operations (`describe`, `
 
 ## Admin View
 
-`/system/content-types` is a read-only table of every registered type with its provider and the one statically-resolvable binding — whether a curation type backs the id. Notification usage is dynamic (a content type is chosen per `notify()` call), so it is deliberately not attributed. A type that lists no binding is registered but unused — the surface makes that drift visible. Backed by `GET /api/admin/system/content-types`, mounted in bootstrap alongside the hooks introspection router.
+`/system/content-types` is a read-only table of every registered type, showing its label over its id, and the one statically-resolvable binding — whether a curation type backs the id. The provider is named beside the id only when it differs from the id's prefix, as with `core:page`, which the pages module registers. Notification usage is dynamic (a content type is chosen per `notify()` call), so it is deliberately not attributed. A type that lists no binding is registered but unused — the surface makes that drift visible. Backed by `GET /api/admin/system/content-types`, mounted in bootstrap alongside the hooks introspection router.
 
 ## Quick Reference
 

@@ -92,7 +92,7 @@ Adding a seam is a PR to `registry.ts`: declare the descriptor with its types, t
 
 ## Introspection
 
-`GET /api/admin/system/hooks` returns the registry snapshot — tracks organised by `HookPhase`, each containing the declared hooks in `order`, each hook listing its registered handlers in execution order. The `/system/hooks` admin page renders this directly: track tabs at the top, vertical timeline below, each hook node expandable to show its description and the ordered handler list with `pluginId`, priority, source location, and `<ClientTime>` registration timestamp. Empty hooks render greyed out because "no plugins registered here" is diagnostically useful.
+`GET /api/admin/system/hooks` returns the registry snapshot — tracks organised by `HookPhase`, each containing the declared hooks in `order`, each hook listing its registered handlers in execution order. The `/system/hooks` admin page renders this directly as one table covering every track: each track is a group headed by its label, and each hook in it is a one-line row showing its kind, id, and handler count. A track that declares no hooks is a single muted heading line. Opening a hook row shows its description and its handlers in execution order, each on one line: the `pluginId`, the source location shortened to its path inside the plugin or module, and the priority only when it is not the default of 100. The full source path and the registration time are in the handler's tooltip. Hooks with no handlers render muted because "no plugins registered here" is diagnostically useful.
 
 ## Quick Reference
 

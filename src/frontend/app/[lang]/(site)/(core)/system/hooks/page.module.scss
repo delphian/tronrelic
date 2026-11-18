@@ -1,192 +1,94 @@
 /**
  * Scoped styles for the hook-system bird's-eye admin page.
  *
- * Page structure is composed with the layout primitives (AdminPage,
- * Stack). This module only contributes the track strip, the vertical
- * timeline rail rendered behind the ordered list of hook nodes, and the
- * tabular handler rows inside an expanded node. All values flow through
- * design tokens so themes propagate correctly.
+ * Page structure comes from the AdminPage shell, the Panel, and the shared
+ * Table, which draws the rows, the row hover, and the open-row background.
+ * This module only styles what the table cannot know about: the track heading
+ * rows, the contents of a hook row, and the handler list inside an open hook.
+ * All values flow through design tokens so themes propagate correctly.
  */
 
-@use '../../../../../breakpoints' as *;
-
-.container {
-    container-type: inline-size;
-    container-name: hooks-page;
-}
-
-.intro {
-    color: var(--color-text-muted);
-    max-width: var(--max-width-prose);
-}
-
-.track_strip {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--gap-xs);
-    border-bottom: var(--border-width-thin) solid var(--color-border);
-    padding-bottom: var(--padding-xs);
-}
-
-.track_tab {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--gap-xs);
-    padding: var(--padding-xs) var(--padding-sm);
+/*
+ * A track heading row. It is a row-group heading, not a control, so it keeps
+ * no hover background. `tr.` and `th.` raise these rules above the Table's own
+ * single-class rules, which would otherwise win or lose on stylesheet order.
+ */
+tr.track_row:hover {
     background: transparent;
-    border: var(--border-width-thin) solid transparent;
-    border-radius: var(--radius-md);
+}
+
+/* Sentence case at body size, so a track reads as a heading over its hooks
+   rather than as a second copy of the uppercase column headers. The top rule
+   separates one track from the last hook of the track before it. */
+th.track_heading {
+    border-top: var(--border-width-thin) solid var(--color-border);
+    color: var(--color-text);
+    font-size: var(--font-size-body-sm);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: var(--letter-spacing-normal);
+    text-transform: none;
+}
+
+.track_empty {
     color: var(--color-text-muted);
-    font-size: var(--font-size-body);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+    font-weight: var(--font-weight-normal);
 }
 
-.track_tab:hover {
-    color: var(--color-text);
-    background: var(--color-surface-muted);
-}
-
-.track_tab:focus-visible {
-    outline: none;
-    border-color: var(--color-focus);
-    box-shadow: 0 0 0 var(--border-width-medium) var(--color-focus-alpha-25);
-}
-
-.track_tab--active {
-    color: var(--color-text);
-    background: var(--color-surface);
-    border-color: var(--color-border);
-}
-
-.track_tab_count {
+.kind_cell {
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    min-width: 1.5em;
-    padding: 0 var(--padding-2xs);
-    border-radius: var(--radius-full);
-    background: var(--color-surface-muted);
+    gap: var(--gap-2xs);
     color: var(--color-text-muted);
-    font-size: var(--font-size-caption);
-    font-weight: var(--font-weight-semibold);
 }
 
-.timeline {
-    position: relative;
-    list-style: none;
-    margin: 0;
-    padding: 0 0 0 var(--padding-md);
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-md);
-}
-
-.timeline::before {
-    content: '';
-    position: absolute;
-    left: var(--padding-2xs);
-    top: 0;
-    bottom: 0;
-    width: var(--border-width-thin);
-    background: var(--color-border);
-}
-
-.hook_node {
-    position: relative;
-}
-
-.hook_node::before {
-    content: '';
-    position: absolute;
-    left: calc(-1 * var(--padding-md) + var(--padding-2xs) - var(--border-width-medium));
-    top: var(--padding-md);
-    width: var(--gap-sm);
-    height: var(--gap-sm);
-    border-radius: var(--radius-full);
-    background: var(--color-primary);
-}
-
-.hook_node--empty::before {
-    background: var(--color-border);
-}
-
-.hook_header {
-    display: flex;
+.hook_cell {
+    display: inline-flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: var(--gap-sm);
-    width: 100%;
-    padding: var(--padding-sm) var(--padding-md);
-    background: var(--color-surface);
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
-    cursor: pointer;
-    text-align: left;
-    font: inherit;
-    color: inherit;
-    transition: border-color 120ms ease, background 120ms ease;
-}
-
-.hook_header:hover {
-    border-color: var(--color-primary);
-}
-
-.hook_header:focus-visible {
-    outline: none;
-    border-color: var(--color-focus);
-    box-shadow: 0 0 0 var(--border-width-medium) var(--color-focus-alpha-25);
-}
-
-.hook_header--empty {
-    background: var(--color-surface-muted);
-}
-
-.hook_id {
-    min-width: 0;
-    font-family: var(--font-mono);
-    font-size: var(--font-size-body);
-    font-weight: var(--font-weight-semibold);
-    overflow-wrap: anywhere;
-}
-
-.hook_meta {
-    display: inline-flex;
-    align-items: center;
     gap: var(--gap-xs);
-    margin-left: auto;
-    color: var(--color-text-muted);
-    font-size: var(--font-size-caption);
+}
+
+/* No colour of its own, so a hook with no handlers takes the muted colour
+   its cell is given. */
+.hook_id {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-body-sm);
+    font-weight: var(--font-weight-medium);
 }
 
 .hook_body {
-    padding: var(--padding-sm) var(--padding-md);
-    border: var(--border-width-thin) solid var(--color-border);
-    border-top: 0;
-    border-radius: 0 0 var(--radius-md) var(--radius-md);
-    background: var(--color-surface-muted);
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-xs);
+    padding: var(--padding-xs) var(--padding-sm);
 }
 
 .hook_description {
-    margin: 0 0 var(--gap-sm);
+    margin: 0;
     color: var(--color-text-muted);
     font-size: var(--font-size-body-sm);
 }
 
+/*
+ * The handlers of one hook, in execution order. Each row is a subgrid of the
+ * list, so the plugin ids form one column as wide as the longest id and the
+ * source locations line up beside it. The id column is `max-content`, a floor
+ * a long source path cannot squeeze: the path wraps inside its own column
+ * instead of being drawn over the plugin id.
+ */
 .handler_list {
-    list-style: none;
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    column-gap: var(--gap-sm-md);
     margin: 0;
     padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-2xs);
+    list-style: none;
 }
 
 .handler_row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: var(--gap-sm);
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
     align-items: baseline;
     padding: var(--padding-2xs) 0;
     border-bottom: var(--border-width-thin) dashed var(--color-border);
@@ -203,6 +105,7 @@
 }
 
 .handler_meta {
+    min-width: 0;
     color: var(--color-text-muted);
     font-size: var(--font-size-caption);
     font-family: var(--font-mono);
@@ -214,19 +117,4 @@
     font-size: var(--font-size-body-sm);
     font-style: italic;
     margin: 0;
-}
-
-/* Phone and small tablet: a handler's metadata carries a source path and a
-   timestamp, too long to sit beside the plugin id, so it drops beneath it. */
-@container hooks-page (max-width: #{$breakpoint-mobile-lg}) {
-    .handler_row {
-        grid-template-columns: minmax(0, 1fr);
-    }
-}
-
-@container hooks-page (max-width: #{$breakpoint-mobile-md}) {
-    .hook_meta {
-        margin-left: 0;
-        width: 100%;
-    }
 }

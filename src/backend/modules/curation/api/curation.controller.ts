@@ -9,8 +9,82 @@
  */
 
 import type { Request, Response } from 'express';
-import type { ICurationItem, ICurationSinkSelection } from '@/types';
+import type { CurationDecision, ICurationHistoryListOptions, ICurationItem, ICurationSinkSelection } from '@/types';
+import { CURATION_DECISIONS } from '@/types';
 import type { CurationService } from '../services/curation-service.js';
+
+/** History items per page when the request names no `limit`; the History tab's page size. */
+const HISTORY_DEFAULT_LIMIT = 25;
+
+/** Most history items one request may ask for. */
+const HISTORY_MAX_LIMIT = 100;
+
+/** Longest `typeId` the history filter accepts; registered type ids are far shorter. */
+const HISTORY_TYPE_ID_MAX_LENGTH = 200;
+
+/** A whole number written in plain digits, the only form `limit` and `skip` accept. */
+const WHOLE_NUMBER = /^\d+$/;
+
+/** The validated history request, or the reason it was refused. */
+type HistoryQueryResult = { options: ICurationHistoryListOptions } | { error: string };
+
+/**
+ * Read one paging number from the query string. Absent means the default; any
+ * other form than plain digits in range is refused rather than guessed at, so
+ * a caller learns its request was wrong instead of silently getting another page.
+ *
+ * @param raw - The query value, which Express gives as an array when repeated.
+ * @param fallback - The value an absent parameter takes.
+ * @param min - The smallest value allowed.
+ * @param max - The largest value allowed.
+ * @returns The number, or null when the value is malformed or out of range.
+ */
+function parseWholeNumber(raw: unknown, fallback: number, min: number, max: number): number | null {
+    let value: number | null = null;
+    if (raw === undefined) {
+        value = fallback;
+    } else if (typeof raw === 'string' && WHOLE_NUMBER.test(raw)) {
+        const parsed = Number(raw);
+        value = parsed >= min && parsed <= max ? parsed : null;
+    }
+    return value;
+}
+
+/**
+ * Validate the history query string: `limit` (1–100, default 25), `skip`
+ * (zero or more, default 0), `decision` (one of {@link CURATION_DECISIONS}),
+ * and `typeId` (an exact content type id, at most 200 characters). A blank
+ * `decision` or `typeId` means no filter, which is what an "All" option sends.
+ *
+ * @param query - The request's parsed query string.
+ * @returns The list options, or the message a 400 answer carries.
+ */
+function parseHistoryQuery(query: Request['query']): HistoryQueryResult {
+    const limit = parseWholeNumber(query.limit, HISTORY_DEFAULT_LIMIT, 1, HISTORY_MAX_LIMIT);
+    const skip = parseWholeNumber(query.skip, 0, 0, Number.MAX_SAFE_INTEGER);
+    const decision = query.decision ?? '';
+    const typeId = query.typeId ?? '';
+    let result: HistoryQueryResult;
+    if (limit === null) {
+        result = { error: `limit must be a whole number from 1 to ${HISTORY_MAX_LIMIT}.` };
+    } else if (skip === null) {
+        result = { error: 'skip must be a whole number of zero or more.' };
+    } else if (typeof decision !== 'string' || (decision !== '' && !CURATION_DECISIONS.includes(decision as CurationDecision))) {
+        result = { error: `decision must be one of ${CURATION_DECISIONS.join(', ')}.` };
+    } else if (typeof typeId !== 'string' || typeId.length > HISTORY_TYPE_ID_MAX_LENGTH) {
+        result = { error: `typeId must be a single content type id of at most ${HISTORY_TYPE_ID_MAX_LENGTH} characters.` };
+    } else {
+        result = {
+            options: {
+                limit,
+                skip,
+                ...(decision ? { decision: decision as CurationDecision } : {}),
+                ...(typeId ? { typeId } : {})
+            }
+        };
+    }
+    return result;
+}
 
 /**
  * Serialize a curation envelope for the admin dashboard: dates to ISO strings,
@@ -109,10 +183,30 @@ export class CurationController {
         res.json({ count: await this.curation.countPending() });
     };
 
-    /** GET /curations/history — closed items (approved/rejected/dismissed), most recent first. */
-    listCurationHistory = async (_req: Request, res: Response): Promise<void> => {
-        const items = await this.curation.listHistory();
-        res.json({ curations: items.map((item) => serializeCurationItem(item)) });
+    /**
+     * GET /curations/history — one page of closed items (approved, rejected, or
+     * dismissed), most recent decision first. Query: `limit` (1–100, default
+     * 25), `skip` (default 0), `decision`, and `typeId`; see
+     * {@link parseHistoryQuery}. Answers `{ curations, total, types }`, where
+     * `total` counts the items the filters match across every page and `types`
+     * lists every decided content type for the type filter, or 400 with
+     * `{ error }` for a malformed or out-of-range parameter.
+     *
+     * @param req - Carries the paging and filter parameters.
+     * @param res - Receives the page or the 400.
+     */
+    listCurationHistory = async (req: Request, res: Response): Promise<void> => {
+        const parsed = parseHistoryQuery(req.query);
+        if ('error' in parsed) {
+            res.status(400).json({ error: parsed.error });
+        } else {
+            const page = await this.curation.listHistory(parsed.options);
+            res.json({
+                curations: page.items.map((item) => serializeCurationItem(item)),
+                total: page.total,
+                types: page.types
+            });
+        }
     };
 
     /**

@@ -12,6 +12,8 @@ export type { IPageContent } from './IPageContent.js';
 export type { IPublicPage } from './IPublicPage.js';
 export type { IPageSettings } from './IPageSettings.js';
 export type { IPageService } from './IPageService.js';
+export type { IPageListOptions } from './IPageListOptions.js';
+export type { IPageListPage } from './IPageListPage.js';
 export type { IPageEditProposal } from './IPageEditProposal.js';
 export type { IPageEditProposalResult } from './IPageEditProposalResult.js';
 export type { IPageProposal } from './IPageProposal.js';

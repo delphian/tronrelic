@@ -115,7 +115,9 @@ export function NotificationsAdminClient({ submenuTree, submenuGeneratedAt, init
             {activeTab === 'categories' && <CategoriesTab />}
             {activeTab === 'channels' && <ChannelsTab />}
             {activeTab === 'history' && <HistoryTab />}
-            {activeTab === 'preferences' && <PreferencesPanel />}
+            {/* Titled, so the matrix draws its own panel with "Mute all" in
+              * the header; /profile wraps it in a panel of its own instead. */}
+            {activeTab === 'preferences' && <PreferencesPanel title="My notifications" />}
 
             {/* Read-only. The audit rows are the record of what was sent and
               * to whom, so editing or deleting one would falsify the history

@@ -14,16 +14,18 @@
  * public-facing. Modal lifecycle goes through the shared `useModal`
  * provider rather than a hand-rolled portal.
  *
- * The list is the shared Table with `stackAt="mobile"`: its five columns fit a
- * tablet, and on a phone each group becomes a labelled entry headed by its id,
- * so no column has to be hidden to make the rest fit.
+ * The list is one panel whose header carries the count and the New group
+ * button, with the shared Table running to the panel's edges. Its five columns
+ * fit a tablet (`stackAt="mobile"`), and on a phone each group becomes a
+ * labelled entry headed by its id, with its icon actions closing the entry.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Plus, Pencil, Trash2, Lock, Users as UsersIcon } from 'lucide-react';
 import { Button } from '../../../../../components/ui/Button';
 import { Badge } from '../../../../../components/ui/Badge';
-import { Card } from '../../../../../components/ui/Card';
+import { IconButton } from '../../../../../components/ui/IconButton';
+import { Panel } from '../../../../../components/ui/Panel';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
 import { useModal } from '../../../../../components/ui/ModalProvider';
@@ -235,113 +237,98 @@ export function GroupsManager() {
         }
     }, [baseUrl, pushToast, fetchGroups]);
 
-    return (
-        <div className={styles.container}>
-            <header className={styles.header}>
-                <div>
-                    {/* h2: the /system/users shell owns the page's single h1. */}
-                    <h2 className={styles.title}>User Groups</h2>
-                    <p className={styles.subtitle}>
-                        Admin-defined tags that plugins consume for permission
-                        controls. System groups are reserved by the platform.
-                    </p>
-                </div>
-                <Button variant="primary" onClick={openCreateModal} aria-label="Create new group">
-                    <Plus size={16} aria-hidden="true" /> New Group
-                </Button>
-            </header>
-
-            {fetchError && (
-                <Card padding="md" className={styles.error_card}>
-                    <p>{fetchError}</p>
-                    <Button variant="secondary" onClick={() => void fetchGroups()}>
-                        Retry
-                    </Button>
-                </Card>
-            )}
-
-            {!fetchError && loading && groups.length === 0 && (
-                <Card padding="md"><p>Loading groups…</p></Card>
-            )}
-
-            {!fetchError && !loading && groups.length === 0 && (
-                <Card padding="md">
-                    <p>No groups yet. Create one to get started.</p>
-                </Card>
-            )}
-
-            {groups.length > 0 && (
-                <Table stackAt="mobile">
-                    <Thead>
-                        <Tr>
-                            <Th scope="col">ID</Th>
-                            <Th scope="col">Name</Th>
-                            <Th scope="col">Description</Th>
-                            <Th scope="col">Updated</Th>
-                            <Th scope="col" width="shrink">Actions</Th>
+    let body: ReactNode;
+    if (fetchError) {
+        body = <div className="alert" role="alert">{fetchError}</div>;
+    } else if (groups.length === 0) {
+        body = <p className="text-muted">{loading ? 'Loading groups…' : 'No groups yet. Create one to get started.'}</p>;
+    } else {
+        body = (
+            <Table flush stackAt="mobile">
+                <Thead>
+                    <Tr>
+                        <Th scope="col" width="shrink">ID</Th>
+                        <Th scope="col">Name</Th>
+                        <Th scope="col">Description</Th>
+                        <Th scope="col" width="shrink">Updated</Th>
+                        <Th scope="col" width="shrink" aria-label="Actions" />
+                    </Tr>
+                </Thead>
+                <Tbody>
+                    {groups.map(group => (
+                        <Tr key={group.id}>
+                            {/* No label: the id is the heading of a stacked entry. */}
+                            <Td>
+                                <span className={styles.slug_cell}>
+                                    <code className={styles.slug}>{group.id}</code>
+                                    {group.system && (
+                                        <Badge tone="info" size="sm" title="System group — read-only">
+                                            <Lock size={12} aria-hidden="true" /> system
+                                        </Badge>
+                                    )}
+                                </span>
+                            </Td>
+                            <Td label="Name">{group.name}</Td>
+                            <Td label="Description" stackSpan="full" muted>
+                                {group.description || '—'}
+                            </Td>
+                            <Td label="Updated">
+                                <ClientTime date={group.updatedAt} format="date" />
+                            </Td>
+                            {/* No label: stacked, the icons close the entry. A
+                                system group can be viewed but not changed, so it
+                                offers the members list alone. */}
+                            <Td>
+                                <span className={styles.actions}>
+                                    <IconButton
+                                        title="View members"
+                                        aria-label={`View members of ${group.name}`}
+                                        onClick={() => openMembersModal(group)}
+                                    >
+                                        <UsersIcon size={16} aria-hidden="true" />
+                                    </IconButton>
+                                    {!group.system && (
+                                        <>
+                                            <IconButton
+                                                variant="primary"
+                                                title="Edit"
+                                                aria-label={`Edit ${group.name}`}
+                                                onClick={() => openEditModal(group)}
+                                            >
+                                                <Pencil size={16} aria-hidden="true" />
+                                            </IconButton>
+                                            <IconButton
+                                                variant="danger"
+                                                title="Delete"
+                                                aria-label={`Delete ${group.name}`}
+                                                onClick={() => void deleteGroup(group)}
+                                            >
+                                                <Trash2 size={16} aria-hidden="true" />
+                                            </IconButton>
+                                        </>
+                                    )}
+                                </span>
+                            </Td>
                         </Tr>
-                    </Thead>
-                    <Tbody>
-                        {groups.map(group => (
-                            <Tr key={group.id}>
-                                {/* No label: the id is the heading of a stacked entry. */}
-                                <Td>
-                                    <span className={styles.slug_cell}>
-                                        <code className={styles.slug}>{group.id}</code>
-                                        {group.system && (
-                                            <Badge tone="info" size="sm" title="System group — read-only">
-                                                <Lock size={12} aria-hidden="true" /> system
-                                            </Badge>
-                                        )}
-                                    </span>
-                                </Td>
-                                <Td label="Name">{group.name}</Td>
-                                <Td label="Description" stackSpan="full" className={styles.description}>
-                                    {group.description || <span className="text-muted">—</span>}
-                                </Td>
-                                <Td label="Updated">
-                                    <ClientTime date={group.updatedAt} format="date" />
-                                </Td>
-                                <Td label="Actions">
-                                    <span className={styles.actions}>
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => openMembersModal(group)}
-                                            aria-label={`View members of ${group.name}`}
-                                            title="View members"
-                                        >
-                                            <UsersIcon size={14} aria-hidden="true" />
-                                        </Button>
-                                        {group.system ? (
-                                            <span className="text-muted">Read-only</span>
-                                        ) : (
-                                            <>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    onClick={() => openEditModal(group)}
-                                                    aria-label={`Edit ${group.name}`}
-                                                >
-                                                    <Pencil size={14} aria-hidden="true" />
-                                                </Button>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    onClick={() => void deleteGroup(group)}
-                                                    aria-label={`Delete ${group.name}`}
-                                                >
-                                                    <Trash2 size={14} aria-hidden="true" />
-                                                </Button>
-                                            </>
-                                        )}
-                                    </span>
-                                </Td>
-                            </Tr>
-                        ))}
-                    </Tbody>
-                </Table>
+                    ))}
+                </Tbody>
+            </Table>
+        );
+    }
+
+    return (
+        <Panel
+            title="Groups"
+            meta={groups.length > 0
+                ? `${groups.length} ${groups.length === 1 ? 'group' : 'groups'} · tags plugins check for permissions; system groups are reserved`
+                : 'Tags plugins check for permissions; system groups are reserved'}
+            actions={fetchError ? (
+                <Button variant="secondary" onClick={() => void fetchGroups()}>Retry</Button>
+            ) : (
+                <Button variant="secondary" onClick={openCreateModal} icon={<Plus size={16} />}>New group</Button>
             )}
-        </div>
+        >
+            {body}
+        </Panel>
     );
 }

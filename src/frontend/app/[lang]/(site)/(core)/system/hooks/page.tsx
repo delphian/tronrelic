@@ -3,58 +3,67 @@
 /**
  * @fileoverview Bird's-eye admin view of the hook system.
  *
- * Loads the introspection snapshot from `/api/admin/system/hooks` and
- * renders a horizontal track strip (one tab per pipeline phase) above a
- * vertical timeline of the hooks declared in the selected track. Each
- * hook node shows its archetype, id, description, and the count of
- * registered handlers; clicking the node expands a panel listing
- * handlers in execution order with plugin id, priority, and source.
+ * Loads the introspection snapshot from `/api/admin/system/hooks` and renders
+ * every pipeline phase (track) at once, in one table: each track is a group
+ * headed by its name, and each hook in it is a one-line row showing its kind,
+ * its id, and how many handlers are registered on it. A track that declares no
+ * hooks is a single muted heading line. Clicking a hook row, or pressing Enter
+ * on it, opens a detail row with the hook's description and its handlers in
+ * execution order: plugin id, the source location relative to its package,
+ * and the priority when it is not the registry's default. The full source path
+ * and the registration time sit in the handler's tooltip, so each handler
+ * stays on one line.
  *
- * The page is a client component because it polls + interacts; it
- * follows the convention of the other `/system/*` admin surfaces which
- * run behind `useSystemAuth` rather than SSR.
+ * The page is a client component because it fetches after mount and toggles
+ * rows; it follows the convention of the other `/system/*` admin surfaces,
+ * which run behind `useSystemAuth` rather than SSR.
  *
  * @module app/[lang]/(site)/(core)/system/hooks/page
  */
 
-import { useEffect, useMemo, useState } from 'react';
-import { AdminPage, Stack } from '../../../../../../components/layout';
-import { Badge } from '../../../../../../components/ui/Badge';
-import { ClientTime } from '../../../../../../components/ui/ClientTime';
+import { Fragment, useEffect, useState } from 'react';
+import type { HookKind, IHookHandlerRecord, IHookSnapshot } from '@/types';
 import { ChevronDown, ChevronRight } from 'lucide-react';
+import { AdminPage } from '../../../../../../components/layout';
+import { Badge } from '../../../../../../components/ui/Badge';
+import { Panel } from '../../../../../../components/ui/Panel';
+import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../../components/ui/Table';
 import styles from './page.module.scss';
 
 /**
- * Shape of one handler returned by the snapshot endpoint.
+ * The priority a handler gets when it registers without one. Only a handler
+ * that moved off it is worth showing a priority for. Mirrors
+ * `DEFAULT_PRIORITY` in `src/backend/hooks/hook-registry.ts`, which
+ * `IHookRegisterOptions.priority` documents as the default.
  */
-interface IHandlerRecord {
-    pluginId: string;
-    priority: number;
-    registeredAt: string;
-    source: string | null;
-}
+const DEFAULT_HANDLER_PRIORITY = 100;
 
 /**
- * Shape of one hook entry within a track.
+ * What each hook kind does with its handlers, shown when an operator hovers a
+ * kind badge. Whether a handler can stop the pipeline follows from the kind,
+ * so it is said here rather than with a second badge on every row.
  */
-interface IHookRecord {
-    id: string;
-    kind: 'observer' | 'series' | 'waterfall' | 'bail';
-    order: number;
-    description: string;
-    predicates: ReadonlyArray<{ id: string; label: string; description: string }>;
-    shortCircuit: boolean;
-    handlers: ReadonlyArray<IHandlerRecord>;
-}
+const KIND_HELP: Record<HookKind, string> = {
+    observer: 'Observer: every handler runs at the same time, and none can change the outcome or stop the pipeline.',
+    series: 'Series: handlers run one after another for their side effects. A handler can stop the pipeline by throwing HookAbortError.',
+    waterfall: 'Waterfall: handlers run in turn, each receiving the value the previous one returned. '
+        + 'A handler can stop the pipeline by throwing HookAbortError.',
+    bail: 'Bail: handlers run in turn until one returns an answer, and that answer wins. '
+        + 'A handler can stop the pipeline by throwing HookAbortError.'
+};
 
 /**
- * Shape of one track (pipeline phase) returned by the snapshot endpoint.
+ * What each column means, shown when an operator hovers its header. The page
+ * keeps its intro to one subtitle line, so the explanation lives here.
  */
-interface ITrackRecord {
-    id: string;
-    label: string;
-    hooks: ReadonlyArray<IHookRecord>;
-}
+const COLUMN_HELP = {
+    kind: 'How the hook runs its handlers. Observer handlers cannot change the outcome; series, waterfall, and bail '
+        + 'handlers run in priority order and can stop the pipeline. Hover a badge for its kind.',
+    hook: 'A point in core’s pipeline that plugins can join. Open a row to read what the hook is for and the '
+        + 'handlers that run on it, in execution order.',
+    handlers: 'How many handlers are registered on the hook. A muted hook has none: it is declared, and no plugin '
+        + 'or module uses it yet.'
+};
 
 /**
  * Map a hook kind to a Badge tone. Bail and series can short-circuit so
@@ -64,31 +73,103 @@ interface ITrackRecord {
  * @param kind - Hook archetype.
  * @returns Tone identifier accepted by the Badge primitive.
  */
-function toneForKind(kind: IHookRecord['kind']): 'neutral' | 'info' | 'success' | 'warning' | 'danger' {
+function toneForKind(kind: HookKind): 'neutral' | 'info' | 'warning' {
+    let tone: 'neutral' | 'info' | 'warning' = 'neutral';
     if (kind === 'bail' || kind === 'series') {
-        return 'warning';
+        tone = 'warning';
+    } else if (kind === 'waterfall') {
+        tone = 'info';
     }
-    if (kind === 'waterfall') {
-        return 'info';
-    }
+    return tone;
+}
 
-    return 'neutral';
+/**
+ * Shorten a handler's source location to the part a reader needs. The
+ * registry records the full compiled path, such as
+ * `file:///app/dist/plugins/trp-blog/src/backend/backend.js:262:37`, whose
+ * prefix only repeats the plugin id beside it and whose column number nobody
+ * reads; a path that long also forced its handler onto several lines.
+ *
+ * The path is cut back to its package: a plugin's file below its
+ * `src/backend/` folder, a core module's file below its module folder, or
+ * anything else below `dist/`, and the column is dropped. A path that matches
+ * none of these keeps only its file name and line.
+ *
+ * @param source - The `file:line:col` string the registry captured.
+ * @returns The short form, such as `backend.js:262`.
+ */
+function shortenSource(source: string): string {
+    const path = source.replace(/^file:\/\//, '').replace(/:(\d+):\d+$/, ':$1');
+    const inPackage = path.match(/\/plugins\/[^/]+\/src\/backend\/(.+)$/)
+        ?? path.match(/\/backend\/modules\/[^/]+\/(.+)$/)
+        ?? path.match(/\/dist\/(.+)$/);
+    return inPackage ? inPackage[1] : path.slice(path.lastIndexOf('/') + 1);
+}
+
+/**
+ * Build the tooltip for a handler: its full source path and when it
+ * registered, the two facts left off the handler's line to keep it short.
+ *
+ * The time is formatted here rather than through `<ClientTime>`, because a
+ * tooltip is an attribute and cannot hold a component. That is safe from
+ * hydration mismatches: the snapshot is fetched after mount, so no handler is
+ * ever rendered on the server.
+ *
+ * @param handler - The handler record from the snapshot.
+ * @returns Two lines: the source path, then the registration time.
+ */
+function describeRegistration(handler: IHookHandlerRecord): string {
+    const registered = new Date(handler.registeredAt);
+    const when = Number.isNaN(registered.getTime())
+        ? 'at an unknown time'
+        : registered.toLocaleString(undefined, { hourCycle: 'h23' });
+    return `${handler.source ?? 'Source location not captured'}\nRegistered ${when}`;
+}
+
+/**
+ * Render an identifier with a line-break opportunity after each separator, so
+ * a narrow column wraps `content.beforeRestore` after its dot, or a source
+ * path after a slash, rather than in the middle of a word.
+ *
+ * @param props.text - The identifier or path to render.
+ * @param props.separator - The character a line may break after: `.` for a hook id, `/` for a path.
+ * @returns The text with `<wbr>` after each separator.
+ */
+function BreakAfter({ text, separator }: { text: string; separator: string }) {
+    return (
+        <>
+            {text.split(separator).map((part, index) => (
+                <Fragment key={index}>
+                    {index > 0 && <>{separator}<wbr /></>}
+                    {part}
+                </Fragment>
+            ))}
+        </>
+    );
 }
 
 /**
  * Admin page rendering the hook-system bird's-eye view.
+ *
+ * @returns The page: the header, then one panel holding every track's hooks.
  */
 export default function HooksAdminPage() {
-    const [tracks, setTracks] = useState<ReadonlyArray<ITrackRecord>>([]);
-    const [activeTrack, setActiveTrack] = useState<string | null>(null);
+    const [tracks, setTracks] = useState<IHookSnapshot['tracks']>([]);
     const [expanded, setExpanded] = useState<Set<string>>(new Set());
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState<boolean>(true);
 
+    /**
+     * Load the snapshot once after mount, and abandon the request if the page
+     * unmounts first so a late answer cannot set state on a dead page.
+     */
     useEffect(() => {
         let aborted = false;
         const ctrl = new AbortController();
 
+        /**
+         * Fetch the snapshot and store either its tracks or the reason it failed.
+         */
         async function load(): Promise<void> {
             setLoading(true);
             setError(null);
@@ -99,13 +180,14 @@ export default function HooksAdminPage() {
                 if (!res.ok) {
                     throw new Error(`Snapshot request failed with status ${res.status}`);
                 }
-                const data = await res.json() as { tracks: ReadonlyArray<ITrackRecord> };
-                if (aborted) return;
-                setTracks(data.tracks);
-                setActiveTrack(prev => prev ?? (data.tracks[0]?.id ?? null));
+                const data = await res.json() as IHookSnapshot;
+                if (!aborted) {
+                    setTracks(data.tracks);
+                }
             } catch (err) {
-                if (aborted) return;
-                setError(err instanceof Error ? err.message : String(err));
+                if (!aborted) {
+                    setError(err instanceof Error ? err.message : String(err));
+                }
             } finally {
                 if (!aborted) {
                     setLoading(false);
@@ -120,10 +202,12 @@ export default function HooksAdminPage() {
         };
     }, []);
 
-    const selectedTrack = useMemo(() => {
-        return tracks.find(t => t.id === activeTrack) ?? null;
-    }, [tracks, activeTrack]);
-
+    /**
+     * Open a hook's detail row, or close it if it is open. Each hook toggles on
+     * its own, so an operator can compare two hooks' handlers side by side.
+     *
+     * @param id - The hook id whose row was clicked.
+     */
     function toggleExpanded(id: string): void {
         setExpanded(prev => {
             const next = new Set(prev);
@@ -136,123 +220,125 @@ export default function HooksAdminPage() {
         });
     }
 
+    const hookCount = tracks.reduce((sum, track) => sum + track.hooks.length, 0);
+    const handlerCount = tracks.reduce(
+        (sum, track) => sum + track.hooks.reduce((hookSum, hook) => hookSum + hook.handlers.length, 0),
+        0
+    );
+
     return (
         <AdminPage
             title="Hook System"
-            subtitle="Bird's-eye view of the request and response pipeline."
+            subtitle="Every hook core declares, grouped by pipeline phase; open a hook to see its description and handlers."
         >
-            <div className={styles.container}>
-                <Stack gap="lg">
-                    <p className={styles.intro}>
-                        Each track is a phase of the lifecycle; nodes are the seams core opens for
-                        plugins to participate in. Empty nodes indicate declared seams with no
-                        current contributors.
-                    </p>
+            {error && <div className="alert" role="alert">{error}</div>}
+            {loading && tracks.length === 0 && (
+                <p className="text-muted">Loading hook snapshot&hellip;</p>
+            )}
 
-                    {error && <div className="alert" role="alert">{error}</div>}
-                    {loading && tracks.length === 0 && (
-                        <p className="text-muted">Loading hook snapshot&hellip;</p>
-                    )}
-
-                    {tracks.length > 0 && (
-                        <div className={styles.track_strip} role="tablist" aria-label="Pipeline phases">
-                            {tracks.map(track => {
-                                const isActive = track.id === activeTrack;
-                                return (
-                                    <button
-                                        key={track.id}
-                                        type="button"
-                                        role="tab"
-                                        aria-selected={isActive}
-                                        className={`${styles.track_tab} ${isActive ? styles['track_tab--active'] : ''}`}
-                                        onClick={() => setActiveTrack(track.id)}
-                                    >
-                                        <span>{track.label}</span>
-                                        <span className={styles.track_tab_count}>{track.hooks.length}</span>
-                                    </button>
-                                );
-                            })}
-                        </div>
-                    )}
-
-                    {selectedTrack && (
-                        <ol
-                            className={styles.timeline}
-                            aria-label={`Hooks in ${selectedTrack.label}`}
-                        >
-                            {selectedTrack.hooks.length === 0 && (
-                                <li>
-                                    <p className="text-muted">No hooks declared in this track yet.</p>
-                                </li>
-                            )}
-                            {selectedTrack.hooks.map(hook => {
-                                const isOpen = expanded.has(hook.id);
-                                const isEmpty = hook.handlers.length === 0;
-                                const handlerNoun = hook.handlers.length === 1 ? 'handler' : 'handlers';
-                                return (
-                                    <li
-                                        key={hook.id}
-                                        className={`${styles.hook_node} ${isEmpty ? styles['hook_node--empty'] : ''}`}
-                                    >
-                                        <button
-                                            type="button"
-                                            className={`${styles.hook_header} ${isEmpty ? styles['hook_header--empty'] : ''}`}
-                                            aria-expanded={isOpen}
-                                            aria-label={`${isOpen ? 'Collapse' : 'Expand'} ${hook.id}`}
-                                            onClick={() => toggleExpanded(hook.id)}
-                                        >
-                                            {isOpen
-                                                ? <ChevronDown size={16} aria-hidden />
-                                                : <ChevronRight size={16} aria-hidden />}
-                                            <Badge tone={toneForKind(hook.kind)}>{hook.kind}</Badge>
-                                            <span className={styles.hook_id}>{hook.id}</span>
-                                            {hook.shortCircuit && <Badge tone="warning">short-circuit</Badge>}
-                                            {hook.predicates.map(p => (
-                                                <Badge key={p.id} tone="info" title={p.description}>{p.label}</Badge>
-                                            ))}
-                                            <span className={styles.hook_meta}>
-                                                order {hook.order} &middot; {hook.handlers.length} {handlerNoun}
-                                            </span>
-                                        </button>
-                                        {isOpen && (
-                                            <div className={styles.hook_body}>
-                                                {hook.description && (
-                                                    <p className={styles.hook_description}>{hook.description}</p>
-                                                )}
-                                                {isEmpty ? (
-                                                    <p className={styles.empty_body}>
-                                                        No plugins registered against this hook.
-                                                    </p>
-                                                ) : (
-                                                    <ol className={styles.handler_list}>
-                                                        {hook.handlers.map((handler, idx) => (
-                                                            <li
-                                                                key={`${handler.pluginId}-${idx}`}
-                                                                className={styles.handler_row}
-                                                            >
-                                                                <span className={styles.handler_plugin}>
-                                                                    {handler.pluginId}
-                                                                </span>
-                                                                <span className={styles.handler_meta}>
-                                                                    priority {handler.priority}
-                                                                    {' '}&middot;{' '}
-                                                                    {handler.source ?? 'source n/a'}
-                                                                    {' '}&middot;{' '}
-                                                                    <ClientTime date={handler.registeredAt} format="datetime" />
-                                                                </span>
-                                                            </li>
-                                                        ))}
-                                                    </ol>
-                                                )}
-                                            </div>
+            {tracks.length > 0 && (
+                <Panel
+                    title="Hooks by phase"
+                    meta={`${hookCount} hooks in ${tracks.length} phases · ${handlerCount} handlers`}
+                >
+                    {/* One table for every track, so the kind and count columns
+                        line up down the whole page. Each track is its own row
+                        group, headed by the track's name. */}
+                    <Table variant="compact" flush>
+                        <Thead>
+                            <Tr>
+                                <Th width="shrink" title={COLUMN_HELP.kind}>Kind</Th>
+                                <Th title={COLUMN_HELP.hook}>Hook</Th>
+                                <Th width="shrink" numeric title={COLUMN_HELP.handlers}>Handlers</Th>
+                            </Tr>
+                        </Thead>
+                        {tracks.map(track => (
+                            <Tbody key={track.id}>
+                                <Tr className={styles.track_row}>
+                                    <Th colSpan={3} scope="rowgroup" className={styles.track_heading}>
+                                        {track.label}
+                                        {track.hooks.length === 0 && (
+                                            <span className={styles.track_empty}> &middot; no hooks declared</span>
                                         )}
-                                    </li>
-                                );
-                            })}
-                        </ol>
-                    )}
-                </Stack>
-            </div>
+                                    </Th>
+                                </Tr>
+                                {track.hooks.map(hook => {
+                                    const isOpen = expanded.has(hook.id);
+                                    const isEmpty = hook.handlers.length === 0;
+                                    return (
+                                        <Fragment key={hook.id}>
+                                            <Tr onClick={() => toggleExpanded(hook.id)} isExpanded={isOpen}>
+                                                <Td>
+                                                    <span className={styles.kind_cell}>
+                                                        {isOpen
+                                                            ? <ChevronDown size={14} aria-hidden />
+                                                            : <ChevronRight size={14} aria-hidden />}
+                                                        <Badge tone={toneForKind(hook.kind)} size="xs" title={KIND_HELP[hook.kind]}>
+                                                            {hook.kind}
+                                                        </Badge>
+                                                    </span>
+                                                </Td>
+                                                <Td muted={isEmpty}>
+                                                    <span className={styles.hook_cell}>
+                                                        <code className={styles.hook_id}><BreakAfter text={hook.id} separator="." /></code>
+                                                        {hook.predicates.map(p => (
+                                                            <Badge key={p.id} tone="info" size="xs" title={p.description}>{p.label}</Badge>
+                                                        ))}
+                                                    </span>
+                                                </Td>
+                                                <Td numeric muted={isEmpty}>{hook.handlers.length}</Td>
+                                            </Tr>
+                                            {isOpen && (
+                                                <Tr isExpanded>
+                                                    <Td colSpan={3}>
+                                                        <div className={styles.hook_body}>
+                                                            {hook.description && (
+                                                                <p className={styles.hook_description}>{hook.description}</p>
+                                                            )}
+                                                            {isEmpty ? (
+                                                                <p className={styles.empty_body}>
+                                                                    No plugins registered against this hook.
+                                                                </p>
+                                                            ) : (
+                                                                <ol
+                                                                    className={styles.handler_list}
+                                                                    aria-label={`Handlers on ${hook.id}, in execution order`}
+                                                                >
+                                                                    {hook.handlers.map((handler, idx) => (
+                                                                        <li
+                                                                            key={`${handler.pluginId}-${idx}`}
+                                                                            className={styles.handler_row}
+                                                                        >
+                                                                            <span className={styles.handler_plugin}>
+                                                                                {handler.pluginId}
+                                                                            </span>
+                                                                            <span
+                                                                                className={styles.handler_meta}
+                                                                                title={describeRegistration(handler)}
+                                                                            >
+                                                                                {handler.source
+                                                                                    ? <BreakAfter text={shortenSource(handler.source)} separator="/" />
+                                                                                    : 'source unknown'}
+                                                                                {handler.priority !== DEFAULT_HANDLER_PRIORITY && (
+                                                                                    <> &middot; priority {handler.priority}</>
+                                                                                )}
+                                                                            </span>
+                                                                        </li>
+                                                                    ))}
+                                                                </ol>
+                                                            )}
+                                                        </div>
+                                                    </Td>
+                                                </Tr>
+                                            )}
+                                        </Fragment>
+                                    );
+                                })}
+                            </Tbody>
+                        ))}
+                    </Table>
+                </Panel>
+            )}
         </AdminPage>
     );
 }

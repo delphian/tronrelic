@@ -12,9 +12,11 @@ import type {
     ContentDescriptorFeature,
     IContentClassification,
     IContentSink,
+    ICurationItem,
     ICurationType,
     IHookRegistry,
     IMenuService,
+    ISyndicationService,
     ISystemLogService
 } from '@/types';
 import { CurationModule } from '../CurationModule.js';
@@ -226,7 +228,7 @@ describe('CurationService', () => {
 
             expect(decided?.changes).toEqual(changeSet);
             expect(order).toEqual(['compare', 'commit']);
-            const [record] = await service.listHistory();
+            const { items: [record] } = await service.listHistory({ limit: 25, skip: 0 });
             expect(record.changes).toEqual(changeSet);
         });
 
@@ -384,7 +386,7 @@ describe('CurationService', () => {
         expect(await service.countPending()).toBe(0);
 
         // The dismissal stays on the audit trail alongside approvals and rejections.
-        const history = await service.listHistory();
+        const { items: history } = await service.listHistory({ limit: 25, skip: 0 });
         expect(history.map((item) => item.id)).toEqual([held.id]);
         expect(history[0].dismissReason).toBe("Owning provider 'x-poster' is not registered");
     });
@@ -489,6 +491,132 @@ describe('CurationService', () => {
     // Removed: "edit returns null for a type that is not editable". Under the
     // collapsed contract applyEdit is required on every curation type, so a
     // non-editable type (missing applyEdit) is no longer representable.
+});
+
+/**
+ * The history keeps every decision forever, so it is read one page at a time
+ * and filtered by decision and type. These tests store decided envelopes
+ * directly, with fixed decision times, so the order the pages come back in is
+ * known rather than depending on how fast decisions ran.
+ */
+describe('CurationService history paging', () => {
+    /** Reference instant the sample decisions are spaced back from. */
+    const NOW = Date.parse('2026-11-17T12:00:00.000Z');
+
+    /**
+     * Build a decided envelope `minutesAgo` minutes before {@link NOW}.
+     *
+     * @param id - The envelope id, which the assertions compare.
+     * @param minutesAgo - How long before the reference instant it was decided.
+     * @param over - Fields that differ from an approved tweet.
+     * @returns The envelope.
+     */
+    function decided(id: string, minutesAgo: number, over: Partial<ICurationItem> = {}): ICurationItem {
+        return {
+            id,
+            typeId: 'x-poster:tweet',
+            providerId: 'x-poster',
+            ref: { postId: id },
+            preview: { title: id },
+            status: 'approved',
+            createdAt: new Date(NOW - (minutesAgo + 60) * 60_000),
+            decidedAt: new Date(NOW - minutesAgo * 60_000),
+            ...over
+        };
+    }
+
+    /**
+     * Build a service over a queue seeded with five decisions across three
+     * types, plus one pending item that the history must never list.
+     *
+     * @returns The service, for paging calls.
+     */
+    async function makeHistoryService(): Promise<CurationService> {
+        const logger = createMockLogger();
+        const queue = new CurationQueue(logger, createMockDatabaseService());
+        const seed: ICurationItem[] = [
+            decided('a', 1),
+            decided('b', 2, { status: 'rejected' }),
+            decided('c', 3, { typeId: 'core:page', providerId: 'pages' }),
+            decided('d', 4, { typeId: 'removed:thing', providerId: 'removed', status: 'dismissed' }),
+            decided('e', 5),
+            { ...decided('p', 0, { typeId: 'pending:only', status: 'pending' }), decidedAt: undefined }
+        ];
+        for (const item of seed) {
+            await queue.insert(item);
+        }
+        return new CurationService(logger, queue, new ContentRegistry(logger));
+    }
+
+    it('pages the decided items newest decision first and counts every match', async () => {
+        const service = await makeHistoryService();
+
+        const first = await service.listHistory({ limit: 2, skip: 0 });
+        const second = await service.listHistory({ limit: 2, skip: 2 });
+        const last = await service.listHistory({ limit: 2, skip: 4 });
+
+        expect(first.items.map((item) => item.id)).toEqual(['a', 'b']);
+        expect(second.items.map((item) => item.id)).toEqual(['c', 'd']);
+        expect(last.items.map((item) => item.id)).toEqual(['e']);
+        expect([first.total, second.total, last.total]).toEqual([5, 5, 5]);
+    });
+
+    it('bounds a page size the caller did not validate', async () => {
+        const service = await makeHistoryService();
+
+        const page = await service.listHistory({ limit: 0, skip: -3 });
+
+        expect(page.items.map((item) => item.id)).toEqual(['a']);
+    });
+
+    it('filters by decision, counting only the matches', async () => {
+        const service = await makeHistoryService();
+
+        const page = await service.listHistory({ limit: 25, skip: 0, decision: 'approved' });
+
+        expect(page.items.map((item) => item.id)).toEqual(['a', 'c', 'e']);
+        expect(page.total).toBe(3);
+    });
+
+    it('filters by type and decision together', async () => {
+        const service = await makeHistoryService();
+
+        const page = await service.listHistory({ limit: 25, skip: 0, decision: 'approved', typeId: 'x-poster:tweet' });
+
+        expect(page.items.map((item) => item.id)).toEqual(['a', 'e']);
+        expect(page.total).toBe(2);
+    });
+
+    it('offers every decided type for the filter, labelled from the registry and unaffected by the filters', async () => {
+        const service = await makeHistoryService();
+        service.registerType(spyCurationType(), 'x-poster');
+
+        const page = await service.listHistory({ limit: 1, skip: 0, decision: 'dismissed' });
+
+        // The pending item's type is left out; a removed type keeps its id as its label.
+        expect(page.types).toEqual([
+            { typeId: 'core:page', label: 'core:page' },
+            { typeId: 'removed:thing', label: 'removed:thing' },
+            { typeId: 'x-poster:tweet', label: 'Tweet' }
+        ]);
+    });
+
+    it('overlays live delivery state onto the returned page only', async () => {
+        const logger = createMockLogger();
+        const queue = new CurationQueue(logger, createMockDatabaseService());
+        await queue.insert(decided('a', 1, { sinks: [{ sinkId: 'blog:site', status: 'pending' }] }));
+        await queue.insert(decided('b', 2, { sinks: [{ sinkId: 'blog:site', status: 'pending' }] }));
+        const service = new CurationService(logger, queue, new ContentRegistry(logger));
+        const getLegsForOrigins = vi.fn(async () => ({
+            a: [{ legId: 'leg-a', originId: 'a', originKind: 'curation', sinkId: 'blog:site', status: 'delivered', attempts: 1, maxAttempts: 5 }]
+        }));
+        service.setSyndicationResolver(() => ({ getLegsForOrigins }) as unknown as ISyndicationService);
+
+        const page = await service.listHistory({ limit: 1, skip: 0 });
+
+        expect(getLegsForOrigins).toHaveBeenCalledWith(['a']);
+        expect(page.items[0].sinks).toEqual([{ sinkId: 'blog:site', status: 'delivered' }]);
+    });
 });
 
 describe('CurationService sink selection', () => {

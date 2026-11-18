@@ -1,23 +1,26 @@
 /*
  * Styles for the centralized content-type registry admin view.
  *
- * Layout structure comes from the Page/PageHeader/Stack layout components and
- * the table from the shared Table, which stacks rows on a phone; this module
- * only styles the intro copy and the type id. All values reference design
- * tokens so the surface themes with the rest of /system.
+ * Layout structure comes from the AdminPage shell, the Panel around the table,
+ * and the shared Table; this module only styles the Type cell, which puts the
+ * type's label over its id. All values reference design tokens so the surface
+ * themes with the rest of /system.
  */
 
-.container {
-    width: 100%;
+.type_label {
+    display: block;
+    color: var(--color-text);
 }
 
-.intro {
+/* The id line, and the provider where the id's prefix does not name it. */
+.type_meta {
+    display: block;
     color: var(--color-text-muted);
-    max-width: var(--max-width-prose);
+    font-size: var(--font-size-body-sm);
 }
 
 .type_id {
+    font-family: var(--font-mono);
     font-size: var(--font-size-body-sm);
-    color: var(--color-text);
     overflow-wrap: anywhere;
 }

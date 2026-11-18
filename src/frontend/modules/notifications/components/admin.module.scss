@@ -1,110 +1,65 @@
 /**
  * Shared styles for the admin notification tabs (Categories, Channels,
- * History). Row list with a primary text block and a trailing control/meta
- * column; reflows to a stack at narrow container widths. Structure only —
- * surfaces and text inherit design tokens.
+ * History). Each tab is a Panel holding a flush table, so these rules cover
+ * only what sits around and inside the rows: the switch beside a row's name,
+ * the History filters and pager, and the status lines. Surfaces, borders, and
+ * row rhythm come from the shared Panel and Table.
  */
 
-@use '../../../app/breakpoints' as *;
-
-.list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-sm);
-    container-type: inline-size;
-    container-name: notification-admin;
-}
-
-.row {
+/* The switch and the name it controls, side by side at every width. The
+   switch shares the cell with the name, rather than taking a column of its
+   own, so a phone's stacked entry keeps it on the name's line. */
+.toggle_label {
     display: flex;
     align-items: flex-start;
-    justify-content: space-between;
-    gap: var(--gap-md);
-    padding: var(--padding-md);
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
-    background: var(--color-surface);
-}
-
-.row_main {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-2xs);
+    gap: var(--gap-sm);
     min-width: 0;
 }
 
-.row_title {
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text);
+/* A name with no description under it is one line, so the switch is centred
+   on it rather than hanging from its top edge. */
+.toggle_label_single {
+    align-items: center;
 }
 
-.row_desc {
-    font-size: var(--font-size-body-sm);
+/* A channel a category leaves off by default, beside the ones it turns on. */
+.channel_off {
     color: var(--color-text-muted);
-    word-break: break-word;
 }
 
-.badges {
+/* The History filters in the panel header. They wrap under each other when
+   the header is too narrow to hold both beside the title. */
+.filters {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--gap-xs);
-    margin-top: var(--gap-2xs);
+    align-items: center;
+    gap: var(--gap-sm-md);
+    min-width: 0;
+    max-width: 100%;
 }
 
-.toggle {
+/* The line under the History table: which rows are shown, and the pager. */
+.footer {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: var(--gap-xs);
-    font-size: var(--font-size-body-sm);
-    color: var(--color-text);
-    white-space: nowrap;
-    cursor: pointer;
-}
-
-.history_head {
-    display: flex;
-    align-items: center;
+    justify-content: space-between;
     gap: var(--gap-sm);
-    flex-wrap: wrap;
 }
 
-.history_meta {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: var(--gap-2xs);
-    white-space: nowrap;
-}
-
-.help {
+.range {
     font-size: var(--font-size-body-sm);
     color: var(--color-text-muted);
-    margin: 0;
 }
 
 .error {
     font-size: var(--font-size-body-sm);
-    color: var(--color-danger);
+    color: var(--color-danger-text);
     margin: 0;
 }
 
 .placeholder {
-    padding: var(--padding-lg);
-    text-align: center;
+    margin: 0;
     color: var(--color-text-muted);
     font-size: var(--font-size-body-sm);
-}
-
-/* Phone and small tablet: the trailing column (a toggle, or the history
-   entry's sender and time) cannot wrap, so beside a long body it squeezes the
-   text into a narrow column. Below 768px it drops under the text instead. */
-@container notification-admin (max-width: #{$breakpoint-mobile-lg}) {
-    .row {
-        flex-direction: column;
-    }
-
-    .history_meta {
-        align-items: flex-start;
-        white-space: normal;
-    }
 }

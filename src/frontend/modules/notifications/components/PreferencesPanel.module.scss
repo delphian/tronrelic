@@ -1,11 +1,11 @@
 /**
  * Styles for the per-user notification preferences matrix.
  *
- * The preferences used to render one bordered card per category, which spent
- * most of the panel on frames and padding around two or three checkboxes. They
- * now read as a single matrix: categories down the side, channels across the
- * top, one checkbox per cell. The mute control is one line above it. Structure
- * only — the table, switch, and colours come from shared components and tokens.
+ * The matrix is one compact table, categories down the side and channels
+ * across the top, with one switch per cell, run to the edges of the panel that
+ * holds it. Where the host draws that panel, "Mute all" sits on one line above
+ * the table. Structure only — the table, switch, and colours come from shared
+ * components and tokens.
  */
 
 .panel {
@@ -15,8 +15,8 @@
     min-width: 0;
 }
 
-/* Mute switch, its label, and the one-line explanation on a single row that
-   wraps only when the container is too narrow. */
+/* Mute switch and its one-line explanation on a single row that wraps only
+   when the container is too narrow. */
 .mute_row {
     display: flex;
     flex-wrap: wrap;
@@ -25,38 +25,18 @@
     row-gap: var(--gap-2xs);
 }
 
-.mute_title {
-    font-size: var(--font-size-body-sm);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text);
-}
-
 /* Dims the matrix while everything is muted, so it is clear the per-channel
    choices are kept but not currently applied. */
 .matrix_muted {
     opacity: var(--opacity-55);
 }
 
-.category_label {
-    font-size: var(--font-size-body-sm);
-    font-weight: var(--font-weight-medium);
-    color: var(--color-text);
-}
-
-.category_desc {
-    font-size: var(--font-size-caption);
-    color: var(--color-text-muted);
-    line-height: var(--line-height-normal);
-}
-
-/* Channel columns hold one checkbox each, centred under the channel name and
-   sized to their content so the category column takes the remaining width.
-   Scoped under .matrix so it outranks the shared table's left-aligned .th
-   regardless of which stylesheet the bundler emits first. */
-.matrix .cell_check {
-    width: 1%;
+/* Channel columns hold one switch each, centred under the channel name. The
+   shared table's `shrink` width already sizes them to their content. Scoped
+   under .matrix so it outranks the shared table's left-aligned .th regardless
+   of which stylesheet the bundler emits first. */
+.matrix .cell_switch {
     text-align: center;
-    white-space: nowrap;
 }
 
 .help {

@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import type { ContentCurationState, IPage, IPageService, ISystemLogService } from '@/types';
+import type { ContentCurationState, IPage, IPageListOptions, IPageService, ISystemLogService } from '@/types';
 import { actorFromAdminRequest } from '../../../services/content-actor.js';
 import { sendContentWriteError } from '../../../services/content-http.js';
 
@@ -68,30 +68,32 @@ export class PagesController {
     // ============================================================================
 
     /**
-     * List pages with stats for the admin view.
+     * List one page of pages with stats for the admin view.
      *
-     * @param req - Query: `published`, `search`, `curation`, `deleted`, `limit`, `skip`.
-     * @param res - Receives `{ pages, stats }`.
+     * @param req - Query: `published`, `search`, `curation`, `deleted`, `limit`
+     *   (held to 1–100, default 50), and `skip`.
+     * @param res - Receives `{ pages, total, stats }`, where `total` counts the
+     *   pages the filters match across every page, for the pager.
      */
     async listPages(req: Request, res: Response): Promise<void> {
         try {
             const { published, search, curation, deleted, limit, skip } = req.query;
 
-            const options: Parameters<IPageService['listPages']>[0] = {
+            const options: IPageListOptions = {
                 published: published === 'true' ? true : published === 'false' ? false : undefined,
-                search: search as string | undefined,
+                search: typeof search === 'string' && search.trim() ? search.trim() : undefined,
                 curation: CURATION_FILTERS.find((state) => state === curation),
                 deleted: deleted === 'true',
-                limit: limit ? parseInt(limit as string, 10) : undefined,
-                skip: skip ? parseInt(skip as string, 10) : undefined,
+                limit: typeof limit === 'string' ? parseInt(limit, 10) : undefined,
+                skip: typeof skip === 'string' ? parseInt(skip, 10) : undefined,
             };
 
-            const [pages, stats] = await Promise.all([
+            const [list, stats] = await Promise.all([
                 this.pageService.listPages(options),
                 this.pageService.getPageStats(),
             ]);
 
-            res.json({ pages, stats });
+            res.json({ pages: list.pages, total: list.total, stats });
         } catch (error) {
             this.logger.error({ error }, 'Failed to list pages');
             res.status(500).json({

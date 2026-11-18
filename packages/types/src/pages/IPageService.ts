@@ -1,5 +1,7 @@
 import type { IPage } from './IPage';
 import type { IPageSettings } from './IPageSettings';
+import type { IPageListOptions } from './IPageListOptions.js';
+import type { IPageListPage } from './IPageListPage.js';
 import type { IPublicPage } from './IPublicPage.js';
 import type { IPublicPageRender } from './IPublicPageRender.js';
 import type { IPageEditProposal } from './IPageEditProposal.js';
@@ -7,7 +9,6 @@ import type { IPageEditProposalResult } from './IPageEditProposalResult.js';
 import type { IPageProposal } from './IPageProposal.js';
 import type { IPageProposalResult } from './IPageProposalResult.js';
 import type { IContentActor } from '../content/IContentActor.js';
-import type { ContentCurationState } from '../content/ContentCurationState.js';
 
 /**
  * Service contract for managing custom pages and page-level settings.
@@ -120,18 +121,15 @@ export interface IPageService {
     findPublicPageByOldSlug(oldSlug: string): Promise<IPage | null>;
 
     /**
-     * List pages for the admin view, latest edits, newest first. `published`
+     * List one page of pages for the admin view, latest edits, newest first,
+     * with the number matching the filters across every page. `published`
      * and `search` filter the latest edit; `curation` asks core for pages in
      * one review state; `deleted` switches to the soft-deleted pages.
+     *
+     * @param options - Filters and paging; `limit` is held to 1–100.
+     * @returns The page of pages and the total for the pager.
      */
-    listPages(options?: {
-        published?: boolean;
-        search?: string;
-        curation?: ContentCurationState;
-        deleted?: boolean;
-        limit?: number;
-        skip?: number;
-    }): Promise<IPage[]>;
+    listPages(options?: IPageListOptions): Promise<IPageListPage>;
 
     /** Get page counts for the admin summary. */
     getPageStats(): Promise<{

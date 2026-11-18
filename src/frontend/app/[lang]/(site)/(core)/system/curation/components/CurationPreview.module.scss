@@ -3,14 +3,51 @@
  * with a relaxed line height — a step above the rest of the review sheet —
  * because the content is what the curator is judging. It sits on an inset
  * surface so it reads as the thing under review rather than as page chrome.
- * Labelled fields follow as a definition list.
+ * Labelled fields follow as a definition list, below the proof on a narrow
+ * sheet and beside it on a wide one. The side-by-side rule responds to the
+ * `review-sheet` container declared by ReviewSheet.module.scss, so the
+ * decision record in the History slide-over, which has no such container,
+ * always stacks.
  */
+
+@use '../../../../../../breakpoints' as *;
 
 .preview {
     display: flex;
     flex-direction: column;
     gap: var(--gap-md);
     min-width: 0;
+}
+
+/* The summary and the proof. The column is as wide as its widest text, which
+ * the reading-width cap on that text bounds, so each box hugs its words
+ * instead of stretching across the sheet with half of it empty. */
+.text {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+    width: fit-content;
+    max-width: 100%;
+    min-width: 0;
+}
+
+/* Proof and fields side by side once the sheet has room for the proof's
+ * reading width and a field list beside it. */
+@container review-sheet (min-width: #{$breakpoint-mobile-lg}) {
+    .preview_split {
+        flex-direction: row;
+        align-items: flex-start;
+        gap: var(--gap-lg);
+    }
+
+    .preview_split .text {
+        flex: 0 1 auto;
+    }
+
+    .preview_split .fields {
+        flex: 1 1 0;
+        min-width: 0;
+    }
 }
 
 .proof {

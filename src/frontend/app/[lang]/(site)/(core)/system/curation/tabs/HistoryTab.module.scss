@@ -1,21 +1,29 @@
 /**
- * Styles for the History tab: a short intro and the decisions table. The table
- * uses the shared Table primitive, whose `stackAt="mobile"` turns each row into
- * a labelled entry on a phone; this module adds only the row affordance, the
- * item cell, and the delivery summary.
+ * Styles for the History tab: the filter row and the decisions table inside
+ * one panel. The table uses the shared Table primitive, whose compact variant
+ * keeps each row to two lines and whose `stackAt="mobile"` turns each row into
+ * a labelled entry on a phone; this module adds only the filter row, the row
+ * affordance, the item cell, and the delivery summary.
  */
 
-.history {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-md);
+@use '../../../../../../breakpoints' as *;
+
+/* One step below the shared Table's default cell size, set through the
+ * table's own `--table-font-size` override hook so no cell rule has to win a
+ * specificity contest. The custom property inherits from the panel down to
+ * the <table> element that reads it. It sits on the panel rather than on a
+ * wrapper around the table, because a flush table must be a direct child of
+ * the panel to run to the card's edges. */
+.panel {
+    --table-font-size: var(--font-size-body-sm);
 }
 
-.intro {
-    margin: 0;
-    max-width: var(--max-width-prose);
-    font-size: var(--font-size-body-xs);
-    color: var(--color-text-muted);
+/* The decision and type filters share one row and wrap on a phone. Each
+ * select keeps its own width rather than stretching across the panel. */
+.filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-xs);
 }
 
 .placeholder {
@@ -26,31 +34,30 @@
     color: var(--color-text-muted);
 }
 
-/* One step below the shared Table's default cell size, set through the
- * table's own `--table-font-size` override hook so no cell rule has to win a
- * specificity contest. The custom property inherits from this wrapper down to
- * the <table> element that reads it. */
-.table_wrap {
-    --table-font-size: var(--font-size-body-sm);
-}
-
 /* The whole row opens the record. */
 .row {
     cursor: pointer;
 }
 
-/* The prose-width cap is what bounds the one-line excerpt below; without a
- * limit its nowrap text would widen the table instead of truncating. */
 .item {
     display: flex;
     flex-direction: column;
     gap: var(--gap-2xs);
     min-width: 0;
-    max-width: var(--max-width-prose);
+}
+
+/* The title and the providing plugin share the first line; a long title
+ * wraps and the plugin follows it. */
+.item_line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: var(--gap-sm);
+    row-gap: var(--gap-2xs);
+    min-width: 0;
 }
 
 .item_button {
-    align-self: flex-start;
     padding: 0;
     border: none;
     background: none;
@@ -71,13 +78,32 @@
     color: var(--color-text-subtle);
 }
 
+/* One line, cut with an ellipsis at the Item column's edge. The zero width
+ * with a full minimum keeps this nowrap text out of the table's width
+ * calculation, so the column takes the space the other columns leave rather
+ * than widening the table to fit the whole excerpt. */
 .excerpt {
     display: block;
+    width: 0;
+    min-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: var(--font-size-body-xs);
     color: var(--color-text-muted);
+}
+
+/* While the rows are stacked (the table's `stackAt="mobile"` step), the
+ * excerpt keeps its natural width, so the Item cell is too wide to share the
+ * entry's first line with the decision badge and takes a line of its own,
+ * where the excerpt is cut at the entry's edge. With the zero width above, a
+ * short title would pull the cell up beside the badge and squeeze the excerpt
+ * into what was left of that line. */
+@container table (max-width: #{$breakpoint-mobile-lg}) {
+    .excerpt {
+        width: auto;
+        min-width: 0;
+    }
 }
 
 .outcomes {
@@ -89,11 +115,6 @@
 .none {
     font-size: var(--font-size-body-xs);
     color: var(--color-text-subtle);
-}
-
-/* Keeps a full date and time on one line so it never wraps mid-value. */
-.col_time {
-    white-space: nowrap;
 }
 
 .record_title {

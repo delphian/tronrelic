@@ -1,0 +1,38 @@
+/**
+ * Styles for the name-and-description block that opens a row in the
+ * notification tables: a medium-weight name over a muted caption line, with an
+ * optional one-line clamp for free text of unknown length.
+ */
+
+.row_label {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    min-width: 0;
+}
+
+/* No font size of its own: the name takes the table's body size, so it reads
+   at the same size as the plain values in the row's other cells. */
+.name {
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text);
+    line-height: var(--line-height-tight);
+}
+
+.description {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+    line-height: var(--line-height-normal);
+}
+
+/* One line with an ellipsis. A line clamp rather than `nowrap` because a
+   table sizes its columns from their content, and a nowrap body would widen
+   the column to the full length of the longest notification. */
+.description_clamped {
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+}

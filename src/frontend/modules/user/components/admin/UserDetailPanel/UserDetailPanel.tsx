@@ -15,12 +15,12 @@
  * admin opens an account, so a loading state here is the user-triggered case
  * the SSR + Live Updates pattern allows.
  *
- * Each table stacks its rows through the shared Table's `stackAt`. The
- * four-column wallet and connected-app tables fit the 820px panel and stack
- * only on a phone. The sessions and sign-in events tables have five and seven
- * columns, which cannot fit the panel at any screen size, so they stack at the
- * tablet threshold and therefore always read as labelled entries in the panel
- * instead of scrolling sideways.
+ * Every table fits the 820px panel and stacks its rows into labelled entries
+ * only on a phone (`stackAt="mobile"`). The sessions and sign-in events fit
+ * because each browser is shown as a short summary such as "Safari 19 ·
+ * macOS", with the full User-Agent in the cell's tooltip, the country shares
+ * the network address's cell, and a refusal reason, which only a failed event
+ * has, sits under that event's badge instead of in a column of dashes.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -42,10 +42,18 @@ import {
     type IAccountDetailsResponse
 } from '../../../api/admin-accounts.api';
 import { AccountNoteEditor } from './AccountNoteEditor';
+import { summarizeUserAgent } from './summarizeUserAgent';
 import styles from './UserDetailPanel.module.scss';
 
 /** Sign-in events loaded per "Show more" click. */
 const EVENT_PAGE_SIZE = 20;
+
+/**
+ * Sign-in events shown when an account opens. The details response carries
+ * up to 20, but the newest few answer most questions, and the rest are one
+ * "Show older events" click away.
+ */
+const FIRST_EVENT_COUNT = 10;
 
 /** Badge tone and wording for each sign-in event kind. */
 const EVENT_KINDS: Record<string, { tone: 'success' | 'danger' | 'warning' | 'neutral'; label: string }> = {
@@ -72,6 +80,35 @@ interface IUserDetailPanelProps {
  */
 function orDash(value: string | null | undefined) {
     return value ? value : <span className="text-muted">—</span>;
+}
+
+/**
+ * Render a User-Agent as its short summary, with the full string in the
+ * tooltip so an admin checking a suspicious session can still read all of it.
+ *
+ * @param userAgent - The stored User-Agent, or null when the request sent none.
+ * @returns The summary, or a dash.
+ */
+function browserCell(userAgent: string | null | undefined) {
+    const summary = summarizeUserAgent(userAgent);
+    return summary ? <span title={userAgent ?? undefined}>{summary}</span> : orDash(null);
+}
+
+/**
+ * Render a network address with the country it was seen from, so the two
+ * facts an admin reads together share one cell.
+ *
+ * @param ip - The caller's address, or null when none was recorded.
+ * @param country - The Cloudflare country code, or null.
+ * @returns The address, followed by the country when there is one.
+ */
+function addressCell(ip: string | null | undefined, country?: string | null) {
+    return (
+        <>
+            <code className={styles.mono}>{orDash(ip)}</code>
+            {country && <span className="text-muted"> · {country}</span>}
+        </>
+    );
 }
 
 /**
@@ -106,7 +143,7 @@ export function UserDetailPanel({ userId, onClose }: IUserDetailPanelProps) {
                 .then(loaded => {
                     if (current) {
                         setDetails(loaded);
-                        setEvents(loaded.recentSignInEvents);
+                        setEvents(loaded.recentSignInEvents.slice(0, FIRST_EVENT_COUNT));
                     }
                 })
                 .catch((caught: unknown) => {
@@ -243,7 +280,7 @@ export function UserDetailPanel({ userId, onClose }: IUserDetailPanelProps) {
                         {details.sessions.length === 0 ? (
                             <p className="text-muted">No live sessions.</p>
                         ) : (
-                            <Table variant="compact" flush stackAt="tablet">
+                            <Table variant="compact" flush stackAt="mobile">
                                 <Thead>
                                     <Tr><Th>Signed in</Th><Th>Refreshed</Th><Th>Expires</Th><Th>Network address</Th><Th>Browser</Th></Tr>
                                 </Thead>
@@ -251,10 +288,10 @@ export function UserDetailPanel({ userId, onClose }: IUserDetailPanelProps) {
                                     {details.sessions.map(session => (
                                         <Tr key={session.id}>
                                             <Td label="Signed in">{session.createdAt ? <ClientTime date={session.createdAt} format="short" /> : orDash(null)}</Td>
-                                            <Td label="Refreshed">{session.updatedAt ? <ClientTime date={session.updatedAt} format="short" /> : orDash(null)}</Td>
-                                            <Td label="Expires">{session.expiresAt ? <ClientTime date={session.expiresAt} format="short" /> : orDash(null)}</Td>
-                                            <Td label="Network address"><code className={styles.mono}>{orDash(session.ipAddress)}</code></Td>
-                                            <Td label="Browser" stackSpan="full"><span className={styles.user_agent}>{orDash(session.userAgent)}</span></Td>
+                                            <Td label="Refreshed">{session.updatedAt ? <ClientTime date={session.updatedAt} format="relative" /> : orDash(null)}</Td>
+                                            <Td label="Expires">{session.expiresAt ? <ClientTime date={session.expiresAt} format="relative" /> : orDash(null)}</Td>
+                                            <Td label="Network address">{addressCell(session.ipAddress)}</Td>
+                                            <Td label="Browser">{browserCell(session.userAgent)}</Td>
                                         </Tr>
                                     ))}
                                 </Tbody>
@@ -274,7 +311,7 @@ export function UserDetailPanel({ userId, onClose }: IUserDetailPanelProps) {
                                     {details.connectedApps.map(app => (
                                         <Tr key={app.clientId}>
                                             <Td>{app.clientName}{app.loopbackOnly && <> <Badge tone="warning" size="sm">Local only</Badge></>}</Td>
-                                            <Td label="Redirects to" stackSpan={2}><span className={styles.user_agent}>{app.redirectHosts.join(', ') || '—'}</span></Td>
+                                            <Td label="Redirects to" stackSpan={2}><span className={styles.long_text}>{app.redirectHosts.join(', ') || '—'}</span></Td>
                                             <Td label="Connected"><ClientTime date={app.grantedAt} format="short" /></Td>
                                             <Td label="Last used">{app.lastUsedAt ? <ClientTime date={app.lastUsedAt} format="short" /> : orDash(null)}</Td>
                                         </Tr>
@@ -287,41 +324,46 @@ export function UserDetailPanel({ userId, onClose }: IUserDetailPanelProps) {
                     <Panel
                         titleAs="h3"
                         title="Sign-in events"
-                        meta={`${details.signInEventsTotal.toLocaleString('en-US')} in the last 90 days · matched by email, so they include attempts by others who typed it`}
+                        meta={`${details.signInEventsTotal.toLocaleString('en-US')} in 90 days · matched by email, so others' attempts show too`}
+                        actions={events.length < details.signInEventsTotal && (
+                            // In the header rather than under the list, so the
+                            // table stays the last thing in the panel and runs
+                            // to its edges.
+                            <Button variant="ghost" loading={loadingMore} onClick={() => void handleShowMore()}>
+                                Show older ({(details.signInEventsTotal - events.length).toLocaleString('en-US')} more)
+                            </Button>
+                        )}
                     >
                         {events.length === 0 ? (
                             <p className="text-muted">No sign-in events recorded for this address.</p>
                         ) : (
-                            <Stack gap="sm">
-                                <Table variant="compact" flush stackAt="tablet">
-                                    <Thead>
-                                        <Tr><Th>When</Th><Th>Event</Th><Th>Method</Th><Th>Network address</Th><Th>Country</Th><Th>Reason</Th><Th>Browser</Th></Tr>
-                                    </Thead>
-                                    <Tbody>
-                                        {events.map((event, index) => {
-                                            const kind = EVENT_KINDS[event.kind] ?? { tone: 'neutral' as const, label: event.kind };
-                                            return (
-                                                <Tr key={`${event.occurredAt}-${index}`}>
-                                                    <Td label="When"><ClientTime date={event.occurredAt} format="short" /></Td>
-                                                    <Td label="Event"><Badge tone={kind.tone} size="sm">{kind.label}</Badge></Td>
-                                                    <Td label="Method">{orDash(event.method)}</Td>
-                                                    <Td label="Network address"><code className={styles.mono}>{orDash(event.ip)}</code></Td>
-                                                    <Td label="Country">{orDash(event.country)}</Td>
-                                                    <Td label="Reason">{orDash(event.reason)}</Td>
-                                                    <Td label="Browser" stackSpan="full"><span className={styles.user_agent}>{orDash(event.userAgent)}</span></Td>
-                                                </Tr>
-                                            );
-                                        })}
-                                    </Tbody>
-                                </Table>
-                                {events.length < details.signInEventsTotal && (
-                                    <div className={styles.more}>
-                                        <Button size="sm" variant="ghost" loading={loadingMore} onClick={() => void handleShowMore()}>
-                                            Show older events ({(details.signInEventsTotal - events.length).toLocaleString('en-US')} more)
-                                        </Button>
-                                    </div>
-                                )}
-                            </Stack>
+                            <Table variant="compact" flush stackAt="mobile">
+                                <Thead>
+                                    <Tr><Th>When</Th><Th>Event</Th><Th>Method</Th><Th>Network address</Th><Th>Browser</Th></Tr>
+                                </Thead>
+                                <Tbody>
+                                    {events.map((event, index) => {
+                                        const kind = EVENT_KINDS[event.kind] ?? { tone: 'neutral' as const, label: event.kind };
+                                        return (
+                                            <Tr key={`${event.occurredAt}-${index}`}>
+                                                <Td label="When"><ClientTime date={event.occurredAt} format="short" /></Td>
+                                                <Td label="Event">
+                                                    {/* Only a failure has a reason, so it sits under
+                                                        the badge rather than in a column that would
+                                                        be a dash on every success. */}
+                                                    <span className={styles.event}>
+                                                        <Badge tone={kind.tone} size="sm" title={event.reason ?? undefined}>{kind.label}</Badge>
+                                                        {event.reason && <span className={styles.reason}>{event.reason}</span>}
+                                                    </span>
+                                                </Td>
+                                                <Td label="Method">{orDash(event.method)}</Td>
+                                                <Td label="Network address">{addressCell(event.ip, event.country)}</Td>
+                                                <Td label="Browser">{browserCell(event.userAgent)}</Td>
+                                            </Tr>
+                                        );
+                                    })}
+                                </Tbody>
+                            </Table>
                         )}
                     </Panel>
                 </Stack>
