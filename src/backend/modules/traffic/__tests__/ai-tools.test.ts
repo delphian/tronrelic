@@ -14,6 +14,7 @@ import type { IAiTool, IAiToolRegistry, IServiceRegistry, ISystemLogService } fr
 import { registerTrafficAiTools, listOwnAiTools, AI_TOOL_NAMES, PROVIDER_ID } from '../ai-tools.js';
 import type { GscService } from '../services/gsc.service.js';
 import type { GscWindowRequest } from '../services/GscWindowRequest.js';
+import type { IGscQueryRankedReadOptions, IGscRankedReadOptions } from '../services/IGscArchive.js';
 import type { RedirectService } from '../services/redirect.service.js';
 import type { TrafficService } from '../services/traffic.service.js';
 
@@ -89,13 +90,22 @@ function createTrafficServiceStub() {
  */
 function createGscServiceStub() {
     return {
-        getKeywords: vi.fn(async (_window: GscWindowRequest, _limit?: number) => ({ keywords: [{ query: 'tron energy', clicks: 4 }] })),
-        getPages: vi.fn(async () => ({ pages: [{ page: '/', clicks: 9 }] })),
-        // Param declared so a test can assert the handler passes a row cap: the
-        // service treats an omitted limit as "every pair", which the admin panel
-        // wants and a context window cannot absorb.
-        getKeywordPagePairs: vi.fn(async (_window: GscWindowRequest, _limit?: number) => ({
-            pairs: [{ keyword: 'tron energy', page: '/tools/energy', clicks: 4 }]
+        // Options declared so tests can assert the sort, paging, and filters
+        // the handler passes through.
+        getKeywords: vi.fn(async (_window: GscWindowRequest, _options?: IGscQueryRankedReadOptions) => ({
+            keywords: [{ query: 'tron energy', clicks: 4 }],
+            total: 1
+        })),
+        getPages: vi.fn(async (_window: GscWindowRequest, _options?: IGscRankedReadOptions) => ({
+            pages: [{ page: '/', clicks: 9 }],
+            total: 1
+        })),
+        // Options declared so a test can assert the handler passes a row cap:
+        // the service treats an omitted limit as "every pair", which the admin
+        // panel wants and a context window cannot absorb.
+        getKeywordPagePairs: vi.fn(async (_window: GscWindowRequest, _options?: IGscQueryRankedReadOptions) => ({
+            pairs: [{ keyword: 'tron energy', page: '/tools/energy', clicks: 4 }],
+            total: 1
         })),
         // Thirty buckets of twenty keywords each, so a test can assert the
         // handler trims them to the total budget.
@@ -547,10 +557,10 @@ describe('traffic AI tools', () => {
 
             const call = gsc.getKeywordPagePairs.mock.calls[0];
             expect(call).toBeDefined();
-            const [, limit] = call;
+            const [, options] = call;
             // Omitting the limit returns every pair — right for the admin panel,
             // fatal for a context window.
-            expect(limit).toBe(30);
+            expect(options?.limit).toBe(30);
         });
 
         it('serves the redirect rule inventory, including rules that were never hit', async () => {
@@ -787,9 +797,106 @@ describe('traffic AI tools', () => {
 
         it('rejects a keyword on views that would not filter by it', async () => {
             // Ignoring it would let a model narrate an unfiltered ranking as
-            // if it were about that keyword.
-            await expect(tools.get(AI_TOOL_NAMES.seo)!.handler({ view: 'keywords', keyword: 'tron' }))
-                .rejects.toThrow(/keyword-history/);
+            // if it were about that keyword. "pages" reads the page totals,
+            // which hold no query at all.
+            const seo = tools.get(AI_TOOL_NAMES.seo)!;
+            await expect(seo.handler({ view: 'pages', keyword: 'tron' })).rejects.toThrow(/keyword-history/);
+            await expect(seo.handler({ view: 'keywords-by-day', keyword: 'tron' })).rejects.toThrow(/keyword-history/);
+            await expect(seo.handler({ view: 'keywords', match: 'contains' })).rejects.toThrow(/needs a "keyword"/);
+        });
+
+        it('passes sort, paging, and filters to the ranked reads and points at the next page', async () => {
+            // The archive holds every query Google reported. A model that saw
+            // one page without being told more exist would report it as the
+            // whole list, which is how the 50-row cap hid most keywords.
+            const gsc = createGscServiceStub();
+            gsc.getKeywords.mockResolvedValueOnce({
+                keywords: Array.from({ length: 50 }, (_unused, i) => ({ query: `q${i}`, clicks: 0 })),
+                total: 120
+            });
+            const { tools: built } = registerAndCapture(gsc);
+
+            const result = await built.get(AI_TOOL_NAMES.seo)!.handler({
+                view: 'keywords',
+                period: '90d',
+                sort: 'impressions',
+                limit: 50,
+                offset: 50,
+                minImpressions: 10,
+                minPosition: 5,
+                maxPosition: 20,
+                pathPrefix: '/blog/'
+            }) as Record<string, unknown>;
+
+            expect(gsc.getKeywords.mock.calls[0][1]).toEqual({
+                sort: 'impressions',
+                limit: 50,
+                offset: 50,
+                minImpressions: 10,
+                minPosition: 5,
+                maxPosition: 20,
+                pathPrefix: '/blog/'
+            });
+            expect(result).toMatchObject({
+                sort: 'impressions',
+                offset: 50,
+                total: 120,
+                returned: 50,
+                hasMore: true,
+                nextOffset: 100,
+                filters: { minImpressions: 10, minPosition: 5, maxPosition: 20, pathPrefix: '/blog/' }
+            });
+            // The total is reported once, beside the paging fields.
+            expect(result.data).not.toHaveProperty('total');
+        });
+
+        it('says when the last page has been read', async () => {
+            const gsc = createGscServiceStub();
+            const { tools: built } = registerAndCapture(gsc);
+
+            const result = await built.get(AI_TOOL_NAMES.seo)!.handler({ view: 'pages' }) as Record<string, unknown>;
+
+            expect(result).toMatchObject({ sort: 'clicks', offset: 0, total: 1, returned: 1, hasMore: false, nextOffset: null, filters: {} });
+        });
+
+        it('filters keyword-page pairs to one page given as a path or a full URL', async () => {
+            // Rows report full URLs, so a model copies one back; both forms
+            // must name the same page.
+            const gsc = createGscServiceStub();
+            const { tools: built } = registerAndCapture(gsc);
+            const seo = built.get(AI_TOOL_NAMES.seo)!;
+
+            await seo.handler({ view: 'keyword-pages', page: 'https://tronrelic.com/resource-markets?ref=x', keyword: 'Energy', match: 'contains' });
+            await seo.handler({ view: 'keyword-pages', page: 'https://tronrelic.com' });
+            await seo.handler({ view: 'keyword-pages', page: '/blog/post-one' });
+
+            expect(gsc.getKeywordPagePairs.mock.calls.map(([, options]) => options)).toEqual([
+                { sort: 'clicks', limit: 20, offset: 0, pagePath: '/resource-markets', keyword: 'Energy', match: 'contains' },
+                { sort: 'clicks', limit: 20, offset: 0, pagePath: '/' },
+                { sort: 'clicks', limit: 20, offset: 0, pagePath: '/blog/post-one' }
+            ]);
+        });
+
+        it('rejects ranking arguments on views that do not rank rows', async () => {
+            // A sort or filter on a series view would read as if it changed
+            // the answer.
+            const seo = tools.get(AI_TOOL_NAMES.seo)!;
+            await expect(seo.handler({ view: 'keywords-by-day', sort: 'impressions' })).rejects.toThrow(/"sort" apply only/);
+            await expect(seo.handler({ view: 'status', offset: 20 })).rejects.toThrow(/"offset" apply only/);
+            await expect(seo.handler({ view: 'keyword-history', keyword: 'tron', page: '/' })).rejects.toThrow(/"page" apply only/);
+        });
+
+        it('rejects paging and filter values that could only mislead', async () => {
+            const seo = tools.get(AI_TOOL_NAMES.seo)!;
+            await expect(seo.handler({ view: 'keywords', sort: 'ctr' })).rejects.toThrow(/sort/);
+            await expect(seo.handler({ view: 'keywords', offset: -1 })).rejects.toThrow(/offset/);
+            await expect(seo.handler({ view: 'keywords', offset: 10001 })).rejects.toThrow(/offset/);
+            await expect(seo.handler({ view: 'keywords', minImpressions: 0 })).rejects.toThrow(/minImpressions/);
+            await expect(seo.handler({ view: 'keywords', minPosition: 0 })).rejects.toThrow(/minPosition/);
+            await expect(seo.handler({ view: 'keywords', minPosition: 20, maxPosition: 5 })).rejects.toThrow(/greater than/);
+            await expect(seo.handler({ view: 'pages', page: 'resource-markets' })).rejects.toThrow(/page/);
+            await expect(seo.handler({ view: 'pages', page: '/', pathPrefix: '/blog/' })).rejects.toThrow(/not both/);
+            await expect(seo.handler({ view: 'pages', pathPrefix: 'blog' })).rejects.toThrow(/pathPrefix/);
         });
 
         it('spreads the keyword-trend row budget across buckets instead of per bucket', async () => {

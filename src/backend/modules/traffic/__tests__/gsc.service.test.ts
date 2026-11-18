@@ -7,7 +7,8 @@
  * the SEO AI tool honest, against an archive double: period, range, and
  * `all` windows (and their returned bounds), zero-filled buckets by day,
  * week, or month, totals taken from the anonymization-immune daily totals,
- * and the first non-final day. The fetch path runs against a stubbed
+ * the first non-final day, and the ranked reads' default row cap, keyword
+ * normalization, and matched total. The fetch path runs against a stubbed
  * googleapis client, covering the request options, the archive writes and
  * the prune of rows a refetch no longer returns (never reaching days older
  * than Google returned), and the saved fetch markers.
@@ -66,9 +67,9 @@ function createFakeArchive(enabled: boolean): FakeArchive {
         writePageTotals: vi.fn<IGscArchive['writePageTotals']>(async () => undefined),
         prune: vi.fn<IGscArchive['prune']>(async () => undefined),
         getCoverage: vi.fn<IGscArchive['getCoverage']>(async () => ({ firstDate: null, lastDate: null, days: 0 })),
-        sumByKeyword: vi.fn<IGscArchive['sumByKeyword']>(async () => []),
-        sumByPage: vi.fn<IGscArchive['sumByPage']>(async () => []),
-        sumByKeywordPage: vi.fn<IGscArchive['sumByKeywordPage']>(async () => []),
+        sumByKeyword: vi.fn<IGscArchive['sumByKeyword']>(async () => ({ rows: [], total: 0 })),
+        sumByPage: vi.fn<IGscArchive['sumByPage']>(async () => ({ rows: [], total: 0 })),
+        sumByKeywordPage: vi.fn<IGscArchive['sumByKeywordPage']>(async () => ({ rows: [], total: 0 })),
         sumTotalsByBucket: vi.fn<IGscArchive['sumTotalsByBucket']>(async () => []),
         topKeywordsByBucket: vi.fn<IGscArchive['topKeywordsByBucket']>(async () => []),
         keywordSumsByBucket: vi.fn<IGscArchive['keywordSumsByBucket']>(async () => [])
@@ -165,11 +166,11 @@ describe('GscService', () => {
             const { service, archive } = setup({}, true);
             stageCoverage(archive, '2025-07-13', '2026-09-29');
 
-            const result = await service.getKeywords({ kind: 'period', hours: 24 }, 10);
+            const result = await service.getKeywords({ kind: 'period', hours: 24 }, { limit: 10 });
 
             expect(result.windowStart).toBe('2026-09-29T00:00:00.000Z');
             expect(result.windowEnd).toBe('2026-09-29T23:59:59.999Z');
-            expect(archive.sumByKeyword).toHaveBeenCalledWith('2026-09-29', '2026-09-29', 10);
+            expect(archive.sumByKeyword).toHaveBeenCalledWith('2026-09-29', '2026-09-29', { limit: 10 });
         });
 
         it('covers whole days and falls back to the fixed delay with nothing archived', async () => {
@@ -178,7 +179,7 @@ describe('GscService', () => {
             const { service } = setup();
             const anchor = fallbackAnchorDay();
 
-            const result = await service.getKeywords({ kind: 'period', hours: 168 }, 10);
+            const result = await service.getKeywords({ kind: 'period', hours: 168 }, { limit: 10 });
 
             expect(new Date(result.windowStart).getTime()).toBe(anchor - 6 * DAY_MS);
             expect(new Date(result.windowEnd).getTime()).toBe(anchor + DAY_MS - 1);
@@ -189,7 +190,7 @@ describe('GscService', () => {
             const { service, archive } = setup({}, true);
             stageCoverage(archive, '2025-07-13', '2026-09-29');
 
-            const result = await service.getKeywords({ kind: 'all' }, 10);
+            const result = await service.getKeywords({ kind: 'all' }, { limit: 10 });
 
             expect(result.windowStart).toBe('2025-07-13T00:00:00.000Z');
             expect(result.windowEnd).toBe('2026-09-29T23:59:59.999Z');
@@ -198,11 +199,11 @@ describe('GscService', () => {
         it('reads an explicit range exactly, without consulting the archived range', async () => {
             const { service, archive } = setup({}, true);
 
-            const result = await service.getPages({ kind: 'range', startDate: '2025-03-01', endDate: '2025-03-31' }, 5);
+            const result = await service.getPages({ kind: 'range', startDate: '2025-03-01', endDate: '2025-03-31' }, { limit: 5 });
 
             expect(result.windowStart).toBe('2025-03-01T00:00:00.000Z');
             expect(result.windowEnd).toBe('2025-03-31T23:59:59.999Z');
-            expect(archive.sumByPage).toHaveBeenCalledWith('2025-03-01', '2025-03-31', 5);
+            expect(archive.sumByPage).toHaveBeenCalledWith('2025-03-01', '2025-03-31', { limit: 5 });
             expect(archive.getCoverage).not.toHaveBeenCalled();
         });
 
@@ -218,12 +219,12 @@ describe('GscService', () => {
             // window's end means every day shown is final.
             const inside = setup({ 'gsc:firstIncompleteDate': '2026-09-29' }, true);
             stageCoverage(inside.archive, '2026-01-01', '2026-09-29');
-            expect((await inside.service.getKeywords({ kind: 'period', hours: 168 }, 10)).firstIncompleteDate).toBe('2026-09-29');
+            expect((await inside.service.getKeywords({ kind: 'period', hours: 168 }, { limit: 10 })).firstIncompleteDate).toBe('2026-09-29');
 
             GscService.resetInstance();
             const beyond = setup({ 'gsc:firstIncompleteDate': '2026-09-30' }, true);
             stageCoverage(beyond.archive, '2026-01-01', '2026-09-29');
-            expect((await beyond.service.getKeywords({ kind: 'period', hours: 168 }, 10)).firstIncompleteDate).toBeNull();
+            expect((await beyond.service.getKeywords({ kind: 'period', hours: 168 }, { limit: 10 })).firstIncompleteDate).toBeNull();
         });
 
         it('raises a saved day before the window start to the window start', async () => {
@@ -232,7 +233,7 @@ describe('GscService', () => {
             const { service, archive } = setup({ 'gsc:firstIncompleteDate': '2026-09-27' }, true);
             stageCoverage(archive, '2026-01-01', '2026-09-29');
 
-            expect((await service.getKeywords({ kind: 'period', hours: 24 }, 10)).firstIncompleteDate).toBe('2026-09-29');
+            expect((await service.getKeywords({ kind: 'period', hours: 24 }, { limit: 10 })).firstIncompleteDate).toBe('2026-09-29');
         });
     });
 
@@ -241,12 +242,15 @@ describe('GscService', () => {
             // Position must weight by impressions, not average naively, and a
             // surfaced-but-unclicked page (zero clicks) must still appear.
             const { service, archive } = setup({}, true);
-            archive.sumByPage.mockResolvedValue([
-                { page: '/energy', clicks: 5, impressions: 100, weightedPosition: 250 },
-                { page: '/quiet', clicks: 0, impressions: 40, weightedPosition: 320 }
-            ]);
+            archive.sumByPage.mockResolvedValue({
+                rows: [
+                    { page: '/energy', clicks: 5, impressions: 100, weightedPosition: 250 },
+                    { page: '/quiet', clicks: 0, impressions: 40, weightedPosition: 320 }
+                ],
+                total: 2
+            });
 
-            const result = await service.getPages({ kind: 'period', hours: 168 }, 10);
+            const result = await service.getPages({ kind: 'period', hours: 168 }, { limit: 10 });
 
             expect(result.pages[0]).toEqual({ page: '/energy', clicks: 5, impressions: 100, ctr: 0.05, position: 2.5 });
             expect(result.pages[1]).toEqual({ page: '/quiet', clicks: 0, impressions: 40, ctr: 0, position: 8 });
@@ -255,14 +259,55 @@ describe('GscService', () => {
         it('passes no limit for keyword-page pairs unless the caller sets one', async () => {
             // The admin panel shows every pair; only a capped caller narrows it.
             const { service, archive } = setup({}, true);
-            archive.sumByKeywordPage.mockResolvedValue([
-                { keyword: 'tron energy', page: '/tools/energy', clicks: 2, impressions: 10, weightedPosition: 30 }
-            ]);
+            archive.sumByKeywordPage.mockResolvedValue({
+                rows: [{ keyword: 'tron energy', page: '/tools/energy', clicks: 2, impressions: 10, weightedPosition: 30 }],
+                total: 1
+            });
 
             const result = await service.getKeywordPagePairs({ kind: 'all' });
 
-            expect(archive.sumByKeywordPage.mock.calls[0][2]).toBeUndefined();
+            expect(archive.sumByKeywordPage.mock.calls[0][2]?.limit).toBeUndefined();
             expect(result.pairs).toEqual([{ keyword: 'tron energy', page: '/tools/energy', clicks: 2, impressions: 10, ctr: 0.2, position: 3 }]);
+        });
+
+        it('caps the keyword and page reads at ten rows when the caller sets no limit', async () => {
+            // Without a default, a caller passing only a sort would pull every
+            // query in the window.
+            const { service, archive } = setup({}, true);
+            stageCoverage(archive, '2026-01-01', '2026-09-29');
+
+            await service.getKeywords({ kind: 'period', hours: 168 }, { sort: 'impressions' });
+            await service.getPages({ kind: 'period', hours: 168 });
+
+            expect(archive.sumByKeyword.mock.calls[0][2]).toEqual({ sort: 'impressions', limit: 10 });
+            expect(archive.sumByPage.mock.calls[0][2]).toEqual({ limit: 10 });
+        });
+
+        it('matches a keyword filter the way Google stores queries and reports the matched total', async () => {
+            // Google stores queries lower-cased, so " Tron Energy " must match
+            // them, and `total` is what tells a capped caller more pages exist.
+            const { service, archive } = setup({}, true);
+            stageCoverage(archive, '2026-01-01', '2026-09-29');
+            archive.sumByKeyword.mockResolvedValue({
+                rows: [{ keyword: 'tron energy rental', clicks: 0, impressions: 12, weightedPosition: 180 }],
+                total: 37
+            });
+
+            const result = await service.getKeywords(
+                { kind: 'period', hours: 720 },
+                { keyword: ' Tron Energy ', match: 'contains', limit: 1, offset: 5, minImpressions: 3, pathPrefix: '/blog/' }
+            );
+
+            expect(archive.sumByKeyword.mock.calls[0][2]).toEqual({
+                keyword: 'tron energy',
+                match: 'contains',
+                limit: 1,
+                offset: 5,
+                minImpressions: 3,
+                pathPrefix: '/blog/'
+            });
+            expect(result.total).toBe(37);
+            expect(result.keywords).toEqual([{ keyword: 'tron energy rental', clicks: 0, impressions: 12, ctr: 0, position: 15 }]);
         });
     });
 

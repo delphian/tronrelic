@@ -35,7 +35,16 @@
 import { google } from 'googleapis';
 import type { searchconsole_v1 } from 'googleapis';
 import type { IDatabaseService, ICacheService, ISystemLogService } from '@/types';
-import type { GscArchiveTable, GscGranularity, GscKeywordMatch, IGscArchive, IGscArchiveCoverage, IGscArchiveSums } from './IGscArchive.js';
+import type {
+    GscArchiveTable,
+    GscGranularity,
+    GscKeywordMatch,
+    IGscArchive,
+    IGscArchiveCoverage,
+    IGscArchiveSums,
+    IGscQueryRankedReadOptions,
+    IGscRankedReadOptions
+} from './IGscArchive.js';
 import type { GscWindowRequest } from './GscWindowRequest.js';
 import { parseGscDay, parseGscDayRange, toGscDayKey } from './parseGscDay.js';
 
@@ -136,7 +145,9 @@ export interface IGscKeywordsPeriodResult {
      * can still change.
      */
     firstIncompleteDate: string | null;
-    /** Aggregated keywords sorted by clicks descending. */
+    /** Queries matching the window and filters before the row cap, so a caller can tell whether more pages exist. */
+    total: number;
+    /** Aggregated keywords in the requested rank order, most clicks first by default. */
     keywords: IGscKeyword[];
 }
 
@@ -195,7 +206,9 @@ export interface IGscPagesPeriodResult {
     windowEnd: string;
     /** First non-final day in the window (YYYY-MM-DD), or null when all are final. */
     firstIncompleteDate: string | null;
-    /** Aggregated pages sorted by clicks descending. */
+    /** Pages matching the window and filters before the row cap. */
+    total: number;
+    /** Aggregated pages in the requested rank order, most clicks first by default. */
     pages: IGscPage[];
 }
 
@@ -239,7 +252,9 @@ export interface IGscKeywordPagesPeriodResult {
     windowEnd: string;
     /** First non-final day in the window (YYYY-MM-DD), or null when all are final. */
     firstIncompleteDate: string | null;
-    /** Aggregated pairs sorted by clicks descending. */
+    /** Pairs matching the window and filters before the row cap. */
+    total: number;
+    /** Aggregated pairs in the requested rank order, most clicks first by default. */
     pairs: IGscKeywordPage[];
 }
 
@@ -351,6 +366,28 @@ interface IResolvedGscWindow {
 
 /** Most matched-query strings {@link GscService.getKeywordHistory} returns alongside the series. */
 const KEYWORD_HISTORY_MATCHED_QUERY_LIMIT = 10;
+
+/** Rows {@link GscService.getKeywords} and {@link GscService.getPages} return when the caller sets no limit. */
+const DEFAULT_RANKED_LIMIT = 10;
+
+/**
+ * Prepare a caller's keyword the way Google stores queries, trimmed and
+ * lower-cased, so the ranked reads and the keyword history match the same rows.
+ */
+function normalizeGscKeyword(keyword: string): string {
+    return keyword.trim().toLowerCase();
+}
+
+/**
+ * Copy ranked-read options with their keyword filter normalized like stored
+ * queries, leaving options without one unchanged.
+ *
+ * @param options - The caller's options.
+ * @returns Options safe to hand to the archive.
+ */
+function withNormalizedKeyword(options: IGscQueryRankedReadOptions): IGscQueryRankedReadOptions {
+    return options.keyword === undefined ? options : { ...options, keyword: normalizeGscKeyword(options.keyword) };
+}
 
 /**
  * Longest window charted one point per day. Past it, a daily series is too
@@ -1189,30 +1226,37 @@ export class GscService {
     }
 
     /**
-     * Get the top search queries over a window, with clicks, impressions,
-     * click-through rate, and impression-weighted position, most clicks first.
+     * Get the search queries over a window, with clicks, impressions,
+     * click-through rate, and impression-weighted position, ranked and
+     * filtered as the caller asks (most clicks first by default).
      *
      * The returned `windowStart`/`windowEnd` carry the days actually covered
-     * (see {@link resolveWindow}), so the UI can show true coverage.
+     * (see {@link resolveWindow}), so the UI can show true coverage, and
+     * `total` counts every matching query so a capped caller can page on.
      *
      * @param window - The span to aggregate.
-     * @param limit - Most keywords to return (default: 10).
-     * @returns The covered window and its aggregated keywords.
+     * @param options - Ranking, paging, and filters. Without a `limit`,
+     *   {@link DEFAULT_RANKED_LIMIT} rows are returned.
+     * @returns The covered window, the matched total, and the requested keywords.
      */
-    async getKeywords(window: GscWindowRequest, limit: number = 10): Promise<IGscKeywordsPeriodResult> {
+    async getKeywords(window: GscWindowRequest, options: IGscQueryRankedReadOptions = {}): Promise<IGscKeywordsPeriodResult> {
         const resolved = await this.resolveWindow(window);
-        const rows = await this.archive.sumByKeyword(resolved.sinceKey, resolved.endKey, limit);
+        const result = await this.archive.sumByKeyword(resolved.sinceKey, resolved.endKey, {
+            ...withNormalizedKeyword(options),
+            limit: options.limit ?? DEFAULT_RANKED_LIMIT
+        });
         return {
             windowStart: resolved.since.toISOString(),
             windowEnd: resolved.end.toISOString(),
             firstIncompleteDate: resolved.firstIncompleteDate,
-            keywords: rows.map(row => ({ keyword: row.keyword, ...toRates(row) }))
+            total: result.total,
+            keywords: result.rows.map(row => ({ keyword: row.keyword, ...toRates(row) }))
         };
     }
 
     /**
-     * Get the landing pages search surfaced over a window, most clicks then
-     * impressions first.
+     * Get the landing pages search surfaced over a window, ranked and
+     * filtered as the caller asks (most clicks, then impressions, by default).
      *
      * The page-dimension counterpart to {@link getKeywords}, read from the
      * page totals, which escape query anonymization. Because impressions are
@@ -1220,44 +1264,52 @@ export class GscService {
      * zero clicks.
      *
      * @param window - The span to aggregate.
-     * @param limit - Most pages to return (default: 10).
-     * @returns The covered window and its aggregated pages.
+     * @param options - Ranking, paging, and filters. Without a `limit`,
+     *   {@link DEFAULT_RANKED_LIMIT} rows are returned.
+     * @returns The covered window, the matched total, and the requested pages.
      */
-    async getPages(window: GscWindowRequest, limit: number = 10): Promise<IGscPagesPeriodResult> {
+    async getPages(window: GscWindowRequest, options: IGscRankedReadOptions = {}): Promise<IGscPagesPeriodResult> {
         const resolved = await this.resolveWindow(window);
-        const rows = await this.archive.sumByPage(resolved.sinceKey, resolved.endKey, limit);
+        const result = await this.archive.sumByPage(resolved.sinceKey, resolved.endKey, {
+            ...options,
+            limit: options.limit ?? DEFAULT_RANKED_LIMIT
+        });
         return {
             windowStart: resolved.since.toISOString(),
             windowEnd: resolved.end.toISOString(),
             firstIncompleteDate: resolved.firstIncompleteDate,
-            pages: rows.map(row => ({ page: row.page, ...toRates(row) }))
+            total: result.total,
+            pages: result.rows.map(row => ({ page: row.page, ...toRates(row) }))
         };
     }
 
     /**
-     * Get which pages each keyword surfaced over a window, most clicks then
-     * impressions first, so impression-only pairs still appear.
+     * Get which pages each keyword surfaced over a window, ranked and
+     * filtered as the caller asks (most clicks, then impressions, by default),
+     * so impression-only pairs still appear.
      *
      * Answers "which pages did each keyword surface?", the join the separate
      * keyword and page panels cannot express because each drops one dimension.
-     * Read from the keyword rows, so it inherits GSC's low-volume query
-     * anonymization exactly as the keyword panel does: anonymized queries
-     * never produced a row, so their clicks are absent and will not reconcile
-     * with the anonymization-immune page totals.
+     * With a page filter it answers "what does this page rank for?". Read from
+     * the keyword rows, so it inherits GSC's low-volume query anonymization
+     * exactly as the keyword panel does: anonymized queries never produced a
+     * row, so their clicks are absent and will not reconcile with the
+     * anonymization-immune page totals.
      *
      * @param window - The span to aggregate.
-     * @param limit - Most pairs to return; omit (or pass 0) for all pairs.
-     *   The admin view is meant to be exhaustive, so it passes none.
-     * @returns The covered window and its aggregated keyword→page pairs.
+     * @param options - Ranking, paging, and filters. Omit `limit` (or pass 0)
+     *   for every pair; the admin view is meant to be exhaustive, so it passes none.
+     * @returns The covered window, the matched total, and the requested pairs.
      */
-    async getKeywordPagePairs(window: GscWindowRequest, limit?: number): Promise<IGscKeywordPagesPeriodResult> {
+    async getKeywordPagePairs(window: GscWindowRequest, options: IGscQueryRankedReadOptions = {}): Promise<IGscKeywordPagesPeriodResult> {
         const resolved = await this.resolveWindow(window);
-        const rows = await this.archive.sumByKeywordPage(resolved.sinceKey, resolved.endKey, limit);
+        const result = await this.archive.sumByKeywordPage(resolved.sinceKey, resolved.endKey, withNormalizedKeyword(options));
         return {
             windowStart: resolved.since.toISOString(),
             windowEnd: resolved.end.toISOString(),
             firstIncompleteDate: resolved.firstIncompleteDate,
-            pairs: rows.map(row => ({ keyword: row.keyword, page: row.page, ...toRates(row) }))
+            total: result.total,
+            pairs: result.rows.map(row => ({ keyword: row.keyword, page: row.page, ...toRates(row) }))
         };
     }
 
@@ -1296,7 +1348,7 @@ export class GscService {
         match: GscKeywordMatch = 'exact',
         granularity?: GscGranularity
     ): Promise<IGscKeywordHistoryResult> {
-        const normalized = keyword.trim().toLowerCase();
+        const normalized = normalizeGscKeyword(keyword);
         const resolved = await this.resolveWindow(window);
         const bucketSize = granularity ?? pickGscGranularity(resolved.dayCount);
 

@@ -7,8 +7,9 @@
  * synchronous so a failed write reaches the caller, the prune statement and
  * the input check that guards it (`exec` takes no bound parameters), the
  * coverage read's handling of an empty archive, and the read statements:
- * bound parameters, FINAL, distinct aliases, and empty results without
- * ClickHouse.
+ * bound parameters, FINAL, distinct aliases, empty results without
+ * ClickHouse, and the ranked reads' ordering, tie-breaks, filters, paging,
+ * and matched-total count.
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -138,37 +139,128 @@ describe('GscArchive', () => {
         // empty instead of failing the request.
         const archive = new GscArchive(undefined, createMockLogger());
 
-        await expect(archive.sumByKeyword('2026-09-01', '2026-09-30', 10)).resolves.toEqual([]);
+        await expect(archive.sumByKeyword('2026-09-01', '2026-09-30', { limit: 10 })).resolves.toEqual({ rows: [], total: 0 });
         await expect(archive.getCoverage()).resolves.toEqual({ firstDate: null, lastDate: null, days: 0 });
     });
 
     it('sums keywords with bound day parameters, FINAL, and numeric counts', async () => {
         // ClickHouse returns 64-bit sums as strings, and an unmerged refetch
         // must be counted once.
-        const { clickhouse, query } = createClickHouse([
-            { keyword: 'tron energy', total_clicks: '3', total_impressions: '40', weighted_position: 120 }
-        ]);
+        const { clickhouse, query } = createClickHouse();
+        query
+            .mockResolvedValueOnce([{ keyword: 'tron energy', total_clicks: '3', total_impressions: '40', weighted_position: 120 }])
+            .mockResolvedValueOnce([{ total: '7' }]);
         const archive = new GscArchive(clickhouse, createMockLogger());
 
-        const rows = await archive.sumByKeyword('2026-09-01', '2026-09-30', 10);
+        const result = await archive.sumByKeyword('2026-09-01', '2026-09-30', { limit: 10 });
 
         const [sql, params] = query.mock.calls[0];
         expect(sql).toContain('FROM gsc_queries FINAL');
         expect(sql).toContain('date BETWEEN {since:Date} AND {end:Date}');
-        expect(sql).toContain('LIMIT {limit:UInt32}');
-        expect(params).toEqual({ since: '2026-09-01', end: '2026-09-30', limit: 10 });
-        expect(rows).toEqual([{ keyword: 'tron energy', clicks: 3, impressions: 40, weightedPosition: 120 }]);
+        expect(sql).toContain('LIMIT {limit:UInt32} OFFSET {offset:UInt32}');
+        expect(params).toEqual({ since: '2026-09-01', end: '2026-09-30', limit: 10, offset: 0 });
+        expect(result).toEqual({ rows: [{ keyword: 'tron energy', clicks: 3, impressions: 40, weightedPosition: 120 }], total: 7 });
     });
 
-    it('sends no limit when the caller asks for every pair', async () => {
+    it('sends no limit and runs no count when the caller asks for every pair', async () => {
+        // An uncapped read already holds every matching row, so its length is
+        // the total and a second statement would only repeat the work.
+        const { clickhouse, query } = createClickHouse([
+            { keyword: 'tron energy', page: 'https://tronrelic.com/', total_clicks: 1, total_impressions: 4, weighted_position: 8 }
+        ]);
+        const archive = new GscArchive(clickhouse, createMockLogger());
+
+        const result = await archive.sumByKeywordPage('2026-09-01', '2026-09-30');
+
+        const [sql, params] = query.mock.calls[0];
+        expect(query).toHaveBeenCalledTimes(1);
+        expect(sql).not.toContain('LIMIT');
+        expect(params).toEqual({ since: '2026-09-01', end: '2026-09-30' });
+        expect(result.total).toBe(1);
+    });
+
+    it('breaks a clicks ranking on impressions before the query text', async () => {
+        // Most queries on a low-traffic site have zero clicks. Breaking those
+        // ties alphabetically made a 50-row read return the alphabetically
+        // first one-impression queries and drop the most-shown ones.
         const { clickhouse, query } = createClickHouse();
         const archive = new GscArchive(clickhouse, createMockLogger());
 
-        await archive.sumByKeywordPage('2026-09-01', '2026-09-30');
+        await archive.sumByKeyword('2026-09-01', '2026-09-30', { limit: 50 });
+
+        expect(query.mock.calls[0][0]).toContain('ORDER BY total_clicks DESC, total_impressions DESC, keyword ASC');
+    });
+
+    it('orders by most impressions or best average position when asked', async () => {
+        const { clickhouse, query } = createClickHouse();
+        const archive = new GscArchive(clickhouse, createMockLogger());
+
+        await archive.sumByPage('2026-09-01', '2026-09-30', { sort: 'impressions', limit: 5 });
+        await archive.sumByKeywordPage('2026-09-01', '2026-09-30', { sort: 'position', limit: 5 });
+
+        // Each capped read runs its rows statement and then its count.
+        expect(query.mock.calls[0][0]).toContain('FROM gsc_page_totals FINAL');
+        expect(query.mock.calls[0][0]).toContain('ORDER BY total_impressions DESC, total_clicks DESC, page ASC');
+        expect(query.mock.calls[2][0]).toContain(
+            'ORDER BY round(weighted_position / total_impressions, 1) ASC, total_impressions DESC, keyword ASC, page ASC'
+        );
+    });
+
+    it('binds every filter, applies figure filters to window totals, and counts with the same filters', async () => {
+        // A count that ignored a filter would report pages of rows that
+        // do not exist, and the caller would page into empty results.
+        const { clickhouse, query } = createClickHouse();
+        const archive = new GscArchive(clickhouse, createMockLogger());
+
+        await archive.sumByKeyword('2026-09-01', '2026-09-30', {
+            limit: 20,
+            offset: 40,
+            minImpressions: 10,
+            minPosition: 5,
+            maxPosition: 20,
+            pathPrefix: '/blog/',
+            keyword: 'energy',
+            match: 'contains'
+        });
 
         const [sql, params] = query.mock.calls[0];
-        expect(sql).not.toContain('LIMIT');
-        expect(params).toEqual({ since: '2026-09-01', end: '2026-09-30' });
+        expect(sql).toContain('positionCaseInsensitiveUTF8(query, {keyword:String}) > 0');
+        expect(sql).toContain('startsWith(path(page), {pathPrefix:String})');
+        expect(sql).toContain(
+            'HAVING total_impressions >= {minImpressions:UInt64} AND total_impressions > 0 ' +
+            'AND round(weighted_position / total_impressions, 1) >= {minPosition:Float64} ' +
+            'AND round(weighted_position / total_impressions, 1) <= {maxPosition:Float64}'
+        );
+        expect(params).toEqual({
+            since: '2026-09-01',
+            end: '2026-09-30',
+            keyword: 'energy',
+            pathPrefix: '/blog/',
+            minImpressions: 10,
+            minPosition: 5,
+            maxPosition: 20,
+            limit: 20,
+            offset: 40
+        });
+
+        const [countSql, countParams] = query.mock.calls[1];
+        expect(countSql).toMatch(/^SELECT count\(\) AS total FROM \(SELECT query AS keyword, /);
+        expect(countSql).toContain('startsWith(path(page), {pathPrefix:String})');
+        expect(countSql).toContain('HAVING total_impressions >= {minImpressions:UInt64}');
+        expect(countSql).not.toContain('LIMIT');
+        expect(countParams).not.toHaveProperty('limit');
+        expect(countParams).not.toHaveProperty('offset');
+    });
+
+    it('matches one landing page by its path, whatever host the stored URL carries', async () => {
+        // Search Console reports full URLs; callers name pages by path.
+        const { clickhouse, query } = createClickHouse();
+        const archive = new GscArchive(clickhouse, createMockLogger());
+
+        await archive.sumByPage('2026-09-01', '2026-09-30', { pagePath: '/resource-markets', limit: 5 });
+
+        expect(query.mock.calls[0][0]).toContain('path(page) = {pagePath:String}');
+        expect(query.mock.calls[0][1]).toMatchObject({ pagePath: '/resource-markets' });
     });
 
     it('keeps aggregate aliases distinct from column names', async () => {
@@ -183,6 +275,8 @@ describe('GscArchive', () => {
         const [sql, params] = query.mock.calls[0];
         expect(sql).not.toMatch(/AS (clicks|impressions)\b/);
         expect(sql).toContain('toMonday(date)');
+        // A bucket of zero-click queries keeps its most-shown ones.
+        expect(sql).toContain('total_clicks DESC, total_impressions DESC, keyword ASC');
         expect(sql).toContain('LIMIT {topN:UInt32} BY bucket');
         expect(params).toEqual({ since: '2026-01-01', end: '2026-09-30', topN: 3 });
     });

@@ -16,6 +16,8 @@
  *   counted once.
  * - ClickHouse returns 64-bit sums as JSON strings, so every count is passed
  *   through `Number()`.
+ * - Ranked reads bind every filter value as a parameter and take their
+ *   ORDER BY from a fixed map, so caller input never becomes SQL text.
  */
 
 import type { IClickHouseService, ISystemLogService } from '@/types';
@@ -26,13 +28,17 @@ import type {
     GscArchiveTable,
     GscGranularity,
     GscKeywordMatch,
+    GscRankSort,
     IGscArchive,
     IGscArchiveBucketKeywordSums,
     IGscArchiveBucketTotals,
     IGscArchiveCoverage,
     IGscArchiveKeywordPageSums,
     IGscArchiveKeywordSums,
-    IGscArchivePageSums
+    IGscArchivePageSums,
+    IGscQueryRankedReadOptions,
+    IGscRankedReadOptions,
+    IGscRankedRows
 } from './IGscArchive.js';
 
 /**
@@ -73,24 +79,118 @@ function toSums(row: IRawSums): { clicks: number; impressions: number; weightedP
     };
 }
 
-/** The optional `LIMIT` clause, bound as a parameter when the caller sets a limit. */
-function limitClause(limit: number | undefined): string {
-    return limit && limit > 0 ? 'LIMIT {limit:UInt32}' : '';
+/**
+ * The impression-weighted average position, rounded to one decimal so the
+ * position filters and the position ranking work on the same figure the
+ * reads report. A group with no impressions has no position, so every filter
+ * on it also requires `total_impressions > 0`.
+ */
+const AVERAGE_POSITION = 'round(weighted_position / total_impressions, 1)';
+
+/**
+ * The leading ORDER BY terms for each ranking, taken from this fixed map and
+ * never from caller text. Every ranking breaks ties on a second figure before
+ * the row's own key, because on a low-traffic site most rows have zero
+ * clicks, and an alphabetical tie-break would then decide which of them a
+ * capped read returns.
+ */
+const RANK_ORDER: Readonly<Record<GscRankSort, string>> = {
+    clicks: 'total_clicks DESC, total_impressions DESC',
+    impressions: 'total_impressions DESC, total_clicks DESC',
+    position: `${AVERAGE_POSITION} ASC, total_impressions DESC`
+};
+
+/**
+ * What differs between the three ranked reads: the table, the grouping
+ * columns, and the final tie-break that keeps rows equal on every figure in
+ * one order, so consecutive pages neither repeat nor skip a row.
+ */
+interface IRankedReadSpec {
+    /** Table to read. */
+    table: 'gsc_queries' | 'gsc_page_totals';
+    /** Grouping columns as selected, such as `query AS keyword`. */
+    columns: string;
+    /** GROUP BY list, naming the aliases in `columns`. */
+    groupBy: string;
+    /** Last ORDER BY terms. */
+    tieBreak: string;
+}
+
+/** One row per search query, from the keyword rows. */
+const KEYWORD_READ: IRankedReadSpec = { table: 'gsc_queries', columns: 'query AS keyword', groupBy: 'keyword', tieBreak: 'keyword ASC' };
+
+/** One row per landing page, from the anonymization-immune page totals. */
+const PAGE_READ: IRankedReadSpec = { table: 'gsc_page_totals', columns: 'page', groupBy: 'page', tieBreak: 'page ASC' };
+
+/** One row per query and the page it surfaced, from the keyword rows. */
+const KEYWORD_PAGE_READ: IRankedReadSpec = {
+    table: 'gsc_queries',
+    columns: 'query AS keyword, page',
+    groupBy: 'keyword, page',
+    tieBreak: 'keyword ASC, page ASC'
+};
+
+/**
+ * The condition matching stored queries against the bound `{keyword:String}`
+ * parameter. A `contains` match is a case-insensitive substring test, so the
+ * keyword is always literal text and never a pattern.
+ */
+function keywordCondition(match: GscKeywordMatch): string {
+    return match === 'contains'
+        ? 'positionCaseInsensitiveUTF8(query, {keyword:String}) > 0'
+        : 'query = {keyword:String}';
 }
 
 /**
- * Add the `limit` parameter only when `limitClause` placed its placeholder,
- * so no unused or undefined value is sent with the query.
+ * Turn a ranked read's options into conditions on the stored rows, conditions
+ * on the summed window totals, and the parameters both bind. Every value is
+ * bound rather than placed in the statement, so caller text cannot change the
+ * query's shape.
  *
- * @param params - The read's other parameters.
- * @param limit - The caller's limit, if any.
- * @returns The parameters to send.
+ * Page filters compare the URL's path, because Search Console reports full
+ * URLs while callers think in paths such as `/blog/`.
+ *
+ * @param options - The read's options. Only the reads over keyword rows set
+ *   `keyword`, since only those rows carry a query.
+ * @returns The WHERE and HAVING conditions and their parameters.
  */
-function withLimit(params: Record<string, unknown>, limit: number | undefined): Record<string, unknown> {
-    return limit && limit > 0 ? { ...params, limit } : params;
+function rankedConditions(options: IGscQueryRankedReadOptions): {
+    where: string[];
+    having: string[];
+    params: Record<string, unknown>;
+} {
+    const where: string[] = [WINDOW_FILTER];
+    const having: string[] = [];
+    const params: Record<string, unknown> = {};
+    if (options.keyword !== undefined) {
+        where.push(keywordCondition(options.match ?? 'exact'));
+        params.keyword = options.keyword;
+    }
+    if (options.pagePath !== undefined) {
+        where.push('path(page) = {pagePath:String}');
+        params.pagePath = options.pagePath;
+    }
+    if (options.pathPrefix !== undefined) {
+        where.push('startsWith(path(page), {pathPrefix:String})');
+        params.pathPrefix = options.pathPrefix;
+    }
+    if (options.minImpressions !== undefined) {
+        having.push('total_impressions >= {minImpressions:UInt64}');
+        params.minImpressions = options.minImpressions;
+    }
+    if (options.minPosition !== undefined || options.maxPosition !== undefined) {
+        having.push('total_impressions > 0');
+    }
+    if (options.minPosition !== undefined) {
+        having.push(`${AVERAGE_POSITION} >= {minPosition:Float64}`);
+        params.minPosition = options.minPosition;
+    }
+    if (options.maxPosition !== undefined) {
+        having.push(`${AVERAGE_POSITION} <= {maxPosition:Float64}`);
+        params.maxPosition = options.maxPosition;
+    }
+    return { where, having, params };
 }
-
-
 
 /**
  * Stores Search Console rows permanently in ClickHouse.
@@ -214,57 +314,50 @@ export class GscArchive implements IGscArchive {
     }
 
     /**
-     * Sum each query over the window, most clicks first, with ties broken by
-     * the query so equal rows keep one order between calls.
+     * Sum each query over the window, ranked by `options.sort`.
      *
      * @param since - First day (YYYY-MM-DD), inclusive.
      * @param end - Last day (YYYY-MM-DD), inclusive.
-     * @param limit - Most rows to return; omit for every query.
-     * @returns One row per query.
+     * @param options - Ranking, paging, and filters; omit for every query, most clicks first.
+     * @returns The requested rows and how many queries matched in all.
      */
-    async sumByKeyword(since: string, end: string, limit?: number): Promise<IGscArchiveKeywordSums[]> {
-        const rows = await this.select<IRawSums & { keyword: string }>(
-            `SELECT query AS keyword, ${SUM_COLUMNS} FROM gsc_queries FINAL WHERE ${WINDOW_FILTER} ` +
-            `GROUP BY keyword ORDER BY total_clicks DESC, keyword ASC ${limitClause(limit)}`,
-            withLimit({ since, end }, limit)
-        );
-        return rows.map(row => ({ keyword: row.keyword, ...toSums(row) }));
+    async sumByKeyword(since: string, end: string, options: IGscQueryRankedReadOptions = {}): Promise<IGscRankedRows<IGscArchiveKeywordSums>> {
+        const result = await this.rankedRead<{ keyword: string }>(KEYWORD_READ, since, end, options);
+        return { rows: result.rows.map(row => ({ keyword: row.keyword, ...toSums(row) })), total: result.total };
     }
 
     /**
-     * Sum each landing page over the window from the page totals, most clicks
-     * then impressions first, so pages shown without a click still rank.
+     * Sum each landing page over the window from the page totals, ranked by
+     * `options.sort`. Pages shown without a click still rank, on impressions.
      *
      * @param since - First day (YYYY-MM-DD), inclusive.
      * @param end - Last day (YYYY-MM-DD), inclusive.
-     * @param limit - Most rows to return.
-     * @returns One row per page.
+     * @param options - Ranking, paging, and filters; omit for every page, most clicks first.
+     * @returns The requested rows and how many pages matched in all.
      */
-    async sumByPage(since: string, end: string, limit: number): Promise<IGscArchivePageSums[]> {
-        const rows = await this.select<IRawSums & { page: string }>(
-            `SELECT page, ${SUM_COLUMNS} FROM gsc_page_totals FINAL WHERE ${WINDOW_FILTER} ` +
-            `GROUP BY page ORDER BY total_clicks DESC, total_impressions DESC, page ASC ${limitClause(limit)}`,
-            withLimit({ since, end }, limit)
-        );
-        return rows.map(row => ({ page: row.page, ...toSums(row) }));
+    async sumByPage(since: string, end: string, options: IGscRankedReadOptions = {}): Promise<IGscRankedRows<IGscArchivePageSums>> {
+        const result = await this.rankedRead<{ page: string }>(PAGE_READ, since, end, options);
+        return { rows: result.rows.map(row => ({ page: row.page, ...toSums(row) })), total: result.total };
     }
 
     /**
-     * Sum each query and page pair over the window, most clicks then
-     * impressions first.
+     * Sum each query and page pair over the window, ranked by `options.sort`.
      *
      * @param since - First day (YYYY-MM-DD), inclusive.
      * @param end - Last day (YYYY-MM-DD), inclusive.
-     * @param limit - Most rows to return; omit for every pair.
-     * @returns One row per pair.
+     * @param options - Ranking, paging, and filters; omit for every pair, most clicks first.
+     * @returns The requested rows and how many pairs matched in all.
      */
-    async sumByKeywordPage(since: string, end: string, limit?: number): Promise<IGscArchiveKeywordPageSums[]> {
-        const rows = await this.select<IRawSums & { keyword: string; page: string }>(
-            `SELECT query AS keyword, page, ${SUM_COLUMNS} FROM gsc_queries FINAL WHERE ${WINDOW_FILTER} ` +
-            `GROUP BY keyword, page ORDER BY total_clicks DESC, total_impressions DESC, keyword ASC, page ASC ${limitClause(limit)}`,
-            withLimit({ since, end }, limit)
-        );
-        return rows.map(row => ({ keyword: row.keyword, page: row.page, ...toSums(row) }));
+    async sumByKeywordPage(
+        since: string,
+        end: string,
+        options: IGscQueryRankedReadOptions = {}
+    ): Promise<IGscRankedRows<IGscArchiveKeywordPageSums>> {
+        const result = await this.rankedRead<{ keyword: string; page: string }>(KEYWORD_PAGE_READ, since, end, options);
+        return {
+            rows: result.rows.map(row => ({ keyword: row.keyword, page: row.page, ...toSums(row) })),
+            total: result.total
+        };
     }
 
     /**
@@ -287,6 +380,9 @@ export class GscArchive implements IGscArchive {
     /**
      * The top queries by clicks within each bucket, using `LIMIT n BY` so the
      * cut happens in ClickHouse rather than after every query is sent back.
+     * Ties fall to impressions before the query text, so a bucket whose
+     * queries all have zero clicks keeps its most-shown ones rather than the
+     * alphabetically first.
      *
      * @param since - First day (YYYY-MM-DD), inclusive.
      * @param end - Last day (YYYY-MM-DD), inclusive.
@@ -298,7 +394,7 @@ export class GscArchive implements IGscArchive {
         const rows = await this.select<IRawSums & { bucket: string; keyword: string }>(
             `SELECT toString(${BUCKET_EXPRESSIONS[granularity]}) AS bucket, query AS keyword, ${SUM_COLUMNS} ` +
             `FROM gsc_queries FINAL WHERE ${WINDOW_FILTER} GROUP BY bucket, keyword ` +
-            'ORDER BY bucket ASC, total_clicks DESC, keyword ASC LIMIT {topN:UInt32} BY bucket',
+            'ORDER BY bucket ASC, total_clicks DESC, total_impressions DESC, keyword ASC LIMIT {topN:UInt32} BY bucket',
             { since, end, topN }
         );
         return rows.map(row => ({ bucket: row.bucket, keyword: row.keyword, ...toSums(row) }));
@@ -323,15 +419,57 @@ export class GscArchive implements IGscArchive {
         end: string,
         granularity: GscGranularity
     ): Promise<IGscArchiveBucketKeywordSums[]> {
-        const keywordFilter = match === 'contains'
-            ? 'positionCaseInsensitiveUTF8(query, {keyword:String}) > 0'
-            : 'query = {keyword:String}';
         const rows = await this.select<IRawSums & { bucket: string; keyword: string }>(
             `SELECT toString(${BUCKET_EXPRESSIONS[granularity]}) AS bucket, query AS keyword, ${SUM_COLUMNS} ` +
-            `FROM gsc_queries FINAL WHERE ${WINDOW_FILTER} AND ${keywordFilter} GROUP BY bucket, keyword`,
+            `FROM gsc_queries FINAL WHERE ${WINDOW_FILTER} AND ${keywordCondition(match)} GROUP BY bucket, keyword`,
             { since, end, keyword }
         );
         return rows.map(row => ({ bucket: row.bucket, keyword: row.keyword, ...toSums(row) }));
+    }
+
+    /**
+     * Run one ranked read: the requested rows, and alongside them a count of
+     * every group that matched, so a capped caller can tell whether more pages
+     * exist. An uncapped read returns every row, so its length is the count
+     * and no second statement runs.
+     *
+     * The count wraps the same grouped statement as the rows, so the two can
+     * never disagree about which groups pass the filters.
+     *
+     * @param spec - The table and grouping the read uses.
+     * @param since - First day (YYYY-MM-DD), inclusive.
+     * @param end - Last day (YYYY-MM-DD), inclusive.
+     * @param options - Ranking, paging, and filters.
+     * @returns The raw rows and the matched total.
+     */
+    private async rankedRead<T>(
+        spec: IRankedReadSpec,
+        since: string,
+        end: string,
+        options: IGscQueryRankedReadOptions
+    ): Promise<IGscRankedRows<IRawSums & T>> {
+        const conditions = rankedConditions(options);
+        const having = conditions.having.length > 0 ? ` HAVING ${conditions.having.join(' AND ')}` : '';
+        const grouped =
+            `SELECT ${spec.columns}, ${SUM_COLUMNS} FROM ${spec.table} FINAL ` +
+            `WHERE ${conditions.where.join(' AND ')} GROUP BY ${spec.groupBy}${having}`;
+        const ordered = `${grouped} ORDER BY ${RANK_ORDER[options.sort ?? 'clicks']}, ${spec.tieBreak}`;
+        const params = { since, end, ...conditions.params };
+        const capped = options.limit !== undefined && options.limit > 0;
+
+        const [rows, counted] = await Promise.all([
+            capped
+                ? this.select<IRawSums & T>(
+                    `${ordered} LIMIT {limit:UInt32} OFFSET {offset:UInt32}`,
+                    { ...params, limit: options.limit, offset: options.offset ?? 0 }
+                )
+                : this.select<IRawSums & T>(ordered, params),
+            capped
+                ? this.select<{ total: string | number }>(`SELECT count() AS total FROM (${grouped})`, params)
+                : Promise.resolve(null)
+        ]);
+
+        return { rows, total: counted ? Number(counted[0]?.total ?? 0) : rows.length };
     }
 
     /**

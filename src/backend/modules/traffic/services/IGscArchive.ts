@@ -24,6 +24,63 @@ export type GscGranularity = 'day' | 'week' | 'month';
 export type GscKeywordMatch = 'exact' | 'contains';
 
 /**
+ * Which figure a ranked read orders its rows by: most clicks, most
+ * impressions, or best (lowest) average position first.
+ */
+export type GscRankSort = 'clicks' | 'impressions' | 'position';
+
+/**
+ * Options that narrow, order, and page a ranked read.
+ *
+ * A capped read is only useful when the caller decides which rows it gets. On
+ * a low-traffic site almost every query has zero clicks, so a fixed "most
+ * clicks first" cap returns an arbitrary slice of them, while the rows worth
+ * acting on are the ones with many impressions or a middling position. The
+ * figure filters apply to totals summed over the whole window, so "at least
+ * 10 impressions" means 10 across the window, not on any one day.
+ */
+export interface IGscRankedReadOptions {
+    /** Figure to rank by. Defaults to `clicks`. */
+    sort?: GscRankSort;
+    /** Most rows to return; omit for every matching row. */
+    limit?: number;
+    /** Matching rows to skip before the returned ones, for paging. Applied only together with `limit`. */
+    offset?: number;
+    /** Keep only groups with at least this many impressions in the window. */
+    minImpressions?: number;
+    /** Keep only groups whose average position, rounded to one decimal as the reads report it, is at least this. */
+    minPosition?: number;
+    /** Keep only groups whose average position, rounded to one decimal, is at most this. */
+    maxPosition?: number;
+    /** Keep only rows whose landing page has exactly this path, such as `/resource-markets`. */
+    pagePath?: string;
+    /** Keep only rows whose landing page path starts with this, such as `/blog/`. */
+    pathPrefix?: string;
+}
+
+/**
+ * Ranked-read options for the reads over keyword rows, which can also filter
+ * by the query text because those rows carry it.
+ */
+export interface IGscQueryRankedReadOptions extends IGscRankedReadOptions {
+    /** Keep only queries matching this text, already trimmed and lower-cased. */
+    keyword?: string;
+    /** How `keyword` matches stored queries. Defaults to `exact`. */
+    match?: GscKeywordMatch;
+}
+
+/**
+ * One page of a ranked read and the number of rows that matched in all, so a
+ * caller can tell whether more pages exist.
+ */
+export interface IGscRankedRows<T> {
+    /** The requested rows, in rank order. */
+    rows: T[];
+    /** Rows matching the window and filters, before `limit` and `offset` were applied. */
+    total: number;
+}
+
+/**
  * How much of the site's search history the archive holds, read from the
  * daily totals table because it carries exactly one row per fetched day.
  */
@@ -142,36 +199,36 @@ export interface IGscArchive {
     getCoverage(): Promise<IGscArchiveCoverage>;
 
     /**
-     * Sum each query over the window, most clicks first.
+     * Sum each query over the window, ranked by `options.sort`. With a page
+     * filter, each query is summed over the matching pages only.
      *
      * @param since - First day, inclusive.
      * @param end - Last day, inclusive.
-     * @param limit - Most rows to return; omit for every query.
-     * @returns One row per query.
+     * @param options - Ranking, paging, and filters; omit for every query, most clicks first.
+     * @returns The requested rows, one per query, and how many queries matched in all.
      */
-    sumByKeyword(since: string, end: string, limit?: number): Promise<IGscArchiveKeywordSums[]>;
+    sumByKeyword(since: string, end: string, options?: IGscQueryRankedReadOptions): Promise<IGscRankedRows<IGscArchiveKeywordSums>>;
 
     /**
      * Sum each landing page over the window from the page totals, which
-     * include clicks from anonymized queries, most clicks then impressions first.
+     * include clicks from anonymized queries, ranked by `options.sort`.
      *
      * @param since - First day, inclusive.
      * @param end - Last day, inclusive.
-     * @param limit - Most rows to return.
-     * @returns One row per page.
+     * @param options - Ranking, paging, and filters; omit for every page, most clicks first.
+     * @returns The requested rows, one per page, and how many pages matched in all.
      */
-    sumByPage(since: string, end: string, limit: number): Promise<IGscArchivePageSums[]>;
+    sumByPage(since: string, end: string, options?: IGscRankedReadOptions): Promise<IGscRankedRows<IGscArchivePageSums>>;
 
     /**
-     * Sum each query and page pair over the window, most clicks then
-     * impressions first.
+     * Sum each query and page pair over the window, ranked by `options.sort`.
      *
      * @param since - First day, inclusive.
      * @param end - Last day, inclusive.
-     * @param limit - Most rows to return; omit for every pair.
-     * @returns One row per pair.
+     * @param options - Ranking, paging, and filters; omit for every pair, most clicks first.
+     * @returns The requested rows, one per pair, and how many pairs matched in all.
      */
-    sumByKeywordPage(since: string, end: string, limit?: number): Promise<IGscArchiveKeywordPageSums[]>;
+    sumByKeywordPage(since: string, end: string, options?: IGscQueryRankedReadOptions): Promise<IGscRankedRows<IGscArchiveKeywordPageSums>>;
 
     /**
      * Sum the site's daily totals into time buckets. Buckets with no data
@@ -185,7 +242,8 @@ export interface IGscArchive {
     sumTotalsByBucket(since: string, end: string, granularity: GscGranularity): Promise<IGscArchiveBucketTotals[]>;
 
     /**
-     * The top queries by clicks within each time bucket.
+     * The top queries by clicks within each time bucket, ties broken by
+     * impressions so a bucket of zero-click queries keeps its most-shown ones.
      *
      * @param since - First day, inclusive.
      * @param end - Last day, inclusive.
