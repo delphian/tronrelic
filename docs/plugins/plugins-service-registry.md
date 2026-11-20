@@ -143,6 +143,10 @@ See the [Identity Module README](../../src/backend/modules/identity/README.md#pu
 
 Core publishes the managed content service as `'content'` (`IContentService`) before any module or plugin starts. A plugin that owns content — an item the platform stores and publishes, such as a post, article, or draft — must use it: implement `IManagedContentType`, register it with `registerType()` from a `watch('content', …)` handler, and call the returned disposer in `disable()`. Every create, read, update, delete, and restore of that content then goes through the service, carrying an `IContentActor` that says who is acting and whether they are a curator. The contract types ship in `@/types`. See [system-content.md](../system/system-content.md) for the model and the author contract.
 
+## Platform-Provided Services: `markdown`
+
+Core's markdown module publishes the shared markdown renderer as `'markdown'` (`IMarkdownRendererService`) before any plugin loads. A plugin that shows authored markdown to visitors renders it through `render(markdown, options?)` instead of carrying its own remark and rehype pipeline, so the sanitize rules that make `dangerouslySetInnerHTML` safe are the same everywhere. Use `get()` in `init()`: a module cannot be disabled, so the entry is either present for the life of the process or missing because the plugin is running on a core too old to have it. The `trp-blog` plugin is the reference consumer, and passes `{ demoteHeadings: true }` because its post page owns the `<h1>`. See the [Markdown Module README](../../src/backend/modules/markdown/README.md).
+
 ## Further Reading
 
 - [plugins.md](./plugins.md) — Plugin system overview
