@@ -151,7 +151,7 @@ describe('AddressTagsModule', () => {
         expect(tabCalls.every((node: { requiresAdmin?: boolean }) => node.requiresAdmin === true)).toBe(true);
     });
 
-    it('run() registers the three ingestion jobs when a scheduler is present, none otherwise', async () => {
+    it('run() registers the three ingestion jobs and the expiry sweep when a scheduler is present, none otherwise', async () => {
         const withScheduler = createDeps();
         withScheduler.scheduler = { register: vi.fn(), disable: vi.fn(), unregister: vi.fn() };
         const module = new AddressTagsModule();
@@ -161,7 +161,8 @@ describe('AddressTagsModule', () => {
         expect(names).toEqual([
             'address-tags:sync-ofac',
             'address-tags:sync-usdt-blacklist',
-            'address-tags:verify-frozen'
+            'address-tags:verify-frozen',
+            'address-tags:expire'
         ]);
         // The Schedules tab picks this module's jobs out of the deployment-wide
         // list by name prefix, and the frontend keeps its own copy of that

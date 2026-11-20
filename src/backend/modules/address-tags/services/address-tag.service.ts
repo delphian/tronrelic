@@ -94,6 +94,24 @@ const MAX_MEANING_LENGTH = 500;
  */
 const DELETE_WRITE_CONCURRENCY = 50;
 
+/**
+ * Longest expiry a source may set on an assertion, ten years. Longer than
+ * any feed's evidence stays meaningful, and short enough that the date sum
+ * never leaves the range a `Date` holds.
+ */
+const MAX_EXPIRY_DAYS = 3650;
+
+/** One day in milliseconds, for turning `expiresAfterDays` into a time. */
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * How far into the future an assertion's `observedAt` may be. A small
+ * allowance covers clock drift between a source and this server; anything
+ * further is a bug in the source, and accepting it would keep the tag from
+ * ever expiring.
+ */
+const OBSERVED_AT_FUTURE_TOLERANCE_MS = 5 * 60 * 1000;
+
 /** Default and maximum page sizes for vocabulary and search reads. */
 const DEFAULT_LIST_LIMIT = 100;
 const MAX_LIST_LIMIT = 1000;
@@ -286,6 +304,10 @@ export class AddressTagService implements IAddressTagService {
         await this.database.createIndex(ADDRESS_TAGS_COLLECTION, { address: 1, tag: 1 }, { unique: true });
         await this.database.createIndex(ADDRESS_TAGS_COLLECTION, { tag: 1, active: 1, address: 1 }, {});
         await this.database.createIndex(ADDRESS_TAGS_COLLECTION, { 'sources.id': 1, address: 1 }, {});
+        // The expiry sweep looks only at documents carrying an element with
+        // an expiry, which are a minority; the sparse index keeps the hourly
+        // run from scanning every sanctions and freeze tag.
+        await this.database.createIndex(ADDRESS_TAGS_COLLECTION, { 'sources.expiresAfterDays': 1 }, { sparse: true });
         await this.definitions.ensureIndexes();
     }
 
@@ -738,7 +760,7 @@ export class AddressTagService implements IAddressTagService {
         if (sourceId.length === 0) {
             throw new Error('syncSource requires a non-empty source id');
         }
-        const result: IAddressTagSyncResult = { source: sourceId, added: 0, refreshed: 0, withdrawn: 0, rejected: 0 };
+        const result: IAddressTagSyncResult = { source: sourceId, added: 0, refreshed: 0, withdrawn: 0, rejected: 0, expired: 0 };
         const collection = this.database.getCollection<IAddressTagDocument>(ADDRESS_TAGS_COLLECTION);
         const now = new Date();
 
@@ -746,7 +768,7 @@ export class AddressTagService implements IAddressTagService {
         // entries: one malformed feed row must not block the rest of a
         // sanctions update. Validation happens before the snapshot floor so
         // the floor compares counts of assertions that could actually apply.
-        const valid = this.validateAssertions(assertions, sourceId, result);
+        const valid = this.validateAssertions(assertions, sourceId, result, now);
 
         // This source's current live holdings, loaded through the multikey
         // `sources.id` index. Both the snapshot diff and the delta withdrawal
@@ -776,12 +798,30 @@ export class AddressTagService implements IAddressTagService {
 
         const assertedKeys = new Set<string>();
         for (const assertion of valid) {
-            assertedKeys.add(this.pairKey(assertion.address, assertion.tag));
-            const refreshed = await this.applyAssertion(assertion, sourceId, now);
-            if (refreshed) {
-                result.refreshed += 1;
+            const key = this.pairKey(assertion.address, assertion.tag);
+            // Counted as asserted whatever happens below, so a snapshot does
+            // not withdraw an expired pair a second time.
+            assertedKeys.add(key);
+            const held = heldByKey.get(key);
+            const observedAt = this.resolveObservedAt(
+                liveKeys.has(key) ? this.findSourceElement(held, sourceId) : undefined,
+                assertion,
+                now
+            );
+            if (assertion.expiresAfterDays !== undefined && this.hasExpired(observedAt, assertion.expiresAfterDays, now)) {
+                result.expired += 1;
+                if (held && liveKeys.has(key)) {
+                    await this.withdrawSourceElement(held, sourceId, now);
+                    this.logExpired(held.address, held.tag, sourceId, observedAt, assertion.expiresAfterDays);
+                    result.withdrawn += 1;
+                }
             } else {
-                result.added += 1;
+                const refreshed = await this.applyAssertion(assertion, sourceId, observedAt, now);
+                if (refreshed) {
+                    result.refreshed += 1;
+                } else {
+                    result.added += 1;
+                }
             }
         }
 
@@ -795,7 +835,7 @@ export class AddressTagService implements IAddressTagService {
         if (mode === 'snapshot') {
             keysToWithdraw = [...liveKeys].filter((key) => !assertedKeys.has(key));
         } else {
-            const revocations = this.validateAssertions(withdrawn ?? [], sourceId, result);
+            const revocations = this.validateAssertions(withdrawn ?? [], sourceId, result, now);
             keysToWithdraw = revocations
                 .map((item) => this.pairKey(item.address, item.tag))
                 .filter((key) => liveKeys.has(key));
@@ -811,6 +851,53 @@ export class AddressTagService implements IAddressTagService {
 
         this.logger.info(result, 'Source reconcile applied');
         return result;
+    }
+
+    /**
+     * Withdraw every live source element whose `observedAt` is older than
+     * its own `expiresAfterDays` allows. A source that sets an expiry stops
+     * re-asserting a tag once it has no new evidence, so without this sweep
+     * the tag would stay live for good with nothing confirming it.
+     *
+     * Only elements that carry an expiry are read, through the sparse index
+     * on `sources.expiresAfterDays`. Withdrawal is the same soft withdrawal a
+     * source's own revocation uses, so the element stays for audit, a human
+     * claim or another source keeps the tag live, and fresh evidence later
+     * brings it back. Each withdrawn tag is logged as its own info entry.
+     * Not on `IAddressTagService`: only the module's scheduled job runs it.
+     *
+     * @param now - The time to judge expiry against; injectable for tests.
+     * @returns How many source elements were withdrawn.
+     */
+    public async expireSources(now: Date = new Date()): Promise<number> {
+        const collection = this.database.getCollection<IAddressTagDocument>(ADDRESS_TAGS_COLLECTION);
+        const candidates = await collection
+            .find({ 'sources.expiresAfterDays': { $exists: true }, active: true })
+            .toArray();
+        let expired = 0;
+        for (const candidate of candidates) {
+            // Withdrawals on one document are applied one source at a time,
+            // so the copy is updated after each one; otherwise the second
+            // withdrawal would count the first source as still live and leave
+            // the document marked active.
+            let doc = candidate;
+            for (const element of candidate.sources ?? []) {
+                if (
+                    element.expiresAfterDays !== undefined &&
+                    !element.withdrawnAt &&
+                    this.hasExpired(element.observedAt, element.expiresAfterDays, now)
+                ) {
+                    await this.withdrawSourceElement(doc, element.id, now);
+                    this.logExpired(doc.address, doc.tag, element.id, element.observedAt, element.expiresAfterDays);
+                    doc = {
+                        ...doc,
+                        sources: (doc.sources ?? []).map((item) => (item.id === element.id ? { ...item, withdrawnAt: now } : item))
+                    };
+                    expired += 1;
+                }
+            }
+        }
+        return expired;
     }
 
     /** @inheritdoc */
@@ -887,24 +974,34 @@ export class AddressTagService implements IAddressTagService {
      * @param assertions - Raw assertions from a source's fetcher.
      * @param sourceId - The source being reconciled, for the rejection log line.
      * @param result - Running counts; `rejected` is incremented in place.
+     * @param now - The reconcile pass's single timestamp, which bounds how far
+     *   into the future an `observedAt` may be.
      * @returns The assertions that passed validation, normalized.
      */
     private validateAssertions(
         assertions: IAddressTagAssertion[],
         sourceId: string,
-        result: IAddressTagSyncResult
+        result: IAddressTagSyncResult,
+        now: Date
     ): IAddressTagAssertion[] {
         const valid: IAddressTagAssertion[] = [];
         for (const assertion of assertions) {
             try {
-                valid.push({
+                const checked: IAddressTagAssertion = {
                     address: this.requireAddress(assertion.address),
                     // The ingestion path is the one writer allowed to use the
                     // reserved prefixes — that is what they are reserved for.
                     tag: this.requireTag(assertion.tag, { allowReserved: true }),
                     ref: assertion.ref,
                     url: assertion.url
-                });
+                };
+                if (assertion.observedAt !== undefined) {
+                    checked.observedAt = this.requireObservedAt(assertion.observedAt, now);
+                }
+                if (assertion.expiresAfterDays !== undefined) {
+                    checked.expiresAfterDays = this.requireExpiryDays(assertion.expiresAfterDays);
+                }
+                valid.push(checked);
             } catch (error) {
                 result.rejected += 1;
                 this.logger.warn(
@@ -936,42 +1033,62 @@ export class AddressTagService implements IAddressTagService {
      * new) and pushes the element, creating the document as machine-only
      * (`manual: false`) when it did not exist.
      *
+     * The element's expiry follows the assertion exactly: set when the
+     * assertion carries one, cleared when it does not, because every
+     * assertion states the source's current setting.
+     *
      * @param assertion - The validated assertion to apply.
      * @param sourceId - The source whose element is written.
+     * @param observedAt - The element's observation time, already resolved
+     *   by `resolveObservedAt` so it never moves backwards.
      * @param now - The reconcile pass's single timestamp.
      * @returns True when step 1 refreshed an existing element, false when
      *          step 2 added one, so the caller can count added vs refreshed.
      */
-    private async applyAssertion(assertion: IAddressTagAssertion, sourceId: string, now: Date): Promise<boolean> {
+    private async applyAssertion(
+        assertion: IAddressTagAssertion,
+        sourceId: string,
+        observedAt: Date,
+        now: Date
+    ): Promise<boolean> {
         const collection = this.database.getCollection<IAddressTagDocument>(ADDRESS_TAGS_COLLECTION);
         const refresh: Record<string, unknown> = {
-            'sources.$[elem].observedAt': now,
+            'sources.$[elem].observedAt': observedAt,
             updatedAt: now,
             active: true
         };
+        const clear: Record<string, ''> = { 'sources.$[elem].withdrawnAt': '' };
         if (assertion.ref !== undefined) {
             refresh['sources.$[elem].ref'] = assertion.ref;
         }
         if (assertion.url !== undefined) {
             refresh['sources.$[elem].url'] = assertion.url;
         }
+        if (assertion.expiresAfterDays !== undefined) {
+            refresh['sources.$[elem].expiresAfterDays'] = assertion.expiresAfterDays;
+        } else {
+            clear['sources.$[elem].expiresAfterDays'] = '';
+        }
         const touched = await collection.updateOne(
             { address: assertion.address, tag: assertion.tag, 'sources.id': sourceId },
             {
                 $set: refresh,
-                $unset: { 'sources.$[elem].withdrawnAt': '' }
+                $unset: clear
             },
             { arrayFilters: [{ 'elem.id': sourceId }] }
         );
         if (touched.matchedCount > 0) {
             return true;
         }
-        const element: IAddressTagSource = { id: sourceId, observedAt: now };
+        const element: IAddressTagSource = { id: sourceId, observedAt };
         if (assertion.ref !== undefined) {
             element.ref = assertion.ref;
         }
         if (assertion.url !== undefined) {
             element.url = assertion.url;
+        }
+        if (assertion.expiresAfterDays !== undefined) {
+            element.expiresAfterDays = assertion.expiresAfterDays;
         }
         await collection.updateOne(
             { address: assertion.address, tag: assertion.tag },
@@ -1170,6 +1287,98 @@ export class AddressTagService implements IAddressTagService {
             throw new Error(`Invalid TRON address: '${trimmed}'`);
         }
         return trimmed;
+    }
+
+    /**
+     * Enforce a usable observation time on a source assertion. A date in the
+     * future would keep the tag from expiring, so only the small clock-drift
+     * allowance is accepted past `now`.
+     *
+     * @param observedAt - The assertion's date, which may arrive unchecked from a plugin.
+     * @param now - The reconcile pass's single timestamp.
+     * @returns The date as a fresh `Date`.
+     */
+    private requireObservedAt(observedAt: Date, now: Date): Date {
+        const time = observedAt instanceof Date ? observedAt.getTime() : Number.NaN;
+        if (!Number.isFinite(time)) {
+            throw new Error('Invalid observedAt: must be a valid Date');
+        }
+        if (time > now.getTime() + OBSERVED_AT_FUTURE_TOLERANCE_MS) {
+            throw new Error(`Invalid observedAt: ${observedAt.toISOString()} is in the future`);
+        }
+        return new Date(time);
+    }
+
+    /**
+     * Enforce a whole-day expiry within the accepted range, so the sweep's
+     * date arithmetic always yields a real time.
+     *
+     * @param days - The assertion's expiry, which may arrive unchecked from a plugin.
+     * @returns The validated number of days.
+     */
+    private requireExpiryDays(days: number): number {
+        if (!Number.isInteger(days) || days < 1 || days > MAX_EXPIRY_DAYS) {
+            throw new Error(`Invalid expiresAfterDays: must be a whole number from 1 to ${MAX_EXPIRY_DAYS}`);
+        }
+        return days;
+    }
+
+    /**
+     * The `observedAt` an assertion leaves on its element. A live element
+     * keeps the newer of its stored date and the assertion's, so a source
+     * replaying older evidence never moves the date backwards. An element
+     * that is new, or withdrawn and coming back, takes the assertion's date,
+     * because the earlier date belongs to a claim that ended. An assertion
+     * with no date is evidence seen now.
+     *
+     * @param liveElement - This source's element on the pair when it is live, otherwise undefined.
+     * @param assertion - The validated assertion.
+     * @param now - The reconcile pass's single timestamp.
+     * @returns The date to store.
+     */
+    private resolveObservedAt(
+        liveElement: IAddressTagSource | undefined,
+        assertion: IAddressTagAssertion,
+        now: Date
+    ): Date {
+        const incoming = assertion.observedAt ?? now;
+        const stored = liveElement ? new Date(liveElement.observedAt) : undefined;
+        return stored && stored.getTime() > incoming.getTime() ? stored : incoming;
+    }
+
+    /**
+     * Whether an element observed at `observedAt` has passed its expiry. The
+     * one place the rule lives, so the reconcile and the sweep agree to the
+     * millisecond on which tags have aged out.
+     */
+    private hasExpired(observedAt: Date, expiresAfterDays: number, now: Date): boolean {
+        return new Date(observedAt).getTime() + expiresAfterDays * DAY_MS <= now.getTime();
+    }
+
+    /**
+     * One source's element on a stored document, or undefined when the
+     * document is absent or the source never asserted it.
+     */
+    private findSourceElement(doc: IAddressTagDocument | undefined, sourceId: string): IAddressTagSource | undefined {
+        return (doc?.sources ?? []).find((element) => element.id === sourceId);
+    }
+
+    /**
+     * Log one expired tag as its own info entry, so `/system/logs` and the
+     * module's Logs tab show each address that lost a tag to age and the
+     * dates that decided it, whichever path withdrew it.
+     */
+    private logExpired(address: string, tag: string, sourceId: string, observedAt: Date, expiresAfterDays: number): void {
+        this.logger.info(
+            {
+                address,
+                tag,
+                source: sourceId,
+                observedAt: new Date(observedAt).toISOString(),
+                expiresAfterDays
+            },
+            'Address tag expired'
+        );
     }
 
     /**

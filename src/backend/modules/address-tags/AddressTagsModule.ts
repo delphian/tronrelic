@@ -85,9 +85,17 @@ const JOB_PREFIX = 'address-tags:';
 const OFAC_JOB = `${JOB_PREFIX}sync-ofac`;
 const USDT_JOB = `${JOB_PREFIX}sync-usdt-blacklist`;
 const VERIFY_JOB = `${JOB_PREFIX}verify-frozen`;
+const EXPIRE_JOB = `${JOB_PREFIX}expire`;
 
 /** Weekly re-verification of held freezes: Mondays 04:00 UTC. */
 const VERIFY_CRON = '0 0 4 * * 1';
+
+/**
+ * The expiry sweep runs hourly. Expiry is counted in whole days, so a tag
+ * leaves at most an hour after its time, which no reader can tell apart
+ * from leaving on the dot.
+ */
+const EXPIRE_CRON = '0 25 * * * *';
 
 /** Dependencies the address-tags module needs at bootstrap. */
 export interface IAddressTagsModuleDependencies {
@@ -264,6 +272,12 @@ export class AddressTagsModule implements IModule<IAddressTagsModuleDependencies
                 if (await this.ingestion.isSourceEnabled(USDT_SOURCE_ID)) {
                     await this.ingestion.verifyHeld(USDT_SOURCE_ID);
                 }
+            }, jobOptions);
+            // Not gated on any one source's switch: an expiry is a property
+            // of each stored element, set by whichever source asserted it,
+            // and switching a source off must not stop its old tags ageing out.
+            this.scheduler.register(EXPIRE_JOB, EXPIRE_CRON, async () => {
+                await this.service.expireSources();
             }, jobOptions);
         }
 

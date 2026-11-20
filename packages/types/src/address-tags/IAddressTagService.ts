@@ -54,8 +54,20 @@ export interface IAddressTagSource {
     ref?: string;
     /** Citable link a UI can surface next to the tag. */
     url?: string;
-    /** Last time this source confirmed the assertion. */
+    /**
+     * The time of the newest evidence this source has seen that the
+     * assertion is true, such as the fetch that found an address still on a
+     * published list or the transaction that showed it acting in a role.
+     * Never moves backwards, and never moves because a source repeated an
+     * assertion from its own stored state.
+     */
     observedAt: Date;
+    /**
+     * Days after `observedAt` at which the element expires and is withdrawn,
+     * when the source set one. Absent means the element never expires on its
+     * own.
+     */
+    expiresAfterDays?: number;
     /**
      * Set when this source stopped asserting the pair. An element with this
      * field no longer contributes to the document's liveness.
@@ -211,6 +223,22 @@ export interface IAddressTagAssertion {
     ref?: string;
     /** Citable link backing the assertion. */
     url?: string;
+    /**
+     * When the source saw the evidence behind this assertion. A source that
+     * re-asserts from its own stored state, rather than from a fresh look at
+     * the world, must pass the date of the evidence it holds, or the tag
+     * would read as newly observed. Absent means the evidence is being seen
+     * now, as when a feed has just been fetched. Never more than a few
+     * minutes in the future.
+     */
+    observedAt?: Date;
+    /**
+     * Days after the element's `observedAt` at which it expires and is
+     * withdrawn, a whole number from 1 to 3650. Every assertion states the
+     * source's current setting, so leaving it out clears any expiry stored
+     * earlier.
+     */
+    expiresAfterDays?: number;
 }
 
 /**
@@ -229,6 +257,13 @@ export interface IAddressTagSyncResult {
     withdrawn: number;
     /** Assertions that failed validation; logged with the offending value. */
     rejected: number;
+    /**
+     * Assertions not applied because their newest observation is already
+     * older than their expiry allows. A live element among them is withdrawn
+     * and counted in `withdrawn` as well, so an old date can never bring an
+     * expired tag back.
+     */
+    expired: number;
 }
 
 /**
@@ -451,6 +486,13 @@ export interface IAddressTagService {
      * Invalid assertions are counted as `rejected` and skipped rather than
      * failing the batch, since one malformed feed row must not block the rest
      * of a sanctions update.
+     *
+     * An element's `observedAt` becomes the newer of the stored date and the
+     * assertion's own `observedAt` (or now, when the assertion carries none);
+     * a withdrawn element being asserted again takes the assertion's date. An
+     * assertion whose resulting date is already past its `expiresAfterDays`
+     * is counted as `expired` and not applied, and a live element it names
+     * is withdrawn, so an old date can never bring an expired tag back.
      *
      * @param source - The source id whose elements this pass may touch.
      * @param assertions - What the source currently asserts (snapshot) or the
