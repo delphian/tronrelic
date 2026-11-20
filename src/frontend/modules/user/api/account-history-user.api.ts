@@ -14,9 +14,9 @@ import type { FlowGranularity, IAccountTransactionPage, IWalletActivitySummary, 
 import { parseJsonResponse } from './http';
 
 /**
- * Address → human-friendly label map the backend resolves through the
- * optional address-labels service. May be empty (or missing on older
- * backends) — callers always fall back to the truncated raw address.
+ * Address → human-friendly label map sent beside the wallet summary and
+ * transactions. The backend has no source of address names today, so the map
+ * is always empty; callers fall back to the truncated raw address.
  */
 export type IAddressLabelMap = Record<string, string>;
 
