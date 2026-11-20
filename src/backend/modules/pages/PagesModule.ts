@@ -11,6 +11,7 @@ import type {
     ICacheService,
     IContentService,
     IDatabaseService,
+    IMarkdownRendererService,
     IMenuService,
     IModule,
     IModuleMetadata,
@@ -60,6 +61,14 @@ export interface IPagesModuleDependencies {
      * translations, through its `translations()` service.
      */
     contentService: IContentService;
+    /**
+     * The shared markdown renderer from the markdown module. Pages render
+     * their bodies and translations through it, so they follow the same
+     * sanitize rules as every other surface that renders markdown. Passed in
+     * directly because the module publishes it on the registry only in its
+     * own `run()`, after this module's `init()`.
+     */
+    markdownRenderer: IMarkdownRendererService;
     /**
      * The service registry, watched for the core `'ai-tools'` registry so the
      * page tools (three reads and the review-held edit tool) are registered
@@ -142,6 +151,7 @@ export class PagesModule implements IModule<IPagesModuleDependencies> {
             this.database,
             this.cacheService,
             this.contentService,
+            dependencies.markdownRenderer,
             this.logger,
             dependencies.onLocalizedRoutesChanged ?? (() => undefined)
         );
@@ -151,7 +161,8 @@ export class PagesModule implements IModule<IPagesModuleDependencies> {
         PageTranslationService.setDependencies({
             cacheService: this.cacheService,
             contentService: this.contentService,
-            pages: this.pageService
+            pages: this.pageService,
+            markdownRenderer: dependencies.markdownRenderer
         });
 
         this.controller = new PagesController(this.pageService, this.logger);

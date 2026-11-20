@@ -17,6 +17,7 @@ import { PageTranslationService } from '../services/page-translation.service.js'
 import type { ICacheService, IContentActor, IContentTranslationService, ICurationService, TranslationValues } from '@/types';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 import { createMockServiceRegistry } from '../../../tests/vitest/mocks/service-registry.js';
+import { createTestMarkdownRenderer } from '../../../tests/vitest/mocks/markdown-renderer.js';
 import { ContentService } from '../../../services/content-service.js';
 import { HookRegistry } from '../../../hooks/hook-registry.js';
 
@@ -128,10 +129,11 @@ describe('page translations', () => {
         const contentService = ContentService.getInstance();
         translations = contentService.translations();
 
-        PageService.setDependencies(database, cache, contentService, mockLogger);
+        const markdownRenderer = createTestMarkdownRenderer();
+        PageService.setDependencies(database, cache, contentService, markdownRenderer, mockLogger);
         pages = PageService.getInstance();
         await pages.ensureTranslationIndexes();
-        PageTranslationService.setDependencies({ cacheService: cache, contentService, pages });
+        PageTranslationService.setDependencies({ cacheService: cache, contentService, pages, markdownRenderer });
         rendering = PageTranslationService.getInstance();
         contentService.registerType(pages.getContentType(), 'pages');
     });

@@ -44,6 +44,7 @@ import { LogsModule } from './modules/logs/index.js';
 import { DatabaseModule } from './modules/database/index.js';
 import { ClickHouseModule } from './modules/clickhouse/index.js';
 import { ClickHouseAccountsModule } from './modules/clickhouse-accounts/index.js';
+import { MarkdownModule } from './modules/markdown/index.js';
 import { PagesModule, PageService } from './modules/pages/index.js';
 import { WidgetsModule } from './modules/widgets/index.js';
 import { IdentityModule } from './modules/identity/index.js';
@@ -306,6 +307,7 @@ interface BootstrapContext {
         clickhouseAccounts: ClickHouseAccountsModule;
         menu: MenuModule;
         logs: LogsModule;
+        markdown: MarkdownModule;
         pages: PagesModule;
         widgets: WidgetsModule;
         identity: IdentityModule;
@@ -490,6 +492,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     const sharedDeps = { database: coreDatabase, cacheService, menuService, serviceRegistry, hookRegistry, app };
 
     const logsModule = new LogsModule();
+    const markdownModule = new MarkdownModule();
     const pagesModule = new PagesModule();
     const widgetsModule = new WidgetsModule();
     const identityModule = new IdentityModule();
@@ -507,6 +510,10 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     const schedulerModule = new SchedulerModule();
 
     await logsModule.init({ pinoLogger, database: coreDatabase, app, serviceRegistry });
+    // Markdown inits before pages, which renders its bodies through the shared
+    // renderer. Pages receives it directly because the module publishes it on
+    // the registry as `'markdown'` only in run(), for plugins.
+    await markdownModule.init({ serviceRegistry });
     // Translated CMS pages appear in the localization snapshot, so a change to
     // a page asks for a rebuild. Resolved at call time: the localization
     // service is configured further down, and these changes only arrive
@@ -514,6 +521,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     await pagesModule.init({
         ...sharedDeps,
         contentService,
+        markdownRenderer: markdownModule.getRenderer(),
         onLocalizedRoutesChanged: () => LocalizationService.getInstance().invalidate()
     });
     await widgetsModule.init({ ...sharedDeps, systemConfig: SystemConfigService.getInstance() });
@@ -706,6 +714,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
             clickhouseAccounts: clickHouseAccountsModule,
             menu: menuModule,
             logs: logsModule,
+            markdown: markdownModule,
             pages: pagesModule,
             widgets: widgetsModule,
             identity: identityModule,
@@ -749,6 +758,7 @@ async function bootstrapRun(ctx: BootstrapContext): Promise<void> {
     await modules.clickhouse.run();
     await modules.menu.run();
     await modules.logs.run();
+    await modules.markdown.run();
     await modules.pages.run();
     await modules.widgets.run();
     // Traffic runs before identity so its `/api/admin/users/{analytics,traffic}`

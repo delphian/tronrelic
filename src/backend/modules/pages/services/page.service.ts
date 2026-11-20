@@ -17,6 +17,7 @@ import type {
     IPublicPageRender,
     ICacheService,
     IDatabaseService,
+    IMarkdownRendererService,
     ISystemLogService,
     ITranslationValueStore,
 } from '@/types';
@@ -140,6 +141,8 @@ export class PageService implements IPageService {
      * @param cacheService - Redis cache for rendered HTML.
      * @param contentService - The core content service every page operation
      *   and public read passes through.
+     * @param markdownRenderer - The shared markdown renderer pages render
+     *   their bodies through.
      * @param logger - Scoped logger.
      * @param onPublicPagesChanged - Called after a change that can alter which
      *   page addresses visitors reach, so the localization snapshot that lists
@@ -150,10 +153,11 @@ export class PageService implements IPageService {
         private readonly database: IDatabaseService,
         private readonly cacheService: ICacheService,
         private readonly contentService: IContentService,
+        markdownRenderer: IMarkdownRendererService,
         private readonly logger: ISystemLogService,
         private readonly onPublicPagesChanged: () => void
     ) {
-        this.markdownService = new MarkdownService(cacheService);
+        this.markdownService = new MarkdownService(cacheService, markdownRenderer);
         this.pagesCollection = database.getCollection<IPageDocument>('pages');
         this.settingsCollection = database.getCollection<IPageSettingsDocument>('page_settings');
         // Translated text stays in this module's storage; core hands out the
@@ -199,6 +203,7 @@ export class PageService implements IPageService {
      * @param database - Core database.
      * @param cacheService - Redis cache service.
      * @param contentService - The core content service.
+     * @param markdownRenderer - The shared markdown renderer.
      * @param logger - Scoped logger.
      * @param onPublicPagesChanged - Called after a change that can alter which
      *   page addresses visitors reach. Defaults to doing nothing, for callers
@@ -208,11 +213,19 @@ export class PageService implements IPageService {
         database: IDatabaseService,
         cacheService: ICacheService,
         contentService: IContentService,
+        markdownRenderer: IMarkdownRendererService,
         logger: ISystemLogService,
         onPublicPagesChanged: () => void = () => undefined
     ): void {
         if (!PageService.instance) {
-            PageService.instance = new PageService(database, cacheService, contentService, logger, onPublicPagesChanged);
+            PageService.instance = new PageService(
+                database,
+                cacheService,
+                contentService,
+                markdownRenderer,
+                logger,
+                onPublicPagesChanged
+            );
         }
     }
 

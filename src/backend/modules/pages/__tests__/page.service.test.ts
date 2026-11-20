@@ -7,6 +7,7 @@ import type { ICacheService, IContentActor, ICurationService } from '@/types';
 import { ObjectId } from 'mongodb';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 import { createMockServiceRegistry } from '../../../tests/vitest/mocks/service-registry.js';
+import { createTestMarkdownRenderer } from '../../../tests/vitest/mocks/markdown-renderer.js';
 import { ContentService } from '../../../services/content-service.js';
 import { HookRegistry } from '../../../hooks/hook-registry.js';
 
@@ -78,7 +79,7 @@ describe('PageService', () => {
             mockLogger
         );
         const contentService = ContentService.getInstance();
-        PageService.setDependencies(mockDatabase, mockCache, contentService, mockLogger);
+        PageService.setDependencies(mockDatabase, mockCache, contentService, createTestMarkdownRenderer(), mockLogger);
         service = PageService.getInstance();
         contentService.registerType(service.getContentType(), 'pages');
     });

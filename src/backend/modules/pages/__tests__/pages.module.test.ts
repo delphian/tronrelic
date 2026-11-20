@@ -11,6 +11,7 @@ import { AI_TOOL_NAMES } from '../ai-tools.js';
 import type { IAiToolRegistry, ICacheService, IMenuService, IServiceRegistry } from '@/types';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 import { createMockServiceRegistry } from '../../../tests/vitest/mocks/service-registry.js';
+import { createTestMarkdownRenderer } from '../../../tests/vitest/mocks/markdown-renderer.js';
 
 class MockCacheService implements ICacheService {
     async get<T = any>(_key: string): Promise<T | null> { return null; }
@@ -77,6 +78,7 @@ describe('PagesModule', () => {
             cacheService: mockCache,
             menuService: mockMenu,
             contentService: mockContent as any,
+            markdownRenderer: createTestMarkdownRenderer(),
             serviceRegistry,
             app: mockApp as any,
             ...overrides

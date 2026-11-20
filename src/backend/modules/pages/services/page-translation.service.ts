@@ -19,6 +19,7 @@
 import type {
     ICacheService,
     IContentService,
+    IMarkdownRendererService,
     IPage,
     IPageContent,
     IPageTranslationService,
@@ -52,6 +53,8 @@ export interface IPageTranslationServiceDependencies {
     contentService: IContentService;
     /** Resolves the English page a visitor is served at a slug. */
     pages: IPublicPageLookup;
+    /** The shared markdown renderer translated bodies are rendered through. */
+    markdownRenderer: IMarkdownRendererService;
 }
 
 /**
@@ -71,7 +74,7 @@ export class PageTranslationService implements IPageTranslationService {
     private constructor(deps: IPageTranslationServiceDependencies) {
         this.contentService = deps.contentService;
         this.pages = deps.pages;
-        this.markdown = new MarkdownService(deps.cacheService);
+        this.markdown = new MarkdownService(deps.cacheService, deps.markdownRenderer);
     }
 
     /**

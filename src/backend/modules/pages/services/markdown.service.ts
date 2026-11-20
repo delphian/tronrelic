@@ -1,12 +1,19 @@
+/**
+ * @fileoverview Page-specific markdown handling for the pages module.
+ *
+ * A page is stored as one markdown string with a YAML frontmatter block, so this
+ * service parses and rebuilds that frontmatter, strips hidden markup from the
+ * markdown the AI tools read, and caches rendered pages in Redis. Turning
+ * markdown into HTML is not done here: it is delegated to the shared renderer
+ * the markdown module publishes, so pages and plugins sanitize the same way.
+ */
+
 import matter from 'gray-matter';
 import { remark } from 'remark';
 import remarkGfm from 'remark-gfm';
-import remarkHtml from 'remark-html';
-import { rehype } from 'rehype';
-import rehypeSanitize from 'rehype-sanitize';
-import rehypeStringify from 'rehype-stringify';
 import type {
     ICacheService,
+    IMarkdownRendererService,
     IMarkdownService,
     IFrontmatterData,
     IParsedMarkdown,
@@ -160,19 +167,15 @@ function collectHtmlRanges(
 }
 
 /**
- * Service for parsing markdown frontmatter and rendering to HTML.
+ * Service for parsing page frontmatter, rendering page markdown, and caching
+ * the result.
  *
  * Implements the IMarkdownService contract providing:
  * - Frontmatter extraction using gray-matter
- * - Markdown to HTML conversion using remark/rehype pipeline
- * - HTML sanitization for security
+ * - Markdown to sanitized HTML, through the shared renderer the markdown
+ *   module owns, so pages follow the same sanitize rules as every other
+ *   surface that renders markdown
  * - Redis caching of rendered HTML
- *
- * The remark/rehype pipeline:
- * 1. Parse markdown with GitHub Flavored Markdown support
- * 2. Convert to HTML
- * 3. Sanitize HTML to prevent XSS attacks
- * 4. Stringify to final HTML output
  */
 export class MarkdownService implements IMarkdownService {
     /**
@@ -208,8 +211,13 @@ export class MarkdownService implements IMarkdownService {
      * Create a markdown service.
      *
      * @param cacheService - Redis cache service for storing rendered HTML
+     * @param renderer - The shared markdown renderer, which owns the
+     *   markdown-to-HTML pipeline and its sanitize rules
      */
-    constructor(private readonly cacheService: ICacheService) {}
+    constructor(
+        private readonly cacheService: ICacheService,
+        private readonly renderer: IMarkdownRendererService
+    ) {}
 
     /**
      * Parse markdown content to extract frontmatter and body.
@@ -261,13 +269,11 @@ export class MarkdownService implements IMarkdownService {
     }
 
     /**
-     * Render markdown body to sanitized HTML.
+     * Render a page's markdown body to sanitized HTML.
      *
-     * Processes markdown through remark/rehype pipeline:
-     * 1. Parse markdown with GFM (tables, strikethrough, task lists)
-     * 2. Convert to HTML
-     * 3. Sanitize HTML to prevent XSS attacks
-     * 4. Stringify to final HTML
+     * The shared renderer does the work, with GitHub Flavored Markdown and the
+     * sanitize step that makes the HTML safe to inject. Headings keep their
+     * written level, because a CMS page's markdown supplies its own `<h1>`.
      *
      * @param markdown - Markdown content to render (without frontmatter)
      * @returns Promise resolving to sanitized HTML string
@@ -280,21 +286,7 @@ export class MarkdownService implements IMarkdownService {
      */
     async renderMarkdown(markdown: string): Promise<string> {
         try {
-            // Step 1: Parse markdown and convert to HTML
-            const htmlResult = await remark()
-                .use(remarkGfm) // GitHub Flavored Markdown support
-                .use(remarkHtml, { sanitize: false }) // Convert to HTML (sanitize later)
-                .process(markdown);
-
-            const html = String(htmlResult);
-
-            // Step 2: Sanitize HTML to prevent XSS attacks
-            const sanitizedResult = await rehype()
-                .use(rehypeSanitize) // Remove dangerous tags/attributes
-                .use(rehypeStringify) // Convert back to HTML string
-                .process(html);
-
-            return String(sanitizedResult);
+            return await this.renderer.render(markdown);
         } catch (error) {
             throw new Error(
                 `Failed to render markdown: ${error instanceof Error ? error.message : 'Unknown error'}`
