@@ -75,6 +75,32 @@ describe('MarkdownRendererService', () => {
             expect(html).not.toContain('javascript:');
         });
 
+        // Pages and the blog write this HTML with dangerouslySetInnerHTML, so
+        // the sanitizer is the only thing between stored text and a visitor's
+        // browser. This case keeps a library upgrade or an options change from
+        // letting executable or page-restyling markup through unnoticed.
+        it('removes frames, inline styles, and executable markup together, keeping the harmless text', async () => {
+            const markdown = [
+                'Before <script>alert(0)</script> after',
+                '<img src="x" onerror="alert(1)">',
+                '[markdown link](javascript:alert(2))',
+                '<a href="javascript:alert(3)">html link</a>',
+                '<iframe src="https://example.com"></iframe>',
+                '<div onclick="alert(4)" style="position:fixed">styled</div>'
+            ].join('\n\n');
+
+            const html = await renderer.render(markdown);
+
+            expect(html).not.toMatch(/<script/i);
+            expect(html).not.toMatch(/onerror|onclick/i);
+            expect(html).not.toMatch(/javascript:/i);
+            expect(html).not.toMatch(/<iframe/i);
+            expect(html).not.toMatch(/style=/i);
+            expect(html).not.toContain('alert(');
+            expect(html).toContain('markdown link');
+            expect(html).toContain('html link');
+        });
+
         it('leaves headings at their written level by default', async () => {
             const html = await renderer.render('# One\n\n###### Six');
             expect(html).toContain('<h1>One</h1>');
