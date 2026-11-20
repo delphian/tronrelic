@@ -75,6 +75,17 @@ describe('AddressTagService observation times and expiry', () => {
             expect(storedDoc(database, ADDRESS_A, 'market:x:treasury').sources[0].observedAt.getTime()).toBe(newer.getTime());
         });
 
+        it('keeps the newest date when one batch repeats a pair with an older date last', async () => {
+            const newer = daysAgo(1);
+            await service.syncSource('rental-markets', [
+                { address: ADDRESS_A, tag: 'market:x:treasury', observedAt: newer, expiresAfterDays: 3 },
+                { address: ADDRESS_A, tag: 'market:x:treasury', observedAt: daysAgo(5), expiresAfterDays: 3 }
+            ], 'delta');
+            const doc = storedDoc(database, ADDRESS_A, 'market:x:treasury');
+            expect(doc.active).toBe(true);
+            expect(doc.sources[0].observedAt.getTime()).toBe(newer.getTime());
+        });
+
         it('gives a withdrawn element coming back the date of the new evidence', async () => {
             await service.syncSource('rental-markets', [{ address: ADDRESS_A, tag: 'market:x:treasury', observedAt: daysAgo(1) }], 'delta');
             await service.syncSource('rental-markets', [], 'delta', [{ address: ADDRESS_A, tag: 'market:x:treasury' }]);
@@ -173,6 +184,30 @@ describe('AddressTagService observation times and expiry', () => {
                 expect.objectContaining({ address: ADDRESS_A, tag: 'market:x:treasury', source: 'rental-markets' }),
                 'Address tag expired'
             );
+        });
+
+        it('does not withdraw an element a sync refreshed after the sweep read it', async () => {
+            // The sweep and a source's sync are separate scheduler jobs, so a
+            // sync can refresh an element between the sweep's read and its
+            // write. The sweep is handed the stale read to reproduce that.
+            await service.syncSource('rental-markets', [
+                { address: ADDRESS_A, tag: 'market:x:treasury', observedAt: daysAgo(4), expiresAfterDays: 5 }
+            ], 'delta');
+            const stale = database.getCollectionData(ADDRESS_TAGS_COLLECTION)
+                .map((doc: any) => ({ ...doc, sources: doc.sources.map((element: any) => ({ ...element })) }));
+            await service.syncSource('rental-markets', [
+                { address: ADDRESS_A, tag: 'market:x:treasury', observedAt: daysAgo(1), expiresAfterDays: 5 }
+            ], 'delta');
+            const real = (database.getCollection as any).getMockImplementation();
+            (database.getCollection as any).mockImplementation((name: string) => {
+                const collection = real(name);
+                return Object.assign(Object.create(collection), { find: () => ({ toArray: async () => stale }) });
+            });
+
+            expect(await service.expireSources(new Date(Date.now() + 2 * DAY_MS))).toBe(0);
+            const doc = storedDoc(database, ADDRESS_A, 'market:x:treasury');
+            expect(doc.active).toBe(true);
+            expect(doc.sources[0].withdrawnAt).toBeUndefined();
         });
 
         it('never touches an element with no expiry, however old', async () => {

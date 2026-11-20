@@ -797,21 +797,31 @@ export class AddressTagService implements IAddressTagService {
         }
 
         const assertedKeys = new Set<string>();
+        // The observation time this pass has already written for each pair.
+        // Holdings are read once before the loop, so a batch that repeats a
+        // pair would otherwise resolve every one of its assertions against the
+        // pre-batch element, letting an older assertion overwrite the date a
+        // newer one just wrote and expire the tag early. Resolving against
+        // what the batch last wrote keeps the date moving one way only.
+        const appliedByKey = new Map<string, Date>();
         for (const assertion of valid) {
             const key = this.pairKey(assertion.address, assertion.tag);
             // Counted as asserted whatever happens below, so a snapshot does
             // not withdraw an expired pair a second time.
             assertedKeys.add(key);
             const held = heldByKey.get(key);
+            const applied = appliedByKey.get(key);
             const observedAt = this.resolveObservedAt(
-                liveKeys.has(key) ? this.findSourceElement(held, sourceId) : undefined,
+                applied
+                    ? { id: sourceId, observedAt: applied }
+                    : (liveKeys.has(key) ? this.findSourceElement(held, sourceId) : undefined),
                 assertion,
                 now
             );
+            appliedByKey.set(key, observedAt);
             if (assertion.expiresAfterDays !== undefined && this.hasExpired(observedAt, assertion.expiresAfterDays, now)) {
                 result.expired += 1;
-                if (held && liveKeys.has(key)) {
-                    await this.withdrawSourceElement(held, sourceId, now);
+                if (held && liveKeys.has(key) && await this.withdrawSourceElement(held, sourceId, now, observedAt)) {
                     this.logExpired(held.address, held.tag, sourceId, observedAt, assertion.expiresAfterDays);
                     result.withdrawn += 1;
                 }
@@ -845,8 +855,9 @@ export class AddressTagService implements IAddressTagService {
             if (!doc) {
                 continue;
             }
-            await this.withdrawSourceElement(doc, sourceId, now);
-            result.withdrawn += 1;
+            if (await this.withdrawSourceElement(doc, sourceId, now)) {
+                result.withdrawn += 1;
+            }
         }
 
         this.logger.info(result, 'Source reconcile applied');
@@ -876,24 +887,21 @@ export class AddressTagService implements IAddressTagService {
             .toArray();
         let expired = 0;
         for (const candidate of candidates) {
-            // Withdrawals on one document are applied one source at a time,
-            // so the copy is updated after each one; otherwise the second
-            // withdrawal would count the first source as still live and leave
-            // the document marked active.
-            let doc = candidate;
             for (const element of candidate.sources ?? []) {
                 if (
                     element.expiresAfterDays !== undefined &&
                     !element.withdrawnAt &&
                     this.hasExpired(element.observedAt, element.expiresAfterDays, now)
                 ) {
-                    await this.withdrawSourceElement(doc, element.id, now);
-                    this.logExpired(doc.address, doc.tag, element.id, element.observedAt, element.expiresAfterDays);
-                    doc = {
-                        ...doc,
-                        sources: (doc.sources ?? []).map((item) => (item.id === element.id ? { ...item, withdrawnAt: now } : item))
-                    };
-                    expired += 1;
+                    // The observation judged here goes into the withdrawal, so
+                    // a reconcile that refreshed this element since the read
+                    // above keeps its evidence. Liveness comes from stored
+                    // state, which also settles a document whose second
+                    // source expires in the same run.
+                    if (await this.withdrawSourceElement(candidate, element.id, now, new Date(element.observedAt))) {
+                        this.logExpired(candidate.address, candidate.tag, element.id, element.observedAt, element.expiresAfterDays);
+                        expired += 1;
+                    }
                 }
             }
         }
@@ -1104,35 +1112,53 @@ export class AddressTagService implements IAddressTagService {
 
     /**
      * Soft-withdraw one source's element on one document: stamp
-     * `withdrawnAt` on that element alone and recompute the document's
-     * liveness in the same write. The document is never deleted — the
-     * element stays as the audit record of what the source asserted and
-     * when it stopped.
+     * `withdrawnAt` on that element alone and bring the document's liveness
+     * back in line. The document is never deleted — the element stays as the
+     * audit record of what the source asserted and when it stopped.
      *
-     * `active` after the withdrawal is derived from the human claim plus the
-     * *other* sources' elements, computed here from the document already in
-     * hand so the stamp and the recompute land in one update instead of a
-     * read-modify-write pair per document.
+     * The stamp is conditional on stored state rather than on the copy the
+     * caller loaded, because the expiry sweep and a source's own reconcile
+     * are separate scheduler jobs and the scheduler only stops a job
+     * overlapping itself. `observedNoLaterThan` carries the observation the
+     * caller judged, so an element a reconcile has refreshed since that read
+     * keeps its freshly confirmed evidence. Liveness is then derived from the
+     * document as it stands after the stamp, not from the caller's copy: a
+     * human claim or another source's element that arrived in between must
+     * keep the tag live, since every read surface filters on `active` and a
+     * wrong `false` hides the tag until the next write to the document.
      *
-     * @param doc - The stored document as loaded at the start of the pass.
+     * @param doc - The stored document as loaded by the caller, used only to address it.
      * @param sourceId - The source whose element is being withdrawn.
      * @param now - The reconcile pass's single timestamp.
+     * @param observedNoLaterThan - The observation time that justified the
+     *   withdrawal, when the decision rested on one. A source revoking its
+     *   own claim omits it, because that holds however fresh the evidence is.
+     * @returns True when this call withdrew the element, false when stored
+     *   state no longer allowed it, so callers count and log only real withdrawals.
      */
-    private async withdrawSourceElement(doc: IAddressTagDocument, sourceId: string, now: Date): Promise<void> {
+    private async withdrawSourceElement(
+        doc: IAddressTagDocument,
+        sourceId: string,
+        now: Date,
+        observedNoLaterThan?: Date
+    ): Promise<boolean> {
         const collection = this.database.getCollection<IAddressTagDocument>(ADDRESS_TAGS_COLLECTION);
-        const others = (doc.sources ?? []).filter((element) => element.id !== sourceId);
-        const stillActive = this.computeActive(doc.manual === true, others);
+        const element: Record<string, unknown> = { 'elem.id': sourceId, 'elem.withdrawnAt': { $exists: false } };
+        if (observedNoLaterThan !== undefined) {
+            element['elem.observedAt'] = { $lte: observedNoLaterThan };
+        }
         await collection.updateOne(
             { address: doc.address, tag: doc.tag, 'sources.id': sourceId },
-            {
-                $set: {
-                    'sources.$[elem].withdrawnAt': now,
-                    active: stillActive,
-                    updatedAt: now
-                }
-            },
-            { arrayFilters: [{ 'elem.id': sourceId }] }
+            { $set: { 'sources.$[elem].withdrawnAt': now, updatedAt: now } },
+            { arrayFilters: [element] }
         );
+        const stored = (await collection.findOne({ address: doc.address, tag: doc.tag })) ?? doc;
+        await collection.updateOne(
+            { address: doc.address, tag: doc.tag },
+            { $set: { active: this.computeActive(stored.manual === true, stored.sources ?? []), updatedAt: now } }
+        );
+        const mine = (stored.sources ?? []).find((item) => item.id === sourceId);
+        return mine?.withdrawnAt !== undefined && new Date(mine.withdrawnAt).getTime() === now.getTime();
     }
 
     /**
@@ -1331,7 +1357,8 @@ export class AddressTagService implements IAddressTagService {
      * because the earlier date belongs to a claim that ended. An assertion
      * with no date is evidence seen now.
      *
-     * @param liveElement - This source's element on the pair when it is live, otherwise undefined.
+     * @param liveElement - This source's element on the pair when it is live,
+     *   or as this pass last wrote it when the batch repeats the pair; otherwise undefined.
      * @param assertion - The validated assertion.
      * @param now - The reconcile pass's single timestamp.
      * @returns The date to store.
