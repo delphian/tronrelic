@@ -12,7 +12,6 @@ The strongest near-term move: retire the bespoke review queues that predate the 
 
 | Item | Why | Scope |
 |------|-----|-------|
-| Port `trp-address-labels` review queue | It ships its own human-moderation flow for proposed address labels (`src/backend/routes/review.ts` + `ReviewTab.tsx`) with no AI involvement — the canonical "second consumer" shape | Register `ICurationType` `address-labels:proposal`, `hold()` proposals, delete the bespoke route + tab |
 | Reconcile the dual-surface drift | `trp-x-poster` / `trp-telegram-bot` keep their own History tabs; deciding from one leaves the central envelope `pending` (noted in [system-curation.md](../../../../docs/system/system-curation.md)) | Make the plugin History surfaces read-only mirrors of the central queue, or remove them |
 
 ## 2. Queue management at scale

@@ -89,7 +89,6 @@ A page file with 500 lines of component logic is the failure mode this rule prev
 |--------|---------|
 | `user` | Better Auth login, the `/profile` settings hub (wallet management via TronLink signing, notification preferences), `/system/users` identity dashboards |
 | `menu` | Navigation system (PriorityNav, useMenuConfig) |
-| `address-labels` | Address labeling and display |
 | `scheduler` | Scheduler monitoring UI |
 | `widgets` | The `/system/widgets` admin shell and placement editor (page picker, widget library, zone board, editor panel); `server.ts` holds the SSR fetch |
 

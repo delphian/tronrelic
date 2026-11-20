@@ -94,7 +94,7 @@ If the module owns content the platform stores and publishes, it must be managed
 
 ### 4. Register in Bootstrap
 
-Add the module to `src/backend/index.ts`. Construct and `init()` it alongside the other module inits in `bootstrapInit()` (after `MenuModule.init()`, in the same block as Logs/Pages/Theme/Scheduler/Identity/Traffic/AddressLabels/Tools); call its `run()` from `bootstrapRun()` before `loadPlugins(...)`:
+Add the module to `src/backend/index.ts`. Construct and `init()` it alongside the other module inits in `bootstrapInit()` (after `MenuModule.init()`, in the same block as Logs/Pages/Theme/Scheduler/Identity/Traffic/Tools); call its `run()` from `bootstrapRun()` before `loadPlugins(...)`:
 
 ```typescript
 import { MyFeatureModule } from './modules/my-feature/index.js';

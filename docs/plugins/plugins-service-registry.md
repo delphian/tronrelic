@@ -46,7 +46,7 @@ It is not an access-control mechanism. The registry gates nothing, and any calle
 
 One practical detail does come with the shape: an accessor that returns `null` reports a real condition, namely that the plugin is enabled but that part of its pipeline is not assembled, instead of leaving a method to throw.
 
-**Publish a projection, not the implementation.** Register an explicit object listing exactly the members that are public, rather than an instance whose every public method becomes contract by accident. `trp-address-labels` is the reference: it registers `labelService.buildFacade()`, a five-method projection over a much larger class, and a test asserts the exact key set so the published surface cannot grow without someone noticing.
+**Publish a projection, not the implementation.** Register an explicit object listing exactly the members that are public, rather than an instance whose every public method becomes contract by accident. `trp-blog` is the reference: it registers `buildBlogServiceFacade(service)`, a seven-method projection over a class that also carries the admin reads and writes, and a test in `blog-service.test.ts` asserts the exact key set so the published surface cannot grow without someone noticing.
 
 ## Sharing the Contract — Types-Only Sibling Package
 

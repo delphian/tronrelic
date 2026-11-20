@@ -19,7 +19,7 @@ import styles from './WalletDetail.module.scss';
 interface IAddressDisplayProps {
     /** The full base58 address. */
     address: string;
-    /** Human-friendly label resolved by the address-labels service, if any. */
+    /** Human-friendly label from the backend's `labels` map, if one was sent. */
     label?: string;
 }
 

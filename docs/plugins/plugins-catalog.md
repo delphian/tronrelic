@@ -10,7 +10,6 @@ Agents and operators routinely waste effort building features the platform alrea
 
 | Plugin | Purpose | README |
 |--------|---------|--------|
-| trp-address-labels | TRON address identity: entity attribution (CEX hot/cold/deposit wallets first) via source providers, curation gate, and the `address-labels` registry service, so feeds render "→ Binance" instead of raw addresses. | [README](../../src/plugins/trp-address-labels/README.md) |
 | trp-ai-assistant | Admin-only Claude API console; streams answers and runs Batch jobs at 50% cost; other plugins register template variables and tools through the service registry. | [README](../../src/plugins/trp-ai-assistant/README.md) |
 | trp-bazi-fortune | 八字命理 Four Pillars readings keyed off each wallet's on-chain `create_time`; daily Wu Xing fortune via Beijing-time pillars. | [README](../../src/plugins/trp-bazi-fortune/README.md) |
 | trp-blog | Admin-authored public blog at `/blog`; AI-proposed posts held in the central curation queue, direct admin authoring at `/system/blog`. | [README](../../src/plugins/trp-blog/README.md) |
