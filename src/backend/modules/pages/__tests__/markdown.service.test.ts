@@ -3,6 +3,7 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { MarkdownService } from '../services/markdown.service.js';
 import type { ICacheService } from '@/types';
+import { createTestMarkdownRenderer } from '../../../tests/vitest/mocks/markdown-renderer.js';
 
 /**
  * Mock CacheService for testing Redis operations.
@@ -44,7 +45,7 @@ describe('MarkdownService', () => {
 
     beforeEach(() => {
         mockCache = new MockCacheService();
-        markdownService = new MarkdownService(mockCache);
+        markdownService = new MarkdownService(mockCache, createTestMarkdownRenderer());
     });
 
     afterEach(() => {

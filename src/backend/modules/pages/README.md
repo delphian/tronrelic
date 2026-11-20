@@ -53,7 +53,7 @@ modules/pages/
 │   ├── page-content-type.ts  # core:page storage callbacks (IManagedContentType)
 │   ├── page-translatable.ts  # core:page translation side (ITranslatableContentType)
 │   ├── page-translation.service.ts # IPageTranslationService singleton; renders served translations
-│   └── markdown.service.ts   # Frontmatter parsing and HTML rendering
+│   └── markdown.service.ts   # Frontmatter parsing, render caching; HTML comes from the markdown module
 ├── __tests__/
 ├── ai-tools.ts               # AI tools: pages-list, pages-search, pages-get, and the review-held pages-propose-edit and pages-propose-page
 ├── PagesModule.ts            # IModule implementation
@@ -61,7 +61,7 @@ modules/pages/
 └── README.md
 ```
 
-**Two-phase lifecycle.** `init()` configures `PageService` and `PageTranslationService` with the injected `IContentService`, creates the translation values index, and builds the controllers. `run()` registers `core:page`, which carries its translation side, on the core content service, registers the `/system/pages` menu item under the System container and the page's tab row in the `pages` menu namespace, mounts the admin router at `/api/admin/pages` and the public router at `/api/pages`, and watches the service registry for `'ai-tools'` so the page AI tools register whenever that registry is available.
+**Two-phase lifecycle.** `init()` configures `PageService` and `PageTranslationService` with the injected `IContentService` and the shared markdown renderer, creates the translation values index, and builds the controllers. `run()` registers `core:page`, which carries its translation side, on the core content service, registers the `/system/pages` menu item under the System container and the page's tab row in the `pages` menu namespace, mounts the admin router at `/api/admin/pages` and the public router at `/api/pages`, and watches the service registry for `'ai-tools'` so the page AI tools register whenever that registry is available.
 
 ## Managed Content Contract
 
@@ -108,7 +108,7 @@ The storage side of `core:page`, called only by the core content service. Parses
 
 ### MarkdownService
 
-Parses frontmatter using `gray-matter` and renders markdown to HTML through the `remark`/`rehype` pipeline with `rehype-sanitize` for XSS prevention. Caches rendered HTML in Redis with a 24-hour TTL keyed `page:html:{slug}`.
+Parses frontmatter using `gray-matter` and caches rendered HTML in Redis with a 24-hour TTL keyed `page:html:{slug}`. It does not convert markdown to HTML itself: `renderMarkdown` calls the shared renderer from the [markdown module](../markdown/README.md), which applies GitHub Flavored Markdown and `rehype-sanitize`, so pages follow the same sanitize rules as the blog. The module receives that renderer as its `markdownRenderer` dependency and passes it to `PageService` and `PageTranslationService`.
 
 `stripHiddenMarkup` removes HTML comments and `<script>` elements from markdown, the two things the sanitizer hides from visitors along with their contents. Every public read that returns markdown instead of HTML passes through it, so markdown cannot reveal a note an author left in a comment. It works on the raw HTML the parser finds, which keeps a comment written inside a code block (the page shows that one), and it edits the original text rather than re-serializing, so all other formatting stays as written.
 

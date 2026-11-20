@@ -131,6 +131,7 @@ export type { AccountIngestionStatus, AccountHistoryTickKind, AccountHistoryTick
 export { PRICE_ASSET_TRX } from './price-history/index.js';
 export type { PriceAsset, IPricePoint, IPriceHistorySettings, IPriceSourceInfo, IPriceAssetCoverage, IPriceHistoryStats, IPriceCoverageDiagnostics, IPriceHistoryService } from './price-history/index.js';
 export type { PortfolioScope, IPortfolioQuery, IPortfolioHolding, IPortfolioAllocationSlice, IPortfolioBalancePoint, IPortfolioSummary, IValuationService } from './valuation/index.js';
+export type { IMarkdownRendererService, IMarkdownRenderOptions } from './markdown/index.js';
 export type { ITrafficIgnoreSubject, ITrafficIgnoreList, ICampaignParams, IUtmParams } from './traffic/index.js';
 export { appendCampaignParams, readUtmParams, CAMPAIGN_MEDIUM_SOCIAL, SYNDICATION_CAMPAIGN } from './traffic/index.js';
 export type { BotRuleLabel, BotRuleMode, BotRuleStatus, BotRuleSource, IBotRuleNetworkMismatch, IBotRuleConditions, IBotRule, IBotRuleInput, IBotRulePreview, IBotRulePreviewSample, IBotRuleStats, IBotRuleSuggestion } from './traffic/index.js';
