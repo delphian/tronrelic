@@ -174,7 +174,8 @@ export class WidgetTypeRegistry implements IWidgetTypeRegistry {
                 pluginId: entry.pluginId,
                 registeredAt: new Date(entry.registeredAt).toISOString(),
                 source: entry.source,
-                configSchema: entry.descriptor.configSchema
+                configSchema: entry.descriptor.configSchema,
+                embeddable: entry.descriptor.embeddable
             });
             byPlugin.set(entry.pluginId, bucket);
         }

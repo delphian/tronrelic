@@ -1,0 +1,21 @@
+// Styles for a page or post body with embedded widgets.
+//
+// HTML runs keep no box of their own: they carry the body's typography class,
+// pass its inherited properties to their children, and let those children
+// sit in the body's flow as if the wrapper were not there. An embedded widget
+// is a block in the reading flow, outside every run, spaced from the prose.
+
+.root {
+    min-width: 0;
+}
+
+.html {
+    display: contents;
+}
+
+.embed {
+    margin-block: var(--gap-lg);
+    // Lets a widget sized with container queries measure the body column
+    // rather than collapsing to its content's width.
+    min-width: 0;
+}

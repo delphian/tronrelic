@@ -25,6 +25,8 @@ import { WidgetTypeRegistry } from '../widget-types/widget-type-registry.js';
 import { PlacementService } from '../placements/placement.service.js';
 import { PlacementResolver } from '../placements/placement-resolver.js';
 import { WidgetRouteCache } from '../placements/WidgetRouteCache.js';
+import { EmbedResolver } from '../embeds/embed-resolver.js';
+import { InstanceConfigValidator } from '../widget-types/instance-config-validator.js';
 import { ZoneLayoutService } from '../zones/zone-layout.service.js';
 import { __resetKnownZonesForTests } from '../zones/define-zone.js';
 import { __resetKnownWidgetTypesForTests } from '../widget-types/define-widget-type.js';
@@ -115,7 +117,8 @@ function buildWidgetsService(): { widgets: WidgetsService } {
     ZoneLayoutService.setDependencies(db, logger);
     const zoneLayouts = ZoneLayoutService.getInstance();
     WidgetsService.__resetForTests();
-    WidgetsService.setDependencies(zones, types, placements, resolver, new WidgetRouteCache(), zoneLayouts, logger);
+    const embeds = new EmbedResolver(types, new InstanceConfigValidator(logger), logger);
+    WidgetsService.setDependencies(zones, types, placements, resolver, new WidgetRouteCache(), zoneLayouts, embeds, logger);
     return { widgets: WidgetsService.getInstance() };
 }
 

@@ -16,6 +16,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import type { IPageService, IPageTranslationService, ISystemLogService } from '@/types';
 import { DEFAULT_LANGUAGE } from '@/types';
+import type { PageEmbeds } from '../services/page-embeds.js';
 
 /** Read the language a public request asks for, or null when it wants the English page. */
 function requestedLanguage(req: Request): string | null {
@@ -36,11 +37,13 @@ export class PageTranslationsController {
     /**
      * @param translationService - Renders and describes served translations.
      * @param pageService - Resolves an old slug to the page it redirects to.
+     * @param pageEmbeds - Fetches embedded widget data for the translated render.
      * @param logger - Scoped logger.
      */
     constructor(
         private readonly translationService: IPageTranslationService,
         private readonly pageService: IPageService,
+        private readonly pageEmbeds: PageEmbeds,
         private readonly logger: ISystemLogService
     ) {}
 
@@ -54,7 +57,9 @@ export class PageTranslationsController {
      * address and `<html lang>` is what translations exist to prevent.
      *
      * @param req - Params: `slug`. Query: `language`.
-     * @param res - Receives the render plus `currentSlug` and `requestedSlug`, or 404.
+     * @param res - Receives the render plus `embeds`, `currentSlug`, and
+     *   `requestedSlug`, or 404. Embedded widgets are fetched in the
+     *   translation's language.
      * @param next - Continues to the English handler.
      */
     async renderPublicTranslation(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -76,7 +81,8 @@ export class PageTranslationsController {
             }
 
             if (rendered) {
-                res.json({ ...rendered, currentSlug, requestedSlug });
+                const embeds = await this.pageEmbeds.resolve(rendered.html, currentSlug, language);
+                res.json({ ...rendered, embeds, currentSlug, requestedSlug });
             } else {
                 res.status(404).json({ error: 'Page not found' });
             }

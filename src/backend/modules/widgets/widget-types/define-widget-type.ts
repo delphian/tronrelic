@@ -50,7 +50,10 @@ export function defineWidgetType(options: IDefineWidgetTypeOptions): IWidgetType
         description: options.description,
         category: options.category,
         defaultDataFetcher: options.defaultDataFetcher,
-        configSchema: options.configSchema
+        configSchema: options.configSchema,
+        // Embeddable unless the type opts out, so a plugin widget written
+        // before embedding existed can be embedded without a code change.
+        embeddable: options.embeddable ?? true
     });
 
     KNOWN_WIDGET_TYPES.set(options.id, descriptor);

@@ -12,7 +12,7 @@ Direct imports from `src/frontend/` break Next.js module resolution and couple p
 interface IFrontendPluginContext {
     pluginId: string;              // namespacing for events and API routes
     layout: ILayoutComponents;     // Page, PageHeader, AdminPage, Stack, Grid, Section, SubMenu
-    ui: IUIComponents;             // Card, Panel, FigureList, Badge, Button, CopyButton, IconButton, Switch, Input, Select, Textarea, Skeleton, StatTile, StatGrid, ClientTime, Tooltip, TronAddress, TronTransactionId, IconPickerModal, ConfirmDialog, AccountPicker, AddressSelector, Table family, Link
+    ui: IUIComponents;             // Card, Panel, EmbeddedContent, FigureList, Badge, Button, CopyButton, IconButton, Switch, Input, Select, Textarea, Skeleton, StatTile, StatGrid, ClientTime, Tooltip, TronAddress, TronTransactionId, IconPickerModal, ConfirmDialog, AccountPicker, AddressSelector, Table family, Link
     charts: IChartComponents;      // LineChart, BarChart, PriceRail
     system: ISystemComponents;     // SchedulerMonitor, CollectionBrowser, ClickHouseTableBrowser, SystemLogsMonitor, AiToolSchemaView, ContentTranslations, TranslationStatusBadges (admin)
     api: IApiClient;               // get/post/put/patch/delete with runtime base URL
@@ -22,6 +22,7 @@ interface IFrontendPluginContext {
     useModal: () => { open, close, closeAll };
     useToast: () => { push, dismiss };
     useFilePicker: () => IFilePickerClient;   // pick/upload files; provider-delivered
+    useWidgetEmbedPicker: () => IWidgetEmbedPickerClient;   // Insert widget dialog for a markdown editor
     useImageGen: () => IImageGenClient;       // prompt→saved image; provider-delivered
     useTranslation: () => ITranslator;        // t(key, englishText) in the page's language
     useLocalizedHref: () => (href: string) => string;   // keeps on-site links in the page's language
@@ -184,6 +185,16 @@ Treat files as a **capability that can be absent**: when no provider is enabled,
 > **Deferred: backend files-module facade.** This picker is the *frontend* half only. A core *backend* files-module facade — a stable, always-present server-side handle over the `'files'` service registry — is intentionally **not** built yet. Backend consumers still reach `IFileService` directly via `context.services.watch('files')` (already provider-agnostic). This does not limit the picker: it works and is fully provider-swappable today, because each provider ships both its picker UI and its own endpoints.
 >
 > **Agents/maintainers: periodically ask the project owner whether it's time to build the backend facade.** What it would add — a single core chokepoint for policy/quota/audit across all backend file writes, and a non-null handle so backend code stops hand-handling "provider not registered." What deferring costs — nothing for the picker; backend consumers keep using `watch('files')`. Surface this every so often (e.g. when adding a new backend file consumer) rather than letting the deferral quietly become permanent.
+
+## Embedded Widgets in Markdown (`ui.EmbeddedContent`, `useWidgetEmbedPicker`)
+
+An author can embed a widget in rendered markdown with a ` ```widget ` block, which core's markdown renderer stores as a placeholder. A plugin that shows such a body renders it with `ui.EmbeddedContent` instead of `dangerouslySetInnerHTML`, passing the stored HTML and the `embeds` its backend route got from the `'widgets'` service's `resolveEmbeds` for this request. Each placeholder renders as its widget in the server HTML. `className` is the body's typography class, and it is applied to the prose only, so the body's `p` and `a` rules never restyle a widget.
+
+```tsx
+<ui.EmbeddedContent className={styles.body} html={post.renderedHtml} embeds={data.embeds} route={`/blog/${post.slug}`} />
+```
+
+A plugin's markdown editor offers the same Insert widget dialog the CMS page editor has: `const { pick } = context.useWidgetEmbedPicker()`, then `await pick()` resolves with the block to insert at the cursor, or `null` on cancel. The dialog lists types from an admin endpoint, so use it on admin pages only. `trp-blog` is the reference for both. See [Embedded widgets](../../src/backend/modules/widgets/README.md#embedded-widgets) for the contract.
 
 ## Image Generation (`context.useImageGen`)
 

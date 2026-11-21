@@ -53,7 +53,8 @@ modules/pages/
 │   ├── page-content-type.ts  # core:page storage callbacks (IManagedContentType)
 │   ├── page-translatable.ts  # core:page translation side (ITranslatableContentType)
 │   ├── page-translation.service.ts # IPageTranslationService singleton; renders served translations
-│   └── markdown.service.ts   # Frontmatter parsing, render caching; HTML comes from the markdown module
+│   ├── markdown.service.ts   # Frontmatter parsing, render caching; HTML comes from the markdown module
+│   └── page-embeds.ts        # Fetches embedded widget data for the public renders, through 'widgets'
 ├── __tests__/
 ├── ai-tools.ts               # AI tools: pages-list, pages-search, pages-get, and the review-held pages-propose-edit and pages-propose-page
 ├── PagesModule.ts            # IModule implementation
@@ -83,6 +84,8 @@ modules/pages/
 `/system/pages` has four tabs: **Pages** (the page counts, then the list paged on the server 25 at a time with its search and status filter, and the editor it opens), **Settings** (the route blacklist), **Database**, and **Logs**. The tab row is the menu module's Submenu Pattern: `run()` registers one memory-only node per tab in the `pages` namespace (`PAGES_ADMIN_SUBMENU_NAMESPACE`), each with `requiresAdmin: true` because the namespace sits outside the System container, and `PagesAdminClient.tsx` renders them with `MenuNavClient`. The `?tab=` query parameter deep-links a tab.
 
 The Database tab shows two read-only collection browsers, because the storage has two naming schemes: the `page` prefix reaches `pages` and `page_settings`, which predate the `module_<id>_` convention, and `module_pages_` reaches the translated text. Editing is off because a change made there would skip the core content service. The Logs tab shows entries under `tronrelic:pages`. The module registers no scheduler jobs, so there is no Schedules tab.
+
+**Embedding widgets.** The editor's **Insert widget** button opens a picker listing every embeddable widget type, with the type's settings form, and writes a ` ```widget ` block at the cursor. The preview shows each embed as a labelled outline rather than the live widget. See [Embedded widgets](../widgets/README.md#embedded-widgets).
 
 **No file dependencies.** Page editors that need attachments use `/system/files` to upload files, then paste the resulting URL into markdown. Pages does not own any file storage.
 
@@ -131,7 +134,7 @@ Write failures from the core content service map to statuses by their `code` thr
 Public API at `/api/pages`:
 
 - `GET /:slug` — published page metadata: `title`, `slug`, `description`, `keywords`, `ogImage`, `createdAt`, and `updatedAt`, plus `requestedSlug`, which differs from `page.slug` when the request matched an old slug. Nothing else leaves the server: not the markdown source, which can hold comments the rendered page hides, and not the redirect history or review state
-- `GET /:slug/render` — rendered HTML with metadata (cache-first, falls through to redirect on miss)
+- `GET /:slug/render` — rendered HTML with metadata (cache-first, falls through to redirect on miss), plus `embeds`: one `IWidgetData | null` per widget the body embeds with a ` ```widget ` block, in document order. The HTML cache holds only the placeholders; `PageEmbeds` (`services/page-embeds.ts`) fetches the widget data on every request through the `'widgets'` service's `resolveEmbeds`, with the page's current slug as the route. See [Embedded widgets](../widgets/README.md#embedded-widgets)
 
 Both public endpoints answer an unexpected failure with a 500 carrying only a generic `error` string. The caller is anonymous, so the underlying message, which can name hosts, collections, or query details, goes only to the log under the `tronrelic:pages` service.
 
@@ -212,7 +215,7 @@ The core content service runs the translation workflow for every translatable ty
 
 **Localization snapshot.** Page changes that can alter which addresses are served — an approval, a delete, a restore — call `onLocalizedRoutesChanged`, which bootstrap points at `LocalizationService.invalidate()`. Translation changes ask for the same rebuild through the core content service. The localization service also rebuilds a snapshot containing content routes after 60 seconds, which bounds the case where an approval finishes after the rebuild it asked for.
 
-Public: `GET /api/pages/:slug?language=<code>` and `GET /api/pages/:slug/render?language=<code>` answer with the translation in the same shapes as the English endpoints, following an old slug to the page's current one. Without `language`, or with `language=en`, the request reaches the English handler unchanged. The site's catch-all route adds the parameter on translated requests.
+Public: `GET /api/pages/:slug?language=<code>` and `GET /api/pages/:slug/render?language=<code>` answer with the translation in the same shapes as the English endpoints (the render's `embeds` are fetched in the translation's language), following an old slug to the page's current one. Without `language`, or with `language=en`, the request reaches the English handler unchanged. The site's catch-all route adds the parameter on translated requests.
 
 ## Database Schema
 

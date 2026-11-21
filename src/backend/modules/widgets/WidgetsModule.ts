@@ -45,6 +45,8 @@ import { WidgetRouteCache } from './placements/WidgetRouteCache.js';
 import { ZoneRegistry } from './zones/zone-registry.js';
 import { ZoneLayoutService } from './zones/zone-layout.service.js';
 import { WidgetTypeRegistry } from './widget-types/widget-type-registry.js';
+import { InstanceConfigValidator } from './widget-types/instance-config-validator.js';
+import { EmbedResolver } from './embeds/embed-resolver.js';
 import { WidgetsService } from './widgets.service.js';
 import { CORE_ZONE_DESCRIPTORS } from './zones/descriptors.js';
 import { buildCoreWidgetTypeDescriptors } from './widget-types/core-widget-types.js';
@@ -244,6 +246,11 @@ export class WidgetsModule implements IModule<IWidgetsModuleDependencies> {
         // WidgetsService clears it on every write.
         this.routeCache = new WidgetRouteCache();
 
+        // One schema check for every path that hands a fetcher settings from
+        // outside the code: placements saved by an operator, and widgets an
+        // author embeds in a page or post body.
+        const configValidator = new InstanceConfigValidator(this.logger);
+
         // Singleton-backed unified widgets service. Composes the internal
         // collaborators behind one IWidgetsService surface.
         WidgetsService.setDependencies(
@@ -253,6 +260,7 @@ export class WidgetsModule implements IModule<IWidgetsModuleDependencies> {
             this.placementResolver,
             this.routeCache,
             this.zoneLayoutService,
+            new EmbedResolver(this.widgetTypeRegistry, configValidator, this.logger),
             this.logger
         );
         this.widgetsService = WidgetsService.getInstance();
@@ -273,7 +281,8 @@ export class WidgetsModule implements IModule<IWidgetsModuleDependencies> {
         this.placementsController = new PlacementsController(
             this.widgetsService,
             this.logger,
-            new ScopedCssValidator(this.logger, { allowNestedRules: true })
+            new ScopedCssValidator(this.logger, { allowNestedRules: true }),
+            configValidator
         );
 
         this.logger.info('Widgets module initialized');

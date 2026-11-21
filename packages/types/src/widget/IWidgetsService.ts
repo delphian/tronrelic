@@ -31,6 +31,7 @@ import type {
     IPlacementPatch
 } from '../widget-placements/IPlacementService.js';
 import type { IWidgetData } from './IWidgetData.js';
+import type { IWidgetEmbedContext } from './IWidgetEmbedContext.js';
 
 /**
  * Disposer returned by a `register*` call. Invoking it removes that
@@ -75,6 +76,14 @@ export interface IRegisterWidgetTypeInput {
      * admin-UX path.
      */
     configSchema?: JSONSchema7;
+    /**
+     * Whether authors may embed this widget inside a page or post body with
+     * a ` ```widget ` block. Defaults to true. Set it false for site chrome,
+     * such as navigation or a sign-in button, and for any type that injects
+     * markup taken from its settings, because page authors include AI tools
+     * and other non-curators whose drafts only a curator reviews.
+     */
+    embeddable?: boolean;
 }
 
 /**
@@ -190,6 +199,24 @@ export interface IWidgetsService {
         params?: Record<string, string>,
         language?: string
     ): Promise<IWidgetData[]>;
+
+    /**
+     * Fetch the data for every widget embedded in a rendered page or post
+     * body. The content endpoint that serves the body calls this on each
+     * request, so the widget data is current while the stored HTML holds
+     * only the placeholders.
+     *
+     * Reads the placeholders with `splitWidgetEmbeds`, and returns one entry
+     * per placeholder in the same order. An entry is null when its type is
+     * not registered, is not embeddable, its settings fail the type's
+     * schema, its fetcher fails or times out, or the body holds more embeds
+     * than the per-body limit. A null entry renders nothing. Never throws.
+     *
+     * @param html - Sanitized HTML from the shared markdown renderer.
+     * @param context - The page the body is shown on, passed to each fetcher.
+     * @returns One result per placeholder, in document order.
+     */
+    resolveEmbeds(html: string, context: IWidgetEmbedContext): Promise<Array<IWidgetData | null>>;
 
     // ------------------------------------------------------------
     // Registration (write — identity-bearing)

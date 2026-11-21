@@ -1,0 +1,50 @@
+/**
+ * The Insert widget dialog. It is its own container so the two-up settings
+ * grid collapses on the dialog's width, which is narrower than the viewport.
+ */
+
+@use '../../../../app/breakpoints' as *;
+
+.form {
+    container-type: inline-size;
+    container-name: widget-embed-picker;
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+}
+
+/* Same two-up grid as the placement editor's settings section. */
+.grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--gap-sm) var(--gap-md);
+    align-items: start;
+}
+
+.span {
+    grid-column: 1 / -1;
+}
+
+.notice {
+    margin: 0;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+}
+
+.error {
+    margin: 0;
+    color: var(--color-danger);
+    font-size: var(--font-size-body-sm);
+}
+
+.actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--button-gap);
+}
+
+@container widget-embed-picker (max-width: #{$breakpoint-mobile-md}) {
+    .grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}

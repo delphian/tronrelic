@@ -19,13 +19,7 @@ import type {
     IWidgetTypeRegistry
 } from '@/types';
 import { DEFAULT_LANGUAGE } from '@/types';
-
-/**
- * Per-widget data-fetch timeout. Matches the legacy
- * `WidgetService.fetchWidgetsForRoute` behaviour so plugin authors
- * see no semantic change after the compat-shim migration.
- */
-const TIMEOUT_MS = 5000;
+import { runWidgetFetcher } from './run-widget-fetcher.js';
 
 /**
  * Pure resolver. No singleton — `WidgetsModule.init()` constructs one
@@ -183,99 +177,55 @@ export class PlacementResolver {
             return null;
         }
 
-        let timerId: NodeJS.Timeout | undefined;
-        try {
-            const timeoutPromise = new Promise<never>((_, reject) => {
-                timerId = setTimeout(() => reject(new Error('Widget fetch timeout')), TIMEOUT_MS);
-            });
-            // Substitute an empty object when the placement carries no
-            // overrides so fetchers can read keys unconditionally
-            // without null-guards on every access.
-            const placementContext = {
-                id: placement.id,
-                instanceConfig: placement.instanceConfig ?? {},
-                language
-            };
-            const raw = await Promise.race([
-                type.defaultDataFetcher(route, params, placementContext),
-                timeoutPromise
-            ]);
-            clearTimeout(timerId);
+        // Substitute an empty object when the placement carries no
+        // overrides so fetchers can read keys unconditionally
+        // without null-guards on every access.
+        const placementContext = {
+            id: placement.id,
+            instanceConfig: placement.instanceConfig ?? {},
+            language
+        };
+        const data = await runWidgetFetcher(type, route, params, placementContext, this.logger, {
+            placementId: placement.id,
+            pluginId: placement.pluginId
+        });
+        if (data === null) return null;
 
-            const data = this.validateSerializable(raw, placement.typeId);
-            if (data === null) return null;
+        // Resolve owning plugin id from the registry — the authoritative
+        // source — so operator placements (which omit `placement.pluginId`)
+        // and non-namespaced type ids both surface the correct frontend
+        // plugin context. Falls back to placement.pluginId only when the
+        // type isn't registered to anyone, which shouldn't happen because
+        // the type was just fetched from the registry above.
+        const owner =
+            this.widgetTypeRegistry.getOwnerPluginId(placement.typeId) ??
+            placement.pluginId ??
+            'unknown';
 
-            // Resolve owning plugin id from the registry — the
-            // authoritative source — so operator placements (which
-            // omit `placement.pluginId`) and non-namespaced type ids
-            // both surface the correct frontend plugin context.
-            // Falls back to placement.pluginId only when the type
-            // isn't registered to anyone, which shouldn't happen
-            // because the type was just fetched from the registry
-            // above.
-            const owner =
-                this.widgetTypeRegistry.getOwnerPluginId(placement.typeId) ??
-                placement.pluginId ??
-                'unknown';
-
-            return {
-                id: placement.typeId,
-                zone: placement.zoneId,
-                pluginId: owner,
-                order: placement.order,
-                // Carry the placement's relative row width through to the
-                // renderer so it can size this flex item; absent leaves it
-                // auto-width as before.
-                layoutWeight: placement.layoutWeight,
-                // Which class of screen the item renders on; the renderer
-                // hides it on the other with CSS.
-                showOn: placement.showOn,
-                title: placement.title,
-                titleUrl: placement.titleUrl,
-                titleSize: placement.titleSize,
-                // The placement id tells two placements of one type apart on
-                // the page; the renderer scopes the placement's CSS to it.
-                placementId: placement.id,
-                customCss: placement.customCss,
-                data,
-                // Forward the same instance config the fetcher received so
-                // the frontend component can branch on it. Mirror the
-                // empty-object default used for the fetcher context above.
-                instanceConfig: placement.instanceConfig ?? {}
-            };
-        } catch (error) {
-            clearTimeout(timerId);
-            this.logger.error(
-                {
-                    typeId: placement.typeId,
-                    placementId: placement.id,
-                    pluginId: placement.pluginId,
-                    error: error instanceof Error ? error.message : String(error)
-                },
-                'Widget data fetch failed'
-            );
-            return null;
-        }
-    }
-
-    /**
-     * Verify the fetched data round-trips through `JSON.stringify` so
-     * the SSR payload is safe to embed in the response. Returns
-     * `null` on non-serialisable input (BigInt, circular refs,
-     * functions). Pure transform — does not mutate `data`.
-     */
-    private validateSerializable(data: unknown, typeId: string): unknown {
-        try {
-            return JSON.parse(JSON.stringify(data));
-        } catch (error) {
-            this.logger.error(
-                {
-                    typeId,
-                    error: error instanceof Error ? error.message : String(error)
-                },
-                'Widget returned non-serializable data'
-            );
-            return null;
-        }
+        return {
+            id: placement.typeId,
+            zone: placement.zoneId,
+            pluginId: owner,
+            order: placement.order,
+            // Carry the placement's relative row width through to the
+            // renderer so it can size this flex item; absent leaves it
+            // auto-width as before.
+            layoutWeight: placement.layoutWeight,
+            // Which class of screen the item renders on; the renderer
+            // hides it on the other with CSS.
+            showOn: placement.showOn,
+            title: placement.title,
+            titleUrl: placement.titleUrl,
+            titleSize: placement.titleSize,
+            // The placement id tells two placements of one type apart on
+            // the page; the renderer scopes the placement's CSS to it.
+            placementId: placement.id,
+            customCss: placement.customCss,
+            data,
+            // Forward the same instance config the fetcher received so
+            // the frontend component can branch on it. Mirror the
+            // empty-object default used for the fetcher context above.
+            instanceConfig: placement.instanceConfig ?? {}
+        };
     }
 }

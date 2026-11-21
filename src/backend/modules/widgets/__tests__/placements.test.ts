@@ -508,7 +508,8 @@ describe('PlacementResolver', () => {
         id,
         label: id,
         description: '',
-        defaultDataFetcher: fetcher
+        defaultDataFetcher: fetcher,
+        embeddable: true
     });
 
     const buildPlacement = (overrides: Partial<IWidgetPlacement> = {}): IWidgetPlacement => ({

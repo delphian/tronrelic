@@ -11,7 +11,7 @@ Owns every concern of the widget subsystem behind a single public surface: `IWid
 | Public service | `'widgets'` on the service registry (`IWidgetsService`) |
 | Backend API base | `/api/admin/system/widgets/placements`, `/api/admin/system/widget-types`, `/api/admin/system/zones` (now also `PATCH /:zoneId/layout`), plus SSR fetch at `/api/widgets` |
 | WebSocket event | `widgets:placements-update` (also fired on zone-layout change — no separate event) |
-| Types package | `@delphian/tronrelic-types` — `IWidgetsService`, `IAuthButtonLink`, `WIDGET_ICON_FORMAT`, `WIDGET_IMAGE_FORMAT`, `WIDGET_MENU_NAMESPACE_FORMAT`, `IRegisterWidgetTypeInput`, `IRegisterZoneInput`, `IRegisterWidgetInput`, `IWidgetPlacement`, `IPlacementInput`, `IPlacementPatch`, `WidgetTitleSize`, `WidgetShowOn`, `IPlacementListFilter`, `IWidgetType`, `IWidgetPlacementContext`, `IZoneDescriptor`, `IZoneSnapshot`, `IZoneLayoutConfig`, `IWidgetTypeSnapshot`, `zoneAcceptsRouteFilter`, `SITE_ZONE_ROUTE_FILTER_REASON` |
+| Types package | `@delphian/tronrelic-types` — `IWidgetsService`, `IAuthButtonLink`, `WIDGET_ICON_FORMAT`, `WIDGET_IMAGE_FORMAT`, `WIDGET_MENU_NAMESPACE_FORMAT`, `IRegisterWidgetTypeInput`, `IRegisterZoneInput`, `IRegisterWidgetInput`, `IWidgetPlacement`, `IPlacementInput`, `IPlacementPatch`, `WidgetTitleSize`, `WidgetShowOn`, `IPlacementListFilter`, `IWidgetType`, `IWidgetPlacementContext`, `IZoneDescriptor`, `IZoneSnapshot`, `IZoneLayoutConfig`, `IWidgetTypeSnapshot`, `zoneAcceptsRouteFilter`, `SITE_ZONE_ROUTE_FILTER_REASON`, and for embedded widgets `IWidgetEmbed`, `IWidgetEmbedContext`, `IWidgetEmbedSegment`, `WIDGET_EMBED_MARKUP`, `parseWidgetEmbed`, `encodeWidgetEmbed`, `splitWidgetEmbeds` |
 | Storage | `module_widgets_placements`, `module_widgets_zone_layouts` (MongoDB) |
 | Migration | `module:widgets:001_create_widget_placements` (placements collection + 4 indexes); `module:widgets:002_seed_block_ticker_placement` (idempotent seed of one operator-source `core:block-ticker` placement in `ticker-after`, guarded on absence so it runs once and never fights an operator edit); `module:widgets:003_add_parent_id_index` (sparse `parentId` index for child grouping); `module:widgets:004_repair_plugin_placement_index` (drops the mis-scoped sparse unique `(typeId, pluginId)` index and recreates it partial — `partialFilterExpression: { pluginId: { $exists: true } }` — so operators can place a widget type more than once). The zone-layouts collection needs no migration — `ZoneLayoutService.load()` creates its unique index idempotently at boot. |
 | System menu node | "Widgets" under the System container — seeded by `WidgetsModule.run()` |
@@ -26,6 +26,9 @@ Owns every concern of the widget subsystem behind a single public surface: `IWid
 | `placements/placement.service.ts` | `IPlacementService` singleton (internal): CRUD, `ensurePluginPlacement`, `softDisableForPlugin`, `findByRoute`, `restoreToPluginDefaults`, `detachChildrenOf` (container-delete child relocation), broadcast hook |
 | `placements/placement-resolver.ts` | SSR-time join of placements ↔ widget-type descriptors with 5s timeout and JSON serialisability check |
 | `placements/WidgetRouteCache.ts` | Per-route cache in front of the resolver: 5s expiry, concurrent requests for a route share one resolution, 200-route cap, cleared by `WidgetsService` on every write |
+| `placements/run-widget-fetcher.ts` | `runWidgetFetcher` — runs one data fetcher under the 5-second limit with the JSON round-trip check, logging and skipping on failure. Shared by the placement resolver and the embed resolver |
+| `embeds/embed-resolver.ts` | `EmbedResolver` — fetches data for widgets embedded in page and post bodies, behind `resolveEmbeds`. See [Embedded widgets](#embedded-widgets) |
+| `widget-types/instance-config-validator.ts` | `InstanceConfigValidator` — the AJV check of settings against a type's `configSchema`, with the custom formats registered. Shared by the placements controller and the embed resolver |
 | `placements/route-matcher.ts` | `routeMatches` predicate, `normaliseRoutePattern` validator, `partitionRoutePatterns` for the admin path |
 | `widget-types/widget-type-registry.ts` | Internal widget-type registry — instantiated by `WidgetsModule.init()` |
 | `widget-types/define-widget-type.ts` | Descriptor mint — runtime registry refuses unminted descriptors |
@@ -46,7 +49,7 @@ Owns every concern of the widget subsystem behind a single public surface: `IWid
 
 `IWidgetsService` (defined in `@delphian/tronrelic-types`) exposes three groups of operations:
 
-**Discovery** — `listZones()`, `listTypes()`, `hasZone(id)`, `hasType(id)`, `fetchWidgetsForRoute(route, params?)`. The last is the SSR entry point that `GET /api/widgets` adapts.
+**Discovery** — `listZones()`, `listTypes()`, `hasZone(id)`, `hasType(id)`, `fetchWidgetsForRoute(route, params?)`, `resolveEmbeds(html, context)`. `fetchWidgetsForRoute` is the SSR entry point that `GET /api/widgets` adapts; `resolveEmbeds` is what the page and blog endpoints call for widgets embedded in a body.
 
 **Registration** — `registerType(input, ownerId)`, `registerZone(input, ownerId)`, `registerWidget(input, ownerId)` (combined type + default placement), `unregisterAllForOwner(ownerId)`. Identity is trust-based: the caller passes `ownerId`, the service trusts it. Matches the rest of the service registry.
 
@@ -258,9 +261,37 @@ Failures within a fetcher are logged and the widget is omitted — they never pr
 
 `WidgetsService` clears the cache on every write that changes what a route resolves to: placement create, update, delete, and restore-defaults, `registerType` (and its disposer), `registerWidget`, and `unregisterAllForOwner`. Operator edits therefore render on the next request. What can be up to 5 seconds old is the data a fetcher returns — the latest block, recent activity, a newly published post — in server-rendered HTML; widgets with live updates correct it after hydration. The cache is per process, so a write on one backend instance does not clear another instance's cache until it expires.
 
+## Embedded widgets
+
+An author can place a widget inside a CMS page or blog post body, rather than in a zone, by writing a fenced code block whose language is `widget`:
+
+````markdown
+```widget
+{ "type": "core:world-clocks", "config": { "zones": [{ "timeZone": "Asia/Shanghai", "countryCode": "CN" }] } }
+```
+````
+
+The page editor on `/system/pages` and the post editor on `/system/blog` have an **Insert widget** button that writes the block from a form built from the type's `configSchema`, the same form the placement editor uses. The shared markdown renderer stores the block as an empty `<tr-widget>` placeholder ([Markdown README](../markdown/README.md#embedded-widgets)), so the stored HTML never holds widget data.
+
+**Resolution happens per request.** The content endpoint serving the body (`GET /api/pages/:slug/render`, and the blog's `GET /posts/:slug`) calls `resolveEmbeds(html, { route, params, language })` and returns the result as `embeds` beside the HTML. `EmbedResolver` reads the placeholders with `splitWidgetEmbeds` and returns one entry per placeholder, in order, so the frontend pairs placeholder *n* with `embeds[n]`. Each embed runs its type's fetcher through `runWidgetFetcher`, with the page's route and language and a placement context whose `id` is `embed-<n>`. The entry is an `IWidgetData` with `zone: 'embed'`, `order: n`, and no placement id, title, or custom CSS.
+
+**Every embed is checked again on every resolve**, because page authors include AI tools and other non-curators whose drafts only a curator reviews:
+
+| Check | When it fails |
+|-------|---------------|
+| The type is registered | `null`; debug log. Usually a disabled plugin, and the embed returns when it is re-enabled |
+| The type's `embeddable` is true | `null`; warning |
+| The settings pass the type's `configSchema` through `InstanceConfigValidator` | `null`; warning listing the fields |
+| The body holds at most `MAX_EMBEDS_PER_BODY` (20) embeds | `null` for each one past the limit; one warning |
+| The fetcher returns JSON-safe data within 5 seconds, and not a bare `null` | `null`; error log, the same as a placed widget |
+
+**`embeddable` defaults to true.** A type opts out with `embeddable: false` on `registerType`/`registerWidget`. Core sets it false on `core:raw-html`, which renders markup from its settings and must stay operator-only, on `core:layout-group`, which has no component, and on the site chrome types `core:auth-button`, `core:site-logo`, `core:main-menu`, `core:language-switcher`, and `core:tab-bar`. The widget-types snapshot carries `embeddable`, and the Insert widget picker lists only embeddable types.
+
+`resolveEmbeds` is not cached. The frontend fetches a CMS page render with a 60-second revalidation, so a page's embeds resolve at most once a minute per frontend instance and their SSR data can be that old. The blog's post fetch is `no-store`, so a post's embeds resolve on every view; each fetcher is still bounded by the 5-second limit and the 20-embed cap. Widgets with live updates correct their SSR data after hydration. A fetcher still receives no request or user, so the [route-cache rule](#route-cache) applies to embeds as well: a type whose data depends on the visitor must not be embeddable.
+
 ## Instance-Config Schema Validation
 
-Widget types may declare `configSchema` (JSON Schema Draft 7) on registration. The placement admin API compiles each declared schema once via AJV and validates `instanceConfig` against it on every create and patch. Schema-invalid bodies return 400 with `{ error, errors: [{ path, message }] }`; widget types without a schema fall through to the existing shape-only "plain object" guard. The validator cache is keyed on the schema reference (WeakMap), so re-enabling a plugin mints a fresh descriptor and a fresh compiled validator without explicit invalidation.
+Widget types may declare `configSchema` (JSON Schema Draft 7) on registration. The placement admin API compiles each declared schema once via AJV (`InstanceConfigValidator`, shared with the embed resolver) and validates `instanceConfig` against it on every create and patch. Schema-invalid bodies return 400 with `{ error, errors: [{ path, message }] }`; widget types without a schema fall through to the existing shape-only "plain object" guard. The validator cache is keyed on the schema reference (WeakMap), so re-enabling a plugin mints a fresh descriptor and a fresh compiled validator without explicit invalidation.
 
 Consumers retrieve the schema for an arbitrary `typeId` via `IWidgetsService.getTypeConfigSchema(typeId)` — the controller's single touchpoint into the type-side contract. Adminship still flows through `IWidgetsService`; the registry stays internal to the module.
 
