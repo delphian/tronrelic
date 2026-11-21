@@ -15,6 +15,7 @@ import { getServerConfig } from '../../../../lib/serverConfig';
 import { getEnabledPluginPageConfig } from '../../../../lib/serverPluginRegistry';
 import { runPluginServerDataFetcher } from '../../../../lib/runPluginServerDataFetcher';
 import { buildServerDataContext } from '../../../../lib/buildServerDataContext';
+import { resolvePluginRedirectPath } from '../../../../lib/resolvePluginRedirectPath';
 import styles from './page.module.scss';
 
 /**
@@ -195,6 +196,10 @@ type IMetadataFetchOutcome = IPluginPageMetadata | null | 'none' | 'error';
  * doesn't exist. React.cache() shares the single invocation between them,
  * mirroring how resolveSlug() is shared.
  *
+ * A `redirect` the fetcher returns is checked here, once per request, so an
+ * unsafe target is logged a single time and both callers see only a redirect
+ * they may follow.
+ *
  * @param slug - The requested URL path, passed to the fetcher as ctx.path
  * @param lang - The request's `[lang]` route parameter, which sets the
  *   language of the fetcher's ctx.translator so a translated page gets a
@@ -213,6 +218,13 @@ const runServerMetadataFetcher = cache(async (slug: string, lang: string): Promi
             console.error(`[catch-all] serverMetadataFetcher failed for ${slug}:`, error);
             outcome = 'error';
         }
+    }
+    if (outcome && typeof outcome === 'object' && outcome.redirect !== undefined) {
+        const target = resolvePluginRedirectPath(outcome.redirect, slug);
+        if (target === null) {
+            console.error(`[catch-all] Ignored redirect from ${slug} to ${JSON.stringify(outcome.redirect)}: not a different path on this site`);
+        }
+        outcome = { ...outcome, redirect: target ?? undefined };
     }
     return outcome;
 });
@@ -282,6 +294,11 @@ export async function generateMetadata({ params }: { params: Promise<IPageParams
         const fetched = await runServerMetadataFetcher(slug, resolvedParams.lang);
         if (fetched === null) {
             return { robots: { index: false, follow: false } };
+        }
+        // The body redirects before anything renders, so this response never
+        // carries a head worth describing.
+        if (typeof fetched === 'object' && fetched.redirect) {
+            return {};
         }
         const dynamic: IPluginPageMetadata = fetched === 'none' || fetched === 'error' ? {} : fetched;
 
@@ -559,6 +576,14 @@ export default async function UnifiedPage({ params }: { params: Promise<IPagePar
     const fetchedMetadata = await runServerMetadataFetcher(slug, resolvedParams.lang);
     if (fetchedMetadata === null) {
         notFound();
+    }
+
+    // The resource moved: send the visitor to its current path, in the
+    // language they asked for, before the data fetcher runs. Temporary, like
+    // a renamed CMS page above, so renaming back cannot strand visitors whose
+    // browser cached the first move.
+    if (typeof fetchedMetadata === 'object' && fetchedMetadata.redirect) {
+        redirect(localizePath(fetchedMetadata.redirect, await resolveMetadataLanguage(params)));
     }
 
     // Dynamic structured data (per-URL, e.g. a BlogPosting for one post)

@@ -190,7 +190,7 @@ Capability: the same `PAGE_EDIT_CAPABILITY` as `pages-propose-edit`, so it is sa
 
 Returns `{ success, pageId, slug, pendingReview }`, where `slug` is the normalized address. Whether the slug is free, not reserved by another page's redirect history, and not blacklisted is checked by `PageContentType` during the create. Those checks, like every title and slug rule the content type applies, throw `PageInputError`, so the tool returns them as `errorKind: 'input'` and the model can pick another slug. The admin controller still answers them with 400, as it does for any refusal that is not a content service error.
 
-Blog posts are not pages. The `trp-blog` plugin has its own `list-blog-posts`, `search-blog-posts`, and `get-blog-post` tools. The tools return English pages only; translations are not exposed to them.
+Blog posts are not pages. The `trp-blog` plugin has its own `list-blog-posts`, `search-blog-posts`, and `get-blog-post` tools. Every page tool's description carries the same routing rule, `PAGES_VERSUS_BLOG_GUIDANCE` in `ai-tools.ts`: a page is standing reference content kept current at a fixed address, and dated writing about something that happened belongs in a blog post. The blog tools carry the matching rule from their side. The rule refers to the blog tools without naming them, because the blog is a plugin that can be disabled. The tools return English pages only; translations are not exposed to them.
 
 ## Translations
 

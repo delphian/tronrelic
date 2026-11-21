@@ -124,11 +124,28 @@ const MAX_IDENTIFIER_LENGTH = 500;
 /** Shape of a core content id, which `crypto.randomUUID()` issues. */
 const CONTENT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** The sentence every description ends with, stating what the three tools share. */
+/**
+ * The rule for telling a site page from a blog post, shared by every page
+ * tool's description so the model reads the same line whichever tool it is
+ * weighing.
+ *
+ * Pages and the blog both hold written content, and their tools sit side by
+ * side in one flat list. Without a stated rule a model picks by the nearest
+ * word in the request, and a news item drafted as a page sits at a fixed
+ * address going stale. The blog belongs to a plugin that can be disabled, so
+ * its tools are referred to generally rather than by name.
+ */
+const PAGES_VERSUS_BLOG_GUIDANCE =
+    'A site page is standing reference content kept current at a fixed address, such as a guide, explainer, policy, or documentation. ' +
+    'Dated writing about something that happened, such as news, a market update, or a time-bound analysis, is a blog post, not a page; ' +
+    'use the blog tools for those when they are available. ';
+
+/** The sentence every read tool's description ends with, stating what the three tools share. */
 const SHARED_DESCRIPTION =
-    'Pages are TronRelic\'s admin-written site pages (guides, explainers, policies, announcements) served at paths such as /about. ' +
+    'Pages are TronRelic\'s admin-written site pages served at paths such as /about. ' +
+    PAGES_VERSUS_BLOG_GUIDANCE +
     'These tools return only published pages exactly as visitors see them; drafts and edits waiting for review are never returned. ' +
-    'Blog posts are separate and are not pages. Read-only; never changes a page.';
+    'Read-only; never changes a page.';
 
 /** One page as the list and search tools return it. */
 interface IPageSummaryView {
@@ -468,6 +485,7 @@ export function buildPageAiTools(service: IPageService, logger: ISystemLogServic
             'Propose an edit to an existing site page for human review. The edit is NOT applied to the live page immediately: it is held in the central curation queue, ' +
             'and visitors keep seeing the current published version until an admin approves the edit. ' +
             `Use when asked to correct, update, or improve a page that already exists. This tool cannot create pages (use ${AI_TOOL_NAMES.proposePage}), delete them, publish or unpublish them, or change their address. ` +
+            PAGES_VERSUS_BLOG_GUIDANCE +
             `BEFORE editing, find the page with ${AI_TOOL_NAMES.search} or ${AI_TOOL_NAMES.list} and read it in full with ${AI_TOOL_NAMES.get}, so the edit is based on what the page actually says. ` +
             'Send only the fields you are changing; an absent field keeps its current value. ' +
             `Parameters: pageId (required) is the page id (a UUID) those tools return. ` +
@@ -532,8 +550,8 @@ export function buildPageAiTools(service: IPageService, logger: ISystemLogServic
         description:
             'Propose a NEW site page for human review. The page is NOT published immediately: it is held in the central curation queue, ' +
             'and nothing is served at its address until an admin approves it. Approving it publishes it. ' +
-            'Pages are TronRelic\'s standing site pages (guides, explainers, policies, documentation) served at a path such as /developers/mcp. ' +
-            'Blog posts, news, and dated announcements are not pages; use the blog tools for those. ' +
+            'Pages are TronRelic\'s site pages served at a path such as /developers/mcp. ' +
+            PAGES_VERSUS_BLOG_GUIDANCE +
             `Use when asked to create a page that does not exist yet. To change an existing page, use ${AI_TOOL_NAMES.proposeEdit} instead. ` +
             `BEFORE drafting, call ${AI_TOOL_NAMES.search} for the main subject. If a page already covers it, propose an edit to that page or tell the user, instead of creating a near-duplicate. ` +
             'Write for a reader: plain language, clear headings, and facts that match what the site actually offers. ' +
