@@ -84,6 +84,14 @@ serverMetadataFetcher?: (ctx: IServerDataContext) => Promise<IPluginPageMetadata
 
 The return value carries a contract with teeth: return `null` **only** when the backend authoritatively reported the resource absent (HTTP 404) — the catch-all then emits noindex metadata and renders a 404. Throw on transient failures instead; thrown errors are caught and the route falls back to the static fields, so a brief backend outage never serves 404s to crawlers. The catch-all invokes the fetcher once per request (shared between `generateMetadata` and the body via `React.cache()`), so a fetcher and a `serverDataFetcher` hitting the same URL cost one backend call under Next's fetch dedupe.
 
+### Redirecting a Moved Resource
+
+A wildcard page's resource can move, as a blog post does when an admin changes its slug. Without a redirect, every search result and shared link to the old address returns 404. A plugin page cannot send a redirect itself, because the catch-all route owns the response, so the fetcher returns `{ redirect: '/blog/new-slug' }` and core sends the visitor there before `serverDataFetcher` runs.
+
+Give the unprefixed English path. Core adds the request's language prefix, so `/zh/blog/old-slug` goes to `/zh/blog/new-slug`. The redirect is temporary (HTTP 307), matching a renamed CMS page, because browsers cache a permanent redirect with no expiry and renaming a resource back to an old address would then send those visitors around a loop. Core ignores and logs a target that is not a path on this site, meaning one that does not start with a single `/`, and a target equal to the page being rendered. The check lives in `src/frontend/lib/resolvePluginRedirectPath.ts`.
+
+Keep the list of old addresses on the backend and answer the fetcher's read of an old address with the resource's current one. `trp-blog` is the reference: its store records a post's previous slugs when a slug change is approved, and `GET /posts/:slug` answers an old slug with `movedTo`.
+
 ## Translating Metadata
 
 The static SEO fields on `IPageConfig` are plain strings fixed when the plugin registers its pages, so they are never translated. A page published in another language on `/system/localization` would otherwise send search engines an English `<title>`, description, and JSON-LD from its `/zh/...` address while its body is in Chinese.
@@ -200,6 +208,7 @@ Before adding SEO and SSR to a plugin page, verify:
 - [ ] Admin pages have `noindex: true`
 - [ ] Each public page meant to be crawled is declared through the `http.sitemapEntries` hook in the backend `init()`
 - [ ] A page published in other languages returns its title, description, and `structuredData` from `serverMetadataFetcher`, built with `ctx.translator.t`
+- [ ] A wildcard page whose resources can change address returns `redirect` from `serverMetadataFetcher` for an old address, rather than a 404
 - [ ] If the page needs pre-fetched data, `serverDataFetcher` returns JSON-serializable values
 - [ ] The plugin component accepts `initialData` and initializes state from it
 - [ ] Client-side `useEffect` only re-fetches when context warrants (timezone, user input, live updates)

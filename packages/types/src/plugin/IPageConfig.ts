@@ -149,6 +149,28 @@ export interface IPluginPageMetadata {
 
     /** Schema.org JSON-LD injected as a <script type="application/ld+json"> tag. */
     structuredData?: Record<string, unknown>;
+
+    /**
+     * Send the visitor to another on-site path instead of rendering this page.
+     *
+     * A wildcard page whose resource moved, such as a blog post whose slug
+     * changed, returns the resource's current path here so links and search
+     * results pointing at the old address keep working. A plugin page cannot
+     * issue a redirect any other way, because the catch-all route owns the
+     * response.
+     *
+     * Give the unprefixed English path, such as `/blog/new-slug`. Core adds
+     * the language prefix of the request, so a visitor on `/zh/blog/old-slug`
+     * lands on `/zh/blog/new-slug`. The redirect is temporary (HTTP 307), the
+     * same as a renamed CMS page: a permanent redirect is cached by browsers
+     * with no expiry, so renaming a resource back to an old address would send
+     * those visitors around a loop.
+     *
+     * Core ignores, and logs, a value that is not a path on this site (one
+     * that does not start with a single `/`) or that names the path already
+     * being rendered. Every other field is ignored when this one is applied.
+     */
+    redirect?: string;
 }
 
 /**
@@ -266,6 +288,10 @@ export interface IPageConfig {
      * Throw on transient failures instead — thrown errors are caught and the
      * route falls back to the static fields, so a brief backend outage never
      * serves 404s to crawlers.
+     *
+     * Returning an object with `redirect` set sends the visitor to that path
+     * instead, before `serverDataFetcher` runs; see
+     * {@link IPluginPageMetadata.redirect}.
      *
      * The static `title`, `description`, and `structuredData` are not
      * translated. A page that is published in other languages returns those
