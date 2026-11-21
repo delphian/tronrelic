@@ -248,8 +248,13 @@ export class WidgetsModule implements IModule<IWidgetsModuleDependencies> {
 
         // One schema check for every path that hands a fetcher settings from
         // outside the code: placements saved by an operator, and widgets an
-        // author embeds in a page or post body.
-        const configValidator = new InstanceConfigValidator(this.logger);
+        // author embeds in a page or post body. Both instances apply the same
+        // rules. The admin one reports every bad field, which the placement
+        // form shows beside the inputs. The embed one stops at the first,
+        // because an embed is re-checked on every public page request and its
+        // failure only reaches a log line.
+        const configValidator = new InstanceConfigValidator(this.logger, { allErrors: true });
+        const embedConfigValidator = new InstanceConfigValidator(this.logger, { allErrors: false });
 
         // Singleton-backed unified widgets service. Composes the internal
         // collaborators behind one IWidgetsService surface.
@@ -260,7 +265,7 @@ export class WidgetsModule implements IModule<IWidgetsModuleDependencies> {
             this.placementResolver,
             this.routeCache,
             this.zoneLayoutService,
-            new EmbedResolver(this.widgetTypeRegistry, configValidator, this.logger),
+            new EmbedResolver(this.widgetTypeRegistry, embedConfigValidator, this.logger),
             this.logger
         );
         this.widgetsService = WidgetsService.getInstance();

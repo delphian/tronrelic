@@ -7,7 +7,10 @@
  * formats the placement form offers as pickers, or an embed could pass
  * settings the placement API refuses. This class is the one check both use.
  *
- * - `allErrors` reports every bad field at once.
+ * - `allErrors` reports every bad field at once, which the placement form
+ *   lists beside its inputs. The embed path turns it off: an embed is
+ *   re-checked on every public page request and its failure only reaches a
+ *   log line, so a long error list there is pure cost.
  * - `strict: false` lets a plugin schema carry keywords AJV does not know,
  *   such as UI hints, without failing to compile.
  * - Compiled validators are cached on the schema object. Descriptors are
@@ -30,11 +33,25 @@ export interface IInstanceConfigFieldError {
     readonly message: string;
 }
 
+/** Options that differ between the placement and embed callers. */
+export interface IInstanceConfigValidatorOptions {
+    /**
+     * Whether a failing check reports every bad field or stops at the first.
+     * `true` is for the placement form, which lists all of them beside the
+     * fields. `false` is for the embed path: an embed's settings are written
+     * by a page author, re-checked on every public page request, and only
+     * recorded in a log line, so collecting every error there spends request
+     * time and log space on detail nobody reads.
+     */
+    allErrors: boolean;
+}
+
 /**
  * Validates widget settings against widget-type schemas.
  *
- * A utility rather than a service: the widgets module constructs one and
- * hands it to the placement controller and the embed resolver.
+ * A utility rather than a service: the widgets module constructs one per
+ * caller, so both paths apply the same schema rules while reporting as many
+ * failures as each one can use.
  */
 export class InstanceConfigValidator {
     private readonly ajv: Ajv;
@@ -43,9 +60,15 @@ export class InstanceConfigValidator {
     /**
      * @param logger - Records a schema that fails to compile, which is a bug
      *   in the widget type rather than in the settings being checked.
+     * @param options - How many failures a check reports; see
+     *   {@link IInstanceConfigValidatorOptions}. Defaults to reporting every
+     *   one, which is what the placement form needs.
      */
-    constructor(private readonly logger: ISystemLogService) {
-        this.ajv = new Ajv({ allErrors: true, strict: false });
+    constructor(
+        private readonly logger: ISystemLogService,
+        options: IInstanceConfigValidatorOptions = { allErrors: true }
+    ) {
+        this.ajv = new Ajv({ allErrors: options.allErrors, strict: false });
         addFormats(this.ajv);
         // Registered rather than left unknown: AJV warns on every compile of
         // a schema naming an unknown format and then validates nothing, so a
