@@ -62,6 +62,18 @@ export async function fetchAdminSnapshot(): Promise<{
 }
 
 /**
+ * Fetch the registered widget types, for the Insert widget picker in the
+ * page and post editors, which needs only the types and their schemas.
+ *
+ * @returns Every registered type, grouped by owner.
+ */
+export async function fetchWidgetTypes(): Promise<IWidgetTypeSnapshot> {
+    const res = await fetch('/api/admin/system/widget-types');
+    if (!res.ok) throw await toError(res, 'load widget types');
+    return res.json() as Promise<IWidgetTypeSnapshot>;
+}
+
+/**
  * Create an operator-source placement.
  *
  * @param input - The new row.

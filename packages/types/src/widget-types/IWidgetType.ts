@@ -115,6 +115,14 @@ export interface IWidgetType {
      * `instanceConfig` (the existing shape-only check still applies).
      */
     readonly configSchema?: JSONSchema7;
+    /**
+     * Whether authors may embed this widget inside a page or post body with
+     * a ` ```widget ` block. Resolved at mint time from the registration's
+     * `embeddable`, which defaults to true; site chrome such as the menu or
+     * the sign-in button, and types that inject author-supplied markup, set
+     * it false.
+     */
+    readonly embeddable: boolean;
 }
 
 /**
@@ -137,6 +145,8 @@ export interface IDefineWidgetTypeOptions {
     defaultDataFetcher: WidgetDataFetcher;
     /** Optional JSON Schema Draft 7 for `instanceConfig` validation. */
     configSchema?: JSONSchema7;
+    /** Whether the type may be embedded in page and post bodies. Defaults to true. */
+    embeddable?: boolean;
 }
 
 /**

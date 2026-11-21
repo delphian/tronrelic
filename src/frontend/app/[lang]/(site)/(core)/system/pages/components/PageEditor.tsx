@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Card } from '../../../../../../../components/ui/Card';
 import { Button } from '../../../../../../../components/ui/Button';
 import { Textarea } from '../../../../../../../components/ui/Textarea';
-import { Save, X, Eye } from 'lucide-react';
+import { Save, X, Eye, LayoutGrid } from 'lucide-react';
 import type { IPage } from '@/types';
+import { useWidgetEmbedPicker } from '../../../../../../../modules/widgets';
 import styles from './PageEditor.module.scss';
 
 /**
@@ -67,7 +68,24 @@ export function PageEditor({ page, onSave, onCancel }: PageEditorProps) {
     const [saving, setSaving] = useState(false);
     const [loadingPreview, setLoadingPreview] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const embedPicker = useWidgetEmbedPicker();
 
+    /**
+     * Open the Insert widget dialog and put the block it returns at the
+     * cursor, or at the end when the editor has never had focus. The block
+     * is inserted into the text rather than appended so an author can place
+     * a widget between two paragraphs.
+     */
+    const insertWidget = useCallback(async () => {
+        const textarea = textareaRef.current;
+        const start = textarea?.selectionStart ?? content.length;
+        const end = textarea?.selectionEnd ?? content.length;
+        const block = await embedPicker.pick();
+        if (block) {
+            setContent(prev => prev.slice(0, start) + block + prev.slice(end));
+        }
+    }, [content.length, embedPicker]);
 
     /**
      * Save page (create or update).
@@ -190,8 +208,19 @@ export function PageEditor({ page, onSave, onCancel }: PageEditorProps) {
             <div className={styles.panes}>
                 {/* Markdown Editor */}
                 <Card padding="md" className={styles.pane}>
-                    <h3 className={styles.pane_title}>Markdown Editor</h3>
+                    <div className={styles.pane_header}>
+                        <h3 className={styles.pane_title}>Markdown Editor</h3>
+                        <Button
+                            variant="secondary"
+                            icon={<LayoutGrid size={18} />}
+                            onClick={() => void insertWidget()}
+                            disabled={saving}
+                        >
+                            Insert widget
+                        </Button>
+                    </div>
                     <Textarea
+                        ref={textareaRef}
                         className={styles.textarea}
                         value={content}
                         onChange={e => setContent(e.target.value)}
@@ -224,6 +253,11 @@ export function PageEditor({ page, onSave, onCancel }: PageEditorProps) {
                     <strong>Frontmatter:</strong> The YAML block at the top defines page metadata.
                     Required fields: <code>title</code>, <code>slug</code>.
                     Optional: <code>description</code>, <code>keywords</code>, <code>published</code>, <code>ogImage</code>.
+                </p>
+                <p className={styles.help}>
+                    <strong>Widgets:</strong> <em>Insert widget</em> adds a <code>```widget</code> block that
+                    renders as the live widget on the page. Keep the block on its own, outside lists and quotes.
+                    The preview shows it as an outline.
                 </p>
             </Card>
         </div>

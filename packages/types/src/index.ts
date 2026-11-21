@@ -32,9 +32,23 @@ export type {
     IRegisterZoneInput,
     IRegisterWidgetInput,
     WidgetsRegistrationDisposer,
-    IAuthButtonLink
+    IAuthButtonLink,
+    IWidgetEmbed,
+    IWidgetEmbedContext,
+    IWidgetEmbedSegment,
+    IWidgetEmbedHtmlSegment,
+    IWidgetEmbedWidgetSegment,
+    IWidgetEmbedPickerClient
 } from './widget/index.js';
-export { WIDGET_ICON_FORMAT, WIDGET_IMAGE_FORMAT, WIDGET_MENU_NAMESPACE_FORMAT } from './widget/index.js';
+export {
+    WIDGET_ICON_FORMAT,
+    WIDGET_IMAGE_FORMAT,
+    WIDGET_MENU_NAMESPACE_FORMAT,
+    WIDGET_EMBED_MARKUP,
+    parseWidgetEmbed,
+    encodeWidgetEmbed,
+    splitWidgetEmbeds
+} from './widget/index.js';
 export type { ISystemConfig, ISystemConfigService } from './system-config/index.js';
 export type { ISystemLogService, ISystemLogQuery, ISystemLogPaginatedResponse, ISaveLogData, LogLevel } from './system-log/index.js';
 export type { ISystemLogCursor, ISystemLogCursorQuery, ISystemLogCursorPage } from './system-log/index.js';
@@ -53,6 +67,7 @@ export type { IAiToolSchemaViewProps } from './ui/IAiToolSchemaViewProps.js';
 export type { IContentTranslationsProps } from './ui/IContentTranslationsProps.js';
 export type { ITranslationStatusBadgesProps } from './ui/ITranslationStatusBadgesProps.js';
 export type { IPanelProps } from './ui/IPanelProps.js';
+export type { IEmbeddedContentProps } from './ui/IEmbeddedContentProps.js';
 export type { ILinkProps } from './ui/ILinkProps.js';
 export type { IFigureListRow } from './ui/IFigureListRow.js';
 export type { IFigureListProps } from './ui/IFigureListProps.js';

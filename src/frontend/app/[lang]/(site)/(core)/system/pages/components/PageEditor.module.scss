@@ -53,6 +53,15 @@
     height: 100%;
 }
 
+/* Pane title with the Insert widget button at its right. */
+.pane_header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--gap-sm);
+}
+
 .pane_title {
     margin: 0;
     font-size: var(--font-size-body-lg);
@@ -94,6 +103,24 @@
 .preview h2:first-child,
 .preview h3:first-child {
     margin-top: 0;
+}
+
+/* An embedded widget's placeholder. The preview endpoint returns HTML only,
+   so the widget shows as a labelled outline naming its type rather than as
+   the live widget. The element and its data-type attribute come from
+   WIDGET_EMBED_MARKUP in the types package. */
+.preview :global(tr-widget) {
+    display: block;
+    margin: var(--gap-sm-md) 0;
+    padding: var(--padding-sm);
+    border: var(--border-width-thin) dashed var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+}
+
+.preview :global(tr-widget)::before {
+    content: 'Embedded widget: ' attr(data-type);
 }
 
 .preview p {

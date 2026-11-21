@@ -61,11 +61,13 @@ function createMockResponse(): Response {
 describe('PagesController', () => {
     let controller: PagesController;
     let mockService: MockPageService;
+    let mockEmbeds: { resolve: ReturnType<typeof vi.fn> };
 
     beforeEach(() => {
         vi.clearAllMocks();
         mockService = new MockPageService();
-        controller = new PagesController(mockService as any, mockLogger);
+        mockEmbeds = { resolve: vi.fn().mockResolvedValue([]) };
+        controller = new PagesController(mockService as any, mockEmbeds as any, mockLogger);
     });
 
     describe('listPages', () => {
@@ -319,9 +321,20 @@ describe('PagesController', () => {
             expect(res.json).toHaveBeenCalledWith({
                 html: '<h1>X</h1>',
                 metadata: { title: 'X' },
+                embeds: [],
                 currentSlug: '/x',
                 requestedSlug: '/x'
             });
+        });
+
+        it('renderPublicPage resolves embedded widgets against the current slug in English', async () => {
+            const widget = { id: 'core:world-clocks', zone: 'embed', pluginId: 'core', order: 0, data: {} };
+            mockEmbeds.resolve.mockResolvedValue([widget]);
+            mockService.renderPublicPageBySlug.mockResolvedValue({ html: '<tr-widget></tr-widget>', metadata: {} });
+            const res = createMockResponse();
+            await controller.renderPublicPage(createMockRequest({ params: { slug: 'x' } }), res);
+            expect(mockEmbeds.resolve).toHaveBeenCalledWith('<tr-widget></tr-widget>', '/x', 'en');
+            expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ embeds: [widget] }));
         });
 
         it('renderPublicPage falls back through a redirect on miss', async () => {
@@ -335,6 +348,7 @@ describe('PagesController', () => {
             expect(res.json).toHaveBeenCalledWith({
                 html: '<h1>Y</h1>',
                 metadata: { title: 'Y' },
+                embeds: [],
                 currentSlug: '/y',
                 requestedSlug: '/x'
             });

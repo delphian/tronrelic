@@ -29,6 +29,7 @@ import { createPublicPagesRouter } from './api/pages.public-routes.js';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
 import { createAdminRateLimiter } from '../../api/middleware/rate-limit.js';
 import { registerPageAiTools } from './ai-tools.js';
+import { PageEmbeds } from './services/page-embeds.js';
 
 /**
  * Menu namespace for the tab row on `/system/pages`. Kept out of `main` so
@@ -165,10 +166,14 @@ export class PagesModule implements IModule<IPagesModuleDependencies> {
             markdownRenderer: dependencies.markdownRenderer
         });
 
-        this.controller = new PagesController(this.pageService, this.logger);
+        // Both public render endpoints send each embedded widget's data
+        // beside the cached HTML, through one resolver.
+        const pageEmbeds = new PageEmbeds(this.serviceRegistry, this.logger);
+        this.controller = new PagesController(this.pageService, pageEmbeds, this.logger);
         this.translationsController = new PageTranslationsController(
             PageTranslationService.getInstance(),
             this.pageService,
+            pageEmbeds,
             this.logger
         );
 

@@ -8,4 +8,7 @@
 
 export { WidgetsAdminClient } from './components/WidgetsAdminClient';
 export { PlacementsWorkbench } from './components/PlacementsWorkbench';
+export { WidgetEmbedPicker } from './components/WidgetEmbedPicker';
+export { useWidgetEmbedPicker } from './hooks/useWidgetEmbedPicker';
+export { formatWidgetEmbedBlock } from './lib/formatWidgetEmbedBlock';
 export type { IWidgetsAdminData, IPageOption, EditorTarget } from './types';

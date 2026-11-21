@@ -44,11 +44,13 @@ import type {
     IZoneRegistry,
     IWidgetTypeRegistry,
     IPlacementService,
-    IZoneLayoutConfig
+    IZoneLayoutConfig,
+    IWidgetEmbedContext
 } from '@/types';
 import { DEFAULT_LANGUAGE, zoneAcceptsRouteFilter } from '@/types';
 import type { PlacementResolver } from './placements/placement-resolver.js';
 import type { WidgetRouteCache } from './placements/WidgetRouteCache.js';
+import type { EmbedResolver } from './embeds/embed-resolver.js';
 import { ZoneLayoutService } from './zones/zone-layout.service.js';
 import { defineZone } from './zones/define-zone.js';
 import { defineWidgetType } from './widget-types/define-widget-type.js';
@@ -113,6 +115,7 @@ export class WidgetsService implements IWidgetsService {
         private readonly resolver: PlacementResolver,
         private readonly routeCache: WidgetRouteCache,
         private readonly zoneLayouts: ZoneLayoutService,
+        private readonly embedResolver: EmbedResolver,
         private readonly logger: ISystemLogService
     ) {}
 
@@ -127,6 +130,7 @@ export class WidgetsService implements IWidgetsService {
         resolver: PlacementResolver,
         routeCache: WidgetRouteCache,
         zoneLayouts: ZoneLayoutService,
+        embedResolver: EmbedResolver,
         logger: ISystemLogService
     ): void {
         if (!WidgetsService.instance) {
@@ -137,6 +141,7 @@ export class WidgetsService implements IWidgetsService {
                 resolver,
                 routeCache,
                 zoneLayouts,
+                embedResolver,
                 logger
             );
         }
@@ -219,6 +224,22 @@ export class WidgetsService implements IWidgetsService {
         );
     }
 
+    /**
+     * Fetch the data for the widgets embedded in a rendered body, so the
+     * content endpoint serving it can send current widget data beside HTML
+     * that only holds placeholders. See `IWidgetsService.resolveEmbeds`.
+     *
+     * @param html - Sanitized HTML from the shared markdown renderer.
+     * @param context - The page the body is shown on.
+     * @returns One entry per placeholder, null where the embed is skipped.
+     */
+    async resolveEmbeds(html: string, context: IWidgetEmbedContext): Promise<Array<IWidgetData | null>> {
+        // Not cached here: the content endpoints that call this are already
+        // behind the frontend's per-page fetch cache, and the embeds a body
+        // holds are fixed by its stored HTML rather than by placement writes.
+        return this.embedResolver.resolve(html, context);
+    }
+
     // ------------------------------------------------------------
     // Registration
     // ------------------------------------------------------------
@@ -250,7 +271,8 @@ export class WidgetsService implements IWidgetsService {
             description: input.description,
             category: input.category,
             defaultDataFetcher: input.defaultDataFetcher,
-            configSchema: input.configSchema
+            configSchema: input.configSchema,
+            embeddable: input.embeddable
         });
         const disposeType = this.widgetTypes.register(ownerId, descriptor);
 

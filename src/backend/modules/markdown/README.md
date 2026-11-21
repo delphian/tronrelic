@@ -20,7 +20,8 @@ The markdown module owns the one pipeline that turns authored markdown into HTML
 | File | Purpose |
 |------|---------|
 | `MarkdownModule.ts` | `IModule` implementation. `init()` configures the renderer singleton; `run()` publishes it as `'markdown'`; `getRenderer()` hands it to bootstrap for the pages module |
-| `services/markdown-renderer.service.ts` | The pipeline: remark with GitHub Flavored Markdown, then rehype-sanitize over the whole HTML, then any requested adjustments |
+| `services/markdown-renderer.service.ts` | The pipeline: remark with GitHub Flavored Markdown, then rehype-sanitize over the whole HTML, then widget placeholders, then any requested adjustments |
+| `lib/rehypeWidgetEmbeds.ts` | Rehype plugin that turns top-level ` ```widget ` blocks into embedded-widget placeholders, after sanitizing |
 | `lib/rehypeDemoteHeadings.ts` | Rehype plugin behind the `demoteHeadings` option |
 | `index.ts` | Public exports |
 
@@ -33,6 +34,27 @@ The markdown module owns the one pipeline that turns authored markdown into HTML
 | `demoteHeadings` | `false` | Shifts every heading down one level (h1 to h2, through h5 to h6; h6 stays h6). Set it when the page already renders its own title as the only `<h1>`, as the blog post page does, so a body that opens with `# Heading` does not add a second one |
 
 Adjustments run after sanitizing, so an option can only rename or rearrange markup the sanitizer already allowed. A new adjustment belongs here as another option, not in a caller's own copy of the pipeline.
+
+### Embedded widgets
+
+Every render, with no option needed, replaces each fenced code block whose language is `widget` with an empty placeholder element. The block's body is JSON naming a widget type and its settings:
+
+````markdown
+```widget
+{ "type": "core:world-clocks", "config": { "zones": [{ "timeZone": "Asia/Shanghai", "countryCode": "CN" }] } }
+```
+````
+
+The placeholder is `<tr-widget data-embed="…" data-type="core:world-clocks"></tr-widget>`, where `data-embed` is the embed as URI-encoded JSON. The names come from `WIDGET_EMBED_MARKUP` in `@/types`, and `parseWidgetEmbed`, `encodeWidgetEmbed`, and `splitWidgetEmbeds` beside it are the one reader and writer every side uses. The stored HTML holds only the placeholder; the content endpoint fetches the widget's data on each request through `IWidgetsService.resolveEmbeds` (see the [Widgets README](../widgets/README.md#embedded-widgets)), and the frontend renders the widget in its place.
+
+| Rule | Why |
+|------|-----|
+| Placeholders are written after sanitizing | The sanitizer removes `<tr-widget>` from anything an author writes, so a placeholder in stored HTML can only have come from a fenced block |
+| Only blocks that are direct children of the body are converted | The frontend cuts the HTML at each placeholder; one nested in a list or quote would split that element in two |
+| A block whose body is not valid JSON with a string `type` stays a code block | The author sees the mistake in the preview instead of losing the text |
+| Only `type` and `config` are kept | Nothing else an author wrote travels into the stored HTML |
+
+Whether the type exists, may be embedded, and accepts the settings is not checked here. That happens when the embed is resolved, so a widget that is later disabled or renamed simply renders nothing.
 
 ## Lifecycle and Wiring
 

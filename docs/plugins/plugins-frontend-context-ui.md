@@ -14,7 +14,7 @@ Layout components carry typed props — `<layout.Stack gap="md">` fails compilat
 interface IFrontendPluginContext {
     pluginId: string;              // Used internally for namespacing events and API routes
     layout: ILayoutComponents;     // Page, PageHeader, AdminPage, Stack, Grid, Section, SubMenu
-    ui: IUIComponents;             // Card, Panel, FigureList, Badge, Button, CopyButton, IconButton, Switch, Input, Field, Skeleton, ClientTime, Tooltip, TronAddress, TronContractAddress, TronTransactionId, IconPickerModal, Table family, Link, Pagination
+    ui: IUIComponents;             // Card, Panel, EmbeddedContent, FigureList, Badge, Button, CopyButton, IconButton, Switch, Input, Field, Skeleton, ClientTime, Tooltip, TronAddress, TronContractAddress, TronTransactionId, IconPickerModal, Table family, Link, Pagination
     charts: IChartComponents;      // LineChart, BarChart, PriceRail
     system: ISystemComponents;     // SchedulerMonitor, CollectionBrowser, ClickHouseTableBrowser, SystemLogsMonitor, AiToolSchemaView (admin)
     api: IApiClient;               // get/post/put/patch/delete

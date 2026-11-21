@@ -11,6 +11,9 @@
  */
 
 export { WidgetZone } from './WidgetZone';
+export { WidgetRenderer } from './WidgetRenderer';
+export { EmbeddedWidgetContent } from './EmbeddedWidgetContent';
+export type { IEmbeddedWidgetContentProps } from './EmbeddedWidgetContent';
 export { MobileTabBarZone } from './MobileTabBarZone';
 export { CorePageZones } from './CorePageZones';
 export { fetchWidgetsForRoute } from './fetchWidgetsForRoute';

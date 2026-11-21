@@ -1468,7 +1468,10 @@ export function buildCoreWidgetTypeDescriptors(
                 'Operator-authored block of raw HTML or plain text. Drop links, legal text, attribution, or embeds into any zone without a plugin.',
             category: 'Content',
             defaultDataFetcher: fetchRawHtmlData,
-            configSchema: RAW_HTML_CONFIG_SCHEMA
+            configSchema: RAW_HTML_CONFIG_SCHEMA,
+            // Renders markup from its settings, and page authors include AI
+            // tools and other non-curators, so it stays an operator-only widget.
+            embeddable: false
         },
         {
             id: WORLD_CLOCKS_TYPE_ID,
@@ -1486,7 +1489,9 @@ export function buildCoreWidgetTypeDescriptors(
                 'Structural container that arranges the widgets dropped into it with their own flexbox layout — group a row of widgets inside a column zone, or vice versa.',
             category: 'Layout',
             defaultDataFetcher: fetchLayoutGroupData,
-            configSchema: LAYOUT_GROUP_CONFIG_SCHEMA
+            configSchema: LAYOUT_GROUP_CONFIG_SCHEMA,
+            // A container with no component of its own; it means nothing in a body.
+            embeddable: false
         },
         {
             id: BLOCK_TICKER_TYPE_ID,
@@ -1512,7 +1517,10 @@ export function buildCoreWidgetTypeDescriptors(
                 'Sign-in button for signed-out visitors; a short identity pill linking to /profile for signed-in ones, where sign-out lives. Shows the sign-in image chosen on /system/system when one is set. Optionally slides out a tray of links, each with an icon, text, and URL.',
             category: 'Account',
             defaultDataFetcher: buildAuthButtonFetcher(deps),
-            configSchema: AUTH_BUTTON_CONFIG_SCHEMA
+            configSchema: AUTH_BUTTON_CONFIG_SCHEMA,
+            // Site chrome, like the four navigation types below: it belongs
+            // in the header zones, not inside an article.
+            embeddable: false
         },
         {
             id: SITE_LOGO_TYPE_ID,
@@ -1520,7 +1528,8 @@ export function buildCoreWidgetTypeDescriptors(
             description: 'The site wordmark, with an optional image such as the site icon, linking to the home page.',
             category: 'Navigation',
             defaultDataFetcher: fetchSiteLogoData,
-            configSchema: SITE_LOGO_CONFIG_SCHEMA
+            configSchema: SITE_LOGO_CONFIG_SCHEMA,
+            embeddable: false
         },
         {
             id: MENU_TYPE_ID,
@@ -1529,7 +1538,8 @@ export function buildCoreWidgetTypeDescriptors(
                 'Navigation from a menu namespace chosen in the placement settings (namespaces are edited at /system/menu), with each visitor seeing only the items they may open. Folds items that do not fit into "More".',
             category: 'Navigation',
             defaultDataFetcher: fetchMenuData,
-            configSchema: MENU_CONFIG_SCHEMA
+            configSchema: MENU_CONFIG_SCHEMA,
+            embeddable: false
         },
         {
             id: LANGUAGE_SWITCHER_TYPE_ID,
@@ -1538,7 +1548,8 @@ export function buildCoreWidgetTypeDescriptors(
                 'Links to the current page in every other language it is published in (managed at /system/localization). Renders nothing on a page that exists only in English.',
             category: 'Navigation',
             defaultDataFetcher: fetchLanguageSwitcherData,
-            configSchema: LANGUAGE_SWITCHER_CONFIG_SCHEMA
+            configSchema: LANGUAGE_SWITCHER_CONFIG_SCHEMA,
+            embeddable: false
         },
         {
             id: TAB_BAR_TYPE_ID,
@@ -1547,7 +1558,8 @@ export function buildCoreWidgetTypeDescriptors(
                 'Phone navigation fixed to the bottom of the screen: the first items of a menu namespace as icon tabs, plus an optional Menu tab that opens the full menu and the language switcher. Place it in the Mobile tab bar zone, which only appears on phone-sized screens.',
             category: 'Navigation',
             defaultDataFetcher: fetchTabBarData,
-            configSchema: TAB_BAR_CONFIG_SCHEMA
+            configSchema: TAB_BAR_CONFIG_SCHEMA,
+            embeddable: false
         }
     ];
 }

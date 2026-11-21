@@ -3,11 +3,13 @@
 /**
  * @fileoverview Tests for the shared markdown renderer: GitHub Flavored
  * Markdown output, the sanitize step that makes the HTML safe to inject, the
- * heading-demotion option, and the singleton contract.
+ * embedded-widget placeholders, the heading-demotion option, and the
+ * singleton contract.
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { ISystemLogService } from '@/types';
+import { splitWidgetEmbeds } from '@/types';
 import { MarkdownRendererService } from '../services/markdown-renderer.service.js';
 
 /** Silent logger double; the renderer writes to it only when a render fails. */
@@ -118,6 +120,51 @@ describe('MarkdownRendererService', () => {
         it('demotes headings nested inside other elements', async () => {
             const html = await renderer.render('> # Quoted', { demoteHeadings: true });
             expect(html).toContain('<h2>Quoted</h2>');
+        });
+    });
+
+    describe('embedded widgets', () => {
+        const block = '```widget\n{"type":"core:world-clocks","config":{"zones":["UTC"]}}\n```';
+
+        it('turns a top-level widget block into a placeholder that splits back into the embed', async () => {
+            const html = await renderer.render(`Before\n\n${block}\n\nAfter`);
+            expect(html).not.toContain('<pre>');
+            const segments = splitWidgetEmbeds(html);
+            const embeds = segments.filter(segment => segment.kind === 'embed');
+            expect(embeds).toEqual([
+                { kind: 'embed', index: 0, embed: { type: 'core:world-clocks', config: { zones: ['UTC'] } } }
+            ]);
+            expect(segments[0]).toMatchObject({ kind: 'html' });
+            expect(segments[segments.length - 1]).toMatchObject({ kind: 'html' });
+        });
+
+        it('labels the placeholder with its type id for editor previews', async () => {
+            const html = await renderer.render(block);
+            expect(html).toContain('data-type="core:world-clocks"');
+        });
+
+        it('leaves a block with invalid JSON as a visible code block', async () => {
+            const html = await renderer.render('```widget\n{not json}\n```');
+            expect(html).toContain('<pre>');
+            expect(splitWidgetEmbeds(html).some(segment => segment.kind === 'embed')).toBe(false);
+        });
+
+        it('leaves a widget block nested in a list as a code block, so splitting cannot break the list', async () => {
+            const html = await renderer.render(`- item\n\n  ${block.split('\n').join('\n  ')}`);
+            expect(html).toContain('<pre>');
+            expect(splitWidgetEmbeds(html).some(segment => segment.kind === 'embed')).toBe(false);
+        });
+
+        it('removes a placeholder element an author writes by hand', async () => {
+            const forged = '<tr-widget data-embed="%7B%22type%22%3A%22core%3Araw-html%22%7D"></tr-widget>';
+            const html = await renderer.render(`Text\n\n${forged}`);
+            expect(html).not.toContain('tr-widget');
+        });
+
+        it('drops keys other than type and config from the stored embed', async () => {
+            const html = await renderer.render('```widget\n{"type":"core:world-clocks","extra":"<b>x</b>"}\n```');
+            const embed = splitWidgetEmbeds(html).find(segment => segment.kind === 'embed');
+            expect(embed).toEqual({ kind: 'embed', index: 0, embed: { type: 'core:world-clocks', config: {} } });
         });
     });
 });

@@ -64,6 +64,10 @@ import { useSignInDialog } from '../modules/user/hooks/useSignInDialog';
 import { getSocket } from './socketClient';
 import { getRuntimeConfig } from './runtimeConfig';
 import { useFilePicker } from './filePickerRegistry';
+// Imported by file, not through the widgets module barrel, so the admin
+// editor components behind that barrel stay out of this bundle.
+import { useWidgetEmbedPicker } from '../modules/widgets/hooks/useWidgetEmbedPicker';
+import { LazyEmbeddedWidgetContent } from '../components/widgets/LazyEmbeddedWidgetContent';
 import { useImageGen } from './imageGenRegistry';
 // Imported by direct path: the localization barrel also exports components
 // with stylesheets, which this client bundle has no use for.
@@ -385,6 +389,7 @@ export function FrontendPluginContextProvider({ children }: { children: React.Re
         const ui: IUIComponents = {
             Card,
             Panel,
+            EmbeddedContent: LazyEmbeddedWidgetContent,
             FigureList,
             Badge,
             Skeleton,
@@ -471,6 +476,7 @@ export function FrontendPluginContextProvider({ children }: { children: React.Re
             useSignInDialog,
             useToast: useToastHook,
             useFilePicker,
+            useWidgetEmbedPicker,
             useImageGen,
             useTranslation: useCoreTranslation,
             useLocalizedHref
@@ -523,6 +529,7 @@ export function createPluginContext(pluginId: string): IFrontendPluginContext {
     const ui: IUIComponents = {
         Card,
         Panel,
+        EmbeddedContent: LazyEmbeddedWidgetContent,
         FigureList,
         Badge,
         Skeleton,
@@ -603,6 +610,7 @@ export function createPluginContext(pluginId: string): IFrontendPluginContext {
         useSignInDialog,
         useToast: useToastHook,
         useFilePicker,
+        useWidgetEmbedPicker,
         useImageGen,
         useTranslation: createTranslationHook(pluginId),
         useLocalizedHref

@@ -16,9 +16,6 @@
  */
 
 import type { Request, Response } from 'express';
-import Ajv, { type ValidateFunction } from 'ajv';
-import addFormats from 'ajv-formats';
-import type { JSONSchema7 } from 'json-schema';
 import type {
     ISystemLogService,
     IWidgetsService,
@@ -29,9 +26,10 @@ import type {
     IPlacementListFilter,
     IPlacementPatch
 } from '@/types';
-import { PLUGIN_ID_PATTERN, WIDGET_ICON_FORMAT, WIDGET_IMAGE_FORMAT, WIDGET_MENU_NAMESPACE_FORMAT } from '@/types';
+import { PLUGIN_ID_PATTERN } from '@/types';
 import { normaliseRoutePattern } from '../placements/route-matcher.js';
 import { ScopedCssValidator, SCOPED_CSS_MAX_LENGTH } from '../css/ScopedCssValidator.js';
+import type { IInstanceConfigFieldError, InstanceConfigValidator } from '../widget-types/instance-config-validator.js';
 import {
     InvalidParentPlacementError,
     MissingPluginDefaultsError,
@@ -42,18 +40,6 @@ import {
     UnknownWidgetTypeError,
     UnknownZoneError
 } from '../widgets.errors.js';
-
-/**
- * Per-field validation error reported back to the client in the
- * structured 400 body when `instanceConfig` fails a widget type's
- * declared schema, or when `customCss` fails the scoped-CSS check.
- * `path` is the JSON Pointer to the offending field (empty string for
- * root-level errors); `message` is the human-readable reason.
- */
-interface IInstanceConfigFieldError {
-    readonly path: string;
-    readonly message: string;
-}
 
 /**
  * Upper bound on a placement's `order` field. Lower numbers render
@@ -161,56 +147,28 @@ function safeStringParam(value: unknown, pattern: RegExp): string | undefined {
  */
 export class PlacementsController {
     /**
-     * Shared AJV instance. `allErrors` so a single bad submission
-     * surfaces every offending field at once rather than feeding the
-     * operator one error per round-trip. `strict: false` lets plugin
-     * authors declare schemas with unrecognised keywords (e.g. UI
-     * hints) without AJV refusing to compile.
-     */
-    private readonly ajv: Ajv;
-
-    /**
-     * Compile cache keyed on the schema *object identity*. Because
-     * widget-type descriptors are frozen at mint time and re-minted on
-     * every plugin re-enable, the schema reference changes whenever
-     * the underlying contract changes — so a WeakMap keyed on the
-     * schema is correct without an explicit invalidation hook, and the
-     * entry is GC'd when the descriptor goes away.
-     */
-    private readonly validatorCache: WeakMap<JSONSchema7, ValidateFunction>;
-
-    /**
      * @param widgets - The widgets service every placement operation goes through.
      * @param logger - Scoped logger for failures the operator cannot see.
      * @param cssValidator - Checks a placement's `customCss` before it is
      *   stored, since the renderer injects it verbatim into a `<style>` tag.
      *   Constructed in nested mode so rules inside the placement are allowed.
+     * @param configValidator - Checks `instanceConfig` against the widget
+     *   type's schema, shared with the embed resolver so a placement and an
+     *   embedded widget accept the same settings.
      */
     constructor(
         private readonly widgets: IWidgetsService,
         private readonly logger: ISystemLogService,
-        private readonly cssValidator: ScopedCssValidator
-    ) {
-        this.ajv = new Ajv({ allErrors: true, strict: false });
-        addFormats(this.ajv);
-        // Registered rather than left unknown: AJV warns on every compile of
-        // a schema naming an unknown format and then validates nothing, so a
-        // setting the form offers as an icon picker, image picker, or menu
-        // namespace dropdown would accept any string sent straight to the API.
-        this.ajv.addFormat(WIDGET_ICON_FORMAT.name, new RegExp(WIDGET_ICON_FORMAT.pattern));
-        this.ajv.addFormat(WIDGET_IMAGE_FORMAT.name, WIDGET_IMAGE_FORMAT.isValid);
-        this.ajv.addFormat(WIDGET_MENU_NAMESPACE_FORMAT.name, new RegExp(WIDGET_MENU_NAMESPACE_FORMAT.pattern));
-        this.validatorCache = new WeakMap();
-    }
+        private readonly cssValidator: ScopedCssValidator,
+        private readonly configValidator: InstanceConfigValidator
+    ) {}
 
     /**
-     * Validate `instanceConfig` against the widget type's declared
-     * JSON Schema, when one is declared. Returns the structured
-     * per-field errors on failure, or `null` when validation passes
-     * (or no schema was declared — in which case the caller has
-     * already enforced the shape-only "plain object" guard via
-     * `parseInstanceConfig`). Compiled validators are cached on the
-     * schema reference so the per-write cost is a single AJV invoke.
+     * Validate `instanceConfig` against the widget type's declared JSON
+     * Schema, when one is declared. The caller has already enforced the
+     * shape-only "plain object" guard via `parseInstanceConfig`. A schema
+     * that cannot compile comes back as a whole-object error, so a widget
+     * author's bug reaches the operator as a 400 rather than a 500.
      *
      * @param typeId - Widget-type id whose schema gates this body.
      * @param instanceConfig - The operator-supplied config object.
@@ -220,40 +178,7 @@ export class PlacementsController {
         typeId: string,
         instanceConfig: Record<string, unknown>
     ): ReadonlyArray<IInstanceConfigFieldError> | null {
-        const schema = this.widgets.getTypeConfigSchema(typeId);
-        if (!schema) return null;
-
-        let validator = this.validatorCache.get(schema);
-        if (!validator) {
-            // Plugin-supplied schemas can be malformed (unsupported
-            // keyword, bad $ref, draft mismatch). Surface that as a
-            // structured 400 so a schema-author bug never lands as a
-            // 500 for the operator submitting a placement edit.
-            try {
-                validator = this.ajv.compile(schema);
-                this.validatorCache.set(schema, validator);
-            } catch (compileErr) {
-                this.logger.error(
-                    {
-                        err: compileErr,
-                        typeId
-                    },
-                    'Failed to compile widget configSchema'
-                );
-                return [{
-                    path: '',
-                    message: `Widget type schema compilation failed: ${compileErr instanceof Error ? compileErr.message : String(compileErr)}`
-                }];
-            }
-        }
-
-        if (validator(instanceConfig)) return null;
-
-        const errors = validator.errors ?? [];
-        return errors.map(err => ({
-            path: err.instancePath,
-            message: err.message ?? 'invalid value'
-        }));
+        return this.configValidator.validate(typeId, this.widgets.getTypeConfigSchema(typeId), instanceConfig);
     }
 
     /**

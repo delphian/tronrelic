@@ -1,10 +1,10 @@
 import { notFound, redirect } from 'next/navigation';
 import type { Metadata } from 'next';
-import type { IPluginPageMetadata } from '@/types';
+import type { IPluginPageMetadata, IWidgetData } from '@/types';
 import { cache } from 'react';
 import { Page } from '../../../../components/layout';
 import { PluginPageWithZones } from '../../../../components/PluginPageWithZones';
-import { CorePageZones } from '../../../../components/widgets';
+import { CorePageZones, EmbeddedWidgetContent } from '../../../../components/widgets';
 import { CategoryLandingPage } from '../../../../modules/menu';
 import { getServerSideApiUrlWithPath } from '../../../../lib/api-url';
 import { buildMetadata, buildArticleStructuredData, localizedAbsoluteUrl, toOpenGraphLocale } from '../../../../lib/seo';
@@ -40,6 +40,12 @@ interface IPageResponse {
  */
 interface IRenderResponse {
     html: string;
+    /**
+     * One widget data entry per embedded-widget placeholder in `html`, in
+     * document order; null where an embed was skipped. Absent from a backend
+     * older than embedded widgets, which renders the body without them.
+     */
+    embeds?: Array<IWidgetData | null>;
     metadata: {
         title: string;
         description?: string;
@@ -490,9 +496,15 @@ export default async function UnifiedPage({ params }: { params: Promise<IPagePar
                         />
                     )}
                     <article>
-                        <div
+                        {/* Widgets embedded with ```widget blocks render in
+                            place on the server, from data the render
+                            endpoint fetched for this request. */}
+                        <EmbeddedWidgetContent
                             className={styles.content}
-                            dangerouslySetInnerHTML={{ __html: renderData.html }}
+                            html={renderData.html}
+                            embeds={renderData.embeds}
+                            route={renderData.currentSlug}
+                            params={{ slug: renderData.currentSlug.replace(/^\//, '') }}
                         />
                     </article>
                 </Page>

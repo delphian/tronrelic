@@ -47,6 +47,12 @@ export interface IWidgetTypeSnapshotRecord {
      * then falls back to a free-form JSON object).
      */
     readonly configSchema?: JSONSchema7;
+    /**
+     * Whether authors may embed the type in a page or post body. The
+     * "Insert widget" picker in the page and post editors lists only types
+     * where this is true.
+     */
+    readonly embeddable: boolean;
 }
 
 /**

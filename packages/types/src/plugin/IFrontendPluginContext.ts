@@ -15,6 +15,8 @@ import type { IPriceRailProps } from '../ui/IPriceRailProps.js';
 import type { IAdminPageProps } from '../ui/IAdminPageProps.js';
 import type { IPaginationProps } from '../ui/IPaginationProps.js';
 import type { ITranslator } from '../localization/ITranslator.js';
+import type { IEmbeddedContentProps } from '../ui/IEmbeddedContentProps.js';
+import type { IWidgetEmbedPickerClient } from '../widget/IWidgetEmbedPickerClient.js';
 
 /**
  * User state exposed to frontend plugins.
@@ -118,6 +120,17 @@ export interface IUIComponents {
      * queries against the panel's width.
      */
     Panel: ComponentType<IPanelProps>;
+
+    /**
+     * EmbeddedContent — a rendered markdown body with its embedded widgets.
+     *
+     * Pass the HTML the shared markdown renderer stored and the `embeds` the
+     * endpoint returned beside it from `IWidgetsService.resolveEmbeds`. Each
+     * ` ```widget ` placeholder renders as its widget, on the server, and the
+     * HTML around them renders as markup. Use it instead of
+     * `dangerouslySetInnerHTML` for any body an author can embed widgets in.
+     */
+    EmbeddedContent: ComponentType<IEmbeddedContentProps>;
 
     /**
      * FigureList — figures as statement-style label-and-value rows.
@@ -2071,6 +2084,24 @@ export interface IFrontendPluginContext {
      * ```
      */
     useFilePicker: () => IFilePickerClient;
+
+    /**
+     * Insert widget hook for a markdown editor. `pick()` opens the core dialog
+     * that lists every embeddable widget type with its settings form, and
+     * resolves with the ` ```widget ` block to insert at the cursor, or null
+     * when the author cancels. The dialog lists types from an admin endpoint,
+     * so use it on admin pages. Must be called within a component context.
+     *
+     * @example
+     * ```typescript
+     * const { pick } = context.useWidgetEmbedPicker();
+     * const onInsert = async () => {
+     *     const block = await pick();
+     *     if (block) insertAtCursor(block);
+     * };
+     * ```
+     */
+    useWidgetEmbedPicker: () => IWidgetEmbedPickerClient;
 
     /**
      * Image-generation hook — the standardized "type a prompt, get a saved image

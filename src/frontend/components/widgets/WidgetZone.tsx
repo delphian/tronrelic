@@ -1,8 +1,7 @@
-import type { ComponentType, CSSProperties } from 'react';
+import type { CSSProperties } from 'react';
 import type { IZoneLayoutConfig, ZoneGapSize } from '@/types';
 import type { WidgetData } from './types';
-import { getWidgetComponent } from './getWidgetComponent';
-import { WidgetWithContext } from './WidgetWithContext';
+import { WidgetRenderer, type IWidgetRendererProps as WidgetRendererProps } from './WidgetRenderer';
 import { WidgetTitle } from './WidgetTitle';
 import { cn } from '../../lib/cn';
 import styles from './WidgetZone.module.scss';
@@ -177,63 +176,6 @@ function itemWeightStyle(layoutWeight: number | undefined): CSSProperties | unde
         return undefined;
     }
     return { '--item-grow': layoutWeight } as CSSProperties;
-}
-
-/**
- * Props for WidgetRenderer component.
- */
-interface WidgetRendererProps {
-    /** Widget data including SSR-fetched content */
-    widget: WidgetData;
-    /** Current URL path where the widget is rendering */
-    route: string;
-    /** Route parameters extracted from the URL path */
-    params: Record<string, string>;
-}
-
-/**
- * Render a single widget with its registered component or fallback.
- *
- * Looks up the component from the statically-generated widget registry.
- * If a component is registered, renders it with the SSR data and plugin context.
- * In development, shows a debug view for unregistered widgets.
- * In production, unregistered widgets render nothing.
- */
-function WidgetRenderer({ widget, route, params }: WidgetRendererProps) {
-    const Component = getWidgetComponent(widget.id);
-
-    if (Component) {
-        return (
-            <WidgetWithContext
-                Component={Component}
-                data={widget.data}
-                instanceConfig={widget.instanceConfig}
-                pluginId={widget.pluginId}
-                route={route}
-                params={params}
-            />
-        );
-    }
-
-    // Development fallback: show debug info for unregistered widgets
-    if (process.env.NODE_ENV === 'development') {
-        return (
-            <div className="surface surface--padding-md border border-dashed border-border">
-                <p className="text-sm text-muted mb-2">
-                    Widget: <code>{widget.id}</code> (no component registered)
-                </p>
-                <p className="text-xs text-muted mb-2">
-                    Export this widget from <code>src/frontend/widgets/index.ts</code>
-                </p>
-                <pre className="text-xs overflow-auto max-h-48 bg-surface-elevated p-2 rounded">
-                    {JSON.stringify(widget.data, null, 2)}
-                </pre>
-            </div>
-        );
-    }
-
-    // Production: render nothing for unregistered widgets
-    return null;
 }
 
 /**

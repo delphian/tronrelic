@@ -1,5 +1,7 @@
 import type { Request, Response } from 'express';
 import type { ContentCurationState, IPage, IPageListOptions, IPageService, ISystemLogService } from '@/types';
+import { DEFAULT_LANGUAGE } from '@/types';
+import type { PageEmbeds } from '../services/page-embeds.js';
 import { actorFromAdminRequest } from '../../../services/content-actor.js';
 import { sendContentWriteError } from '../../../services/content-http.js';
 
@@ -56,10 +58,12 @@ function toPublicPageMetadata(page: IPage): IPublicPageMetadata {
 export class PagesController {
     /**
      * @param pageService - The page service, which routes writes through core.
+     * @param pageEmbeds - Fetches embedded widget data for the public render.
      * @param logger - Scoped logger.
      */
     constructor(
         private readonly pageService: IPageService,
+        private readonly pageEmbeds: PageEmbeds,
         private readonly logger: ISystemLogService
     ) {}
 
@@ -322,7 +326,9 @@ export class PagesController {
      * old slug when the slug itself serves nothing.
      *
      * @param req - Params: `slug`.
-     * @param res - Receives the render plus `currentSlug` and `requestedSlug`, or 404.
+     * @param res - Receives the render plus `embeds` (one widget data entry
+     *   per embedded-widget placeholder), `currentSlug`, and `requestedSlug`,
+     *   or 404.
      */
     async renderPublicPage(req: Request, res: Response): Promise<void> {
         try {
@@ -345,8 +351,12 @@ export class PagesController {
                 return;
             }
 
+            // Embedded widget data is fetched per request, beside the cached
+            // HTML, so the HTML cache never holds widget data that goes stale.
+            const embeds = await this.pageEmbeds.resolve(rendered.html, currentSlug, DEFAULT_LANGUAGE);
             res.json({
                 ...rendered,
+                embeds,
                 currentSlug,
                 requestedSlug: normalizedSlug,
             });

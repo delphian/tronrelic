@@ -17,6 +17,7 @@ import type { JSONSchema7 } from 'json-schema';
 import type { ISystemLogService, IWidgetsService, IWidgetPlacement } from '@/types';
 import { PlacementsController } from '../api/placements.controller.js';
 import { ScopedCssValidator } from '../css/ScopedCssValidator.js';
+import { InstanceConfigValidator } from '../widget-types/instance-config-validator.js';
 import { SITE_LOGO_CONFIG_SCHEMA } from '../widget-types/core-widget-types.js';
 
 /**
@@ -87,7 +88,12 @@ function buildLoggerStub(): ISystemLogService {
  * checks production runs rather than a stub that always passes.
  */
 function buildController(widgets: IWidgetsService, logger: ISystemLogService): PlacementsController {
-    return new PlacementsController(widgets, logger, new ScopedCssValidator(logger, { allowNestedRules: true }));
+    return new PlacementsController(
+        widgets,
+        logger,
+        new ScopedCssValidator(logger, { allowNestedRules: true }),
+        new InstanceConfigValidator(logger)
+    );
 }
 
 /**
