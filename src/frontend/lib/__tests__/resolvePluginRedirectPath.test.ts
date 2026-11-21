@@ -31,6 +31,21 @@ describe('resolvePluginRedirectPath', () => {
         expect(resolvePluginRedirectPath('/blog/a/', '/blog/a')).toBeNull();
     });
 
+    // A query string, a fragment, and `..` segments never reach the fetcher,
+    // which is built from the path alone, so accepting one of these would
+    // redirect the page to itself on every request the browser made.
+    it('refuses a target that requests the current path under a different spelling', () => {
+        expect(resolvePluginRedirectPath('/blog/a?from=old', '/blog/a')).toBeNull();
+        expect(resolvePluginRedirectPath('/blog/a#top', '/blog/a')).toBeNull();
+        expect(resolvePluginRedirectPath('/blog/../blog/a', '/blog/a')).toBeNull();
+        expect(resolvePluginRedirectPath('/blog/a/?from=old#top', '/blog/a')).toBeNull();
+    });
+
+    it('accepts a different path that carries a query string or fragment', () => {
+        expect(resolvePluginRedirectPath('/blog/b?from=a', '/blog/a')).toBe('/blog/b?from=a');
+        expect(resolvePluginRedirectPath('/blog/b#top', '/blog/a')).toBe('/blog/b#top');
+    });
+
     it('refuses anything that is not a non-empty string', () => {
         expect(resolvePluginRedirectPath(undefined, '/blog/a')).toBeNull();
         expect(resolvePluginRedirectPath('', '/blog/a')).toBeNull();

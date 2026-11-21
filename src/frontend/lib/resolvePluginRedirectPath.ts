@@ -18,6 +18,27 @@ function withoutTrailingSlash(path: string): string {
 }
 
 /**
+ * Reduce a path to the address a browser would actually request from it, so
+ * two spellings of one page compare as equal.
+ *
+ * A browser resolves `..` segments and leaves the fragment behind before it
+ * sends the request, and the catch-all route builds the fetcher's context from
+ * the path alone, so `/blog/a`, `/blog/a#top`, `/blog/a?from=old`, and
+ * `/blog/../blog/a` all reach the fetcher as `/blog/a`. The host is a
+ * placeholder that never appears in the result, and a path the URL parser
+ * rejects yields null so the caller refuses it instead of guessing.
+ */
+function requestPathname(path: string): string | null {
+    let pathname: string | null;
+    try {
+        pathname = withoutTrailingSlash(new URL(path, 'http://placeholder.invalid').pathname);
+    } catch {
+        pathname = null;
+    }
+    return pathname;
+}
+
+/**
  * Accept a plugin's redirect target only when it is a path on this site that
  * differs from the one being rendered.
  *
@@ -25,7 +46,10 @@ function withoutTrailingSlash(path: string): string {
  * refused along with anything that does not start with `/`. Whitespace and
  * control characters are refused because a browser strips some of them and
  * could then read a different address than the one checked here. A target
- * equal to the current path is refused because following it would loop.
+ * that requests the current path is refused because following it would loop.
+ * That comparison runs on the resolved pathnames rather than the raw strings,
+ * because a query string, a fragment, or `..` segments never reach the
+ * fetcher. A target whose own pathname differs keeps its query and fragment.
  *
  * @param target - The `redirect` value the plugin returned; anything but a
  *   string is refused.
@@ -40,6 +64,7 @@ export function resolvePluginRedirectPath(target: unknown, currentPath: string):
         && !path.startsWith('//')
         && !path.includes('\\')
         && !/[\s\u0000-\u001f\u007f]/.test(path);
-    const isSelf = onSite && withoutTrailingSlash(path) === withoutTrailingSlash(currentPath);
-    return onSite && !isSelf ? path : null;
+    const targetPathname = onSite ? requestPathname(path) : null;
+    const isSelf = targetPathname !== null && targetPathname === requestPathname(currentPath);
+    return targetPathname !== null && !isSelf ? path : null;
 }
