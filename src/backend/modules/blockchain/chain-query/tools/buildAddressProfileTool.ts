@@ -85,7 +85,7 @@ export function buildAddressProfileTool(toolkit: IChainQueryToolkit): IAiTool {
             'Get an overview of one TRON address\'s value movements: totals (transfers, transactions, distinct counterparties, first and last activity), a breakdown per token and direction (count, zero-value count, total, usd, counterparties), its address tags, and groups of its counterparties that look like address poisoning. ' +
             'Use this first when asked about a wallet, to decide where to look next: ' + AI_TOOL_NAMES.addressCounterparties + ' for who it deals with, ' + AI_TOOL_NAMES.addressTransfers + ' for individual transfers. ' +
             'A high zeroValueTransfers count on "in" rows means the address is being targeted by poisoning spam. Staking, delegation, and voting are not value movements and are not covered. ' +
-            `Parameters: address (required); hours or since/until (default and maximum ${WINDOW_RULES.maxHours} hours per call; the stored history is ${CHAIN_DATA_RETENTION_DAYS} days, so a second call with since/until moved back a week covers the rest). ` +
+            `Parameters: address (required); hours or since/until (default and maximum ${WINDOW_RULES.maxHours} hours per call; the stored history is ${CHAIN_DATA_RETENTION_DAYS} days, so further calls with since/until moved back ${WINDOW_RULES.maxHours} hours at a time cover the rest). ` +
             SHARED_DESCRIPTION,
         capability: CHAIN_QUERY_CAPABILITY,
         inputSchema: {

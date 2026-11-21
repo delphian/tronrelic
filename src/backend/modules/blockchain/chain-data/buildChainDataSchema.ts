@@ -23,14 +23,15 @@ export const CHAIN_DATA_DATABASE = 'tron';
 /**
  * Days of chain data each table keeps before whole days are dropped.
  *
- * Sized from production in October 2026, when one full day measured about
- * 9 GiB across every table, so fourteen days is about 126 GiB on the 298 GiB
- * ClickHouse volume. It is written into each table's definition when the table
- * is created, so an edit here alone reaches only tables created afterwards.
- * Changing it for a deployment that already has the tables also takes a
- * migration that runs {@link buildChainDataRetentionStatements}.
+ * One full day measured about 9 GiB across every table on production in
+ * October 2026, so twenty-one days is about 189 GiB on the 298 GiB ClickHouse
+ * volume, which the chain data shares with every other ClickHouse table. It is
+ * written into each table's definition when the table is created, so an edit
+ * here alone reaches only tables created afterwards. Changing it for a
+ * deployment that already has the tables also takes a migration that calls
+ * `applyChainDataRetention()` with the new number of days.
  */
-export const CHAIN_DATA_RETENTION_DAYS = 14;
+export const CHAIN_DATA_RETENTION_DAYS = 21;
 
 /**
  * The derived table recording each value movement between two accounts twice,
