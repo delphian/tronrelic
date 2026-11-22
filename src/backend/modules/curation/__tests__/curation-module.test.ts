@@ -277,7 +277,7 @@ describe('CurationService', () => {
 
         expect(decided?.status).toBe('approved');
         expect(decided?.decidedBy).toBe('admin-1');
-        expect(type.applyEdit).toHaveBeenCalledWith({ postId: 'p1' }, { status: 'published' });
+        expect(type.applyEdit).toHaveBeenCalledWith({ postId: 'p1' }, { status: 'published' }, { actorId: 'admin-1' });
         expect(await service.countPending()).toBe(0);
     });
 
@@ -290,7 +290,7 @@ describe('CurationService', () => {
         const decided = await service.reject(held.id, 'admin-1');
 
         expect(decided?.status).toBe('rejected');
-        expect(type.applyEdit).toHaveBeenCalledWith({}, { status: 'rejected' });
+        expect(type.applyEdit).toHaveBeenCalledWith({}, { status: 'rejected' }, { actorId: 'admin-1' });
     });
 
     it('fires content.published on approval with the type, ref, and decision-time descriptor', async () => {
@@ -332,6 +332,66 @@ describe('CurationService', () => {
         expect(hookRegistry.invoke).not.toHaveBeenCalled();
     });
 
+    /**
+     * Guards the leak where approving a configuration change, such as a saved
+     * prompt edit, handed its descriptor to every unfiltered hook-bound prompt.
+     */
+    it('does not fire content.published when the type declares announcesPublication: false', async () => {
+        const hookRegistry = createMockHookRegistry();
+        const service = makeService(hookRegistry);
+        const type = spyCurationType({ announcesPublication: false });
+        service.registerType(type, 'x-poster');
+        const held = await service.hold({ typeId: 'x-poster:tweet', ref: { postId: 'p1' } });
+
+        await service.approve(held.id, 'admin-1');
+
+        expect(type.applyEdit).toHaveBeenCalledWith({ postId: 'p1' }, { status: 'published' }, { actorId: 'admin-1' });
+        expect(hookRegistry.invoke).not.toHaveBeenCalled();
+    });
+
+    /**
+     * Guards the bypass where the service token approved an item whose type
+     * grants something only a signed-in admin may grant.
+     */
+    it('refuses an approval without a signed-in curator when the type requires one, leaving the item pending', async () => {
+        const service = makeService();
+        const type = spyCurationType({ requiresSignedInCurator: true });
+        service.registerType(type, 'x-poster');
+        const held = await service.hold({ typeId: 'x-poster:tweet', ref: { postId: 'p1' } });
+
+        await expect(service.approve(held.id)).rejects.toThrow(/signed-in admin/);
+        await expect(service.approve(held.id, 'system:policy-auto-approve')).rejects.toThrow(/signed-in admin/);
+
+        expect(type.applyEdit).not.toHaveBeenCalled();
+        expect((await service.get(held.id))?.status).toBe('pending');
+
+        const decided = await service.approve(held.id, 'admin-1');
+        expect(decided?.status).toBe('approved');
+    });
+
+    it('still lets the service token reject an item whose type requires a signed-in curator', async () => {
+        const service = makeService();
+        const type = spyCurationType({ requiresSignedInCurator: true });
+        service.registerType(type, 'x-poster');
+        const held = await service.hold({ typeId: 'x-poster:tweet', ref: { postId: 'p1' } });
+
+        const decided = await service.reject(held.id);
+
+        expect(decided?.status).toBe('rejected');
+        expect(type.applyEdit).toHaveBeenCalledWith({ postId: 'p1' }, { status: 'rejected' }, { actorId: undefined });
+    });
+
+    it('skips the auto-approve bypass for a type that requires a signed-in curator', async () => {
+        const service = makeService();
+        const type = spyCurationType({ requiresSignedInCurator: true });
+        service.registerType(type, 'x-poster');
+
+        const held = await runWithCurationAutoApprove(true, () => service.hold({ typeId: 'x-poster:tweet', ref: { postId: 'p1' } }));
+
+        expect(held.status).toBe('pending');
+        expect(type.applyEdit).not.toHaveBeenCalled();
+    });
+
     it('omits the approve transition when the type declares no approved status word', async () => {
         const service = makeService();
         // A type that declares only a rejection word: with no `approved` word,
@@ -351,7 +411,7 @@ describe('CurationService', () => {
 
         const rejectedHeld = await service.hold({ typeId: 'x-poster:tweet', ref: { postId: 'b' } });
         await service.reject(rejectedHeld.id, 'admin-1');
-        expect(applyEdit).toHaveBeenCalledWith({ postId: 'b' }, { status: 'rejected' });
+        expect(applyEdit).toHaveBeenCalledWith({ postId: 'b' }, { status: 'rejected' }, { actorId: 'admin-1' });
     });
 
     it('blocks a decision when the owning type is unregistered, leaving the item pending', async () => {
@@ -481,7 +541,7 @@ describe('CurationService', () => {
         const updated = await service.edit(held.id, { body: 'edited' }, 'admin-1');
 
         // applyEdit now receives the opaque ref (content self-mutation), not the curation envelope.
-        expect(type.applyEdit).toHaveBeenCalledWith(expect.objectContaining({ postId: 'p1' }), { body: 'edited' });
+        expect(type.applyEdit).toHaveBeenCalledWith(expect.objectContaining({ postId: 'p1' }), { body: 'edited' }, { actorId: 'admin-1' });
         expect(updated?.preview.body).toBe('edited');
         // The cached snapshot is refreshed too, so the disabled-owner fallback is current.
         expect((await service.get(held.id))?.preview.body).toBe('edited');

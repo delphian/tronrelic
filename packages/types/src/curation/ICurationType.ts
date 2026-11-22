@@ -20,6 +20,7 @@
 
 import type { IContentType, IContentEditPatch } from '../content/IContentType.js';
 import type { IContentClassification } from '../content/IContentClassification.js';
+import type { ICurationCommitContext } from './ICurationCommitContext.js';
 
 /**
  * Retained alias of the platform-wide {@link IContentEditPatch}. Editing a held
@@ -80,6 +81,33 @@ export interface ICurationType extends IContentType {
     classification?: IContentClassification;
 
     /**
+     * Whether an approval of this type counts as content going live. When
+     * true or omitted, approving an item whose type declares
+     * `decisionStatus.approved` fires the core `content.published` hook, which
+     * saved prompts and other reactors bind to.
+     *
+     * Set it to false for a type whose approval applies a change that is not
+     * published content, such as a configuration change. Otherwise every
+     * approval hands the item's descriptor to reactors written for published
+     * content, and a reactor that announces new content could repeat that
+     * descriptor to an outside channel.
+     */
+    announcesPublication?: boolean;
+
+    /**
+     * Whether only a signed-in curator may approve an item of this type. When
+     * true, curation refuses an approval whose decider has no Better Auth user
+     * id, which is the case for a request made with the `ADMIN_API_TOKEN`
+     * service token and for the interactive auto-approve bypass. Rejection is
+     * still open to every admin path, because it changes nothing.
+     *
+     * Set it on a type whose approval grants something the platform otherwise
+     * restricts to a signed-in admin, so the review queue does not become a way
+     * around that restriction.
+     */
+    requiresSignedInCurator?: boolean;
+
+    /**
      * The originator's own status word core writes when it resolves each decision,
      * applied through the inherited `applyEdit({ status })` seam so the decision's
      * terminal bookkeeping is readable data rather than a callback.
@@ -109,6 +137,9 @@ export interface ICurationType extends IContentType {
      *
      * @param ref - The opaque pointer identifying the record to edit.
      * @param patch - The generic edit to apply — a `{ status }` transition or a `{ body }` edit.
+     * @param context - Who caused the write, so a type can attribute it or
+     *        refuse one made without a signed-in curator. Curation always
+     *        passes it; a type that does not need it may ignore it.
      */
-    applyEdit(ref: Record<string, unknown>, patch: IContentEditPatch): void | Promise<void>;
+    applyEdit(ref: Record<string, unknown>, patch: IContentEditPatch, context?: ICurationCommitContext): void | Promise<void>;
 }

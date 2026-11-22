@@ -180,8 +180,9 @@ function readRefs(value: unknown): string[] {
 /**
  * Find the prompt a reference names. An exact id wins; otherwise the name is
  * compared case-insensitively, which is how the service keeps names unique.
+ * Exported so the edit-proposal tool resolves a reference the same way.
  */
-function findPrompt(prompts: ISavedPrompt[], ref: string): ISavedPrompt | undefined {
+export function findPrompt(prompts: ISavedPrompt[], ref: string): ISavedPrompt | undefined {
     const lowered = ref.toLowerCase();
     return prompts.find(prompt => prompt.id === ref)
         ?? prompts.find(prompt => prompt.name.toLowerCase() === lowered);

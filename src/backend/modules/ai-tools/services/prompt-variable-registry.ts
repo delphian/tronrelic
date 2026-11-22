@@ -49,6 +49,20 @@ const CLASSIFICATIONS_KEY = 'ai-tools:variable-classifications';
  */
 const VARIABLE_PATTERN = /\{%([a-zA-Z0-9_:,./-]+)%\}/g;
 
+/**
+ * List the distinct `{%name%}` tokens a piece of prompt text references,
+ * using the same pattern expansion uses, so a reviewer comparing two versions
+ * of a prompt sees exactly the variables each would expand. Nothing is
+ * resolved.
+ *
+ * @param text - Prompt text, such as a saved prompt body.
+ * @returns Each referenced token written as `{%name%}`, in first-seen order.
+ */
+export function listPromptVariableTokens(text: string): string[] {
+    const names = Array.from(text.matchAll(VARIABLE_PATTERN), (match) => match[1]);
+    return [...new Set(names)].map((name) => `{%${name}%}`);
+}
+
 /** Allowed shape for an admin-created variable name (lowercase kebab). */
 const VARIABLE_NAME_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 

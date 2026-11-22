@@ -10,7 +10,7 @@
 
 import type { Request, Response } from 'express';
 import type { CurationDecision, ICurationHistoryListOptions, ICurationItem, ICurationSinkSelection } from '@/types';
-import { CURATION_DECISIONS } from '@/types';
+import { CURATION_DECISIONS, isSignedInCuratorId } from '@/types';
 import type { CurationService } from '../services/curation-service.js';
 
 /** History items per page when the request names no `limit`; the History tab's page size. */
@@ -368,6 +368,16 @@ export class CurationController {
         // selected sink that is not eligible — which covers every selection against
         // an item with zero eligible sinks, since none can be valid. Zero eligible
         // sinks with no selection approves to nowhere, the only available outcome.
+        // A type whose approval grants something only a signed-in admin may
+        // grant refuses the service token here, as a 403 the caller can act on.
+        // The service refuses it too, so a caller that skips this route is
+        // still stopped.
+        if (action === 'approve'
+            && this.curation.getType(item.typeId)?.requiresSignedInCurator
+            && !isSignedInCuratorId(actorId(req))) {
+            res.status(403).json({ error: 'Only a signed-in admin can approve this item. Sign in to approve it; the service token cannot.' });
+            return;
+        }
         if (action === 'approve') {
             const eligible = await this.curation.listEligibleSinks(id);
             if (eligible.length > 0 && (!sinks || sinks.length === 0)) {
