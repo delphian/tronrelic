@@ -57,6 +57,16 @@ const ChainParametersSchema = new Schema<IChainParametersDocument>(
             bandwidthPerTrx: {
                 type: Number,
                 required: true
+            },
+            // Optional: snapshots stored before these existed lack them, and
+            // a missing value must stay missing rather than read as zero.
+            blockRewardSun: {
+                type: Number,
+                required: false
+            },
+            voteRewardSun: {
+                type: Number,
+                required: false
             }
         },
         fetchedAt: {

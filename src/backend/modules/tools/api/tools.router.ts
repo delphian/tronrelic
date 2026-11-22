@@ -54,6 +54,7 @@ export function createToolsRouter(controller: ToolsController): Router {
     router.post('/energy/estimate', rateLimiter, asyncHandler(controller.estimateEnergy));
     router.post('/stake/from-trx', rateLimiter, asyncHandler(controller.estimateStakeFromTrx));
     router.post('/stake/from-energy', rateLimiter, asyncHandler(controller.estimateStakeFromEnergy));
+    router.get('/staking-rewards', rateLimiter, asyncHandler(controller.getStakingRewards));
     router.post('/signature/verify', rateLimiter, asyncHandler(controller.verifySignature));
     // The approval checker only reads public on-chain data for an address the
     // caller types in, so a linked wallet is not a prerequisite — login is the

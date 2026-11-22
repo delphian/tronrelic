@@ -26,6 +26,8 @@ Both this fetcher and the USDT parameters fetcher send their requests through `T
 | `totalBandwidthLimit` | `TotalNetLimit` from network state | Network bandwidth capacity | 10 min |
 | `totalFrozenForBandwidth` | `TotalNetWeight`, converted to SUN | Denominator for `bandwidthPerTrx` | 10 min |
 | `bandwidthPerTrx` | Derived: `TotalNetLimit / TotalNetWeight` | Conversion ratio | 10 min |
+| `blockRewardSun` | `getWitnessPayPerBlock` chain param | SUN paid to a block's producer, for the staking rewards calculator (8 TRX in November 2026). Optional: absent on older snapshots, never defaulted to 0 | 10 min |
+| `voteRewardSun` | `getWitness127PayPerBlock` chain param | SUN shared across the top 127 Super Representatives per block (128 TRX in November 2026). Optional, as above | 10 min |
 
 `totalFrozenForEnergy` currently uses a 32M TRX estimate; precise calculation from validator account resources is a known follow-up. Until then `energyPerTrx` slightly overestimates TRX cost — safe for pricing.
 
@@ -108,6 +110,8 @@ interface IChainParameters {
         totalBandwidthLimit: number;
         totalFrozenForBandwidth: number;
         bandwidthPerTrx: number;
+        blockRewardSun?: number;
+        voteRewardSun?: number;
     };
     fetchedAt: Date;
     createdAt: Date;

@@ -428,6 +428,22 @@ export interface TronGridChainParametersResponse {
     }>;
 }
 
+/**
+ * One Super Representative candidate from `/wallet/listwitnesses`. TronGrid
+ * returns every candidate, elected or not, with addresses in hex whatever the
+ * `visible` flag says.
+ */
+export interface TronGridWitness {
+    /** Hex address starting with 41. */
+    address: string;
+    /** Votes the candidate holds; absent when it holds none. */
+    voteCount?: number;
+    /** The URL or name the candidate registered. */
+    url?: string;
+    /** True while the candidate is one of the block producers. */
+    isJobs?: boolean;
+}
+
 export interface TronGridEnergyPricePoint {
     time: string;
     price: number;
@@ -1038,6 +1054,49 @@ export class TronGridClient {
             logger.error({ error, address }, 'Failed to fetch withdrawable reward');
             return 0;
         }
+    }
+
+    /**
+     * List every Super Representative candidate with its vote count.
+     *
+     * The staking rewards calculator divides each block's rewards by these
+     * vote counts. The call goes through the shared queue and retries like
+     * block sync, so a passing 429 does not fail a scheduled refresh.
+     *
+     * @returns Every candidate, unsorted, with hex addresses.
+     * @throws Error when every attempt fails.
+     */
+    async listWitnesses(): Promise<TronGridWitness[]> {
+        const response = await retry(() => this.post<{ witnesses?: TronGridWitness[] }>('/wallet/listwitnesses', {}), {
+            ...blockchainConfig.retry,
+            onRetry: (attempt, error) => logger.warn({ attempt, error }, 'Retrying TronGrid listWitnesses')
+        });
+        return response?.witnesses ?? [];
+    }
+
+    /**
+     * Read the share of rewards one Super Representative keeps.
+     *
+     * TRON calls this the brokerage. Voters receive the rest, so the staking
+     * rewards calculator needs it for every representative it lists. TronGrid
+     * answers 0 both for a representative that keeps nothing and for an
+     * address that is not a representative, so callers ask only about listed
+     * representatives.
+     *
+     * @param address - The representative's address, hex or Base58.
+     * @returns The percentage kept, from 0 to 100.
+     * @throws Error when every attempt fails or the answer is not a percentage.
+     */
+    async getBrokerage(address: string): Promise<number> {
+        const response = await retry(() => this.post<{ brokerage?: number }>('/wallet/getBrokerage', { address }), {
+            ...blockchainConfig.retry,
+            onRetry: (attempt, error) => logger.warn({ attempt, error, address }, 'Retrying TronGrid getBrokerage')
+        });
+        const brokerage = Number(response?.brokerage ?? 0);
+        if (!Number.isFinite(brokerage) || brokerage < 0 || brokerage > 100) {
+            throw new Error(`TronGrid returned an invalid brokerage for ${address}: ${String(response?.brokerage)}`);
+        }
+        return brokerage;
     }
 
     /**

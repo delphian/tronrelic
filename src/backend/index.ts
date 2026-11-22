@@ -608,12 +608,15 @@ async function bootstrapInit(): Promise<BootstrapContext> {
         listContentRoutes: () => contentService.translations().listLocalizedRoutes()
     });
     // Tools receives the page service for its Bootstrap tab, which creates the
-    // module's CMS pages for review, and the widgets service to register the
-    // stake calculator as an embeddable widget. Both modules finished init() above.
+    // module's CMS pages for review, and the widgets service to register its
+    // calculators as embeddable widgets. Both modules finished init() above.
+    // The scheduler drives the staking rewards refresh (nullable, so
+    // ENABLE_SCHEDULER=false switches it off).
     await toolsModule.init({
         ...sharedDeps,
         pageService: pagesModule.getPageService(),
-        widgetsService: widgetsModule.getWidgetsService()
+        widgetsService: widgetsModule.getWidgetsService(),
+        scheduler: schedulerService
     });
     // Notifications module: builds the category/channel registries, preference,
     // policy, and audit stores. Inits before ai-tools so its run() (which

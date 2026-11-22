@@ -17,6 +17,7 @@ import type { SignatureService } from '../../auth/signature.service.js';
 import type { ApprovalService } from '../services/approval.service.js';
 import type { TimestampService } from '../services/timestamp.service.js';
 import { resolveHopCaveats, type AddressOriginsService } from '../services/address-origins.service.js';
+import type { StakingRewardsService } from '../services/StakingRewardsService.js';
 
 const addressSchema = z
     .object({
@@ -90,6 +91,8 @@ export class ToolsController {
      * @param signatureService - TRON signature verifier
      * @param approvalService - TRC20 token approval scanner
      * @param timestampService - Timestamp/block/date converter
+     * @param addressOriginsService - Activation-ancestry climb and its access tiers
+     * @param stakingRewardsService - Reader of the stored staking rewards snapshot
      */
     constructor(
         private readonly addressService: AddressService,
@@ -97,8 +100,22 @@ export class ToolsController {
         private readonly signatureService: SignatureService,
         private readonly approvalService: ApprovalService,
         private readonly timestampService: TimestampService,
-        private readonly addressOriginsService: AddressOriginsService
+        private readonly addressOriginsService: AddressOriginsService,
+        private readonly stakingRewardsService: StakingRewardsService
     ) {}
+
+    /**
+     * Return the stored staking rewards snapshot: every top-127 Super
+     * Representative's yearly voter reward after commission.
+     *
+     * Reads the copy the scheduled refresh stored and never calls TronGrid,
+     * so the endpoint costs one database read however often it is called.
+     * `snapshot` is null before the first refresh has finished.
+     */
+    getStakingRewards = async (_req: Request, res: Response): Promise<void> => {
+        const snapshot = await this.stakingRewardsService.getSnapshot();
+        res.json({ success: true, snapshot });
+    };
 
     /**
      * Convert between TRON hex and base58check address formats.

@@ -1,6 +1,6 @@
 # Tools Module
 
-The tools module provides user-facing TRON blockchain utilities: address format conversion, energy estimation, bidirectional stake calculation, signature verification, token approval checking, and timestamp/block conversion. Each tool has its own page accessible from the "Tools" navigation menu.
+The tools module provides user-facing TRON blockchain utilities: address format conversion, energy estimation, bidirectional stake calculation, staking rewards by Super Representative, signature verification, token approval checking, and timestamp/block conversion. Each tool has its own page accessible from the "Tools" navigation menu.
 
 ## Why This Matters
 
@@ -8,9 +8,9 @@ TRON developers and users frequently need to convert address formats, estimate e
 
 ## Architecture Overview
 
-The module follows TronRelic's two-phase lifecycle with dependency injection. It has no database collections of its own and no scheduler jobs — the calculator service reads from the shared `transactions` collection for energy statistics and calls ChainParametersService for live network parameters. The address converter and signature verifier are stateless.
+The module follows TronRelic's two-phase lifecycle with dependency injection. The calculator service reads from the shared `transactions` collection for energy statistics and calls ChainParametersService for live network parameters. The address converter and signature verifier are stateless. The one thing the module stores and schedules is the [staking rewards snapshot](#staking-rewards-calculator): one collection, `module_tools_staking_rewards`, and one job, `tools:staking-rewards-refresh`.
 
-Besides the shared dependencies, `init()` receives `pageService` (`IPageService`), used by the [Bootstrap tab](#admin-page-and-bootstrap-pages) to read and create the module's CMS pages, and `widgetsService` (`IWidgetsService`), used to register the [stake calculator widget](#stake-calculator-page).
+Besides the shared dependencies, `init()` receives `pageService` (`IPageService`), used by the [Bootstrap tab](#admin-page-and-bootstrap-pages) to read and create the module's CMS pages, `widgetsService` (`IWidgetsService`), used to register the [stake calculator widget](#stake-calculator-page) and the staking rewards widget, and an optional `scheduler` (`ISchedulerService | null`), which runs the staking rewards refresh. With no scheduler, including `ENABLE_SCHEDULER=false`, the snapshot is never refreshed.
 
 **Backend** (`src/backend/modules/tools/`): ToolsModule implements IModule, creates services in `init()`, mounts routes and registers menu items in `run()`. Public routes are mounted at `/api/tools/*` and admin routes at `/api/admin/tools/*` via IoC.
 
@@ -24,7 +24,7 @@ The module resolves two shared services from `IServiceRegistry` during `init()`:
 
 | Registry Key | Service | Purpose |
 |---|---|---|
-| `chain-parameters` | `IChainParametersService` | Live `energyPerTrx`, `bandwidthPerTrx`, and `energyFee` ratios for stake and energy calculations |
+| `chain-parameters` | `IChainParametersService` | Live `energyPerTrx`, `bandwidthPerTrx`, and `energyFee` ratios for stake and energy calculations, and the `blockRewardSun` and `voteRewardSun` reward rates for the staking rewards calculator |
 | `blockchain` | `IBlockchainService` | The activation-ancestry climb behind the Address Origins tool, resolved per request rather than at init so boot order cannot leave a stale reference |
 
 `chain-parameters` is required at init — `init()` throws if it is missing, causing application shutdown per the fail-fast convention. `blockchain` is resolved lazily and throws only if a request reaches the origins stream with no such service registered. The TronWeb instance used for signature verification and address normalization is not a registry service: `init()` builds it from `TronGridClient.createTronWeb()`.
@@ -36,6 +36,7 @@ The module resolves two shared services from `IServiceRegistry` during `init()`:
 | Address Converter | `/tools/address-converter` | `POST /api/tools/address/convert` | Hex to base58check and reverse |
 | Energy Estimator | `/tools/energy-estimator` | `POST /api/tools/energy/estimate` | Daily energy needs, the stake that covers them, and the burn cost of not staking |
 | Stake Calculator | `/tools/stake-calculator` | `POST /api/tools/stake/from-trx` and `/from-energy` | Bidirectional TRX/energy calculation |
+| Staking Rewards | `/tools/staking-rewards` | `GET /api/tools/staking-rewards` | Yearly voting reward through each top-127 Super Representative, after commission |
 | Signature Verifier | `/tools/signature-verifier` | `POST /api/tools/signature/verify` | Wallet signature verification |
 | Approval Checker | `/tools/approval-checker` | `POST /api/tools/approval/check` | Scan TRC20 token approvals (requires login) |
 | Address Origins | `/tools/address-origins` | `GET /api/tools/origins/stream` (SSE) | Trace a wallet's activation chain to its originator; multi-wallet + full ladder require login |
@@ -59,9 +60,26 @@ The stake calculator's page text and search metadata are meant to be edited by a
 
 **Why the route falls back.** A page is served in a language only while it has a published translation into that language, with no English fallback. When no CMS page answers here — before one is created or approved, after one is deleted, in every language the page has not been translated into, and when the backend cannot be reached — the built-in page keeps `/tools/stake-calculator` and its translated addresses answering. To move a translated address such as `/ru/tools/stake-calculator` onto the CMS page, publish that page's translation on `/system/pages`, and copy the ` ```widget ` block into the translated body unchanged.
 
+## Staking Rewards Calculator
+
+`/tools/staking-rewards` shows the yearly reward a voter earns through each of the top 127 Super Representatives (SRs), after the SR's commission, and applies the chosen SR's rate to a stake the visitor types. One staked TRX is one vote.
+
+**Why it is stored, not computed per request.** Each SR's commission (TRON's "brokerage") is one `/wallet/getBrokerage` call, so a full computation is about 130 TronGrid requests on the queue block sync shares. The `tools:staking-rewards-refresh` job (`0 10 */6 * * *`) does it every six hours and stores the result; the page, the widget, and the endpoint only read the stored copy. `run()` also starts one refresh, not awaited, when nothing is stored yet, so a new deployment does not wait six hours. Concurrent refreshes share one run.
+
+| Part | Where | What it does |
+|---|---|---|
+| Formula | `services/buildStakingRewardsSnapshot.ts` | Pure function. Vote reward per vote per year = `voteRewardSun` × blocks per year ÷ votes of the top 127, the same for each of them. Block reward for each of the top 27 = `blockRewardSun` × blocks per year ÷ 27 ÷ that SR's votes. Both × (1 − commission). The counts 127 and 27 are protocol constants, not chain parameters. Blocks per year come from `blockchainConfig.network.blockIntervalSeconds` |
+| Service | `services/StakingRewardsService.ts` | Reads the reward rates from the `chain-parameters` service, votes from `/wallet/listwitnesses`, and each top-127 commission from `/wallet/getBrokerage`, one at a time through `TronGridClient`. Replaces the single document `{ _id: 'latest' }` in `module_tools_staking_rewards`. A missing reward rate throws and leaves the previous snapshot in place rather than guessing |
+| Types | `IStakingRewardsSnapshot`, `ISuperRepresentativeReward`, `STAKING_REWARDS_PATH`, `STAKING_REWARDS_WIDGET_TYPE_ID`, `TOOLS_JOB_PREFIX` in `@/types` | Shared by the backend, the route, and the widget |
+| Widget type | `services/createStakingRewardsWidgetType.ts`, id `tools:staking-rewards` | Embeddable, no settings. Its fetcher returns `{ snapshot }`, so a CMS page renders the table on the server. Frontend: `StakingRewardsWidget` in `widgets.core.ts` |
+| Proposed page | `services/STAKING_REWARDS_PAGE_PROPOSAL.ts` | Same title, description, keywords, heading, and intro as the built-in page, then the widget. Offered on the Bootstrap tab |
+| Frontend route | `app/[lang]/(site)/(core)/tools/staking-rewards/page.tsx` | Same CMS-or-built-in rule as the stake calculator. The built-in page reads the snapshot on the server (revalidated every five minutes) and passes it to `StakingRewards` |
+
+The calculator works out per-year, per-month, and per-day TRX in the browser (`lib/estimateStakingReward.ts`) as simple interest, because rewards are claimed by hand at most once a day and only compound if re-staked. The block reward assumes each producer makes an equal share of blocks, so a producer that misses blocks pays slightly less than shown. Before the first refresh finishes, the page and the widget say the figures are being calculated.
+
 ## Admin Page and Bootstrap Pages
 
-`/system/tools`, under the System container, has two tabs registered in the `tools-admin` menu namespace (`TOOLS_ADMIN_SUBMENU_NAMESPACE` in `@/types`): **Bootstrap** and **Logs** (`SystemLogsMonitor` scoped to `tronrelic:tools`). The module owns no collections and no scheduler jobs, so there is no Database or Schedules tab.
+`/system/tools`, under the System container, has four tabs registered in the `tools-admin` menu namespace (`TOOLS_ADMIN_SUBMENU_NAMESPACE` in `@/types`): **Bootstrap**, **Schedules** (`SchedulerMonitor` filtered by `TOOLS_JOB_PREFIX`), **Database** (`CollectionBrowser` with prefix `module_tools_`), and **Logs** (`SystemLogsMonitor` scoped to `tronrelic:tools`). An admin runs the staking rewards refresh by hand from the Schedules tab.
 
 The Bootstrap tab lists the CMS pages the module ships, from `services/TOOLS_BOOTSTRAP_PAGES.ts`, with the state of the address each would take and a **Create** button. Clicking Create proposes the page through `IPageService.proposePage`, the same path an AI tool uses, so it waits in `/system/curation` and nothing changes for visitors until a curator approves it. To offer another page, add an entry to that file.
 
@@ -157,9 +175,9 @@ The module creates a "Tools" container node in the `main` namespace with child e
 
 ## Module Lifecycle
 
-**init() phase:** Stores injected dependencies, registers TransactionModel with the database service, resolves `IChainParametersService` from the service registry, builds a TronWeb instance from `TronGridClient`, creates the address, calculator, signature, approval, timestamp, and address-origins services, creates ToolsController, and creates `ToolsBootstrapService` and `ToolsAdminController` from the injected `pageService`. Does NOT mount routes or register menu items.
+**init() phase:** Stores injected dependencies, registers TransactionModel with the database service, resolves `IChainParametersService` from the service registry, builds a TronWeb instance from `TronGridClient`, creates the address, calculator, signature, approval, timestamp, address-origins, and staking rewards services, creates ToolsController, and creates `ToolsBootstrapService` and `ToolsAdminController` from the injected `pageService`. Does NOT mount routes or register menu items.
 
-**run() phase:** Registers the Tools menu category and child items in the `main` namespace, the `/system/tools` entry under the System container, and the `tools-admin` tab row; mounts the tools router at `/api/tools` with rate limiting and async error handling and the admin router at `/api/admin/tools`; and registers the `tools:stake-calculator` widget type on the injected `widgetsService`.
+**run() phase:** Registers the Tools menu category and child items in the `main` namespace, the `/system/tools` entry under the System container, and the `tools-admin` tab row; mounts the tools router at `/api/tools` with rate limiting and async error handling and the admin router at `/api/admin/tools`; registers the `tools:stake-calculator` and `tools:staking-rewards` widget types on the injected `widgetsService`; and, when a scheduler is present, registers `tools:staking-rewards-refresh` with the module logger and starts a first refresh if nothing is stored.
 
 ## Further Reading
 

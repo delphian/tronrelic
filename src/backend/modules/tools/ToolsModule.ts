@@ -6,9 +6,10 @@
  * and timestamp/block conversion. Registers a "Tools" menu category with individual
  * entries for each tool.
  *
- * Also registers the stake calculator as an embeddable widget, and runs the
+ * Also registers the stake and staking rewards calculators as embeddable
+ * widgets, refreshes the staking rewards snapshot on a schedule, and runs the
  * `/system/tools` admin page, whose Bootstrap tab lets an admin create the CMS
- * pages this module ships, such as the stake calculator's, for curator review.
+ * pages this module ships for curator review.
  *
  * Follows TronRelic's two-phase initialization pattern with dependency injection.
  */
@@ -22,11 +23,13 @@ import type {
     IModule,
     IModuleMetadata,
     IPageService,
+    ISchedulerService,
     IServiceRegistry,
     IWidgetsService
 } from '@/types';
-import { TOOLS_ADMIN_SUBMENU_NAMESPACE } from '@/types';
+import { TOOLS_ADMIN_SUBMENU_NAMESPACE, TOOLS_JOB_PREFIX } from '@/types';
 import { logger } from '../../lib/logger.js';
+import { blockchainConfig } from '../../config/blockchain.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
 import { createAdminRateLimiter } from '../../api/middleware/rate-limit.js';
@@ -46,19 +49,34 @@ import { createToolsAdminRouter } from './api/createToolsAdminRouter.js';
 import { ToolsBootstrapService } from './services/ToolsBootstrapService.js';
 import { TOOLS_BOOTSTRAP_PAGES } from './services/TOOLS_BOOTSTRAP_PAGES.js';
 import { STAKE_CALCULATOR_WIDGET_TYPE } from './services/STAKE_CALCULATOR_WIDGET_TYPE.js';
+import { StakingRewardsService } from './services/StakingRewardsService.js';
+import { createStakingRewardsWidgetType } from './services/createStakingRewardsWidgetType.js';
 
 /** Collection name for transaction lookups used by the calculator service. */
 const TRANSACTIONS_COLLECTION = 'transactions';
 
 /**
- * The `/system/tools` tabs. The module owns no collections and no scheduler
- * jobs, so it has no Database or Schedules tab; every module with an admin
- * page has a Logs tab.
+ * The `/system/tools` tabs. Schedules and Database surface the staking rewards
+ * refresh job and the collection it writes, so an operator checking why the
+ * rewards look stale stays on this page; every module with an admin page has
+ * a Logs tab.
  */
 const TOOLS_ADMIN_SUBMENU_TABS: ReadonlyArray<{ label: string; tab: string; icon: string; order: number }> = [
     { label: 'Bootstrap', tab: 'bootstrap', icon: 'Sprout', order: 0 },
-    { label: 'Logs', tab: 'logs', icon: 'ScrollText', order: 1 }
+    { label: 'Schedules', tab: 'schedules', icon: 'Clock', order: 1 },
+    { label: 'Database', tab: 'database', icon: 'Database', order: 2 },
+    { label: 'Logs', tab: 'logs', icon: 'ScrollText', order: 3 }
 ];
+
+/** Scheduler job that recomputes every Super Representative's voter reward. */
+export const STAKING_REWARDS_REFRESH_JOB = `${TOOLS_JOB_PREFIX}staking-rewards-refresh`;
+
+/**
+ * Every six hours, ten minutes past the hour. Votes move slowly and a refresh
+ * costs about 130 requests on the queue block sync shares, so a tighter
+ * schedule would spend that queue on changes nobody could see.
+ */
+const STAKING_REWARDS_REFRESH_CRON = '0 10 */6 * * *';
 
 /**
  * Tools module dependencies for initialization.
@@ -81,8 +99,14 @@ export interface IToolsModuleDependencies {
     app: Express;
     /** The pages module's service, used by the Bootstrap tab to read and create the module's CMS pages. */
     pageService: IPageService;
-    /** The widgets service, used to register the stake calculator as an embeddable widget. */
+    /** The widgets service, used to register the calculators as embeddable widgets. */
     widgetsService: IWidgetsService;
+    /**
+     * Scheduler the staking rewards refresh registers on. Optional so tests can
+     * leave it out; with none, including `ENABLE_SCHEDULER=false`, the rewards
+     * snapshot is never refreshed and the calculator says so.
+     */
+    scheduler?: ISchedulerService | null;
 }
 
 /**
@@ -103,6 +127,7 @@ export interface IToolsModuleDependencies {
  * - Creates CalculatorService with cache, database, and chain parameters
  * - Creates SignatureService for wallet verification
  * - Creates ToolsController with both services
+ * - Creates the staking rewards service, which owns the stored rewards snapshot
  * - Creates the bootstrap service and the admin controller for `/system/tools`
  * - Does NOT mount routes or register menu items
  *
@@ -110,7 +135,8 @@ export interface IToolsModuleDependencies {
  * - Registers "Tools" container menu node in 'main' namespace
  * - Registers child menu items for each tool
  * - Mounts tools router at /api/tools
- * - Registers the stake calculator as an embeddable widget type
+ * - Registers the stake and staking rewards calculators as embeddable widget types
+ * - Registers the staking rewards refresh job when a scheduler is present
  * - Registers the `/system/tools` menu entry and tab row, and mounts the admin router at /api/admin/tools
  */
 export class ToolsModule implements IModule<IToolsModuleDependencies> {
@@ -118,8 +144,8 @@ export class ToolsModule implements IModule<IToolsModuleDependencies> {
     readonly metadata: IModuleMetadata = {
         id: 'tools',
         name: 'Tools',
-        version: '1.1.0',
-        description: 'User-facing TRON utility tools: address converter, energy estimator, stake calculator, signature verifier, approval checker, timestamp converter'
+        version: '1.2.0',
+        description: 'User-facing TRON utility tools: address converter, energy estimator, stake calculator, staking rewards calculator, signature verifier, approval checker, timestamp converter'
     };
 
     /** Stored dependencies from init() phase. */
@@ -128,11 +154,13 @@ export class ToolsModule implements IModule<IToolsModuleDependencies> {
     private serviceRegistry!: IServiceRegistry;
     private app!: Express;
     private widgetsService!: IWidgetsService;
+    private scheduler: ISchedulerService | null = null;
 
     /** Services created during init() phase. */
     private controller!: ToolsController;
     private toolsService!: ToolsService;
     private adminController!: ToolsAdminController;
+    private stakingRewardsService!: StakingRewardsService;
 
     /** Logger instance for this module. */
     private readonly logger = logger.child({ module: 'tools' });
@@ -155,6 +183,7 @@ export class ToolsModule implements IModule<IToolsModuleDependencies> {
         this.serviceRegistry = dependencies.serviceRegistry;
         this.app = dependencies.app;
         this.widgetsService = dependencies.widgetsService;
+        this.scheduler = dependencies.scheduler ?? null;
 
         this.database.registerModel(TRANSACTIONS_COLLECTION, TransactionModel);
 
@@ -182,9 +211,19 @@ export class ToolsModule implements IModule<IToolsModuleDependencies> {
         // address service to Base58Check-validate inputs before they climb.
         const addressOriginsService = new AddressOriginsService(dependencies.serviceRegistry, addressService);
 
+        this.stakingRewardsService = new StakingRewardsService({
+            source: tronGridClient,
+            chainParameters,
+            database: this.database,
+            addressService,
+            logger: this.logger,
+            blockIntervalSeconds: blockchainConfig.network.blockIntervalSeconds
+        });
+
         this.controller = new ToolsController(
             addressService, calculatorService, signatureService,
-            approvalService, timestampService, addressOriginsService
+            approvalService, timestampService, addressOriginsService,
+            this.stakingRewardsService
         );
 
         const bootstrapService = new ToolsBootstrapService(dependencies.pageService, TOOLS_BOOTSTRAP_PAGES, this.logger);
@@ -219,7 +258,43 @@ export class ToolsModule implements IModule<IToolsModuleDependencies> {
         this.widgetsService.registerType(STAKE_CALCULATOR_WIDGET_TYPE, this.metadata.id);
         this.logger.info({ typeId: STAKE_CALCULATOR_WIDGET_TYPE.id }, 'Stake calculator registered as an embeddable widget');
 
+        const stakingRewardsWidget = createStakingRewardsWidgetType(() => this.stakingRewardsService.getSnapshot());
+        this.widgetsService.registerType(stakingRewardsWidget, this.metadata.id);
+        this.logger.info({ typeId: stakingRewardsWidget.id }, 'Staking rewards calculator registered as an embeddable widget');
+
+        await this.registerStakingRewardsRefresh();
+
         this.logger.info('Tools module running');
+    }
+
+    /**
+     * Register the staking rewards refresh job, and start a first refresh when
+     * no snapshot is stored yet so a new deployment does not wait up to six
+     * hours for the calculator to show figures.
+     *
+     * With no scheduler nothing refreshes, which is how `ENABLE_SCHEDULER=false`
+     * keeps a local backend from sending the 130 TronGrid requests. The first
+     * refresh is not awaited: it takes about half a minute on the shared queue,
+     * and startup must not wait on it. Its failure is logged, and the scheduled
+     * run tries again.
+     */
+    private async registerStakingRewardsRefresh(): Promise<void> {
+        if (this.scheduler) {
+            // The module's logger goes with the job so the scheduler's own
+            // failure entry lands on this module's Logs tab.
+            this.scheduler.register(STAKING_REWARDS_REFRESH_JOB, STAKING_REWARDS_REFRESH_CRON, async () => {
+                await this.stakingRewardsService.refresh();
+            }, { logger: this.logger });
+
+            const stored = await this.stakingRewardsService.getSnapshot();
+            if (!stored) {
+                void this.stakingRewardsService.refresh().catch(error => {
+                    this.logger.error({ error }, 'First staking rewards refresh failed; the scheduled refresh will retry');
+                });
+            }
+        } else {
+            this.logger.warn('No scheduler; the staking rewards snapshot will not be refreshed');
+        }
     }
 
     /**
@@ -287,6 +362,7 @@ export class ToolsModule implements IModule<IToolsModuleDependencies> {
                 { label: 'Address Generator', url: '/tools/address-generator', icon: 'KeyRound', order: 15, description: 'Create a new TRON wallet with a recovery phrase, or search for a vanity address. Everything runs in your browser, so keys never leave your device.' },
                 { label: 'Energy Estimator', url: '/tools/energy-estimator', icon: 'Zap', order: 20, description: 'Estimate how much energy your smart contract calls need each day, and compare staking TRX for it with burning TRX to pay the fees.' },
                 { label: 'Stake Calculator', url: '/tools/stake-calculator', icon: 'Calculator', order: 30, description: 'See how much energy and bandwidth a TRX stake gives you, or how much TRX to stake for the energy you need, at live network rates.' },
+                { label: 'Staking Rewards', url: '/tools/staking-rewards', icon: 'Coins', order: 35, description: 'Estimate the TRX you earn each year by voting with staked TRX, and compare every Super Representative by commission and reward rate.' },
                 { label: 'Signature Verifier', url: '/tools/signature-verifier', icon: 'ShieldCheck', order: 40, description: 'Check whether a TRON wallet signed a message, to confirm who controls an address. A link carrying the wallet, message, and signature verifies on load.' },
                 { label: 'Approval Checker', url: '/tools/approval-checker', icon: 'Shield', order: 45, description: 'Scan a TRON wallet\'s recent TRC20 token approvals for unlimited allowances, and see which contracts can spend its tokens.' },
                 { label: 'Address Origins', url: '/tools/address-origins', icon: 'GitBranch', order: 48, description: 'Trace a TRON wallet back through the accounts that activated it to find where it came from, and spot ancestors shared by several wallets.' },

@@ -95,6 +95,12 @@ export class ChainParametersFetcher implements IChainParametersFetcher {
             const energyFee = this.findParam(chainParams, 'getEnergyFee');
             const totalEnergyCurrentLimit = this.findParam(chainParams, 'getTotalEnergyCurrentLimit');
 
+            // Per-block reward rates, read by the staking rewards calculator.
+            // Left undefined when absent: a zero here would publish "no
+            // rewards" rather than "rate unknown".
+            const blockRewardSun = this.findOptionalParam(chainParams, 'getWitnessPayPerBlock');
+            const voteRewardSun = this.findOptionalParam(chainParams, 'getWitness127PayPerBlock');
+
             // Extract network state - live staking data from getaccountresource
             // TotalEnergyWeight/TotalNetWeight are in TRX (not SUN)
             const totalEnergyLimit = networkState.TotalEnergyLimit;
@@ -128,7 +134,9 @@ export class ChainParametersFetcher implements IChainParametersFetcher {
                     energyFee,
                     totalBandwidthLimit,
                     totalFrozenForBandwidth,
-                    bandwidthPerTrx
+                    bandwidthPerTrx,
+                    blockRewardSun,
+                    voteRewardSun
                 },
                 fetchedAt: new Date(),
                 createdAt: new Date()
@@ -172,5 +180,21 @@ export class ChainParametersFetcher implements IChainParametersFetcher {
             return 0;
         }
         return param.value;
+    }
+
+    /**
+     * Extract a parameter whose absence must stay visible to readers, such as
+     * a reward rate, where zero is a real value with a different meaning.
+     *
+     * @param params - Array of chain parameters from TronGrid
+     * @param key - Parameter key to find
+     * @returns The value, or undefined when TronGrid did not return it
+     */
+    private findOptionalParam(params: Array<{ key: string; value: number }>, key: string): number | undefined {
+        const value = params.find(p => p.key === key)?.value;
+        if (typeof value !== 'number') {
+            this.logger.warn({ key }, 'Chain parameter not found in response');
+        }
+        return typeof value === 'number' ? value : undefined;
     }
 }
