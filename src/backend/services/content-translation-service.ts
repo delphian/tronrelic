@@ -538,9 +538,11 @@ export class ContentTranslationService implements IContentTranslationService {
         const curation = this.requireCuration();
 
         const previous = await this.findProposal(id, language);
-        await proposals.write(id, language, values);
         const holdId = randomUUID();
         const source = typeof input.source === 'string' && input.source.trim() !== '' ? input.source.trim() : undefined;
+        // Record the new hold before writing the new text. An approval of the
+        // older hold re-reads the hold after reading the text, so once the
+        // hold has moved it refuses rather than publishing text it never showed.
         await this.proposalCollection().updateOne(
             { contentId: id, language },
             {
@@ -555,6 +557,7 @@ export class ContentTranslationService implements IContentTranslationService {
 
         let item: ICurationItem;
         try {
+            await proposals.write(id, language, values);
             item = await curation.hold({
                 typeId: CONTENT_TRANSLATION_CURATION_TYPE_ID,
                 ref: { typeId, id, language, holdId },
@@ -669,15 +672,23 @@ export class ContentTranslationService implements IContentTranslationService {
      * language, the English title, who proposed it, and whether the English
      * has changed since, so a curator can judge it without opening the editor.
      *
+     * A ref is described only while its hold is still the open proposal. A
+     * replaced proposal keeps neither its text nor its proposer, so describing
+     * a superseded ref would attribute the replacement's words and proposer to
+     * the older submission. Refusing it makes curation keep the preview it
+     * cached when that older proposal was held, which is the faithful record.
+     *
      * @param ref - The queue item's ref, `{ typeId, id, language, holdId }`.
      * @returns A read-only descriptor.
+     * @throws ContentError `superseded` when the ref names a hold that is no
+     *   longer the open proposal for that language.
      */
     async describeProposal(ref: Record<string, unknown>): Promise<IContentDescriptor> {
-        const { typeId, id, language } = this.parseProposalRef(ref);
+        const { typeId, id, language, holdId } = this.parseProposalRef(ref);
         const entry = this.requireTranslatable(typeId);
+        const proposal = await this.requireOpenHold(id, language, holdId);
         const fields = entry.translation.translatableFields;
         const [proposed] = entry.translation.proposals ? await entry.translation.proposals.read([{ id, language }]) : [];
-        const proposal = await this.findProposal(id, language);
         const [served] = await this.deps.reader.readPublic(typeId, [id]);
         const english = served ? entry.translation.extractTranslatable(served) : {};
         const values = proposed?.values ?? {};
@@ -716,10 +727,14 @@ export class ContentTranslationService implements IContentTranslationService {
      *
      * @param ref - The queue item's ref, `{ typeId, id, language, holdId }`.
      * @returns The change set.
+     * @throws ContentError `superseded` when the ref names a hold that is no
+     *   longer the open proposal, so the queue records no comparison rather
+     *   than one against a newer proposal's text.
      */
     async describeProposalChanges(ref: Record<string, unknown>): Promise<IContentChangeSet> {
-        const { typeId, id, language } = this.parseProposalRef(ref);
+        const { typeId, id, language, holdId } = this.parseProposalRef(ref);
         const entry = this.requireTranslatable(typeId);
+        await this.requireOpenHold(id, language, holdId);
         const fields = entry.translation.translatableFields
             .filter((field) => field.kind !== 'url')
             .map((field) => ({ name: field.name, label: field.label }));
@@ -924,6 +939,26 @@ export class ContentTranslationService implements IContentTranslationService {
         return curation;
     }
 
+    /**
+     * Load the open proposal a queue item names, refusing a ref whose hold has
+     * been replaced or dropped, so nothing reports a newer proposal's text
+     * under an older queue item.
+     *
+     * @param id - Core content id of the item.
+     * @param language - Language code of the proposal.
+     * @param holdId - The hold the queue item was opened for.
+     * @returns The open proposal.
+     * @throws ContentError `superseded` when the hold is no longer the open one.
+     */
+    private async requireOpenHold(id: string, language: string, holdId: string): Promise<IContentTranslationProposalDocument> {
+        const proposal = await this.findProposal(id, language);
+        if (!proposal || proposal.holdId !== holdId) {
+            throw new ContentError('superseded', `This review item no longer holds the current proposed "${language}" translation`);
+        }
+
+        return proposal;
+    }
+
     /** Load a proposal's review state, or null when none is open for that language. */
     private async findProposal(id: string, language: string): Promise<IContentTranslationProposalDocument | null> {
         return this.proposalCollection().findOne({ contentId: id, language }, { projection: { _id: 0 } });
@@ -996,7 +1031,8 @@ export class ContentTranslationService implements IContentTranslationService {
      *
      * @param entry - The translatable type.
      * @param proposal - The proposal being approved.
-     * @throws ContentError `deleted` or `source-changed` when it cannot be applied.
+     * @throws ContentError `deleted` or `source-changed` when it cannot be
+     *   applied, or `superseded` when a newer proposal replaced it meanwhile.
      */
     private async approveProposal(entry: ITranslatableEntry, proposal: IContentTranslationProposalDocument): Promise<void> {
         const { contentId: id, language } = proposal;
@@ -1012,6 +1048,16 @@ export class ContentTranslationService implements IContentTranslationService {
         const [record] = await proposals.read([{ id, language }]);
         if (!record) {
             throw new Error(`The proposed "${language}" translation of ${id} has no stored text`);
+        }
+        // The held text is keyed by item and language alone, so a proposal
+        // made while the checks above ran has already replaced it. Read the
+        // hold again and refuse unless it is still this one, or the approval
+        // publishes text the curator never reviewed. `proposeTranslation`
+        // records the new hold before it writes the new text, so text read
+        // here under this hold is this proposal's own.
+        const current = await this.findProposal(id, language);
+        if (current?.holdId !== proposal.holdId) {
+            throw new ContentError('superseded', `A newer "${language}" translation was proposed while this one was being approved; nothing was changed`);
         }
         await entry.translation.writeTranslation(id, language, record.values);
         const now = new Date();
