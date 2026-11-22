@@ -100,6 +100,28 @@ describe('findTranslationMismatches', () => {
         expect(report).toEqual({ refusals: [], differences: [] });
     });
 
+    it('refuses an address added inside a site link target, which a prefilling tool route would receive', () => {
+        const report = findTranslationMismatches(
+            fields,
+            { title: 'A', body: 'Check your wallet.' },
+            { title: 'A', body: `Проверьте [свой кошелёк](/tools/approval-checker?address=${ADDRESS}).` },
+            'ru'
+        );
+
+        expect(report.refusals.join(' ')).toContain(ADDRESS);
+    });
+
+    it('does not refuse an address the English already carries inside a link target', () => {
+        const report = findTranslationMismatches(
+            fields,
+            { title: 'A', body: `Check [your wallet](/tools/approval-checker?address=${ADDRESS}).` },
+            { title: 'A', body: `Проверьте [свой кошелёк](/ru/tools/approval-checker?address=${ADDRESS}).` },
+            'ru'
+        );
+
+        expect(report).toEqual({ refusals: [], differences: [] });
+    });
+
     it('does not read prose that looks like a label as a reference definition', () => {
         expect(findTranslationMismatches(fields, { title: 'A', body: '[Note]: some words here' }, { title: 'A', body: '[Lưu ý]: một vài từ ở đây' }, 'vi'))
             .toEqual({ refusals: [], differences: [] });
