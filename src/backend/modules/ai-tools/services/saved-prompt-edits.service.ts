@@ -12,7 +12,9 @@
  * - Only the body changes. Model, tool allowlist, and triggers are never part
  *   of a proposal, so a proposal cannot widen what a prompt may do.
  * - One pending proposal per prompt. A newer one, or a direct save or delete on
- *   `/system/ai-tools`, withdraws the older one as `superseded`.
+ *   `/system/ai-tools`, withdraws the older one as `superseded`. Two proposals
+ *   made in the same instant can both be stored; the approval's `updatedAt`
+ *   check then fails the second and tells the curator to propose it again.
  * - An approval writes only if the prompt still carries the `updatedAt` the
  *   proposal was based on; otherwise the proposal is marked `failed`.
  */
@@ -36,6 +38,9 @@ export const SAVED_PROMPT_EDIT_CURATION_TYPE_ID = 'ai-tools:saved-prompt-edit';
 
 /** Decider recorded when a proposal is withdrawn because something newer replaced it. */
 export const SUPERSEDED_DECIDED_BY = `${SYSTEM_DECIDER_PREFIX}superseded`;
+
+/** Decider recorded when a proposal is closed because it could not be held for review. */
+export const HOLD_FAILED_DECIDED_BY = `${SYSTEM_DECIDER_PREFIX}hold-failed`;
 
 /** Most proposals allowed to wait for a curator at once, so a looping agent cannot flood the queue. */
 export const MAX_PENDING_PROMPT_PROPOSALS = 20;
@@ -146,11 +151,23 @@ export class SavedPromptEditsService {
         };
         const supersededCount = await this.supersedeProposals(olderPending, 'A newer proposal for the same prompt replaced it.');
         await this.store.insert(proposal);
-        const held = await curation.hold({
-            typeId: SAVED_PROMPT_EDIT_CURATION_TYPE_ID,
-            ref: { proposalId: proposal.id },
-            source: input.source
-        });
+        // A proposal whose hold failed has no curation item, so no curator can
+        // ever decide it, yet `listPending` would still present it for review
+        // and `countPending` would charge it against the cap. Take the record
+        // out of `pending` before reporting the failure to the caller.
+        let held: Awaited<ReturnType<ICurationService['hold']>>;
+        try {
+            held = await curation.hold({
+                typeId: SAVED_PROMPT_EDIT_CURATION_TYPE_ID,
+                ref: { proposalId: proposal.id },
+                source: input.source
+            });
+        } catch (error) {
+            const failureReason = 'The edit could not be held for review, so it is not waiting for a curator. Propose it again.';
+            await this.store.transition(proposal.id, 'pending', 'failed', { decidedBy: HOLD_FAILED_DECIDED_BY, failureReason });
+            this.logger.error({ error, proposalId: proposal.id, promptId: prompt.id }, 'Could not hold a saved prompt edit for curation; the proposal was marked failed');
+            throw error;
+        }
         await this.store.setCurationItemId(proposal.id, held.id);
         this.logger.info({ proposalId: proposal.id, promptId: prompt.id, curationId: held.id, supersededCount }, 'Saved prompt edit proposed and held for curation');
 
