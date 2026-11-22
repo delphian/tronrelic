@@ -1083,18 +1083,34 @@ export class TronGridClient {
      * address that is not a representative, so callers ask only about listed
      * representatives.
      *
+     * java-tron's brokerage handler writes `{"Error": ...}` into the body with
+     * HTTP 200 instead of an error status, so an answer carrying no `brokerage`
+     * is a failed lookup rather than a zero commission. A genuine 0% arrives as
+     * an explicit `{"brokerage": 0}`, because that handler writes the number
+     * into the JSON by hand rather than letting protobuf omit a default value.
+     * Rejecting the absent field stops a failed lookup from being stored as a
+     * 0% commission, which would rank that representative at the top of the
+     * calculator until the next refresh.
+     *
      * @param address - The representative's address, hex or Base58.
      * @returns The percentage kept, from 0 to 100.
-     * @throws Error when every attempt fails or the answer is not a percentage.
+     * @throws Error when every attempt fails, the answer carries no brokerage,
+     *   or the answer is not a percentage.
      */
     async getBrokerage(address: string): Promise<number> {
-        const response = await retry(() => this.post<{ brokerage?: number }>('/wallet/getBrokerage', { address }), {
-            ...blockchainConfig.retry,
-            onRetry: (attempt, error) => logger.warn({ attempt, error, address }, 'Retrying TronGrid getBrokerage')
-        });
-        const brokerage = Number(response?.brokerage ?? 0);
+        const response = await retry(
+            () => this.post<{ brokerage?: number | null; Error?: string }>('/wallet/getBrokerage', { address }),
+            {
+                ...blockchainConfig.retry,
+                onRetry: (attempt, error) => logger.warn({ attempt, error, address }, 'Retrying TronGrid getBrokerage')
+            }
+        );
+        if (response?.brokerage === undefined || response.brokerage === null) {
+            throw new Error(`TronGrid returned no brokerage for ${address}: ${response?.Error ?? JSON.stringify(response)}`);
+        }
+        const brokerage = Number(response.brokerage);
         if (!Number.isFinite(brokerage) || brokerage < 0 || brokerage > 100) {
-            throw new Error(`TronGrid returned an invalid brokerage for ${address}: ${String(response?.brokerage)}`);
+            throw new Error(`TronGrid returned an invalid brokerage for ${address}: ${String(response.brokerage)}`);
         }
         return brokerage;
     }
