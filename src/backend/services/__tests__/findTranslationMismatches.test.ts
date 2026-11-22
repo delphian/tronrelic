@@ -45,6 +45,30 @@ describe('findTranslationMismatches', () => {
         expect(problems.some((problem) => problem.includes('links'))).toBe(true);
     });
 
+    it('reports a link added through a reference definition', () => {
+        const problems = findTranslationMismatches(
+            fields,
+            { title: 'A', body: 'Claim your reward.' },
+            { title: 'A', body: '领取 [奖励][claim]。\n\n[claim]: //evil.example' }
+        );
+
+        expect(problems.join(' ')).toContain('//evil.example');
+    });
+
+    it('reports a link added through raw HTML', () => {
+        const problems = findTranslationMismatches(
+            fields,
+            { title: 'A', body: 'Claim your reward.' },
+            { title: 'A', body: '领取 <a href="//evil.example">奖励</a>。' }
+        );
+
+        expect(problems.join(' ')).toContain('//evil.example');
+    });
+
+    it('does not read prose that looks like a label as a reference definition', () => {
+        expect(findTranslationMismatches(fields, { title: 'A', body: '[Note]: some words here' }, { title: 'A', body: '[Lưu ý]: một vài từ ở đây' })).toEqual([]);
+    });
+
     it('reports a dropped or changed figure but ignores separator style', () => {
         expect(findTranslationMismatches(fields, { title: 'A', body: 'Price 1.5 TRX' }, { title: 'A', body: 'Giá 1,5 TRX' })).toEqual([]);
         expect(findTranslationMismatches(fields, { title: 'A', body: 'Price 15 TRX' }, { title: 'A', body: 'Giá 16 TRX' }).length).toBeGreaterThan(0);

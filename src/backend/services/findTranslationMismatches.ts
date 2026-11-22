@@ -9,7 +9,9 @@
  * addresses, or numbers differ from the English is refused before it reaches
  * the curation queue.
  *
- * - Links and TRON addresses must match exactly, in both directions.
+ * - Links and TRON addresses must match exactly, in both directions. A link
+ *   is a bare http(s) URL, a Markdown link or image target, a reference-link
+ *   definition, or a raw HTML `href` or `src`.
  * - Every number in the English must appear in the translation. Grouping and
  *   decimal separators are ignored, because languages write them differently.
  * - A number in the translation that is not in the English is allowed only
@@ -26,6 +28,24 @@ const ABSOLUTE_URL_PATTERN = /https?:\/\/[^\s<>"'()[\]]+/gi;
 
 /** Targets of Markdown links and images, which also catches relative links such as `/resource-markets`. */
 const MARKDOWN_TARGET_PATTERN = /\]\(\s*<?([^)\s>]+)>?/g;
+
+/**
+ * The destination of a reference-link definition, such as `[claim]: //evil.example`.
+ * The renderer resolves a reference link into a real link, and the sanitizer
+ * leaves a destination with no scheme alone, so it reaches the reader as a
+ * clickable link and has to be compared like an inline target. The line must
+ * end after the destination and its optional title, as Markdown requires, so
+ * prose beginning `[Note]: some words` is not taken for a definition.
+ */
+const REFERENCE_DEFINITION_PATTERN = /^[ \t]{0,3}\[[^\]\n]+\]:[ \t]*<?([^\s<>]+)>?[ \t]*(?:"[^"]*"|'[^']*'|\([^)]*\))?[ \t]*$/gm;
+
+/**
+ * The `href` or `src` of raw HTML. The renderer keeps raw HTML, the sanitizer
+ * allows both attributes on `<a>` and `<img>`, and a value with no scheme
+ * passes its protocol list, so raw HTML is another way a link reaches the
+ * reader without Markdown link syntax.
+ */
+const HTML_TARGET_PATTERN = /\b(?:href|src)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'`=<>]+))/gi;
 
 /** A TRON base58 address: `T` followed by 33 base58 characters. */
 const TRON_ADDRESS_PATTERN = /\bT[1-9A-HJ-NP-Za-km-z]{33}\b/g;
@@ -78,9 +98,22 @@ function findAnchors(text: string): IAnchors {
     for (const match of text.matchAll(MARKDOWN_TARGET_PATTERN)) {
         links.add(match[1].replace(TRAILING_PUNCTUATION, ''));
     }
+    for (const match of text.matchAll(REFERENCE_DEFINITION_PATTERN)) {
+        links.add(match[1].replace(TRAILING_PUNCTUATION, ''));
+    }
+    for (const match of text.matchAll(HTML_TARGET_PATTERN)) {
+        const target = match[1] ?? match[2] ?? match[3] ?? '';
+        if (target !== '') {
+            links.add(target.replace(TRAILING_PUNCTUATION, ''));
+        }
+    }
     // Remove the links before looking for numbers and addresses, so digits in
     // a URL are checked as part of the link rather than a second time.
-    const withoutLinks = text.replace(ABSOLUTE_URL_PATTERN, ' ').replace(MARKDOWN_TARGET_PATTERN, '] ');
+    const withoutLinks = text
+        .replace(ABSOLUTE_URL_PATTERN, ' ')
+        .replace(MARKDOWN_TARGET_PATTERN, '] ')
+        .replace(REFERENCE_DEFINITION_PATTERN, ' ')
+        .replace(HTML_TARGET_PATTERN, ' ');
     const addresses = new Set<string>(withoutLinks.match(TRON_ADDRESS_PATTERN) ?? []);
     const withoutAddresses = withoutLinks.replace(TRON_ADDRESS_PATTERN, ' ');
     const numbers = new Set<string>();
