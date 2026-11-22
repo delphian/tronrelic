@@ -1,0 +1,79 @@
+@use '../../../../app/breakpoints' as *;
+
+// Sized by its own width, because it renders on a full page and inside a CMS
+// page body, where the column it gets can be much narrower than the window.
+.container {
+    container-type: inline-size;
+    container-name: staking-rewards;
+}
+
+// Stake and representative side by side, the representative given more room
+// because its option labels carry a name and a rate.
+.fields {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+    gap: var(--gap-md);
+}
+
+.note {
+    margin: 0;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+    line-height: var(--line-height-relaxed);
+}
+
+.table_header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--gap-sm);
+}
+
+.table_title {
+    font-size: var(--font-size-heading-sm);
+}
+
+.updated {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-caption);
+}
+
+.representative {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-xs);
+}
+
+// A text button: the name selects that representative in the calculator above.
+.representative_button {
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--color-text);
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+    transition: color var(--transition-base);
+
+    &:hover {
+        color: var(--color-primary);
+    }
+
+    &[aria-pressed='true'] {
+        color: var(--color-primary);
+        font-weight: var(--font-weight-semibold);
+    }
+}
+
+.table_footer {
+    display: flex;
+    justify-content: center;
+}
+
+@container staking-rewards (max-width: #{$breakpoint-mobile-md}) {
+    .fields {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}

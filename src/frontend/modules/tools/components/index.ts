@@ -6,6 +6,7 @@ export { AddressConverter } from './AddressConverter';
 export { AddressGenerator } from './AddressGenerator';
 export { EnergyEstimator } from './EnergyEstimator';
 export { StakeCalculator } from './StakeCalculator';
+export { StakingRewards } from './StakingRewards';
 export { SignatureVerifier } from './SignatureVerifier';
 export { ApprovalChecker } from './ApprovalChecker';
 export { AddressOrigins } from './AddressOrigins';

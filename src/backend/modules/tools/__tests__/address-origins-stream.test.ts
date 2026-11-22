@@ -21,6 +21,7 @@ import type { SignatureService } from '../../auth/signature.service.js';
 import type { ApprovalService } from '../services/approval.service.js';
 import type { TimestampService } from '../services/timestamp.service.js';
 import type { AddressOriginsService } from '../services/address-origins.service.js';
+import type { StakingRewardsService } from '../services/StakingRewardsService.js';
 import { ToolsController } from '../api/tools.controller.js';
 import { CallPacer } from '../lib/CallPacer.js';
 
@@ -113,7 +114,8 @@ async function runStream(addresses: string[], hopCounts: number[]): Promise<IStr
         null as unknown as SignatureService,
         null as unknown as ApprovalService,
         null as unknown as TimestampService,
-        originsService
+        originsService,
+        null as unknown as StakingRewardsService
     );
 
     const captured: ICapturedEvent[] = [];
@@ -189,7 +191,8 @@ async function runInternalHopStream(): Promise<ICapturedEvent[]> {
         null as unknown as SignatureService,
         null as unknown as ApprovalService,
         null as unknown as TimestampService,
-        originsService
+        originsService,
+        null as unknown as StakingRewardsService
     );
 
     const captured: ICapturedEvent[] = [];

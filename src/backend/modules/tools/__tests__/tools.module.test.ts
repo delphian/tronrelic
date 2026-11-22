@@ -33,7 +33,7 @@ vi.mock('../../blockchain/tron-grid.client.js', () => ({
 
 import { ToolsModule } from '../index.js';
 import type { ICacheService, IChainParameters, IChainParametersService, IMenuService, IServiceRegistry } from '@/types';
-import { STAKE_CALCULATOR_WIDGET_TYPE_ID } from '@/types';
+import { STAKE_CALCULATOR_WIDGET_TYPE_ID, STAKING_REWARDS_WIDGET_TYPE_ID, TOOLS_JOB_PREFIX } from '@/types';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 import { createMockServiceRegistry } from '../../../tests/vitest/mocks/service-registry.js';
 
@@ -194,7 +194,7 @@ describe('ToolsModule', () => {
             expect(module.metadata).toBeDefined();
             expect(module.metadata.id).toBe('tools');
             expect(module.metadata.name).toBe('Tools');
-            expect(module.metadata.version).toBe('1.1.0');
+            expect(module.metadata.version).toBe('1.2.0');
             expect(module.metadata.description).toBeDefined();
         });
     });
@@ -353,19 +353,20 @@ describe('ToolsModule', () => {
 
             await module.run();
 
-            // 1 container + 8 children, then the /system/tools entry and its 2 tabs
-            expect(mockMenu.create).toHaveBeenCalledTimes(12);
+            // 1 container + 9 children, then the /system/tools entry and its 4 tabs
+            expect(mockMenu.create).toHaveBeenCalledTimes(15);
 
             const calls = mockMenu.create.mock.calls;
 
             // Verify child items reference the container parent
             const parentId = 'mock-container-id';
-            const childCalls = calls.slice(1, 9);
+            const childCalls = calls.slice(1, 10);
             const childLabels = childCalls.map((c: unknown[]) => (c[0] as { label: string }).label);
             expect(childLabels).toContain('Address Converter');
             expect(childLabels).toContain('Address Generator');
             expect(childLabels).toContain('Energy Estimator');
             expect(childLabels).toContain('Stake Calculator');
+            expect(childLabels).toContain('Staking Rewards');
             expect(childLabels).toContain('Signature Verifier');
             expect(childLabels).toContain('Approval Checker');
             expect(childLabels).toContain('Address Origins');
@@ -438,6 +439,43 @@ describe('ToolsModule', () => {
                 expect.objectContaining({ id: STAKE_CALCULATOR_WIDGET_TYPE_ID, embeddable: true }),
                 'tools'
             );
+            expect(mockWidgets.registerType).toHaveBeenCalledWith(
+                expect.objectContaining({ id: STAKING_REWARDS_WIDGET_TYPE_ID, embeddable: true }),
+                'tools'
+            );
+        });
+
+        /**
+         * The Schedules tab on /system/tools finds the module's jobs by name
+         * prefix, so a job registered under any other name would never appear
+         * there.
+         */
+        it('should register the staking rewards refresh under the tools job prefix, with the module logger, only in run()', async () => {
+            const module = new ToolsModule();
+            const scheduler = { register: vi.fn() };
+            // A stored snapshot, so run() starts no background refresh.
+            vi.spyOn(mockDatabase, 'getCollection').mockReturnValue({
+                findOne: vi.fn().mockResolvedValue({ _id: 'latest', representatives: [] })
+            } as any);
+
+            await module.init({
+                database: mockDatabase,
+                cacheService: mockCache,
+                menuService: mockMenu,
+                serviceRegistry: mockServiceRegistry,
+                app: mockApp as any,
+                pageService: mockPageService as any,
+                widgetsService: mockWidgets as any,
+                scheduler: scheduler as any
+            });
+            expect(scheduler.register).not.toHaveBeenCalled();
+
+            await module.run();
+
+            expect(scheduler.register).toHaveBeenCalledTimes(1);
+            const [name, , , options] = scheduler.register.mock.calls[0];
+            expect(name.startsWith(TOOLS_JOB_PREFIX)).toBe(true);
+            expect(options).toEqual(expect.objectContaining({ logger: expect.anything() }));
         });
 
         /** Pages are created only when an admin clicks Create, never at boot. */

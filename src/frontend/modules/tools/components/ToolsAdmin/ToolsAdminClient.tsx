@@ -1,10 +1,11 @@
 /**
  * @fileoverview Client shell for `/system/tools`.
  *
- * Holds the tab row and the two panels: Bootstrap, where an admin creates the
- * CMS pages the tools module ships, and Logs, the core log monitor scoped to
- * this module. The module owns no collections and no scheduler jobs, so it has
- * no Database or Schedules tab. The tab row is the menu module's Submenu
+ * Holds the tab row and the four panels: Bootstrap, where an admin creates the
+ * CMS pages the tools module ships; Schedules and Database, the core scheduler
+ * and collection browsers scoped to this module, which surface the staking
+ * rewards refresh job and the collection it writes; and Logs, the core log
+ * monitor scoped to this module. The tab row is the menu module's Submenu
  * Pattern: the server entry fetches the `tools-admin` namespace and this
  * shell renders it with `MenuNavClient`, driving the active panel from local
  * state and keeping `?tab=` in the address bar as a deep link.
@@ -14,14 +15,33 @@
 import { useCallback, useState } from 'react';
 import type { MenuNodeSerialized } from '@/shared';
 import type { IToolsBootstrapPage } from '@/types';
-import { TOOLS_ADMIN_SUBMENU_NAMESPACE } from '@/types';
+import { TOOLS_ADMIN_SUBMENU_NAMESPACE, TOOLS_JOB_PREFIX } from '@/types';
 import { AdminPage } from '../../../../components/layout';
 import { MenuNavClient } from '../../../../components/layout/MenuNav/MenuNavClient';
 import { SystemLogsMonitor } from '../../../logs';
+import { CollectionBrowser } from '../../../database';
+import { SchedulerMonitor, type SchedulerJob } from '../../../scheduler';
 import { BootstrapTab } from './BootstrapTab';
 
 /** The page's tab ids; the `?tab=` value carried by each submenu node. */
-type ToolsAdminTabId = 'bootstrap' | 'logs';
+type ToolsAdminTabId = 'bootstrap' | 'schedules' | 'database' | 'logs';
+
+/** Every valid tab, so the deep link and the click routing share one list. */
+const TOOLS_ADMIN_TAB_IDS: ReadonlyArray<ToolsAdminTabId> = ['bootstrap', 'schedules', 'database', 'logs'];
+
+/** Prefix of the module's MongoDB collections, under the `module_<id>_` convention. */
+const COLLECTION_PREFIX = 'module_tools_';
+
+/**
+ * Keep the scheduler rows this module registers. A prefix test rather than a
+ * list of names, so a job the module adds later appears with no change here.
+ *
+ * @param job - One scheduler row.
+ * @returns Whether the tools module owns it.
+ */
+function isToolsJob(job: SchedulerJob): boolean {
+    return job.name.startsWith(TOOLS_JOB_PREFIX);
+}
 
 /**
  * Log service name the module's entries are stored under. `ToolsModule` logs
@@ -38,7 +58,7 @@ const LOG_SERVICE = 'tronrelic:tools';
  * @returns Whether it names a tab on this page.
  */
 function isToolsAdminTabId(tab: string | undefined): tab is ToolsAdminTabId {
-    return tab === 'bootstrap' || tab === 'logs';
+    return TOOLS_ADMIN_TAB_IDS.includes(tab as ToolsAdminTabId);
 }
 
 /**
@@ -104,7 +124,7 @@ export function ToolsAdminClient({ submenuTree, submenuGeneratedAt, initialBoots
     return (
         <AdminPage
             title="Tools"
-            subtitle="The public TRON tools: create the editable pages this module ships, and read its logs."
+            subtitle="The public TRON tools: create the editable pages this module ships, check the staking rewards refresh, and read its logs."
         >
             <MenuNavClient
                 namespace={TOOLS_ADMIN_SUBMENU_NAMESPACE}
@@ -116,6 +136,8 @@ export function ToolsAdminClient({ submenuTree, submenuGeneratedAt, initialBoots
             />
 
             {activeTab === 'bootstrap' && <BootstrapTab pages={bootstrapPages} onPageUpdated={handleBootstrapPageUpdated} />}
+            {activeTab === 'schedules' && <SchedulerMonitor jobFilter={isToolsJob} title="Tools Schedules" hideStats />}
+            {activeTab === 'database' && <CollectionBrowser prefix={COLLECTION_PREFIX} title="Tools Collections" />}
             {activeTab === 'logs' && <SystemLogsMonitor service={LOG_SERVICE} title="Tools Logs" />}
         </AdminPage>
     );

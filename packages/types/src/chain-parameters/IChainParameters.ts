@@ -31,6 +31,21 @@ export interface IChainParameters {
 
         /** Derived ratio: bandwidth units per TRX when staking */
         bandwidthPerTrx: number;
+
+        /**
+         * SUN paid to the Super Representative that produces each block
+         * (`getWitnessPayPerBlock`). Absent on snapshots stored before the
+         * field existed, and when TronGrid omits it, so a reader must treat
+         * absence as "not known" rather than as zero.
+         */
+        blockRewardSun?: number;
+
+        /**
+         * SUN shared across the top 127 Super Representatives by votes for each
+         * block (`getWitness127PayPerBlock`), which they pass to their voters
+         * after commission. Absent under the same conditions as `blockRewardSun`.
+         */
+        voteRewardSun?: number;
     };
 
     /** When these parameters were fetched from the blockchain */
