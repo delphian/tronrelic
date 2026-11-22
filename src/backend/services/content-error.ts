@@ -48,7 +48,8 @@ export function isContentError(error: unknown): error is ContentError {
         'vetoed',
         'curation-unavailable',
         'superseded',
-        'forbidden'
+        'forbidden',
+        'source-changed'
     ];
     const code = (error as { code?: unknown } | null)?.code;
 

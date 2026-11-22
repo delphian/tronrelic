@@ -51,6 +51,17 @@
     color: var(--color-warning-text);
 }
 
+/* The notice that a proposal is waiting, with its "Use proposed text" button
+ * beside it. Wraps so the button drops under the text in a narrow container
+ * rather than squeezing it. */
+.proposal_notice {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap-sm);
+}
+
 .list {
     list-style: none;
     margin: 0;

@@ -19,6 +19,8 @@
  *   item's current edit, so nothing was promoted.
  * `forbidden` — the actor may not perform the operation, such as a
  *   non-curator importing an item as already approved.
+ * `source-changed` — a proposed translation was written against English text
+ *   that has changed since, so it is refused rather than recorded as current.
  */
 export type ContentErrorCode =
     | 'unknown-type'
@@ -28,4 +30,5 @@ export type ContentErrorCode =
     | 'vetoed'
     | 'curation-unavailable'
     | 'superseded'
-    | 'forbidden';
+    | 'forbidden'
+    | 'source-changed';

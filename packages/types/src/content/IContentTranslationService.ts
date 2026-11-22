@@ -6,10 +6,12 @@
  * `IContentService.translations()`, so the `'content'` registry name stays the
  * one entry point for everything about managed content.
  *
- * Translations are not reviewed. Only a curator may save, delete, or restore
- * one, and the change is live as soon as it is made; anyone else is refused
- * with the `forbidden` code. Every write still runs the `content.before*` veto
- * hooks with `language` set on the context, and is recorded with who made it.
+ * A curator's save, delete, or restore is not reviewed: it is live as soon as
+ * it is made, and anyone else calling those methods is refused with the
+ * `forbidden` code. Anyone else may instead propose a translation with
+ * `proposeTranslation`, which holds it in the curation queue until a curator
+ * approves it. Every write still runs the `content.before*` veto hooks with
+ * `language` set on the context, and is recorded with who made it.
  *
  * A translation is addressed by its item's type and content id plus a language
  * code, because an item has at most one translation per language. An item is
@@ -22,7 +24,10 @@
 import type { IContent } from './IContent.js';
 import type { IContentActor } from './IContentActor.js';
 import type { IContentTranslation } from './IContentTranslation.js';
+import type { IContentTranslationContext } from './IContentTranslationContext.js';
 import type { IContentTranslationOverview } from './IContentTranslationOverview.js';
+import type { IContentTranslationProposalInput } from './IContentTranslationProposalInput.js';
+import type { IContentTranslationProposalOutcome } from './IContentTranslationProposalOutcome.js';
 import type { IContentTranslationSettings } from './IContentTranslationSettings.js';
 import type { IContentTranslationStatus } from './IContentTranslationStatus.js';
 import type { IContentTranslationSuggestion } from './IContentTranslationSuggestion.js';
@@ -87,6 +92,56 @@ export interface IContentTranslationService {
         input: IContentTranslationWrite,
         actor: IContentActor
     ): Promise<IContentTranslation>;
+
+    /**
+     * Propose a new or corrected translation and hold it for curator review.
+     * Nothing visitors see changes until a curator approves it in the curation
+     * queue. Approval keeps the translation's published state; a language
+     * with no saved translation is saved as a draft, so only a curator can
+     * publish an item in a language for the first time.
+     *
+     * The item must be served to visitors and the language enabled. The
+     * values are checked against the field list and the type's own rules, and
+     * the links, TRON addresses, and numbers in them must match the English,
+     * because a curator may not read the language well enough to catch a
+     * swapped address or link. A second proposal for the same language
+     * replaces the first and closes the first's queue item.
+     *
+     * @param typeId - The managed content type.
+     * @param id - Core content id of the item.
+     * @param language - Language code of the translation.
+     * @param input - The proposed values and the English fingerprint they follow.
+     * @param actor - Who is proposing.
+     * @returns Whether the proposal is waiting for review, and its queue item.
+     * @throws ContentError `forbidden` when the type accepts no proposals,
+     *   `not-found` when the item is not served, `deleted` when the
+     *   translation is soft-deleted, `source-changed` when the English changed,
+     *   `vetoed` when a hook refuses it, `curation-unavailable` when there is
+     *   no queue to hold it in.
+     * @throws Error when a value is missing or malformed, the language is not
+     *   enabled, or the links, addresses, or numbers differ from the English.
+     */
+    proposeTranslation(
+        typeId: string,
+        id: string,
+        language: string,
+        input: IContentTranslationProposalInput,
+        actor: IContentActor
+    ): Promise<IContentTranslationProposalOutcome>;
+
+    /**
+     * Read what a proposer needs to translate an item: the English visitors
+     * are served with its fingerprint, and the served translation, if any.
+     * Holds nothing a visitor cannot read.
+     *
+     * @param typeId - The managed content type.
+     * @param id - Core content id of the item.
+     * @param language - Language code of the translation.
+     * @returns The context, or null when the item is not served to visitors.
+     * @throws ContentError `unknown-type` when the type is not registered or not translatable.
+     * @throws Error when the language code is malformed or the default language.
+     */
+    getTranslationContext(typeId: string, id: string, language: string): Promise<IContentTranslationContext | null>;
 
     /**
      * Soft-delete a translation. The item stops being served in that language,

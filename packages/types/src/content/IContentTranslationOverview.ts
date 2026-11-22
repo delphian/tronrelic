@@ -7,6 +7,7 @@
  */
 
 import type { IContentTranslation } from './IContentTranslation.js';
+import type { IContentTranslationProposal } from './IContentTranslationProposal.js';
 import type { IContentTranslationSource } from './IContentTranslationSource.js';
 
 /**
@@ -18,4 +19,10 @@ export interface IContentTranslationOverview {
 
     /** Every translation, including soft-deleted ones, ordered by language code. */
     translations: IContentTranslation[];
+
+    /**
+     * Proposals waiting for review, ordered by language code. A language can
+     * have a proposal and no saved translation yet.
+     */
+    proposals: IContentTranslationProposal[];
 }

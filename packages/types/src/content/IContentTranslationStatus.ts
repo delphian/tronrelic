@@ -23,4 +23,13 @@ export interface IContentTranslationStatus {
 
     /** True when the translation is soft-deleted. */
     deleted: boolean;
+
+    /**
+     * False when the language has only a proposal waiting for review and no
+     * saved translation yet. `published`, `stale`, and `deleted` are then false.
+     */
+    saved: boolean;
+
+    /** True when a proposed translation for this language is waiting for review. */
+    proposalPending: boolean;
 }

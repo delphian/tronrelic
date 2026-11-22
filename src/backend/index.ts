@@ -31,6 +31,7 @@ import { ContentRegistry, CONTENT_TYPES_SERVICE } from './services/content-regis
 import { ContentTypesController, createContentTypesAdminRouter } from './services/content-types-admin.js';
 import { ContentRouter, CONTENT_ROUTER_SERVICE } from './services/content-router.js';
 import { ContentService, CONTENT_SERVICE } from './services/content-service.js';
+import { registerContentAiTools } from './services/content-ai-tools.js';
 import { ContentTranslationsController, createContentTranslationsAdminRouter } from './services/content-translations-admin.js';
 import { ClassificationGate, AllowAllRoutingPolicy } from './services/content-routing-gate.js';
 import { ContentRouterController, createContentRouterAdminRouter } from './services/content-router-admin.js';
@@ -446,6 +447,9 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     const contentService = ContentService.getInstance();
     await contentService.ensureIndexes();
     serviceRegistry.register(CONTENT_SERVICE, contentService);
+    // The translation AI tools wait for the `'ai-tools'` registry, which the
+    // AI tools module publishes later, so they subscribe rather than register now.
+    registerContentAiTools(serviceRegistry, contentService.translations(), logger);
 
     // Register the internal publish sink — a credential-free `publish`-kind
     // destination so the curation destination picker has a real, selectable

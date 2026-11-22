@@ -16,10 +16,11 @@ import type {
     IContentActor,
     IContentReadRequest,
     IContentWriteContext,
+    ICurationType,
     IManagedContentType,
     ITranslatableField
 } from '@/types';
-import { HookAbortError } from '@/types';
+import { HookAbortError, createValueStoreProposals } from '@/types';
 import { ContentService } from '../content-service.js';
 import { ContentTranslationStore } from '../content-translation-store.js';
 import { HookRegistry } from '../../hooks/hook-registry.js';
@@ -90,8 +91,62 @@ function noteType(
             listPublicPaths: (note) => note.paths,
             readTranslations: (keys) => store.read(keys),
             writeTranslation: (id, language, values) => store.write(id, language, values),
-            onTranslationChanged: async () => undefined
+            onTranslationChanged: async () => undefined,
+            proposals: createValueStoreProposals(store)
         }
+    };
+}
+
+/** One queue item the fake curation service holds. */
+interface IFakeCurationItem {
+    id: string;
+    typeId: string;
+    ref: Record<string, unknown>;
+    status: 'pending' | 'approved' | 'rejected';
+}
+
+/**
+ * Build a curation service that keeps items in memory and commits each
+ * decision through the registered binding's `applyEdit`, the way the real
+ * queue does, so the proposal path runs end to end.
+ *
+ * @returns The fake, with its items exposed for assertions.
+ */
+function fakeCuration() {
+    const types = new Map<string, ICurationType>();
+    const items = new Map<string, IFakeCurationItem>();
+    let next = 0;
+
+    /**
+     * Record a decision on an item and commit it through its binding.
+     *
+     * @param id - The queue item.
+     * @param status - The decision.
+     * @returns The decided item, or null when it was not pending.
+     */
+    const decide = async (id: string, status: 'approved' | 'rejected'): Promise<IFakeCurationItem | null> => {
+        const item = items.get(id);
+        let decided: IFakeCurationItem | null = null;
+        if (item && item.status === 'pending') {
+            item.status = status;
+            await types.get(item.typeId)!.applyEdit(item.ref, { status });
+            decided = item;
+        }
+        return decided;
+    };
+
+    return {
+        items,
+        types,
+        registerType: (type: ICurationType) => { types.set(type.typeId, type); },
+        unregisterType: (typeId: string) => types.delete(typeId),
+        hold: async (input: { typeId: string; ref: Record<string, unknown> }) => {
+            const item: IFakeCurationItem = { id: `item-${++next}`, typeId: input.typeId, ref: input.ref, status: 'pending' };
+            items.set(item.id, item);
+            return item;
+        },
+        approve: (id: string) => decide(id, 'approved'),
+        reject: (id: string) => decide(id, 'rejected')
     };
 }
 
@@ -169,8 +224,8 @@ describe('ContentTranslationService', () => {
 
         expect(summary[untranslated.id]).toBeUndefined();
         expect(summary[translated.id]).toEqual([
-            { language: 'es', published: false, stale: false, deleted: false },
-            { language: 'zh', published: true, stale: true, deleted: false }
+            { language: 'es', published: false, stale: false, deleted: false, saved: true, proposalPending: false },
+            { language: 'zh', published: true, stale: true, deleted: false, saved: true, proposalPending: false }
         ]);
     });
 
@@ -197,5 +252,139 @@ describe('ContentTranslationService', () => {
 
         await service.translations().saveTranslation('test:note', note.id, 'zh', { values: { text: '你好' }, published: false }, curator);
         expect(onChanged).toHaveBeenCalledWith(note.id, 'zh');
+    });
+});
+
+describe('ContentTranslationService proposals', () => {
+    /** The non-curator an AI tool proposes as. */
+    const agent: IContentActor = { id: 'user-member', kind: 'user', isCurator: false };
+
+    let database: ReturnType<typeof createMockDatabaseService>;
+    let service: ContentService;
+    let curation: ReturnType<typeof fakeCuration>;
+
+    beforeEach(() => {
+        ContentService.resetForTests();
+        database = createMockDatabaseService();
+        const registry = createMockServiceRegistry();
+        curation = fakeCuration();
+        registry.register('curation', curation);
+        registry.register('localization', { getLanguage: async (code: string) => ({ code, enabled: code === 'zh' }) });
+        ContentService.setDependencies(database, new HookRegistry(silentLogger), registry, silentLogger);
+        service = ContentService.getInstance();
+        service.registerType(noteType(database), 'test');
+    });
+
+    /**
+     * Create a note and read the English fingerprint a proposer must send.
+     *
+     * @param text - The note's English text.
+     * @returns The note's id and its source fingerprint.
+     */
+    async function noteWithHash(text: string): Promise<{ id: string; sourceHash: string }> {
+        const note = await service.create<INote>('test:note', { text, paths: ['/n'] }, curator);
+        const context = await service.translations().getTranslationContext('test:note', note.id, 'zh');
+        return { id: note.id, sourceHash: context!.sourceHash };
+    }
+
+    it('holds a proposal for review and keeps serving the published translation until it is approved', async () => {
+        const { id, sourceHash } = await noteWithHash('Rent energy for 30 TRX');
+        await service.translations().saveTranslation('test:note', id, 'zh', { values: { text: '租用能量 30 TRX' }, published: true }, curator);
+
+        const outcome = await service.translations().proposeTranslation('test:note', id, 'zh', { values: { text: '以 30 TRX 租用能量' }, sourceHash }, agent);
+
+        expect(outcome).toMatchObject({ pendingReview: true, curationItemId: 'item-1' });
+        expect((await service.translations().readPublicTranslation<INote>('test:note', id, 'zh'))?.values.text).toBe('租用能量 30 TRX');
+        expect(curation.items.get('item-1')?.typeId).toBe('core:content-translation');
+
+        await curation.approve('item-1');
+
+        const served = await service.translations().readPublicTranslation<INote>('test:note', id, 'zh');
+        expect(served?.values.text).toBe('以 30 TRX 租用能量');
+        expect((await service.translations().getOverview('test:note', id)).proposals).toEqual([]);
+    });
+
+    it('saves an approved proposal into a new language as a draft, so only a curator publishes it', async () => {
+        const { id, sourceHash } = await noteWithHash('Hello');
+        await service.translations().proposeTranslation('test:note', id, 'zh', { values: { text: '你好' }, sourceHash }, agent);
+
+        const [status] = (await service.translations().summarizeTranslations('test:note', [id]))[id];
+        expect(status).toMatchObject({ language: 'zh', saved: false, proposalPending: true });
+
+        await curation.approve('item-1');
+
+        const [saved] = (await service.translations().getOverview('test:note', id)).translations;
+        expect(saved).toMatchObject({ language: 'zh', published: false, values: { text: '你好' } });
+    });
+
+    it('refuses a proposal translated from English that has changed since', async () => {
+        const { id, sourceHash } = await noteWithHash('Hello');
+        await service.update('test:note', id, { text: 'Hello there' }, curator);
+
+        await expect(
+            service.translations().proposeTranslation('test:note', id, 'zh', { values: { text: '你好' }, sourceHash }, agent)
+        ).rejects.toMatchObject({ code: 'source-changed' });
+        expect(curation.items.size).toBe(0);
+    });
+
+    it('refuses a proposal whose links, addresses, or numbers differ from the English', async () => {
+        const { id, sourceHash } = await noteWithHash('Send 50 TRX to TLa2f6VPqDgRE67v1736s7bJ8Ray5wYjU7');
+
+        await expect(
+            service.translations().proposeTranslation(
+                'test:note', id, 'zh',
+                { values: { text: '发送 50 TRX 到 TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf' }, sourceHash },
+                agent
+            )
+        ).rejects.toThrow(/TRON addresses/);
+        expect(curation.items.size).toBe(0);
+    });
+
+    it('refuses a proposal into a language that is not enabled', async () => {
+        const { id, sourceHash } = await noteWithHash('Hello');
+
+        await expect(
+            service.translations().proposeTranslation('test:note', id, 'vi', { values: { text: 'Xin chào' }, sourceHash }, agent)
+        ).rejects.toThrow(/not an enabled language/);
+    });
+
+    it('replaces an older proposal, so approving the older queue item changes nothing', async () => {
+        const { id, sourceHash } = await noteWithHash('Hello');
+        await service.translations().proposeTranslation('test:note', id, 'zh', { values: { text: '你好一' }, sourceHash }, agent);
+        await service.translations().proposeTranslation('test:note', id, 'zh', { values: { text: '你好二' }, sourceHash }, agent);
+
+        expect(curation.items.get('item-1')?.status).toBe('rejected');
+        await curation.approve('item-2');
+
+        const [saved] = (await service.translations().getOverview('test:note', id)).translations;
+        expect(saved.values.text).toBe('你好二');
+    });
+
+    it('closes an open proposal when a curator saves the translation directly', async () => {
+        const { id, sourceHash } = await noteWithHash('Hello');
+        await service.translations().proposeTranslation('test:note', id, 'zh', { values: { text: '你好' }, sourceHash }, agent);
+
+        await service.translations().saveTranslation('test:note', id, 'zh', { values: { text: '您好' }, published: true }, curator);
+
+        expect(curation.items.get('item-1')?.status).toBe('rejected');
+        expect((await service.translations().getOverview('test:note', id)).proposals).toEqual([]);
+        expect((await service.translations().readPublicTranslation<INote>('test:note', id, 'zh'))?.values.text).toBe('您好');
+    });
+
+    it('refuses a proposal for a type that accepts none', async () => {
+        ContentService.resetForTests();
+        const registry = createMockServiceRegistry();
+        registry.register('curation', curation);
+        registry.register('localization', { getLanguage: async (code: string) => ({ code, enabled: true }) });
+        ContentService.setDependencies(database, new HookRegistry(silentLogger), registry, silentLogger);
+        service = ContentService.getInstance();
+        const type = noteType(database);
+        delete (type.translation as { proposals?: unknown }).proposals;
+        service.registerType(type, 'test');
+        const { id, sourceHash } = await noteWithHash('Hello');
+
+        await expect(
+            service.translations().proposeTranslation('test:note', id, 'zh', { values: { text: '你好' }, sourceHash }, agent)
+        ).rejects.toMatchObject({ code: 'forbidden' });
     });
 });

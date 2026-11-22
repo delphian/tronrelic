@@ -7,7 +7,8 @@
  * translated addresses for the localization snapshot. This class supplies only
  * what core cannot know about pages: which fields a translation carries, how
  * to read the English values out of a page, where a page is served, and how to
- * drop a page's render caches. The translated text is kept in the module's own
+ * drop a page's render caches. The translated text, and any proposed text
+ * waiting for review, is kept in the module's own
  * `module_pages_translation_values` collection through the store core hands
  * out.
  *
@@ -20,10 +21,12 @@ import type {
     ISystemLogService,
     ITranslatableContentType,
     ITranslatableField,
+    ITranslationProposals,
     ITranslationValueRecord,
     ITranslationValueStore,
     TranslationValues
 } from '@/types';
+import { createValueStoreProposals } from '@/types';
 import type { MarkdownService } from './markdown.service.js';
 
 /**
@@ -72,6 +75,14 @@ export class PageTranslatable implements ITranslatableContentType<IPageContent> 
     readonly translatableFields = PAGE_TRANSLATABLE_FIELDS;
 
     /**
+     * Lets page translations be proposed by a non-curator, such as an AI
+     * agent, and held for review. Proposals wait beside the served text in
+     * the same values collection. Pages add no rule of their own to the
+     * values, so there is nothing to validate beyond core's checks.
+     */
+    readonly proposals: ITranslationProposals;
+
+    /**
      * @param store - The store core handed out for the module's translation
      *   values collection.
      * @param markdown - Strips the frontmatter from a page body and owns the
@@ -84,7 +95,9 @@ export class PageTranslatable implements ITranslatableContentType<IPageContent> 
         private readonly markdown: MarkdownService,
         private readonly slugsForPage: PageSlugLookup,
         private readonly logger: ISystemLogService
-    ) {}
+    ) {
+        this.proposals = createValueStoreProposals(store);
+    }
 
     /**
      * Read the English values a translator works from. The body is the

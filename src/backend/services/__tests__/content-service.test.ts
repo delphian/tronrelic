@@ -730,7 +730,11 @@ describe('ContentService', () => {
         it('answers the queue through the generated curation binding', async () => {
             const item = await service.create<IFakeContent>('test:item', { title: 'Live', note: 'n' }, curator);
             await service.update('test:item', item.id, { title: 'Proposed' }, automated);
-            const binding = curation.registerType.mock.calls[0][0] as { describeChanges: (ref: Record<string, unknown>) => Promise<unknown> };
+            // Core also registers its own translation-proposal binding, so
+            // pick the item type's binding by id rather than by position.
+            const binding = curation.registerType.mock.calls
+                .map((call: unknown[]) => call[0] as { typeId: string; describeChanges: (ref: Record<string, unknown>) => Promise<unknown> })
+                .find((registered: { typeId: string }) => registered.typeId === 'test:item')!;
 
             const changeSet = await binding.describeChanges({ id: item.id, holdId: 'any' });
 

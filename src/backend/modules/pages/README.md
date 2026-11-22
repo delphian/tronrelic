@@ -131,7 +131,7 @@ Admin REST API at `/api/admin/pages` (gated by `requireAdmin`):
 - `GET /settings` — page settings: the route blacklist
 - `PATCH /settings` — update settings
 
-Write failures from the core content service map to statuses by their `code` through `sendContentWriteError` in `src/backend/services/content-http.ts`: `not-found` 404, `deleted`/`not-deleted` 409, `vetoed` 403, `forbidden` 403, `curation-unavailable` 503, `superseded` 409; a page validation error is 400.
+Write failures from the core content service map to statuses by their `code` through `sendContentWriteError` in `src/backend/services/content-http.ts`: `not-found` 404, `deleted`/`not-deleted` 409, `vetoed` 403, `forbidden` 403, `curation-unavailable` 503, `superseded` 409, `source-changed` 409; a page validation error is 400.
 
 Public API at `/api/pages`:
 
@@ -192,7 +192,7 @@ Capability: the same `PAGE_EDIT_CAPABILITY` as `pages-propose-edit`, so it is sa
 
 Returns `{ success, pageId, slug, pendingReview }`, where `slug` is the normalized address. Whether the slug is free, not reserved by another page's redirect history, and not blacklisted is checked by `PageContentType` during the create. Those checks, like every title and slug rule the content type applies, throw `PageInputError`, so the tool returns them as `errorKind: 'input'` and the model can pick another slug. The admin controller still answers them with 400, as it does for any refusal that is not a content service error.
 
-Blog posts are not pages. The `trp-blog` plugin has its own `list-blog-posts`, `search-blog-posts`, and `get-blog-post` tools. Every page tool's description carries the same routing rule, `PAGES_VERSUS_BLOG_GUIDANCE` in `ai-tools.ts`: a page is standing reference content kept current at a fixed address, and dated writing about something that happened belongs in a blog post. The blog tools carry the matching rule from their side. The rule refers to the blog tools without naming them, because the blog is a plugin that can be disabled. The tools return English pages only; translations are not exposed to them.
+Blog posts are not pages. The `trp-blog` plugin has its own `list-blog-posts`, `search-blog-posts`, and `get-blog-post` tools. Every page tool's description carries the same routing rule, `PAGES_VERSUS_BLOG_GUIDANCE` in `ai-tools.ts`: a page is standing reference content kept current at a fixed address, and dated writing about something that happened belongs in a blog post. The blog tools carry the matching rule from their side. The rule refers to the blog tools without naming them, because the blog is a plugin that can be disabled. These tools return English pages only. Translations are read and proposed through the core content service's tools, `content-get-translation` and `content-propose-translation`, with `typeId` `core:page`; see [Translations](#translations).
 
 ## Translations
 
@@ -208,7 +208,8 @@ The core content service runs the translation workflow for every translatable ty
 | Public paths | The page's slug and old slugs, while its served version is `published`. An old slug containing anything but `a-z`, `0-9`, `-`, and `/` is left out |
 | Translated text | `module_pages_translation_values`, through the store core hands out; unique on `(contentId, language)`, where `contentId` is the page's id |
 | Admin UI | `/system/pages` → a page's **Translations** button opens the core `ContentTranslations` editor, with the page editor's preview endpoint as its Markdown preview. Each row in the page list shows the core `TranslationStatusBadges` row: one badge per live translation, green when published, amber when the English changed, neutral for a draft |
-| Who may write | A signed-in admin. The `ADMIN_API_TOKEN` service token is refused with 403, because translations are not reviewed |
+| Who may write | A signed-in admin, live at once. The `ADMIN_API_TOKEN` service token is refused with 403, because a direct save is not reviewed |
+| Proposals | `PageTranslatable.proposals`, built with `createValueStoreProposals(store)`, so a non-curator such as the `content-propose-translation` AI tool can propose a page translation that waits in `/system/curation`. Pages add no value rule of their own. See [system-content.md](../../../../docs/system/system-content.md#proposed-translations) |
 | Served when | The page is served at that slug, the translation is published and not deleted, and the language is enabled |
 
 **No English fallback.** A translated request for a page with no published translation into that language is a 404, never the English body. The same applies when an administrator publishes a route pattern covering a CMS page on the localization Routes tab: requests in that language 404 until the page has a translation.
@@ -258,14 +259,16 @@ interface ITranslationValueDocument {   // From src/backend/services/content-tra
     _id: ObjectId;
     contentId: string;                  // Core content id of the page
     language: string;                   // Language code, never 'en'
-    values: {
+    values?: {                          // Absent while only a proposal exists
         title: string;
         description: string;
         keywords: string[];
         body: string;                   // Markdown without frontmatter
         ogImage: string;                // Empty: the English page's image
     };
-    updatedAt: Date;
+    updatedAt?: Date;
+    proposedValues?: { /* same shape */ };  // A proposed translation waiting for review
+    proposedAt?: Date;
 }
 ```
 

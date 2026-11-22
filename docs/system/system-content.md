@@ -111,6 +111,8 @@ Any managed type can be translated, and core runs the workflow for all of them, 
 
 Core keeps each translation's state in its own `content_translations` collection: the item and language, `published`, `sourceHash` (a fingerprint of the English text it was saved against), who changed it and when, and soft deletion. It stores no translated text. The content type keeps the translated values in a collection of its own, usually through the store `IContentService.translations().createValueStore(database, collectionName)` hands out, which is bound to the type's own database so a plugin's collection is prefixed like the rest of its storage. Core never writes into that collection; the type's `writeTranslation` and `readTranslations` call the store.
 
+A proposed translation follows the same split. Its text waits in the type's own collection, on the same document as the served text (`proposedValues` beside `values`), the way an English edit waits beside the approved version. Its review state lives in core's `content_translation_proposals` collection: the item, language, `holdId`, open queue item, the English fingerprint it was translated from, and who proposed it.
+
 ### What the content type supplies
 
 | Member | Purpose |
@@ -120,16 +122,40 @@ Core keeps each translation's state in its own `content_translations` collection
 | `listPublicPaths(item)` | The exact paths an item is served at, or an empty list when the type's own rules hide it. Core drops any path containing `:` or `*`, which the localization snapshot would read as a route pattern |
 | `readTranslations`, `writeTranslation` | Load and store translated values, normally by calling the store |
 | `onTranslationChanged(id, language)` | Drop anything the type caches for the translated address, such as a rendered page. Must not throw for a cache failure |
+| `proposals` (optional) | An `ITranslationProposals`: `validate` (the type's own value rules, run when a proposal is made), and `read`, `write`, `clear` for the held text. A type using the core store builds it with `createValueStoreProposals(store, validate)` from `@/types`; a plugin, which may only import types, binds the store's `readProposed`, `writeProposed`, and `clearProposed` itself. Without it, every proposal for the type is refused with `forbidden` |
 
 ### What core does
 
-Translations are not reviewed. Only a curator may save, delete, or restore one, and the change is live at once; anyone else is refused with `forbidden`. A save validates the values against the field list, runs `content.beforeUpdate` with `language` set and the `IContentTranslationWrite` as `input`, stores the values through the type, and records the English fingerprint, which clears the stale flag. Deleting and restoring run `content.beforeDelete` and `content.beforeRestore`. Every change calls the type's `onTranslationChanged` and asks the localization snapshot to rebuild.
+A curator's change is not reviewed. Only a curator may save, delete, or restore a translation, and the change is live at once; anyone else calling those methods is refused with `forbidden`. Anyone else may propose one instead; see [Proposed translations](#proposed-translations). A save validates the values against the field list, runs `content.beforeUpdate` with `language` set and the `IContentTranslationWrite` as `input`, stores the values through the type, and records the English fingerprint, which clears the stale flag. Deleting and restoring run `content.beforeDelete` and `content.beforeRestore`. Every change calls the type's `onTranslationChanged` and asks the localization snapshot to rebuild.
 
 The English text translators work from is the version visitors are served, or the latest edit when nothing is served yet. An English edit waiting for review is never shown to translators, because a curator may reject it; the editor is told a `pendingEdit` exists instead. A translation is `stale` when the English fingerprint has changed since it was saved. A stale translation is still served.
 
 `readPublicTranslation(typeId, id, language)` returns the item at its served version with the translated values, or null when either is not served. `listPublishedTranslationIds(typeId, language)` returns the ids of items with a published, live translation into a language, so a translated index page, such as a blog's `/zh/blog`, can list, page, and search just those in the type's own storage. The type applies its own visibility rule, such as a page's `published` flag, and lays the values over the item itself. `listLocalizedRoutes()` collects every published, live translation's paths across all translatable types; bootstrap hands it to the localization module as `listContentRoutes`.
 
 The Suggest request sends the English values of every non-`url` field to the AI provider chosen in the content translation settings, as JSON data the prompt tells the model not to follow, with no tools and no `{%variable%}` expansion. A stale existing translation goes along so the model updates it. The output budget is sized to the English text and the target language: one token per English character, and more for a script that tokenizes poorly, such as Vietnamese or the Indic scripts. It is capped at the chosen model's own output limit as the provider reports it, or at 16,000 tokens when the provider's default model is in use, because its limit cannot be read. The request timeout grows with that budget, up to ten minutes. A failed run's log entry records the budget and where its ceiling came from, together with the stop reason, token usage, and the length of the visible reply. The result is never saved; `url` fields carry over from the existing translation. One settings document serves every type and is edited on the System → Localization Settings tab, next to the separate settings for interface text. The target language's own translation prompt, edited on the Localization Languages tab, is added after the shared system prompt, so a language's glossary applies to content and interface text alike.
+
+### Proposed translations
+
+`proposeTranslation(typeId, id, language, { values, sourceHash, source }, actor)` holds a new or corrected translation for curator review, so a caller who is not a curator, such as the `content-propose-translation` AI tool, can change a translated version without anything going live unreviewed. `getTranslationContext(typeId, id, language)` returns what such a caller works from: the served English, its fingerprint, the served translation if any, and whether a proposal is already waiting. It holds only what a visitor can read.
+
+A proposal is refused, before anything is stored, when:
+
+| Refusal | Why |
+|---|---|
+| The type sets no `proposals` | `forbidden`; the type has not opted in |
+| The language is not enabled | Approved drafts would pile up unseen and all go live the day it is switched on |
+| The item is not served to visitors | `not-found`; a proposal translates only English that visitors read |
+| `sourceHash` differs from the served English | `source-changed`; a translation of older text would be recorded as current |
+| The translation is soft-deleted | `deleted`; a curator restores it first |
+| A value breaks the field list or the type's `validate` | Checked now, so it cannot fail after a curator approves it |
+| A link, TRON address, or number differs from the English | A curator may not read the language well enough to see a swapped address or affiliate link. Links and addresses must match exactly; every English number must appear, separators ignored; only a one- or two-digit number may be added, for translated dates. See `findTranslationMismatches.ts` |
+| A `content.beforeUpdate` handler aborts | `vetoed`. The hook runs at proposal time with `language` set, and not again at approval |
+
+`url` fields are not proposable: the saved translation's values carry over. The proposal is held under its own curation type, `core:content-translation`, registered by core with the provider id `core`. It cannot use the binding generated for the item's type, because that binding keeps one hold per item on the item's row, approves by promoting the English working version, and inherits `publishesToSinks`, which would post an approved blog translation to X or Telegram again. The translation binding never publishes to sinks. Each proposal gets a fresh `holdId`, and at most one is open per item and language: a newer proposal replaces the text and rejects the older queue item as `system:translation-superseded`, so the text a curator approves is always the text the queue showed.
+
+Approval writes the proposed text through the type's `writeTranslation`, records the proposal's English fingerprint, and keeps the translation's `published` state. A language with no saved translation is saved as a draft, so only a curator can publish an item in a language for the first time, which is what adds its translated address, `hreflang` links, and sitemap entries. Approval is refused with `deleted` or `source-changed` when the item or translation was deleted, or the English changed, after the proposal was made; the queue has recorded the decision by then, so the proposal is dropped. A rejection drops it too. A curator's direct save or delete of the same translation drops an open proposal and rejects its queue item in the curator's name. An approval fires `content.published` with `typeId` `core:content-translation`, because a translation going live is a publication; a subscriber that should not react to translations filters on it.
+
+The queue shows the proposed text of the Markdown field as the body, the other fields, the English title, and who proposed it as details, and compares the proposal with the translation visitors read now. A language with no served translation gets the `none` baseline.
 
 ### Admin routes and editor
 
@@ -143,7 +169,7 @@ The Suggest request sends the English values of every non-`url` field to the AI 
 | POST | `/:typeId/:id/translations/:language/suggest` | `IContentTranslationSuggestion`; saves nothing. 503 with no AI provider, 502 for an unusable answer. 20 a minute |
 | GET, PATCH | `/translation-settings` | `{ settings }` (`IContentTranslationSettings`) |
 
-The editor is `ContentTranslations` from `src/frontend/modules/content`: one input per declared field with the English value beside it. A type's admin page mounts it for one item and may pass `renderPreview` for its Markdown field. The type's admin list shows `TranslationStatusBadges` beside each item, fed by `getTranslationStatuses`, so how much is translated is visible where the content is managed rather than on the localization page. `/system/pages` is the reference for both.
+The editor is `ContentTranslations` from `src/frontend/modules/content`: one input per declared field with the English value beside it. A type's admin page mounts it for one item and may pass `renderPreview` for its Markdown field. A language with a proposal waiting shows a "Proposal waiting" badge and a link to the curation queue, and its editor warns that saving replaces the proposal and offers **Use proposed text** to start from it. The overview carries the open proposals as `proposals`. The type's admin list shows `TranslationStatusBadges` beside each item, fed by `getTranslationStatuses`, so how much is translated is visible where the content is managed rather than on the localization page. Each status carries `saved` (false for a language with only a proposal, shown blue) and `proposalPending` (an inbox icon). `/system/pages` is the reference for both.
 
 ## Errors
 
@@ -159,6 +185,7 @@ The service throws an Error carrying a `code` from `ContentErrorCode`, so a call
 | `curation-unavailable` | The change needs review and curation is not running | 503 |
 | `superseded` | A curator approved a queue item that no longer holds the current edit | 409 |
 | `forbidden` | The actor may not perform the operation, such as a non-curator importing an approved item | 403 |
+| `source-changed` | A proposed translation was written against English text that has changed since | 409 |
 
 An error the author throws (a validation failure such as a slug conflict) passes through unchanged.
 
@@ -175,7 +202,8 @@ An error the author throws (a validation failure such as a slug conflict) passes
 | Actor for admin routes | `actorFromAdminRequest(req)` (`src/backend/services/content-actor.ts`): a signed-in admin is a curator; the service token is `system:service-token` and is not |
 | Hooks | `content.beforeCreate` / `beforeUpdate` / `beforeDelete` / `beforeRestore` (series); translation writes set `language` |
 | Translations | `IContentService.translations()` → `IContentTranslationService`; state in `content_translations`, values in the type's own collection; settings in `content_translation_settings`; admin routes at `/api/admin/content` |
-| Types | `@delphian/tronrelic-types` → `IContent`, `IManagedContentType`, `IContentService`, `IContentActor`, `IContentPayloadRecord`, `ContentCurationState`, `ContentVersion`, `ContentErrorCode`, `ITranslatableContentType`, `ITranslatableField`, `IContentTranslationService`, `IContentChangeSet`, `ContentFieldChange` |
+| Proposed translations | `proposeTranslation`, `getTranslationContext`; review state in `content_translation_proposals`; curation type `core:content-translation` (`content-translation-curation.ts`); AI tools `content-get-translation` and `content-propose-translation` (`content-ai-tools.ts`), registered at bootstrap under provider id `content` |
+| Types | `@delphian/tronrelic-types` → `IContent`, `IManagedContentType`, `IContentService`, `IContentActor`, `IContentPayloadRecord`, `ContentCurationState`, `ContentVersion`, `ContentErrorCode`, `ITranslatableContentType`, `ITranslatableField`, `IContentTranslationService`, `ITranslationProposals`, `IContentTranslationProposal`, `IContentTranslationContext`, `createValueStoreProposals`, `IContentChangeSet`, `ContentFieldChange` |
 | Managed types today | `core:page` (Pages module), translatable; `blog:post` (`trp-blog` plugin), translatable and publishes to sinks; `relics:relic` (`trp-relics` plugin), publishes to sinks |
 
 ## Adopting an Existing Type

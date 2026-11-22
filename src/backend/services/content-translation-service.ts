@@ -15,28 +15,41 @@
  * `ITranslatableContentType` methods. Core never writes the type's collection
  * and never stores the type's text.
  *
- * Translations are not reviewed. Only a curator may change one, and the change
- * is live at once. Every write runs the `content.before*` veto hooks with
- * `language` set, so a rule over all content covers translations too.
+ * A curator's save is not reviewed: it is live at once. Anyone else may only
+ * propose a translation, which is held in the curation queue under the
+ * `core:content-translation` binding until a curator approves it. Core keeps
+ * each proposal's review state in `content_translation_proposals`, and the
+ * proposed text waits beside the served text in the type's own collection.
+ * Every write runs the `content.before*` veto hooks with `language` set, so a
+ * rule over all content covers translations too.
  *
  * @see ../../../docs/system/system-content.md — the translations section.
  * @module backend/services/content-translation-service
  */
 
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type {
+    ContentCurationState,
     HookDescriptor,
     IContent,
     IContentActor,
+    IContentChangeSet,
+    IContentDescriptor,
     IContentService,
     IContentTranslation,
+    IContentTranslationContext,
     IContentTranslationOverview,
+    IContentTranslationProposal,
+    IContentTranslationProposalInput,
+    IContentTranslationProposalOutcome,
     IContentTranslationService,
     IContentTranslationSettings,
     IContentTranslationStatus,
     IContentTranslationSuggestion,
     IContentTranslationWrite,
     IContentWriteContext,
+    ICurationItem,
+    ICurationService,
     IDatabaseService,
     IHookRegistry,
     IManagedContentType,
@@ -45,26 +58,50 @@ import type {
     ISystemLogService,
     ITranslatableContentType,
     ITranslatableField,
+    ITranslationProposals,
     ITranslationValueRecord,
     ITranslationValueStore,
     TranslationValues
 } from '@/types';
 import { DEFAULT_LANGUAGE, LANGUAGE_CODE_PATTERN, MAX_TRANSLATION_STATUS_IDS } from '@/types';
 import { HOOKS } from '../hooks/registry.js';
+import { buildContentChangeSet } from './buildContentChangeSet.js';
 import { ContentError } from './content-error.js';
 import { runContentVeto } from './content-veto.js';
 import { ContentTranslationStore } from './content-translation-store.js';
 import type { ContentTranslationSettingsService } from './content-translation-settings.js';
 import type { ContentTranslationSuggestionService } from './content-translation-suggestion.js';
+import { CONTENT_TRANSLATION_CURATION_TYPE_ID } from './content-translation-curation.js';
+import { ContentTranslationInputError } from './content-translation-errors.js';
+import { findTranslationMismatches } from './findTranslationMismatches.js';
 
 /** Core collection holding the state of every translation. */
 export const CONTENT_TRANSLATIONS_COLLECTION = 'content_translations';
+
+/** Core collection holding the review state of every proposed translation. */
+export const CONTENT_TRANSLATION_PROPOSALS_COLLECTION = 'content_translation_proposals';
+
+/**
+ * Decider recorded when a newer proposal replaces an older one and the older
+ * one's queue item is closed, so History separates it from a curator's reject.
+ */
+const SUPERSEDED_DECIDER = 'system:translation-superseded';
 
 /**
  * Characters that make a path a route pattern in the localization snapshot.
  * A path holding one of them would cover addresses the item is not served at.
  */
 const ROUTE_PATTERN_CHARACTERS = /[:*\s]/;
+
+/**
+ * Read one translated value as display text, joining a list with commas, so
+ * the curation preview can show any field kind as a line of text.
+ */
+function fieldText(values: TranslationValues, name: string): string {
+    const value = values[name];
+
+    return Array.isArray(value) ? value.join(', ') : (value ?? '');
+}
 
 /** A registered managed type together with its translation side. */
 interface ITranslatableEntry {
@@ -101,6 +138,34 @@ export interface IContentTranslationStateDocument {
     deletedBy?: string;
 }
 
+/**
+ * The review state core keeps for one proposed translation. The proposed text
+ * is not here; the content type holds it beside the served text.
+ */
+export interface IContentTranslationProposalDocument {
+    /** Core content id of the translated item. */
+    contentId: string;
+    /** The managed content type of the item. */
+    typeId: string;
+    /** Language code of the proposal. */
+    language: string;
+    /**
+     * The current hold. Copied into the queue item's ref, so only the queue
+     * item opened for this proposal can decide it.
+     */
+    holdId: string;
+    /** The open curation queue item, once the hold recorded one. */
+    curationItemId?: string;
+    /** Fingerprint of the English text the proposal translates. */
+    sourceHash: string;
+    /** Who proposed it. */
+    proposedBy: string;
+    /** What produced it, such as an AI tool name. */
+    source?: string;
+    /** When it was proposed. */
+    proposedAt: Date;
+}
+
 /** Collaborators the translation service needs, wired by the content service. */
 export interface IContentTranslationServiceDependencies {
     /** Core database holding `content_translations`. */
@@ -117,6 +182,17 @@ export interface IContentTranslationServiceDependencies {
     suggestions: Pick<ContentTranslationSuggestionService, 'suggest'>;
     /** Reads and writes the AI settings. */
     settings: Pick<ContentTranslationSettingsService, 'getSettings' | 'updateSettings'>;
+    /**
+     * Resolves the curation queue proposals are held in, per call, because
+     * curation starts after this service is built.
+     */
+    getCuration: () => ICurationService | undefined;
+    /**
+     * Whether visitors can reach a language. Proposals are refused for a
+     * language that is not enabled, so approved drafts do not pile up unseen
+     * and all go live the day it is switched on.
+     */
+    isLanguageEnabled: (code: string) => Promise<boolean>;
     /**
      * Called after a change that can alter which addresses are served in which
      * language, so the localization snapshot is rebuilt.
@@ -145,6 +221,7 @@ export class ContentTranslationService implements IContentTranslationService {
         await this.deps.database.createIndex(CONTENT_TRANSLATIONS_COLLECTION, { contentId: 1, language: 1 }, { unique: true });
         await this.deps.database.createIndex(CONTENT_TRANSLATIONS_COLLECTION, { typeId: 1, published: 1, deletedAt: 1 });
         await this.deps.database.createIndex(CONTENT_TRANSLATIONS_COLLECTION, { typeId: 1, language: 1, published: 1 });
+        await this.deps.database.createIndex(CONTENT_TRANSLATION_PROPOSALS_COLLECTION, { contentId: 1, language: 1 }, { unique: true });
 
         return;
     }
@@ -182,7 +259,8 @@ export class ContentTranslationService implements IContentTranslationService {
                 values: english,
                 pendingEdit: latest.curation === 'pending' && latestHash !== englishHash
             },
-            translations: states.map((state) => this.toTranslation(state, records, englishHash))
+            translations: states.map((state) => this.toTranslation(state, records, englishHash)),
+            proposals: await this.listProposals(entry, id, englishHash)
         };
     }
 
@@ -206,19 +284,44 @@ export class ContentTranslationService implements IContentTranslationService {
         const states = wanted.length > 0
             ? await this.collection().find({ contentId: { $in: wanted } }).sort({ language: 1 }).toArray()
             : [];
+        const proposals = wanted.length > 0
+            ? await this.proposalCollection().find({ contentId: { $in: wanted } }, { projection: { contentId: 1, language: 1 } }).toArray()
+            : [];
+        const proposed = new Set(proposals.map((proposal) => `${proposal.contentId}\u0000${proposal.language}`));
         const translatedIds = Array.from(new Set(states.map((state) => state.contentId)));
         const englishHashes = await this.englishHashes(entry, translatedIds);
 
         const summary: Record<string, IContentTranslationStatus[]> = {};
+        const saved = new Set<string>();
         for (const state of states) {
+            const key = `${state.contentId}\u0000${state.language}`;
+            saved.add(key);
             const statuses = summary[state.contentId] ?? [];
             statuses.push({
                 language: state.language,
                 published: state.published,
                 stale: state.sourceHash !== englishHashes.get(state.contentId),
-                deleted: Boolean(state.deletedAt)
+                deleted: Boolean(state.deletedAt),
+                saved: true,
+                proposalPending: proposed.has(key)
             });
             summary[state.contentId] = statuses;
+        }
+        // A proposal into a language with no saved translation still belongs
+        // in the list, so an operator sees there is something to review.
+        for (const proposal of proposals) {
+            if (!saved.has(`${proposal.contentId}\u0000${proposal.language}`)) {
+                const statuses = summary[proposal.contentId] ?? [];
+                statuses.push({
+                    language: proposal.language,
+                    published: false,
+                    stale: false,
+                    deleted: false,
+                    saved: false,
+                    proposalPending: true
+                });
+                summary[proposal.contentId] = statuses.sort((a, b) => a.language.localeCompare(b.language));
+            }
         }
 
         return summary;
@@ -227,7 +330,8 @@ export class ContentTranslationService implements IContentTranslationService {
     /**
      * Create or replace a translation. The values are checked against the
      * type's field list before the veto hooks run, so a hook sees exactly what
-     * will be stored.
+     * will be stored. A proposal waiting for review in the same language is
+     * closed, because the curator's save replaces what it proposed.
      *
      * @param typeId - The managed content type.
      * @param id - Core content id of the item.
@@ -266,6 +370,7 @@ export class ContentTranslationService implements IContentTranslationService {
             },
             { upsert: true }
         );
+        await this.supersedeProposal(entry, id, language, actor);
         await this.notifyChanged(entry, id, language);
         this.deps.logger.info({ typeId, id, language, actor: actor.id, published: write.published }, 'Content translation saved');
 
@@ -273,7 +378,9 @@ export class ContentTranslationService implements IContentTranslationService {
     }
 
     /**
-     * Soft-delete a translation. The stored values stay for a restore.
+     * Soft-delete a translation. The stored values stay for a restore. A
+     * proposal waiting for review in the same language is closed, so it
+     * cannot bring the deleted translation back when approved.
      *
      * @param typeId - The managed content type.
      * @param id - Core content id of the item.
@@ -294,6 +401,7 @@ export class ContentTranslationService implements IContentTranslationService {
             { contentId: id, language },
             { $set: { deletedAt: now, deletedBy: actor.id, updatedAt: now, updatedBy: actor.id } }
         );
+        await this.supersedeProposal(entry, id, language, actor);
         await this.notifyChanged(entry, id, language);
         this.deps.logger.info({ typeId, id, language, actor: actor.id }, 'Content translation soft-deleted');
 
@@ -360,6 +468,268 @@ export class ContentTranslationService implements IContentTranslationService {
             { fields, english, previous: stale ? existing : null, existing },
             actor.id
         );
+    }
+
+    // -------------------------------------------------------------- proposals
+
+    /**
+     * Hold a proposed translation for curator review. The checks run in the
+     * order that refuses a bad proposal before anything is stored: the type
+     * must accept proposals, the language must be enabled, the item must be
+     * served, the English must not have changed, and the values must pass the
+     * field list, the type's own rules, and the comparison of links, TRON
+     * addresses, and numbers with the English. Only then are the values held
+     * and a queue item opened. A proposal already open for the language is
+     * replaced, and its queue item is closed as superseded.
+     *
+     * @param typeId - The managed content type.
+     * @param id - Core content id of the item.
+     * @param language - Language code of the translation.
+     * @param input - The proposed values and the English fingerprint they follow.
+     * @param actor - Who is proposing; recorded on the proposal.
+     * @returns Whether the proposal waits for review, and its queue item.
+     */
+    async proposeTranslation(
+        typeId: string,
+        id: string,
+        language: string,
+        input: IContentTranslationProposalInput,
+        actor: IContentActor
+    ): Promise<IContentTranslationProposalOutcome> {
+        const entry = this.requireTranslatable(typeId);
+        const proposals = this.requireProposals(entry);
+        this.requireLanguage(language);
+        await this.requireEnabledLanguage(language);
+        const [served] = await this.deps.reader.readPublic(typeId, [id]);
+        if (!served) {
+            throw new ContentError('not-found', `No ${entry.type.label} with id ${id} is served to visitors, so it cannot be translated by proposal`);
+        }
+        const fields = entry.translation.translatableFields;
+        const english = entry.translation.extractTranslatable(served);
+        const englishHash = this.hashValues(fields, english);
+        if (input?.sourceHash !== englishHash) {
+            throw new ContentError('source-changed', `The English text of this ${entry.type.label} has changed since it was read; read it again and translate the current text`);
+        }
+        const state = await this.findState(id, language);
+        if (state?.deletedAt) {
+            throw new ContentError('deleted', `The "${language}" translation is deleted; a curator must restore it before it can change`);
+        }
+        const [saved] = state ? await entry.translation.readTranslations([{ id, language }]) : [];
+        const values = this.buildProposalValues(fields, input?.values, saved?.values);
+        try {
+            await proposals.validate(values);
+        } catch (error) {
+            // The contract asks a type to refuse values with a descriptive
+            // Error, so its message is what the proposer needs to fix them.
+            throw new ContentTranslationInputError(error instanceof Error ? error.message : String(error));
+        }
+        const mismatches = findTranslationMismatches(fields, english, values);
+        if (mismatches.length > 0) {
+            throw new ContentTranslationInputError(`The translation must keep every link, TRON address, and number exactly as the English has it. ${mismatches.join(' ')}`);
+        }
+        await this.runVeto(HOOKS.content.beforeUpdate, {
+            operation: 'update',
+            typeId,
+            id,
+            actor,
+            input: { values, published: state?.published === true },
+            language
+        });
+        const curation = this.requireCuration();
+
+        const previous = await this.findProposal(id, language);
+        await proposals.write(id, language, values);
+        const holdId = randomUUID();
+        const source = typeof input.source === 'string' && input.source.trim() !== '' ? input.source.trim() : undefined;
+        await this.proposalCollection().updateOne(
+            { contentId: id, language },
+            {
+                $set: { typeId, holdId, sourceHash: englishHash, proposedBy: actor.id, proposedAt: new Date(), ...(source ? { source } : {}) },
+                $unset: source ? { curationItemId: '' } : { curationItemId: '', source: '' }
+            },
+            { upsert: true }
+        );
+        if (previous?.curationItemId) {
+            await this.closeQueueItem(curation, previous.curationItemId, SUPERSEDED_DECIDER);
+        }
+
+        let item: ICurationItem;
+        try {
+            item = await curation.hold({
+                typeId: CONTENT_TRANSLATION_CURATION_TYPE_ID,
+                ref: { typeId, id, language, holdId },
+                source: source ?? actor.id
+            });
+        } catch (error) {
+            await this.discardProposal(entry, id, language, holdId);
+            throw error;
+        }
+        // A policy bypass may approve the item inside hold(), which has then
+        // already applied the decision and removed the proposal, so the
+        // filter below matches nothing and the outcome reports it as decided.
+        const recorded = item.status === 'pending'
+            ? (await this.proposalCollection().updateOne({ contentId: id, language, holdId }, { $set: { curationItemId: item.id } })).matchedCount > 0
+            : false;
+        this.deps.logger.info({ typeId, id, language, actor: actor.id, curationItemId: item.id, status: item.status }, 'Content translation proposed');
+
+        return {
+            typeId,
+            contentId: id,
+            language,
+            pendingReview: recorded,
+            ...(recorded ? { curationItemId: item.id } : {})
+        };
+    }
+
+    /**
+     * Read the served English and served translation a proposer works from.
+     *
+     * @param typeId - The managed content type.
+     * @param id - Core content id of the item.
+     * @param language - Language code of the translation.
+     * @returns The context, or null when the item is not served to visitors.
+     */
+    async getTranslationContext(typeId: string, id: string, language: string): Promise<IContentTranslationContext | null> {
+        const entry = this.requireTranslatable(typeId);
+        this.requireLanguage(language);
+        const [served] = await this.deps.reader.readPublic(typeId, [id]);
+        let context: IContentTranslationContext | null = null;
+        if (served) {
+            const fields = entry.translation.translatableFields;
+            const source = entry.translation.extractTranslatable(served);
+            const sourceHash = this.hashValues(fields, source);
+            const state = await this.findState(id, language);
+            const live = state && state.published && !state.deletedAt ? state : null;
+            const [record] = live ? await entry.translation.readTranslations([{ id, language }]) : [];
+            context = {
+                typeId,
+                contentId: id,
+                language,
+                fields: [...fields],
+                source,
+                sourceHash,
+                translation: live && record
+                    ? { values: record.values, stale: live.sourceHash !== sourceHash, updatedAt: live.updatedAt }
+                    : null,
+                proposalPending: (await this.findProposal(id, language)) !== null
+            };
+        }
+
+        return context;
+    }
+
+    /**
+     * Record a curator's decision on a proposed translation. Called by the
+     * `core:content-translation` curation binding when the queue commits a
+     * decision.
+     *
+     * A decision is applied only when the queue item's `holdId` matches the
+     * proposal's, so a queue item left open for an older proposal can never
+     * approve the newer text in its place. Approving a stale one throws
+     * `superseded`; rejecting one changes nothing.
+     *
+     * An approval is refused when the item or the translation was deleted
+     * since, or the English changed since the proposal was made. The queue
+     * has already recorded the decision by then, so the proposal is dropped
+     * in every refused case rather than left with no queue item to decide it.
+     *
+     * @param ref - The queue item's ref, `{ typeId, id, language, holdId }`.
+     * @param decision - The curator's decision.
+     * @throws ContentError `superseded`, `deleted`, or `source-changed` when an
+     *   approval cannot be applied.
+     */
+    async applyProposalDecision(ref: Record<string, unknown>, decision: Exclude<ContentCurationState, 'pending'>): Promise<void> {
+        const { typeId, id, language, holdId } = this.parseProposalRef(ref);
+        const entry = this.requireTranslatable(typeId);
+        const proposal = await this.findProposal(id, language);
+        if (!proposal || proposal.holdId !== holdId) {
+            this.deps.logger.warn({ typeId, id, language, decision, holdId }, 'Translation proposal decision on a superseded hold ignored');
+            if (decision === 'approved') {
+                throw new ContentError('superseded', `This review item no longer holds the current proposed "${language}" translation; nothing was changed`);
+            }
+        } else if (decision === 'approved') {
+            try {
+                await this.approveProposal(entry, proposal);
+            } catch (error) {
+                await this.discardProposal(entry, id, language, holdId);
+                throw error;
+            }
+            this.deps.logger.info({ typeId, id, language }, 'Translation proposal approved');
+        } else {
+            await this.discardProposal(entry, id, language, holdId);
+            this.deps.logger.info({ typeId, id, language }, 'Translation proposal rejected');
+        }
+
+        return;
+    }
+
+    /**
+     * Render a proposed translation for the curation queue. The body is the
+     * proposed text of the type's Markdown field, and the details name the
+     * language, the English title, who proposed it, and whether the English
+     * has changed since, so a curator can judge it without opening the editor.
+     *
+     * @param ref - The queue item's ref, `{ typeId, id, language, holdId }`.
+     * @returns A read-only descriptor.
+     */
+    async describeProposal(ref: Record<string, unknown>): Promise<IContentDescriptor> {
+        const { typeId, id, language } = this.parseProposalRef(ref);
+        const entry = this.requireTranslatable(typeId);
+        const fields = entry.translation.translatableFields;
+        const [proposed] = entry.translation.proposals ? await entry.translation.proposals.read([{ id, language }]) : [];
+        const proposal = await this.findProposal(id, language);
+        const [served] = await this.deps.reader.readPublic(typeId, [id]);
+        const english = served ? entry.translation.extractTranslatable(served) : {};
+        const values = proposed?.values ?? {};
+        const markdownField = fields.find((field) => field.kind === 'markdown') ?? fields.find((field) => field.kind === 'multiline');
+        const englishTitle = fieldText(english, 'title');
+        const details = [
+            { label: 'Language', value: language },
+            { label: 'Content type', value: entry.type.label },
+            { label: 'English title', value: englishTitle || id },
+            ...(proposal ? [{ label: 'Proposed by', value: proposal.proposedBy }] : []),
+            ...(proposal?.source ? [{ label: 'Source', value: proposal.source }] : []),
+            ...(proposal && served && proposal.sourceHash !== this.hashValues(fields, english)
+                ? [{ label: 'Warning', value: 'The English changed after this was proposed; approving it will be refused.' }]
+                : [])
+        ];
+        for (const field of fields) {
+            if (field.kind !== 'url' && field.name !== markdownField?.name && fieldText(values, field.name) !== '') {
+                details.push({ label: field.label, value: fieldText(values, field.name) });
+            }
+        }
+
+        return {
+            title: `${entry.type.label} translation (${language}): ${fieldText(values, 'title') || englishTitle || id}`,
+            summary: `A proposed ${language} translation of "${englishTitle || id}". Approving it ${(await this.findState(id, language))?.published ? 'replaces the translation visitors read' : 'saves it as a draft that a curator publishes from the translation editor'}.`,
+            ...(markdownField ? { body: fieldText(values, markdownField.name) } : {}),
+            details,
+            editable: false
+        };
+    }
+
+    /**
+     * Compare a proposed translation with the translation visitors are served
+     * in that language, over every field a translator writes. A language with
+     * no served translation has nothing to compare against and gets the
+     * `none` baseline, and the curator reads the proposal in full instead.
+     *
+     * @param ref - The queue item's ref, `{ typeId, id, language, holdId }`.
+     * @returns The change set.
+     */
+    async describeProposalChanges(ref: Record<string, unknown>): Promise<IContentChangeSet> {
+        const { typeId, id, language } = this.parseProposalRef(ref);
+        const entry = this.requireTranslatable(typeId);
+        const fields = entry.translation.translatableFields
+            .filter((field) => field.kind !== 'url')
+            .map((field) => ({ name: field.name, label: field.label }));
+        const [proposed] = entry.translation.proposals ? await entry.translation.proposals.read([{ id, language }]) : [];
+        const state = await this.findState(id, language);
+        const [saved] = state?.published && !state.deletedAt ? await entry.translation.readTranslations([{ id, language }]) : [];
+
+        return proposed && saved
+            ? buildContentChangeSet(fields, saved.values, proposed.values)
+            : { baseline: 'none', changes: [], unchangedFields: [] };
     }
 
     // ----------------------------------------------------------------- public
@@ -503,6 +873,242 @@ export class ContentTranslationService implements IContentTranslationService {
         return this.deps.database.getCollection<IContentTranslationStateDocument>(CONTENT_TRANSLATIONS_COLLECTION);
     }
 
+    /** The typed handle on the `content_translation_proposals` review-state collection. */
+    private proposalCollection() {
+        return this.deps.database.getCollection<IContentTranslationProposalDocument>(CONTENT_TRANSLATION_PROPOSALS_COLLECTION);
+    }
+
+    /**
+     * Resolve a type's proposal storage.
+     *
+     * @param entry - The translatable type.
+     * @returns The type's proposal storage.
+     * @throws ContentError `forbidden` when the type accepts no proposals.
+     */
+    private requireProposals(entry: ITranslatableEntry): ITranslationProposals {
+        const proposals = entry.translation.proposals;
+        if (!proposals) {
+            throw new ContentError('forbidden', `Translations of a ${entry.type.label} cannot be proposed; only a curator can change them`);
+        }
+
+        return proposals;
+    }
+
+    /**
+     * Refuse a proposal into a language visitors cannot reach yet.
+     *
+     * @param language - The language code, already checked for format.
+     * @throws Error when the language is unknown or not enabled.
+     */
+    private async requireEnabledLanguage(language: string): Promise<void> {
+        if (!(await this.deps.isLanguageEnabled(language))) {
+            throw new ContentTranslationInputError(`"${language}" is not an enabled language on this site; translations can be proposed only into enabled languages`);
+        }
+
+        return;
+    }
+
+    /**
+     * Resolve the curation queue a proposal is held in.
+     *
+     * @returns The live curation service.
+     * @throws ContentError `curation-unavailable` when it is not running, so a
+     *   proposal is refused rather than stored with nothing to decide it.
+     */
+    private requireCuration(): ICurationService {
+        const curation = this.deps.getCuration();
+        if (!curation) {
+            throw new ContentError('curation-unavailable', 'A proposed translation needs curator review, but the curation service is not available.');
+        }
+
+        return curation;
+    }
+
+    /** Load a proposal's review state, or null when none is open for that language. */
+    private async findProposal(id: string, language: string): Promise<IContentTranslationProposalDocument | null> {
+        return this.proposalCollection().findOne({ contentId: id, language }, { projection: { _id: 0 } });
+    }
+
+    /**
+     * Read the open proposals of one item for the translation editor.
+     *
+     * @param entry - The translatable type.
+     * @param id - Core content id of the item.
+     * @param englishHash - Fingerprint of the English as it is now, for the stale flag.
+     * @returns The proposals, ordered by language code.
+     */
+    private async listProposals(entry: ITranslatableEntry, id: string, englishHash: string): Promise<IContentTranslationProposal[]> {
+        const docs = await this.proposalCollection().find({ contentId: id }).sort({ language: 1 }).toArray();
+        const records = docs.length > 0 && entry.translation.proposals
+            ? await entry.translation.proposals.read(docs.map((doc) => ({ id, language: doc.language })))
+            : [];
+
+        return docs.map((doc) => ({
+            language: doc.language,
+            values: records.find((record) => record.language === doc.language)?.values ?? {},
+            stale: doc.sourceHash !== englishHash,
+            proposedBy: doc.proposedBy,
+            ...(doc.source ? { source: doc.source } : {}),
+            proposedAt: doc.proposedAt,
+            ...(doc.curationItemId ? { curationItemId: doc.curationItemId } : {})
+        }));
+    }
+
+    /**
+     * Build the values a proposal holds: the caller's text for every field a
+     * translator writes, checked against the field list, and the saved
+     * translation's value for every `url` field, because links to images are
+     * not proposable.
+     *
+     * @param fields - The type's translatable fields.
+     * @param raw - The caller's values.
+     * @param saved - The saved translation's values, when there is one.
+     * @returns One value per declared field.
+     */
+    private buildProposalValues(
+        fields: ReadonlyArray<ITranslatableField>,
+        raw: unknown,
+        saved: TranslationValues | undefined
+    ): TranslationValues {
+        const input = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
+        const text: Record<string, unknown> = {};
+        for (const field of fields) {
+            if (field.kind !== 'url') {
+                text[field.name] = input[field.name];
+            }
+        }
+        const values = this.validateValues(fields.filter((field) => field.kind !== 'url'), text);
+        for (const field of fields) {
+            if (field.kind === 'url') {
+                const kept = saved?.[field.name];
+                values[field.name] = typeof kept === 'string' ? kept : '';
+            }
+        }
+
+        return values;
+    }
+
+    /**
+     * Make an approved proposal the saved translation. The English must still
+     * be the text it translated, and neither the item nor the translation may
+     * have been deleted since. Approval keeps the translation's published
+     * state, and saves a language with no translation yet as a draft.
+     *
+     * @param entry - The translatable type.
+     * @param proposal - The proposal being approved.
+     * @throws ContentError `deleted` or `source-changed` when it cannot be applied.
+     */
+    private async approveProposal(entry: ITranslatableEntry, proposal: IContentTranslationProposalDocument): Promise<void> {
+        const { contentId: id, language } = proposal;
+        const proposals = this.requireProposals(entry);
+        await this.requireLiveItem(entry, id);
+        const state = await this.findState(id, language);
+        if (state?.deletedAt) {
+            throw new ContentError('deleted', `The "${language}" translation was deleted after this was proposed; nothing was changed`);
+        }
+        if ((await this.englishHash(entry, id)) !== proposal.sourceHash) {
+            throw new ContentError('source-changed', `The English text changed after this "${language}" translation was proposed; nothing was changed`);
+        }
+        const [record] = await proposals.read([{ id, language }]);
+        if (!record) {
+            throw new Error(`The proposed "${language}" translation of ${id} has no stored text`);
+        }
+        await entry.translation.writeTranslation(id, language, record.values);
+        const now = new Date();
+        await this.collection().updateOne(
+            { contentId: id, language },
+            {
+                $set: { typeId: entry.type.typeId, sourceHash: proposal.sourceHash, updatedAt: now, updatedBy: proposal.proposedBy },
+                $setOnInsert: { published: false, createdAt: now, createdBy: proposal.proposedBy }
+            },
+            { upsert: true }
+        );
+        await this.discardProposal(entry, id, language, proposal.holdId);
+        await this.notifyChanged(entry, id, language);
+
+        return;
+    }
+
+    /**
+     * Drop a proposal's review state and its held text. The text is cleared
+     * only when this hold was still the current one, so a newer proposal that
+     * replaced it in the meantime keeps its text.
+     *
+     * @param entry - The translatable type.
+     * @param id - Core content id of the item.
+     * @param language - Language code of the proposal.
+     * @param holdId - The hold being dropped.
+     */
+    private async discardProposal(entry: ITranslatableEntry, id: string, language: string, holdId: string): Promise<void> {
+        const removed = await this.proposalCollection().deleteOne({ contentId: id, language, holdId });
+        if (removed.deletedCount > 0) {
+            await entry.translation.proposals?.clear(id, language);
+        }
+
+        return;
+    }
+
+    /**
+     * Close any proposal open for a language after a curator changed the
+     * translation directly, so approving the older proposal later cannot
+     * overwrite or undo what the curator did. Its queue item is rejected in
+     * the curator's name. A failure to close the queue item is logged rather
+     * than thrown, because the proposal itself is already gone and the queue
+     * item can no longer decide anything.
+     *
+     * @param entry - The translatable type.
+     * @param id - Core content id of the item.
+     * @param language - Language code of the translation.
+     * @param actor - The curator whose change replaced the proposal.
+     */
+    private async supersedeProposal(entry: ITranslatableEntry, id: string, language: string, actor: IContentActor): Promise<void> {
+        const proposal = await this.findProposal(id, language);
+        if (proposal) {
+            await this.discardProposal(entry, id, language, proposal.holdId);
+            const curation = this.deps.getCuration();
+            if (proposal.curationItemId && curation) {
+                await this.closeQueueItem(curation, proposal.curationItemId, actor.id);
+            }
+            this.deps.logger.info({ typeId: entry.type.typeId, id, language, actor: actor.id }, 'Translation proposal closed by a curator change');
+        }
+
+        return;
+    }
+
+    /**
+     * Reject a queue item whose proposal has already been replaced or
+     * dropped. The rejection reaches `applyProposalDecision`, which finds no
+     * matching hold and changes nothing, so this only closes the item.
+     *
+     * @param curation - The live curation service.
+     * @param curationItemId - The queue item to close.
+     * @param decidedBy - Recorded as the decider.
+     */
+    private async closeQueueItem(curation: ICurationService, curationItemId: string, decidedBy: string): Promise<void> {
+        try {
+            await curation.reject(curationItemId, decidedBy);
+        } catch (error) {
+            this.deps.logger.warn({ error, curationItemId }, 'Failed to close a superseded translation proposal in the curation queue');
+        }
+
+        return;
+    }
+
+    /**
+     * Read the parts of a proposal's queue ref.
+     *
+     * @param ref - The queue item's ref.
+     * @returns The type, item, language, and hold it names.
+     */
+    private parseProposalRef(ref: Record<string, unknown>): { typeId: string; id: string; language: string; holdId: string } {
+        return {
+            typeId: String(ref.typeId ?? ''),
+            id: String(ref.id ?? ''),
+            language: String(ref.language ?? ''),
+            holdId: typeof ref.holdId === 'string' ? ref.holdId : ''
+        };
+    }
+
     /**
      * Resolve a registered type that takes part in translation.
      *
@@ -546,10 +1152,10 @@ export class ContentTranslationService implements IContentTranslationService {
      */
     private requireLanguage(language: string): void {
         if (!LANGUAGE_CODE_PATTERN.test(language)) {
-            throw new Error(`"${language}" is not a valid language code`);
+            throw new ContentTranslationInputError(`"${language}" is not a valid language code`);
         }
         if (language === DEFAULT_LANGUAGE) {
-            throw new Error(`The item itself is the "${DEFAULT_LANGUAGE}" version; a translation needs another language`);
+            throw new ContentTranslationInputError(`The item itself is the "${DEFAULT_LANGUAGE}" version; a translation needs another language`);
         }
 
         return;
@@ -689,21 +1295,21 @@ export class ContentTranslationService implements IContentTranslationService {
             let empty: boolean;
             if (field.kind === 'string-list') {
                 if (value !== undefined && !(Array.isArray(value) && value.every((entry) => typeof entry === 'string'))) {
-                    throw new Error(`${field.label} must be a list of text`);
+                    throw new ContentTranslationInputError(`${field.label} must be a list of text`);
                 }
                 const list = ((value as string[] | undefined) ?? []).map((entry) => entry.trim()).filter((entry) => entry !== '');
                 values[field.name] = list;
                 empty = list.length === 0;
             } else {
                 if (value !== undefined && typeof value !== 'string') {
-                    throw new Error(`${field.label} must be text`);
+                    throw new ContentTranslationInputError(`${field.label} must be text`);
                 }
                 const text = typeof value === 'string' ? value : '';
                 values[field.name] = field.kind === 'text' || field.kind === 'url' ? text.trim() : text;
                 empty = text.trim() === '';
             }
             if (field.required && empty) {
-                throw new Error(`${field.label} is required`);
+                throw new ContentTranslationInputError(`${field.label} is required`);
             }
         }
 
