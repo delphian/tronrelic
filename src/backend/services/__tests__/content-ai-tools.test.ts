@@ -55,7 +55,7 @@ describe('content translation AI tools', () => {
     });
 
     it('records a signed-in caller as a non-curator proposer', async () => {
-        const proposeTranslation = vi.fn(async () => ({ typeId: 'core:page', contentId: ID, language: 'zh', pendingReview: true }));
+        const proposeTranslation = vi.fn(async () => ({ typeId: 'core:page', contentId: ID, language: 'zh', pendingReview: true, differences: [] }));
         const { propose } = tools({ proposeTranslation });
 
         await propose.handler({ typeId: 'core:page', id: ID, language: 'zh', sourceHash: HASH, values: { title: '标题' } }, { userId: 'user-7' });
@@ -80,8 +80,20 @@ describe('content translation AI tools', () => {
         expect(hidden.error).not.toContain('mongo');
     });
 
+    it('forwards a custom request and refuses one that is not a boolean', async () => {
+        const proposeTranslation = vi.fn(async () => ({ typeId: 'core:page', contentId: ID, language: 'ru', pendingReview: true, differences: [] }));
+        const { propose } = tools({ proposeTranslation });
+        const input = { typeId: 'core:page', id: ID, language: 'ru', sourceHash: HASH, values: { title: 'Заголовок' } };
+
+        expect(await propose.handler({ ...input, custom: 'yes' })).toMatchObject({ success: false, errorKind: 'input' });
+        expect(proposeTranslation).not.toHaveBeenCalled();
+
+        await propose.handler({ ...input, custom: true });
+        expect(proposeTranslation).toHaveBeenCalledWith('core:page', ID, 'ru', expect.objectContaining({ custom: true }), expect.anything());
+    });
+
     it('stops proposing once the daily allowance is spent', async () => {
-        const proposeTranslation = vi.fn(async () => ({ typeId: 'core:page', contentId: ID, language: 'zh', pendingReview: true }));
+        const proposeTranslation = vi.fn(async () => ({ typeId: 'core:page', contentId: ID, language: 'zh', pendingReview: true, differences: [] }));
         const { propose } = tools({ proposeTranslation }, new ProposalQuota(1));
         const input = { typeId: 'core:page', id: ID, language: 'zh', sourceHash: HASH, values: { title: '标题' } };
 

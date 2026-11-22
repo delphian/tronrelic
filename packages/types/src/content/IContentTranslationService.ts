@@ -72,7 +72,8 @@ export interface IContentTranslationService {
     /**
      * Create or replace an item's translation into one language. Saving also
      * records the English text the translation now matches, which clears the
-     * stale flag.
+     * stale flag. `input.custom` marks the translation custom or returns it to
+     * tracking the English; absent keeps its current setting.
      *
      * @param typeId - The managed content type.
      * @param id - Core content id of the item.
@@ -101,25 +102,30 @@ export interface IContentTranslationService {
      * publish an item in a language for the first time.
      *
      * The item must be served to visitors and the language enabled. The
-     * values are checked against the field list and the type's own rules, and
-     * the links, TRON addresses, and numbers in them must match the English,
+     * values are checked against the field list and the type's own rules. A
+     * TRON address or external link the English does not contain is refused,
      * because a curator may not read the language well enough to catch a
-     * swapped address or link. A second proposal for the same language
-     * replaces the first and closes the first's queue item.
+     * swapped address or affiliate link. Other differences in numbers, links
+     * to this site, and dropped addresses or links are allowed, because
+     * language versions may differ on purpose, and are listed on the queue
+     * item for the curator. A second proposal for the same language replaces
+     * the first and closes the first's queue item.
      *
      * @param typeId - The managed content type.
      * @param id - Core content id of the item.
      * @param language - Language code of the translation.
-     * @param input - The proposed values and the English fingerprint they follow.
+     * @param input - The proposed values, the English fingerprint they
+     *   follow, and an optional request to change the custom setting.
      * @param actor - Who is proposing.
-     * @returns Whether the proposal is waiting for review, and its queue item.
+     * @returns Whether the proposal is waiting for review, its queue item, and
+     *   how it differs from the English.
      * @throws ContentError `forbidden` when the type accepts no proposals,
      *   `not-found` when the item is not served, `deleted` when the
      *   translation is soft-deleted, `source-changed` when the English changed,
      *   `vetoed` when a hook refuses it, `curation-unavailable` when there is
      *   no queue to hold it in.
      * @throws Error when a value is missing or malformed, the language is not
-     *   enabled, or the links, addresses, or numbers differ from the English.
+     *   enabled, or the proposal adds a TRON address or external link.
      */
     proposeTranslation(
         typeId: string,

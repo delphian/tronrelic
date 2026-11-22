@@ -16,10 +16,14 @@
  * by anyone else, such as an AI agent, waits in the curation queue; the editor
  * shows it so the admin knows that saving here replaces it and closes its
  * review, and can start from the proposed text instead.
+ *
+ * A translation can be marked custom: kept for its own readers, for cultural
+ * or search reasons, rather than in step with the English. A custom version is
+ * never flagged stale, and carries a tick on its language badge instead.
  */
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { AlertCircle, Archive, ArrowLeft, Edit, Eye, Inbox, Plus, RotateCcw, Save, Sparkles, Trash2, X } from 'lucide-react';
+import { AlertCircle, Archive, ArrowLeft, Check, Edit, Eye, Inbox, Plus, RotateCcw, Save, Sparkles, Trash2, X } from 'lucide-react';
 import type {
     IContentTranslation,
     IContentTranslationProposal,
@@ -58,6 +62,8 @@ interface ITranslationDraft {
     values: Record<string, string>;
     /** Whether visitors are served the translation once it is saved. */
     published: boolean;
+    /** Whether the translation is kept custom rather than in step with the English. */
+    custom: boolean;
     /** The stored translation, or null when this save will create it. */
     existing: IContentTranslation | null;
 }
@@ -225,7 +231,8 @@ export function ContentTranslations({ typeId, contentId, title, publicPath, rend
             language,
             existing,
             values: existing ? toInputValues(source.fields, existing.values) : startingValues(source),
-            published: existing?.published ?? false
+            published: existing?.published ?? false,
+            custom: existing?.custom ?? false
         });
         setShowPreview(false);
         setPreview('');
@@ -240,13 +247,17 @@ export function ContentTranslations({ typeId, contentId, title, publicPath, rend
     /**
      * Put a proposal's text in the editor, so the admin can correct it and
      * save their own version rather than approving it unchanged in the
-     * curation queue. Saving closes the proposal's review either way.
+     * curation queue. A custom setting the proposal asked for is carried over
+     * too, so the switch shows what the proposer intended. Saving closes the
+     * proposal's review either way.
      *
      * @param proposal - The proposal to start from.
      */
     const applyProposalText = (proposal: IContentTranslationProposal) => {
         if (source) {
-            setDraft((current) => (current ? { ...current, values: toInputValues(source.fields, proposal.values) } : current));
+            setDraft((current) => (current
+                ? { ...current, values: toInputValues(source.fields, proposal.values), custom: proposal.custom ?? current.custom }
+                : current));
         }
     };
 
@@ -309,7 +320,8 @@ export function ContentTranslations({ typeId, contentId, title, publicPath, rend
         try {
             await saveTranslation(typeId, contentId, draft.language.code, {
                 values: fromInputValues(source.fields, draft.values),
-                published: draft.published
+                published: draft.published,
+                custom: draft.custom
             });
             setDraft(null);
             await load();
@@ -427,13 +439,24 @@ export function ContentTranslations({ typeId, contentId, title, publicPath, rend
                             {draft.existing ? 'Edit' : 'Translate'}: {title} → {draft.language.name}
                         </h2>
                         <div className={styles.actions}>
-                            <span className={styles.published}>
+                            <span className={styles.switch_label}>
                                 <Switch
                                     on={draft.published}
                                     onChange={(next) => setDraft((current) => (current ? { ...current, published: next } : current))}
                                     aria-label="Published"
                                 />
                                 Published
+                            </span>
+                            <span
+                                className={styles.switch_label}
+                                title="A custom version is written for its own readers and no longer tracks the English, so it is never flagged stale."
+                            >
+                                <Switch
+                                    on={draft.custom}
+                                    onChange={(next) => setDraft((current) => (current ? { ...current, custom: next } : current))}
+                                    aria-label="Custom version, does not track the English"
+                                />
+                                Custom
                             </span>
                             <Button
                                 variant="ghost"
@@ -481,11 +504,21 @@ export function ContentTranslations({ typeId, contentId, title, publicPath, rend
 
                 {errorCard}
 
-                {draft.existing?.stale && (
+                {draft.existing?.stale && !draft.custom && (
                     <Card tone="muted" padding="sm">
                         <p className={styles.notice}>
                             The English text has changed since this translation was saved. Saving records the
                             translation as matching the current English text.
+                        </p>
+                    </Card>
+                )}
+
+                {draft.custom && (
+                    <Card tone="muted" padding="sm">
+                        <p className={styles.notice_quiet}>
+                            Custom version: written for {draft.language.name} readers rather than kept in step with
+                            the English, so it is never flagged stale.
+                            {draft.existing?.englishChanged && ' The English has changed since this version was last saved; check whether any fact here needs the same change.'}
                         </p>
                     </Card>
                 )}
@@ -598,6 +631,9 @@ export function ContentTranslations({ typeId, contentId, title, publicPath, rend
                                                     {translation.published ? 'Published' : 'Draft'}
                                                 </Badge>
                                             )}
+                                            {translation?.custom && !translation.deletedAt && (
+                                                <Badge tone="success"><Check size={12} aria-hidden="true" /> Custom</Badge>
+                                            )}
                                             {translation?.stale && !translation.deletedAt && (
                                                 <Badge tone="warning"><AlertCircle size={12} /> English changed</Badge>
                                             )}
@@ -616,10 +652,17 @@ export function ContentTranslations({ typeId, contentId, title, publicPath, rend
                                                     ? 'Served in this language while published.'
                                                     : 'Not served in this language.'}
                                         </p>
+                                        {translation?.custom && translation.englishChanged && !translation.deletedAt && (
+                                            <p className={styles.row_meta}>
+                                                Custom version. The English has changed since it was last saved.
+                                            </p>
+                                        )}
                                         {proposal && (
                                             <p className={styles.row_meta}>
                                                 A proposed translation is waiting in the <a href="/system/curation">curation queue</a>.
                                                 {translation ? ' Approving it replaces the saved text.' : ' Approving it saves a draft you then publish here.'}
+                                                {proposal.custom === true && !translation?.custom && ' It also asks to mark this version custom.'}
+                                                {proposal.custom === false && translation?.custom && ' It also asks to return this version to tracking the English.'}
                                             </p>
                                         )}
                                     </Stack>

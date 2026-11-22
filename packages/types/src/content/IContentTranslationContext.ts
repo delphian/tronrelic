@@ -40,9 +40,12 @@ export interface IContentTranslationContext {
 
     /**
      * The translation visitors are served in this language, or null when
-     * there is none. `stale` is true when the English changed after it was saved.
+     * there is none. `stale` is true when the English changed after it was
+     * saved and the translation is not custom. `custom` is true when it was
+     * written for its own readers rather than kept in step with the English,
+     * so a proposer edits it on its own terms instead of re-translating it.
      */
-    translation: { values: TranslationValues; stale: boolean; updatedAt: Date } | null;
+    translation: { values: TranslationValues; stale: boolean; custom: boolean; updatedAt: Date } | null;
 
     /** True when a proposal for this language is already waiting for review. */
     proposalPending: boolean;

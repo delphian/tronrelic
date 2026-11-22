@@ -32,7 +32,8 @@
     gap: var(--gap-sm);
 }
 
-.published {
+/* A switch with its text label beside it, used for Published and Custom. */
+.switch_label {
     display: inline-flex;
     align-items: center;
     gap: var(--gap-xs);
@@ -49,6 +50,14 @@
     margin: 0;
     font-size: var(--font-size-body-sm);
     color: var(--color-warning-text);
+}
+
+/* A notice that informs rather than warns, such as the note that a custom
+ * version does not track the English. Muted, so it does not read as a fault. */
+.notice_quiet {
+    margin: 0;
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
 }
 
 /* The notice that a proposal is waiting, with its "Use proposed text" button

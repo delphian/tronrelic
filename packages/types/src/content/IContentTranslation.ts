@@ -33,10 +33,24 @@ export interface IContentTranslation {
 
     /**
      * True when the English text has changed since this translation was last
-     * saved. A stale translation is still served; the flag only tells the
-     * translator it may need updating.
+     * saved and the translation is not `custom`. A stale translation is still
+     * served; the flag only tells the translator it may need updating.
      */
     stale: boolean;
+
+    /**
+     * True when a curator marked this language version as custom: written for
+     * its own readers, for cultural or search reasons, rather than kept in
+     * step with the English. A custom version is never flagged stale.
+     */
+    custom: boolean;
+
+    /**
+     * True when the English text has changed since this translation was last
+     * saved, whether or not it is custom. For a custom version this is the
+     * quiet reminder that a fact in the English may have changed.
+     */
+    englishChanged: boolean;
 
     /** When the translation was soft-deleted; absent while it is live. */
     deletedAt?: Date;

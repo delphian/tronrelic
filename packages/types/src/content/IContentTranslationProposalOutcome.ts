@@ -26,4 +26,12 @@ export interface IContentTranslationProposalOutcome {
 
     /** The open curation queue item, while `pendingReview` is true. */
     curationItemId?: string;
+
+    /**
+     * How the proposal's numbers, links, and TRON addresses differ from the
+     * English, one sentence each, in the words the curator sees on the queue
+     * item. Empty when they match. A proposer checks these for mistakes, such
+     * as a figure dropped by accident.
+     */
+    differences: string[];
 }

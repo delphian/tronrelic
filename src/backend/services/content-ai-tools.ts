@@ -265,7 +265,8 @@ export function buildContentAiTools(
             'Parameters: typeId (required), id (required, the content id, a UUID), language (required, a language code such as "zh", "vi", or "es"; never "en"). ' +
             'Returns { success, typeId, contentId, language, fields, source, sourceHash, translation, proposalPending }. ' +
             'fields lists each translatable field with its name, label, and kind; a field of kind "url" (a social image) cannot be proposed. ' +
-            'source holds the English values by field name. translation is null when no published translation exists, otherwise { values, stale, updatedAt }, where stale means the English changed after it was written. ' +
+            'source holds the English values by field name. translation is null when no published translation exists, otherwise { values, stale, custom, updatedAt }, where stale means the English changed after it was written. ' +
+            'custom true means an admin keeps that language version deliberately different from the English, for its own readers or for search; edit it on its own terms rather than re-translating it from the English. ' +
             'proposalPending is true when a proposal for this language is already waiting for review; a new proposal replaces it. ' +
             'Returns { success: true, found: false } when the item is not served to visitors. ' +
             'Drafts, deleted translations, and edits waiting for review are never returned. Read-only; never changes anything.',
@@ -327,10 +328,14 @@ export function buildContentAiTools(
             `sourceHash (required) is the sourceHash ${CONTENT_AI_TOOL_NAMES.getTranslation} returned; the proposal is refused if the English changed since, and you must read it again. ` +
             'values (required) holds the complete translation keyed by field name: send every field that has English text, never only the changed ones, because the proposal replaces the whole translation. ' +
             'Use each field\'s kind: a string for text, multiline, and markdown fields, and a list of strings for string-list fields. Fields of kind "url" are ignored. ' +
-            'Keep every link, TRON address, and number exactly as the English has them, with numbers in digits; the proposal is refused if any differ, and the error lists them. ' +
-            'Keep the Markdown structure (headings, lists, links) of the English. ' +
+            'A TRON address, or a link to another site (http, https, or a target starting with //), that the English does not contain is refused, and the error lists it. ' +
+            'Numbers, links to pages on this site (paths starting with /), and addresses or links you leave out may differ from the English, ' +
+            'and a language version may legitimately differ for its readers; write numbers in digits. Every difference is listed for the reviewer. ' +
+            'custom (optional boolean) asks the reviewer to mark the language version custom (true), meaning it no longer tracks the English and is never flagged stale, ' +
+            'or to return it to tracking the English (false). Omit it to keep the current setting. Set it only when asked to, or when the version deliberately departs from the English. ' +
+            'Keep the Markdown structure (headings, lists, links) of the English unless the version is custom. ' +
             'If a proposal for the language is already waiting, yours replaces it. ' +
-            'Returns { success, typeId, contentId, language, pendingReview, curationItemId }. Never report the translation as live. ' +
+            'Returns { success, typeId, contentId, language, pendingReview, curationItemId, differences }. differences lists, one sentence each, how the numbers, links, and addresses differ from the English; check it for anything you changed by mistake, and propose again to fix it. Never report the translation as live. ' +
             'Never use this to answer the user or relay findings; write those as normal text in the conversation.',
         capability: PROPOSE_CAPABILITY,
         inputSchema: {
@@ -350,12 +355,17 @@ export function buildContentAiTools(
                             { type: 'array', items: { type: 'string' } }
                         ]
                     }
+                },
+                custom: {
+                    type: 'boolean',
+                    description: 'Optional. true asks to mark the language version custom (no longer tracks the English); false asks to return it to tracking the English. Omit to keep the current setting.'
                 }
             },
             required: ['typeId', 'id', 'language', 'sourceHash', 'values'],
             additionalProperties: false
         },
-        // A page translation with a keyword list, and a blog post translation
+        // A page translation with a keyword list, a custom Russian version
+        // that links the Russian copy of a page, and a blog post translation
         // that leaves its optional search fields empty.
         inputExamples: [
             {
@@ -369,6 +379,19 @@ export function buildContentAiTools(
                     keywords: ['能量', '租赁', 'tron'],
                     body: '# 在 TRON 上租用能量\n\n租用能量可以避免质押 TRX 的前期成本。请参阅 [能量市场](/resource-markets)。'
                 }
+            },
+            {
+                typeId: 'core:page',
+                id: '5d6e7f80-9a1b-4e7b-8a1c-3f2b8c1e9d4a',
+                language: 'ru',
+                sourceHash: 'fcde2b2edba56bf408601fb721fe9b5c338d10ee429ea04fae5511b68fbf8fb9',
+                values: {
+                    title: 'Калькулятор стейкинга TRON (трон)',
+                    description: 'Сколько энергии вы получите за стейкинг TRX.',
+                    keywords: ['стейкинг трон калькулятор', 'калькулятор стейкинга trx'],
+                    body: '# Калькулятор стейкинга трон\n\nРазморозка TRX занимает 14 дней. Сравните с [арендой энергии](/ru/resource-markets).'
+                },
+                custom: true
             },
             {
                 typeId: 'blog:post',
@@ -385,8 +408,9 @@ export function buildContentAiTools(
             }
         ],
         /**
-         * Validate the address and fingerprint, spend one proposal from the
-         * daily allowance, and hand the values to the translation service.
+         * Validate the address, fingerprint, and optional custom request,
+         * spend one proposal from the daily allowance, and hand the values to
+         * the translation service.
          *
          * @param input - The model's arguments.
          * @param principal - The signed-in caller, recorded as the proposer.
@@ -402,6 +426,10 @@ export function buildContentAiTools(
             if (!values || typeof values !== 'object' || Array.isArray(values)) {
                 throw new ContentToolInputError('values must be an object holding the translation keyed by field name.');
             }
+            if (input.custom !== undefined && typeof input.custom !== 'boolean') {
+                throw new ContentToolInputError('custom must be true, false, or left out.');
+            }
+            const custom = typeof input.custom === 'boolean' ? input.custom : undefined;
             if (!quota.tryConsume()) {
                 throw new ContentToolInputError('The daily allowance of proposed translations is used up. Try again tomorrow, or ask an admin to use the translation editor.');
             }
@@ -411,7 +439,12 @@ export function buildContentAiTools(
                 typeId,
                 id,
                 language,
-                { values: values as TranslationValues, sourceHash, source: `ai-tool:${CONTENT_AI_TOOL_NAMES.proposeTranslation}` },
+                {
+                    values: values as TranslationValues,
+                    sourceHash,
+                    source: `ai-tool:${CONTENT_AI_TOOL_NAMES.proposeTranslation}`,
+                    ...(custom !== undefined ? { custom } : {})
+                },
                 proposalActor(principal)
             );
             return { ...outcome };

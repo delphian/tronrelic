@@ -19,11 +19,18 @@ export interface IContentTranslationProposal {
     values: TranslationValues;
 
     /**
-     * True when the English text has changed since the proposal was made.
-     * Approving it is then refused, because the proposal translates text
-     * visitors no longer read.
+     * True when the English text has changed since the proposal was made and
+     * the approved translation would not be custom. Approving it is then
+     * refused, because the proposal translates text visitors no longer read.
      */
     stale: boolean;
+
+    /**
+     * The custom setting the proposal asks for on approval: true to mark the
+     * translation custom, false to return it to tracking the English, absent
+     * to keep it as it is.
+     */
+    custom?: boolean;
 
     /** Who proposed it: a Better Auth user id or a `system:` stand-in. */
     proposedBy: string;

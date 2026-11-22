@@ -17,4 +17,11 @@ export interface IContentTranslationWrite {
 
     /** Whether visitors are served the translation once it is saved. */
     published: boolean;
+
+    /**
+     * Whether the translation is custom: kept for its own readers rather than
+     * in step with the English, and so never flagged stale. Absent keeps the
+     * translation's current setting, which is off for a new translation.
+     */
+    custom?: boolean;
 }
