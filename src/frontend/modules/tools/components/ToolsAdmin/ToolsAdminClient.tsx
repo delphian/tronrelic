@@ -75,6 +75,7 @@ interface IToolsAdminClientProps {
  */
 export function ToolsAdminClient({ submenuTree, submenuGeneratedAt, initialBootstrapPages, initialTab }: IToolsAdminClientProps) {
     const [activeTab, setActiveTab] = useState<ToolsAdminTabId>(isToolsAdminTabId(initialTab) ? initialTab : 'bootstrap');
+    const [bootstrapPages, setBootstrapPages] = useState<IToolsBootstrapPage[] | null>(initialBootstrapPages);
 
     /**
      * Switch panels and rewrite the address in place, because `MenuNavClient`
@@ -85,6 +86,19 @@ export function ToolsAdminClient({ submenuTree, submenuGeneratedAt, initialBoots
         const tab = tabFromUrl(item.url);
         setActiveTab(tab);
         window.history.replaceState(null, '', `/system/tools?tab=${tab}`);
+    }, []);
+
+    /**
+     * Record a row the backend has just updated. The rows live in this shell
+     * rather than in the Bootstrap tab because switching tabs unmounts the
+     * panel, which would otherwise discard a page the admin just created and
+     * offer Create again for an address that is now held, where a second
+     * click only earns a conflict.
+     *
+     * @param page - The row the create call returned, replacing the row with the same id.
+     */
+    const handleBootstrapPageUpdated = useCallback((page: IToolsBootstrapPage) => {
+        setBootstrapPages(current => (current === null ? current : current.map(item => (item.id === page.id ? page : item))));
     }, []);
 
     return (
@@ -101,7 +115,7 @@ export function ToolsAdminClient({ submenuTree, submenuGeneratedAt, initialBoots
                 onItemSelect={handleTabSelect}
             />
 
-            {activeTab === 'bootstrap' && <BootstrapTab initialPages={initialBootstrapPages} />}
+            {activeTab === 'bootstrap' && <BootstrapTab pages={bootstrapPages} onPageUpdated={handleBootstrapPageUpdated} />}
             {activeTab === 'logs' && <SystemLogsMonitor service={LOG_SERVICE} title="Tools Logs" />}
         </AdminPage>
     );

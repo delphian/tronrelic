@@ -40,11 +40,18 @@ const STATE_DISPLAY: Record<ToolsBootstrapPageState, { label: string; tone: Badg
  */
 interface IBootstrapTabProps {
     /**
-     * The rows the server read when it rendered the page, so the tab opens
-     * with data; null when that read failed, which the tab says rather than
-     * showing an empty list an admin could mistake for "nothing to create".
+     * The rows to list, seeded on the server so the tab opens with data and
+     * held by the page shell so they survive a tab switch; null when the
+     * server read failed, which the tab says rather than showing an empty
+     * list an admin could mistake for "nothing to create".
      */
-    initialPages: IToolsBootstrapPage[] | null;
+    pages: IToolsBootstrapPage[] | null;
+    /**
+     * Hand a row the backend has just returned back to the shell, which owns
+     * the rows so a created page is still shown as created after the admin
+     * visits another tab.
+     */
+    onPageUpdated: (page: IToolsBootstrapPage) => void;
 }
 
 /**
@@ -69,11 +76,10 @@ function HeldNote({ row }: { row: IToolsBootstrapPage }) {
  * Bootstrap tab: one row per page the tools module can create, with a Create
  * button while the page's address is free.
  *
- * @param props - The server-read rows.
+ * @param props - The rows to list and the callback that records an updated row.
  * @returns The tab panel.
  */
-export function BootstrapTab({ initialPages }: IBootstrapTabProps) {
-    const [pages, setPages] = useState<IToolsBootstrapPage[]>(initialPages ?? []);
+export function BootstrapTab({ pages, onPageUpdated }: IBootstrapTabProps) {
     const [creatingId, setCreatingId] = useState<string | null>(null);
     const { push } = useToast();
 
@@ -87,7 +93,7 @@ export function BootstrapTab({ initialPages }: IBootstrapTabProps) {
         setCreatingId(row.id);
         try {
             const { page } = await createBootstrapPage(row.id);
-            setPages(current => current.map(item => (item.id === page.id ? page : item)));
+            onPageUpdated(page);
             push({
                 tone: 'success',
                 title: `${row.label} created`,
@@ -106,12 +112,12 @@ export function BootstrapTab({ initialPages }: IBootstrapTabProps) {
             title="Bootstrap"
             meta="Pages this module can create. Each goes to the curation queue and is created only while no page holds its address."
         >
-            {initialPages === null && (
+            {pages === null && (
                 <p className="text-muted">The page list could not be loaded. Reload the page to try again.</p>
             )}
             {/* Stacks into labelled entries on a narrow panel, where four
               * columns and a sentence-long description would not fit. */}
-            {initialPages !== null && <Table flush stackAt="tablet">
+            {pages !== null && <Table flush stackAt="tablet">
                 <Thead>
                     <Tr>
                         <Th>Page</Th>
