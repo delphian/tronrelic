@@ -17,6 +17,11 @@
  */
 
 import type { WidgetComponent } from '@/types';
+import { STAKE_CALCULATOR_WIDGET_TYPE_ID } from '@/types';
+// Imported by path rather than through the tools barrel: this registry is
+// loaded with the site layout, and the barrel would pull every tool's
+// components and styles into that bundle.
+import { StakeCalculatorWidget } from '../../modules/tools/components/StakeCalculator/StakeCalculatorWidget';
 import { RawHtmlWidget } from './RawHtmlWidget';
 import { WorldClocksWidget } from './WorldClocksWidget';
 import { BlockTickerWidget } from './BlockTickerWidget';
@@ -31,7 +36,9 @@ import { TabBarWidget } from './TabBarWidget';
  * Core widget components keyed by backend widget-type id. Mirrors the
  * `CORE_WIDGET_TYPE_DESCRIPTORS` registered in
  * `backend/modules/widgets/widget-types/core-widget-types.ts` — every id
- * registered there must have a matching renderer here.
+ * registered there must have a matching renderer here. Types a core module
+ * registers for itself, such as the tools module's stake calculator, belong
+ * here too, because the generated file only ever holds plugin components.
  */
 export const coreWidgetComponents: Record<string, WidgetComponent> = {
     'core:raw-html': RawHtmlWidget,
@@ -44,5 +51,6 @@ export const coreWidgetComponents: Record<string, WidgetComponent> = {
     // existing placements keep rendering.
     'core:main-menu': MenuWidget,
     'core:language-switcher': LanguageSwitcherWidget,
-    'core:tab-bar': TabBarWidget
+    'core:tab-bar': TabBarWidget,
+    [STAKE_CALCULATOR_WIDGET_TYPE_ID]: StakeCalculatorWidget
 };

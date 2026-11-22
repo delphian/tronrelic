@@ -1,14 +1,15 @@
 import { notFound, redirect } from 'next/navigation';
 import type { Metadata } from 'next';
-import type { IPluginPageMetadata, IWidgetData } from '@/types';
+import type { IPluginPageMetadata } from '@/types';
 import { cache } from 'react';
-import { Page } from '../../../../components/layout';
 import { PluginPageWithZones } from '../../../../components/PluginPageWithZones';
-import { CorePageZones, EmbeddedWidgetContent } from '../../../../components/widgets';
+import { CorePageZones } from '../../../../components/widgets';
 import { CategoryLandingPage } from '../../../../modules/menu';
+import { CmsPageArticle } from '../../../../modules/pages';
+import { fetchPublicPageMetadata, fetchPublicPageRender } from '../../../../modules/pages/server';
 import { getServerSideApiUrlWithPath } from '../../../../lib/api-url';
-import { buildMetadata, buildArticleStructuredData, localizedAbsoluteUrl, toOpenGraphLocale } from '../../../../lib/seo';
-import { DEFAULT_LANGUAGE, localizeHref, localizePath, serializeInlineJson } from '@/types';
+import { buildMetadata, localizedAbsoluteUrl, toOpenGraphLocale } from '../../../../lib/seo';
+import { localizeHref, localizePath, serializeInlineJson } from '@/types';
 import { fetchLocalizationSeed, getServerTranslator, resolveMetadataLanguage } from '../../../../modules/localization/server';
 import { menuTranslationKey } from '../../../../modules/menu/lib/menuTranslationKey';
 import { getServerConfig } from '../../../../lib/serverConfig';
@@ -16,46 +17,6 @@ import { getEnabledPluginPageConfig } from '../../../../lib/serverPluginRegistry
 import { runPluginServerDataFetcher } from '../../../../lib/runPluginServerDataFetcher';
 import { buildServerDataContext } from '../../../../lib/buildServerDataContext';
 import { resolvePluginRedirectPath } from '../../../../lib/resolvePluginRedirectPath';
-import styles from './page.module.scss';
-
-/**
- * Page metadata response from backend. The public endpoint returns only these
- * fields; the markdown source stays on the server, and the body arrives
- * already rendered and sanitized from the `/render` endpoint.
- */
-interface IPageResponse {
-    page: {
-        title: string;
-        slug: string;
-        description?: string;
-        keywords?: string[];
-        ogImage?: string;
-        createdAt: string;
-        updatedAt: string;
-    };
-    requestedSlug: string;
-}
-
-/**
- * Rendered HTML response from backend.
- */
-interface IRenderResponse {
-    html: string;
-    /**
-     * One widget data entry per embedded-widget placeholder in `html`, in
-     * document order; null where an embed was skipped. Absent from a backend
-     * older than embedded widgets, which renders the body without them.
-     */
-    embeds?: Array<IWidgetData | null>;
-    metadata: {
-        title: string;
-        description?: string;
-        keywords?: string[];
-        ogImage?: string;
-    };
-    currentSlug: string;
-    requestedSlug: string;
-}
 
 /**
  * Dynamic route params.
@@ -85,22 +46,6 @@ interface ICategoryResolveResponse {
         url: string;
         icon?: string;
     }[];
-}
-
-/**
- * Build the URL of a public CMS page endpoint in the language being rendered.
- *
- * A translated request adds `?language=`, and the backend then answers with
- * that page's translation or a 404. It never falls back to the English body,
- * so a translated address cannot serve English text under a translated
- * `<html lang>`.
- *
- * @param apiUrl - Server-side API base URL.
- * @param suffix - Path after the slug, such as `/render`.
- */
-function publicPageUrl(apiUrl: string, slug: string, language: string, suffix = ''): string {
-    const query = language === DEFAULT_LANGUAGE ? '' : `?language=${encodeURIComponent(language)}`;
-    return `${apiUrl}/pages/${encodeURIComponent(slug)}${suffix}${query}`;
 }
 
 /**
@@ -245,18 +190,13 @@ export async function generateMetadata({ params }: { params: Promise<IPageParams
     const [resolution, language] = await Promise.all([resolveSlug(slug), resolveMetadataLanguage(params)]);
 
     if (resolution.type === 'custom') {
-        const apiUrl = getServerSideApiUrlWithPath();
-
         try {
-            const response = await fetch(publicPageUrl(apiUrl, slug, language), {
-                next: { revalidate: 60 }
-            });
+            const data = await fetchPublicPageMetadata(slug, language);
 
-            if (!response.ok) {
+            if (!data) {
                 return {};
             }
 
-            const data: IPageResponse = await response.json();
             const { page } = data;
             const { siteUrl } = await getServerConfig();
 
@@ -459,20 +399,18 @@ export default async function UnifiedPage({ params }: { params: Promise<IPagePar
     // translated request gets the page's translation into that language, or a
     // 404 when the page has no published translation into it.
     if (resolution.type === 'custom') {
-        const apiUrl = getServerSideApiUrlWithPath();
         const language = await resolveMetadataLanguage(params);
 
         // Fetch rendered HTML and page metadata in parallel
-        const [renderResponse, pageResponse] = await Promise.all([
-            fetch(publicPageUrl(apiUrl, slug, language, '/render'), { next: { revalidate: 60 } }),
-            fetch(publicPageUrl(apiUrl, slug, language), { next: { revalidate: 60 } })
+        const [renderData, pageData, { siteUrl }] = await Promise.all([
+            fetchPublicPageRender(slug, language),
+            fetchPublicPageMetadata(slug, language),
+            getServerConfig()
         ]);
 
-        if (!renderResponse.ok) {
+        if (!renderData) {
             notFound();
         }
-
-        const renderData: IRenderResponse = await renderResponse.json();
 
         // If requested slug differs from current slug, redirect to current
         // slug, staying in the language the visitor asked for.
@@ -480,51 +418,11 @@ export default async function UnifiedPage({ params }: { params: Promise<IPagePar
             redirect(localizePath(renderData.currentSlug, language));
         }
 
-        // Build Article structured data from page metadata (dates, description)
-        let articleJsonLd: Record<string, unknown> | null = null;
-        if (pageResponse.ok) {
-            const pageData: IPageResponse = await pageResponse.json();
-            const { siteUrl } = await getServerConfig();
-            articleJsonLd = buildArticleStructuredData({
-                siteUrl,
-                title: pageData.page.title,
-                description: pageData.page.description,
-                // The address this version is served at, prefix included.
-                path: localizePath(pageData.page.slug, language),
-                datePublished: pageData.page.createdAt,
-                dateModified: pageData.page.updatedAt,
-                image: pageData.page.ogImage,
-                keywords: pageData.page.keywords
-            });
-        }
-
         // CorePageZones gives a markdown page the same main-before and
         // main-after zones as a page in the (core) route group.
         return (
             <CorePageZones>
-                <Page>
-                    {articleJsonLd && (
-                        <script
-                            type="application/ld+json"
-                            // The title, description, and keywords are stored
-                            // page content, so they are escaped for an inline
-                            // script rather than written with JSON.stringify.
-                            dangerouslySetInnerHTML={{ __html: serializeInlineJson(articleJsonLd) }}
-                        />
-                    )}
-                    <article>
-                        {/* Widgets embedded with ```widget blocks render in
-                            place on the server, from data the render
-                            endpoint fetched for this request. */}
-                        <EmbeddedWidgetContent
-                            className={styles.content}
-                            html={renderData.html}
-                            embeds={renderData.embeds}
-                            route={renderData.currentSlug}
-                            params={{ slug: renderData.currentSlug.replace(/^\//, '') }}
-                        />
-                    </article>
-                </Page>
+                <CmsPageArticle render={renderData} page={pageData?.page ?? null} language={language} siteUrl={siteUrl} />
             </CorePageZones>
         );
     }

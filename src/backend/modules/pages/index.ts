@@ -11,6 +11,7 @@ export type { IPagesModuleDependencies } from './PagesModule.js';
 export { PageService } from './services/page.service.js';
 export { PageTranslationService } from './services/page-translation.service.js';
 export { MarkdownService } from './services/markdown.service.js';
+export { PageInputError } from './services/PageInputError.js';
 
 export { PagesController } from './api/pages.controller.js';
 export { createPagesRouter } from './api/pages.routes.js';

@@ -8,6 +8,7 @@ import type { IPageEditProposal } from './IPageEditProposal.js';
 import type { IPageEditProposalResult } from './IPageEditProposalResult.js';
 import type { IPageProposal } from './IPageProposal.js';
 import type { IPageProposalResult } from './IPageProposalResult.js';
+import type { IPageSlugHolder } from './IPageSlugHolder.js';
 import type { IContentActor } from '../content/IContentActor.js';
 
 /**
@@ -103,6 +104,19 @@ export interface IPageService {
      * @param id - The page's core content id.
      */
     getPageById(id: string): Promise<IPage | null>;
+
+    /**
+     * Find the page holding an address, whatever its review or deletion
+     * state: the same pages the create-time slug check refuses on, so a caller
+     * can tell in advance whether a new page could take the address. A page
+     * owning the address as its slug is preferred over one holding it only
+     * in its redirect history.
+     *
+     * @param slug - The address to look up, such as `/tools/stake-calculator`.
+     * @returns The holding page and how it holds the address, or null when
+     *   the address is free.
+     */
+    findPageHoldingSlug(slug: string): Promise<IPageSlugHolder | null>;
 
     /**
      * Get the page a visitor sees at a slug: live, reviewed as needed, and

@@ -13,6 +13,7 @@ import type {
     IPageProposal,
     IPageProposalResult,
     IPageSettings,
+    IPageSlugHolder,
     IPublicPage,
     IPublicPageRender,
     ICacheService,
@@ -663,6 +664,26 @@ export class PageService implements IPageService {
         const [page] = await this.contentService.readAdmin<IPageContent>(PAGE_CONTENT_TYPE_ID, [id]);
 
         return page ? this.toIPageFromContent(page) : null;
+    }
+
+    /**
+     * Find the page holding an address, whatever its review or deletion state.
+     *
+     * Matches the same documents `PageContentType.assertSlugsAvailable` refuses
+     * a create on — the slug or redirect history of the latest edit or the
+     * approved version, deleted pages included — so the answer agrees with
+     * what a create would meet. The slug owner is looked up first, so a page
+     * that owns the address wins over one that only redirects from it.
+     *
+     * @param slug - The address to look up.
+     * @returns The holding page and how it holds the address, or null when free.
+     */
+    async findPageHoldingSlug(slug: string): Promise<IPageSlugHolder | null> {
+        const owner = await this.pagesCollection.findOne({ $or: [{ slug }, { 'approved.slug': slug }] });
+        const doc = owner ?? await this.pagesCollection.findOne({ $or: [{ oldSlugs: slug }, { 'approved.oldSlugs': slug }] });
+        const page = !doc ? null : doc.contentId ? await this.getPageById(doc.contentId) : this.toIPage(doc);
+
+        return page ? { page, holds: owner ? 'slug' : 'redirect' } : null;
     }
 
     /**
