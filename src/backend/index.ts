@@ -603,7 +603,14 @@ async function bootstrapInit(): Promise<BootstrapContext> {
         // routes, whatever module or plugin owns the content.
         listContentRoutes: () => contentService.translations().listLocalizedRoutes()
     });
-    await toolsModule.init(sharedDeps);
+    // Tools receives the page service for its Bootstrap tab, which creates the
+    // module's CMS pages for review, and the widgets service to register the
+    // stake calculator as an embeddable widget. Both modules finished init() above.
+    await toolsModule.init({
+        ...sharedDeps,
+        pageService: pagesModule.getPageService(),
+        widgetsService: widgetsModule.getWidgetsService()
+    });
     // Notifications module: builds the category/channel registries, preference,
     // policy, and audit stores. Inits before ai-tools so its run() (which
     // publishes `'notifications'`) precedes ai-tools' run() that registers a

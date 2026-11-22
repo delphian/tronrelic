@@ -102,6 +102,8 @@ Singleton implementing `IPageService`. Owns the `pages` and `page_settings` coll
 - `listPublicPages` and `getPublicPages` return `IPublicPage` from `@/types`: the served version reduced to id, slug, title, description, keywords, Open Graph image, and the markdown body with its frontmatter, HTML comments, and scripts removed. The listing loads every visible page and filters in memory, because only core knows which of a page's two stored versions a visitor is served, so a database search could match text no visitor sees
 - `proposeEdit` and `proposePage`, for automated callers: apply a field-level edit, or create a new page, as a non-curator so core always holds it for review; see [`pages-propose-edit`](#pages-propose-edit) and [`pages-propose-page`](#pages-propose-page)
 - Admin listing decorated with review state; filtering by review state asks core for the ids first
+- `findPageHoldingSlug(slug)` → `IPageSlugHolder | null`: the page holding an address in any review or deletion state, as its slug or in its redirect history, matching what the create-time slug check refuses on. The tools module's Bootstrap tab uses it to say whether a page can be created, and why not
+- `PageInputError` is exported from the module's `index.ts`, so another module calling `proposePage` can tell an input or slug refusal apart from a failure
 - Settings management (route blacklist only)
 - Markdown rendering with Redis cache, including a public-render fast path that hits cache before the database
 

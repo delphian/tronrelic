@@ -1,8 +1,10 @@
 /**
  * @fileoverview Core widget-type catalog as plain registration data.
  *
- * Single source of truth for every widget type the platform ships out
- * of the box, mirroring `zones/descriptors.ts`. `WidgetsModule.run()`
+ * Single source of truth for every widget type the widgets module ships
+ * out of the box, mirroring `zones/descriptors.ts`. A core module that
+ * owns a feature registers that feature's widget type itself, under its
+ * own module id, as the tools module does for `tools:stake-calculator`. `WidgetsModule.run()`
  * iterates this array and calls `widgetsService.registerType(input,
  * 'core')` for each, so core types flow through the same admission
  * path plugins use — no static-minting shortcut.

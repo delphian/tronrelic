@@ -8,11 +8,12 @@
 export { AddressConverter } from './components/AddressConverter';
 export { AddressGenerator } from './components/AddressGenerator';
 export { EnergyEstimator } from './components/EnergyEstimator';
-export { StakeCalculator } from './components/StakeCalculator';
+export { StakeCalculator, StakeCalculatorForm, StakeCalculatorWidget } from './components/StakeCalculator';
 export { SignatureVerifier } from './components/SignatureVerifier';
 export { ApprovalChecker } from './components/ApprovalChecker';
 export { AddressOrigins } from './components/AddressOrigins';
 export { TimestampConverter } from './components/TimestampConverter';
+export { ToolsAdminClient } from './components/ToolsAdmin';
 
 // API
 export {
@@ -23,7 +24,8 @@ export {
     verifySignature,
     checkApprovals,
     createAddressOriginsStream,
-    convertTimestamp
+    convertTimestamp,
+    createBootstrapPage
 } from './api';
 
 // Types

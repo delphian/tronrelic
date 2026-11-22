@@ -151,6 +151,39 @@ describe('PageService', () => {
         });
     });
 
+    describe('findPageHoldingSlug', () => {
+        it('returns null for a free address', async () => {
+            expect(await service.findPageHoldingSlug('/free')).toBeNull();
+        });
+
+        it('finds a page held for review as the slug owner', async () => {
+            const created = await service.createPage(makePageMarkdown({ title: 'Held', slug: '/held', published: true }), serviceToken);
+
+            const holder = await service.findPageHoldingSlug('/held');
+
+            expect(holder).toMatchObject({ holds: 'slug', page: { contentId: created.contentId, curation: 'pending' } });
+        });
+
+        /** A deleted page still blocks a new page at its address, so the lookup must report it. */
+        it('finds a soft-deleted page', async () => {
+            const created = await service.createPage(makePageMarkdown({ title: 'Gone', slug: '/gone', published: true }), curator);
+            await service.deletePage(created.contentId!, curator);
+
+            const holder = await service.findPageHoldingSlug('/gone');
+
+            expect(holder?.page.deletedAt).toBeDefined();
+        });
+
+        it('reports an address in another page\'s redirect history as a redirect', async () => {
+            const created = await service.createPage(makePageMarkdown({ title: 'Moved', slug: '/before', published: true }), curator);
+            await service.updatePage(created.contentId!, makePageMarkdown({ title: 'Moved', slug: '/after', published: true }), curator);
+
+            const holder = await service.findPageHoldingSlug('/before');
+
+            expect(holder).toMatchObject({ holds: 'redirect', page: { slug: '/after' } });
+        });
+    });
+
     describe('updatePage', () => {
         it('preserves the previous slug in oldSlugs when slug changes', async () => {
             const created = await service.createPage(makePageMarkdown({ title: 'A', slug: '/a' }), curator);

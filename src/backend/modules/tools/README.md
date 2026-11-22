@@ -8,9 +8,11 @@ TRON developers and users frequently need to convert address formats, estimate e
 
 ## Architecture Overview
 
-The module follows TronRelic's two-phase lifecycle with dependency injection. It has no database collections of its own — the calculator service reads from the shared `transactions` collection for energy statistics and calls ChainParametersService for live network parameters. The address converter and signature verifier are stateless.
+The module follows TronRelic's two-phase lifecycle with dependency injection. It has no database collections of its own and no scheduler jobs — the calculator service reads from the shared `transactions` collection for energy statistics and calls ChainParametersService for live network parameters. The address converter and signature verifier are stateless.
 
-**Backend** (`src/backend/modules/tools/`): ToolsModule implements IModule, creates services in `init()`, mounts routes and registers menu items in `run()`. Routes are mounted at `/api/tools/*` via IoC.
+Besides the shared dependencies, `init()` receives `pageService` (`IPageService`), used by the [Bootstrap tab](#admin-page-and-bootstrap-pages) to read and create the module's CMS pages, and `widgetsService` (`IWidgetsService`), used to register the [stake calculator widget](#stake-calculator-page).
+
+**Backend** (`src/backend/modules/tools/`): ToolsModule implements IModule, creates services in `init()`, mounts routes and registers menu items in `run()`. Public routes are mounted at `/api/tools/*` and admin routes at `/api/admin/tools/*` via IoC.
 
 **Frontend** (`src/frontend/modules/tools/`): Interactive client components for each tool. No SSR data fetching — tools are user-driven forms where loading states are appropriate for user-triggered API calls.
 
@@ -42,6 +44,35 @@ The module resolves two shared services from `IServiceRegistry` during `init()`:
 ### Energy Estimator Costs Are Burn Costs
 
 The estimator prices its cost figures with the chain's `energyFee`, which is what the network burns in TRX for each unit of energy an account lacks (100 SUN today). That is not a rental price: energy rental markets usually charge a fraction of it, so calling the figure "rent" overstated renting several times over. The response therefore names the figures `burnPriceSun`, `burnCostPerDayTRX`, `burnCostPerMonthTRX`, and `burnMatchesStakeDays` (the days of burning that add up to the TRX staking would lock), and the page labels them as burn costs. Core holds no energy market data, so a rental price cannot be computed here without a contract that a market plugin publishes.
+
+### Stake Calculator Page
+
+The stake calculator's page text and search metadata are meant to be edited by admins without a deploy, so its address can be handed to a CMS page managed by the [pages module](../pages/README.md). An admin creates that page from the [Bootstrap tab](#admin-page-and-bootstrap-pages); nothing is created automatically.
+
+| Part | Where | What it does |
+|---|---|---|
+| Widget type | `services/STAKE_CALCULATOR_WIDGET_TYPE.ts`, id `tools:stake-calculator` (`STAKE_CALCULATOR_WIDGET_TYPE_ID` in `@/types`) | Registered in `run()` through `IWidgetsService.registerType` with `tools` as the owner. Embeddable, takes no settings, and its fetcher returns `{}`. The frontend renders it with `StakeCalculatorWidget` from `components/widgets/widgets.core.ts` |
+| Proposed page | `services/STAKE_CALCULATOR_PAGE_PROPOSAL.ts` | Every visible field matches the built-in page: the same title, description, and keywords, and a body with the same heading and intro line followed by the widget in a ` ```widget ` block, so approving the page changes no visible text. Its default address is `/tools/stake-calculator` (`STAKE_CALCULATOR_PATH` in `@/types`), and `source: 'tools-module'` is the actor a curator sees |
+| Frontend route | `app/[lang]/(site)/(core)/tools/stake-calculator/page.tsx` | Serves the CMS page when it answers at this address, redirects when an admin has moved the page, and renders the built-in `StakeCalculator` page otherwise |
+
+**The address is a default, not a fixture.** The page is created at `/tools/stake-calculator`, and from then on the CMS rules apply to it like any page. If an admin changes its slug, the pages module keeps the old address in the page's redirect history, and this route redirects visitors to the new one, the same as the catch-all route does for any renamed page.
+
+**Why the route falls back.** A page is served in a language only while it has a published translation into that language, with no English fallback. When no CMS page answers here — before one is created or approved, after one is deleted, in every language the page has not been translated into, and when the backend cannot be reached — the built-in page keeps `/tools/stake-calculator` and its translated addresses answering. To move a translated address such as `/ru/tools/stake-calculator` onto the CMS page, publish that page's translation on `/system/pages`, and copy the ` ```widget ` block into the translated body unchanged.
+
+## Admin Page and Bootstrap Pages
+
+`/system/tools`, under the System container, has two tabs registered in the `tools-admin` menu namespace (`TOOLS_ADMIN_SUBMENU_NAMESPACE` in `@/types`): **Bootstrap** and **Logs** (`SystemLogsMonitor` scoped to `tronrelic:tools`). The module owns no collections and no scheduler jobs, so there is no Database or Schedules tab.
+
+The Bootstrap tab lists the CMS pages the module ships, from `services/TOOLS_BOOTSTRAP_PAGES.ts`, with the state of the address each would take and a **Create** button. Clicking Create proposes the page through `IPageService.proposePage`, the same path an AI tool uses, so it waits in `/system/curation` and nothing changes for visitors until a curator approves it. To offer another page, add an entry to that file.
+
+| Endpoint | Returns | Notes |
+|---|---|---|
+| `GET /api/admin/tools/bootstrap` | `{ success, pages: IToolsBootstrapPage[] }` | One row per offered page, with its `state` and the page holding the address, if any |
+| `POST /api/admin/tools/bootstrap/:id` | `{ success, page, curationId }`, 201 | 404 for an unknown entry; 409 when a page holds the address; a content service refusal takes its mapped status, such as 503 when curation is not running |
+
+Both sit behind `createAdminRateLimiter('tools-admin')` and `requireAdmin`.
+
+**When Create is offered.** A page is created only when no page holds its address at that moment, and the button can be used again whenever the address is free, however many times the page existed before. `ToolsBootstrapService` asks `IPageService.findPageHoldingSlug` (any review or deletion state, slug or redirect history) and reports one of the `ToolsBootstrapPageState` values. The pages module refuses a new page on any address another page holds, and it counts a soft-deleted page and a page whose proposal was rejected as holding theirs, because deletion is soft and there is no purge. So in the `rejected`, `deleted`, and `redirect` states the button is replaced by a note naming the holding page; the admin acts on that page in `/system/pages`. Two clicks racing past the check still create one page, because the pages module refuses the second.
 
 The Signature Verifier supports direct URL linking via query parameters: `/tools/signature-verifier?wallet=T...&message=hello&signature=0x...` — it auto-fills and verifies on page load.
 
@@ -126,9 +157,9 @@ The module creates a "Tools" container node in the `main` namespace with child e
 
 ## Module Lifecycle
 
-**init() phase:** Stores injected dependencies, registers TransactionModel with the database service, resolves `IChainParametersService` from the service registry, builds a TronWeb instance from `TronGridClient`, creates the address, calculator, signature, approval, timestamp, and address-origins services, and creates ToolsController. Does NOT mount routes or register menu items.
+**init() phase:** Stores injected dependencies, registers TransactionModel with the database service, resolves `IChainParametersService` from the service registry, builds a TronWeb instance from `TronGridClient`, creates the address, calculator, signature, approval, timestamp, and address-origins services, creates ToolsController, and creates `ToolsBootstrapService` and `ToolsAdminController` from the injected `pageService`. Does NOT mount routes or register menu items.
 
-**run() phase:** Registers the Tools menu category and child items in the `main` namespace, mounts the tools router at `/api/tools` with rate limiting and async error handling.
+**run() phase:** Registers the Tools menu category and child items in the `main` namespace, the `/system/tools` entry under the System container, and the `tools-admin` tab row; mounts the tools router at `/api/tools` with rate limiting and async error handling and the admin router at `/api/admin/tools`; and registers the `tools:stake-calculator` widget type on the injected `widgetsService`.
 
 ## Further Reading
 

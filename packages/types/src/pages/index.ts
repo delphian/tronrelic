@@ -18,6 +18,7 @@ export type { IPageEditProposal } from './IPageEditProposal.js';
 export type { IPageEditProposalResult } from './IPageEditProposalResult.js';
 export type { IPageProposal } from './IPageProposal.js';
 export type { IPageProposalResult } from './IPageProposalResult.js';
+export type { IPageSlugHolder } from './IPageSlugHolder.js';
 export type { IPublicPageRender } from './IPublicPageRender.js';
 export type { IPublicPageTranslationMetadata } from './IPublicPageTranslationMetadata.js';
 export type { IPageTranslationService } from './IPageTranslationService.js';

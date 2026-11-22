@@ -33,6 +33,7 @@ vi.mock('../../blockchain/tron-grid.client.js', () => ({
 
 import { ToolsModule } from '../index.js';
 import type { ICacheService, IChainParameters, IChainParametersService, IMenuService, IServiceRegistry } from '@/types';
+import { STAKE_CALCULATOR_WIDGET_TYPE_ID } from '@/types';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 import { createMockServiceRegistry } from '../../../tests/vitest/mocks/service-registry.js';
 
@@ -164,6 +165,8 @@ describe('ToolsModule', () => {
     let mockChainParams: MockChainParametersService;
     let mockServiceRegistry: IServiceRegistry;
     let mockApp: MockExpressApp;
+    let mockPageService: { proposePage: ReturnType<typeof vi.fn> };
+    let mockWidgets: { registerType: ReturnType<typeof vi.fn> };
 
     beforeEach(() => {
         vi.clearAllMocks();
@@ -174,6 +177,10 @@ describe('ToolsModule', () => {
         mockChainParams = new MockChainParametersService();
         mockServiceRegistry = createMockServiceRegistry({ 'chain-parameters': mockChainParams });
         mockApp = new MockExpressApp();
+        mockPageService = {
+            proposePage: vi.fn().mockResolvedValue({ pageId: 'page-1', slug: '/tools/stake-calculator', pendingReview: true, curationId: 'cur-1' })
+        };
+        mockWidgets = { registerType: vi.fn(() => () => undefined) };
     });
 
     // ============================================================================
@@ -205,7 +212,9 @@ describe('ToolsModule', () => {
                 cacheService: mockCache,
                 menuService: mockMenu,
                 serviceRegistry: mockServiceRegistry,
-                app: mockApp as any
+                app: mockApp as any,
+                pageService: mockPageService as any,
+                widgetsService: mockWidgets as any
             })).resolves.not.toThrow();
         });
 
@@ -217,7 +226,9 @@ describe('ToolsModule', () => {
                 cacheService: mockCache,
                 menuService: mockMenu,
                 serviceRegistry: mockServiceRegistry,
-                app: mockApp as any
+                app: mockApp as any,
+                pageService: mockPageService as any,
+                widgetsService: mockWidgets as any
             });
 
             // init() completing without throwing verifies dependency storage
@@ -232,7 +243,9 @@ describe('ToolsModule', () => {
                 cacheService: mockCache,
                 menuService: mockMenu,
                 serviceRegistry: mockServiceRegistry,
-                app: mockApp as any
+                app: mockApp as any,
+                pageService: mockPageService as any,
+                widgetsService: mockWidgets as any
             });
 
             expect(mockApp.use).not.toHaveBeenCalled();
@@ -246,7 +259,9 @@ describe('ToolsModule', () => {
                 cacheService: mockCache,
                 menuService: mockMenu,
                 serviceRegistry: mockServiceRegistry,
-                app: mockApp as any
+                app: mockApp as any,
+                pageService: mockPageService as any,
+                widgetsService: mockWidgets as any
             });
 
             expect(mockMenu.create).not.toHaveBeenCalled();
@@ -261,7 +276,9 @@ describe('ToolsModule', () => {
                 cacheService: mockCache,
                 menuService: mockMenu,
                 serviceRegistry: emptyRegistry,
-                app: mockApp as any
+                app: mockApp as any,
+                pageService: mockPageService as any,
+                widgetsService: mockWidgets as any
             })).rejects.toThrow('ChainParametersService not found on service registry');
         });
 
@@ -274,7 +291,9 @@ describe('ToolsModule', () => {
                 cacheService: mockCache,
                 menuService: mockMenu,
                 serviceRegistry: mockServiceRegistry,
-                app: mockApp as any
+                app: mockApp as any,
+                pageService: mockPageService as any,
+                widgetsService: mockWidgets as any
             });
 
             expect(getSpy).toHaveBeenCalledWith('chain-parameters');
@@ -300,7 +319,9 @@ describe('ToolsModule', () => {
                 cacheService: mockCache,
                 menuService: mockMenu,
                 serviceRegistry: mockServiceRegistry,
-                app: mockApp as any
+                app: mockApp as any,
+                pageService: mockPageService as any,
+                widgetsService: mockWidgets as any
             });
 
             await module.run();
@@ -325,19 +346,22 @@ describe('ToolsModule', () => {
                 cacheService: mockCache,
                 menuService: mockMenu,
                 serviceRegistry: mockServiceRegistry,
-                app: mockApp as any
+                app: mockApp as any,
+                pageService: mockPageService as any,
+                widgetsService: mockWidgets as any
             });
 
             await module.run();
 
-            // 1 container + 8 children = 9 create calls
-            expect(mockMenu.create).toHaveBeenCalledTimes(9);
+            // 1 container + 8 children, then the /system/tools entry and its 2 tabs
+            expect(mockMenu.create).toHaveBeenCalledTimes(12);
 
             const calls = mockMenu.create.mock.calls;
 
             // Verify child items reference the container parent
             const parentId = 'mock-container-id';
-            const childLabels = calls.slice(1).map((c: unknown[]) => (c[0] as { label: string }).label);
+            const childCalls = calls.slice(1, 9);
+            const childLabels = childCalls.map((c: unknown[]) => (c[0] as { label: string }).label);
             expect(childLabels).toContain('Address Converter');
             expect(childLabels).toContain('Address Generator');
             expect(childLabels).toContain('Energy Estimator');
@@ -348,7 +372,7 @@ describe('ToolsModule', () => {
             expect(childLabels).toContain('Timestamp Converter');
 
             // All children reference the container parent
-            for (const call of calls.slice(1)) {
+            for (const call of childCalls) {
                 expect((call[0] as { parent: string }).parent).toBe(parentId);
             }
         });
@@ -361,16 +385,97 @@ describe('ToolsModule', () => {
                 cacheService: mockCache,
                 menuService: mockMenu,
                 serviceRegistry: mockServiceRegistry,
-                app: mockApp as any
+                app: mockApp as any,
+                pageService: mockPageService as any,
+                widgetsService: mockWidgets as any
             });
 
             await module.run();
 
-            expect(mockApp.use).toHaveBeenCalledTimes(1);
+            const call = mockApp.use.mock.calls.find((c: unknown[]) => c[0] === '/api/tools');
+            expect(call).toBeDefined();
+            expect(call![1]).toBeTypeOf('function');
+        });
 
-            const call = mockApp.use.mock.calls[0];
-            expect(call[0]).toBe('/api/tools');
-            expect(call[1]).toBeTypeOf('function');
+        it('should mount the admin router at /api/admin/tools behind the admin gate', async () => {
+            const module = new ToolsModule();
+
+            await module.init({
+                database: mockDatabase,
+                cacheService: mockCache,
+                menuService: mockMenu,
+                serviceRegistry: mockServiceRegistry,
+                app: mockApp as any,
+                pageService: mockPageService as any,
+                widgetsService: mockWidgets as any
+            });
+
+            await module.run();
+
+            const call = mockApp.use.mock.calls.find((c: unknown[]) => c[0] === '/api/admin/tools');
+            expect(call).toBeDefined();
+            // Rate limiter, requireAdmin, then the router.
+            expect(call!.length).toBe(4);
+        });
+
+        it('should register the stake calculator as an embeddable widget owned by the tools module', async () => {
+            const module = new ToolsModule();
+
+            await module.init({
+                database: mockDatabase,
+                cacheService: mockCache,
+                menuService: mockMenu,
+                serviceRegistry: mockServiceRegistry,
+                app: mockApp as any,
+                pageService: mockPageService as any,
+                widgetsService: mockWidgets as any
+            });
+            expect(mockWidgets.registerType).not.toHaveBeenCalled();
+
+            await module.run();
+
+            expect(mockWidgets.registerType).toHaveBeenCalledWith(
+                expect.objectContaining({ id: STAKE_CALCULATOR_WIDGET_TYPE_ID, embeddable: true }),
+                'tools'
+            );
+        });
+
+        /** Pages are created only when an admin clicks Create, never at boot. */
+        it('should not propose any page during the lifecycle', async () => {
+            const module = new ToolsModule();
+
+            await module.init({
+                database: mockDatabase,
+                cacheService: mockCache,
+                menuService: mockMenu,
+                serviceRegistry: mockServiceRegistry,
+                app: mockApp as any,
+                pageService: mockPageService as any,
+                widgetsService: mockWidgets as any
+            });
+            await module.run();
+            mockServiceRegistry.register('curation', {});
+
+            expect(mockPageService.proposePage).not.toHaveBeenCalled();
+        });
+
+        it('should register the /system/tools entry and its Bootstrap and Logs tabs during run()', async () => {
+            const module = new ToolsModule();
+
+            await module.init({
+                database: mockDatabase,
+                cacheService: mockCache,
+                menuService: mockMenu,
+                serviceRegistry: mockServiceRegistry,
+                app: mockApp as any,
+                pageService: mockPageService as any,
+                widgetsService: mockWidgets as any
+            });
+            await module.run();
+
+            expect(mockMenu.create).toHaveBeenCalledWith(expect.objectContaining({ namespace: 'main', url: '/system/tools' }));
+            expect(mockMenu.create).toHaveBeenCalledWith(expect.objectContaining({ namespace: 'tools-admin', url: '/system/tools?tab=bootstrap', requiresAdmin: true }));
+            expect(mockMenu.create).toHaveBeenCalledWith(expect.objectContaining({ namespace: 'tools-admin', url: '/system/tools?tab=logs', requiresAdmin: true }));
         });
 
         it('should throw if menu registration fails', async () => {
@@ -383,7 +488,9 @@ describe('ToolsModule', () => {
                 cacheService: mockCache,
                 menuService: mockMenu,
                 serviceRegistry: mockServiceRegistry,
-                app: mockApp as any
+                app: mockApp as any,
+                pageService: mockPageService as any,
+                widgetsService: mockWidgets as any
             });
 
             await expect(module.run()).rejects.toThrow('Failed to register tools menu items');
@@ -403,13 +510,15 @@ describe('ToolsModule', () => {
                 cacheService: mockCache,
                 menuService: mockMenu,
                 serviceRegistry: mockServiceRegistry,
-                app: mockApp as any
+                app: mockApp as any,
+                pageService: mockPageService as any,
+                widgetsService: mockWidgets as any
             });
 
             await module.run();
 
             expect(mockMenu.create).toHaveBeenCalled();
-            expect(mockApp.use).toHaveBeenCalledTimes(1);
+            expect(mockApp.use).toHaveBeenCalledTimes(2);
         });
     });
 
@@ -430,7 +539,9 @@ describe('ToolsModule', () => {
                 cacheService: mockCache,
                 menuService: mockMenu,
                 serviceRegistry: mockServiceRegistry,
-                app: mockApp as any
+                app: mockApp as any,
+                pageService: mockPageService as any,
+                widgetsService: mockWidgets as any
             });
 
             await module.run();
@@ -446,7 +557,9 @@ describe('ToolsModule', () => {
                 cacheService: mockCache,
                 menuService: mockMenu,
                 serviceRegistry: mockServiceRegistry,
-                app: mockApp as any
+                app: mockApp as any,
+                pageService: mockPageService as any,
+                widgetsService: mockWidgets as any
             });
 
             await module.run();
@@ -462,7 +575,9 @@ describe('ToolsModule', () => {
                 cacheService: mockCache,
                 menuService: mockMenu,
                 serviceRegistry: mockServiceRegistry,
-                app: mockApp as any
+                app: mockApp as any,
+                pageService: mockPageService as any,
+                widgetsService: mockWidgets as any
             });
 
             await module.run();
@@ -479,7 +594,9 @@ describe('ToolsModule', () => {
                 cacheService: mockCache,
                 menuService: mockMenu,
                 serviceRegistry: mockServiceRegistry,
-                app: mockApp as any
+                app: mockApp as any,
+                pageService: mockPageService as any,
+                widgetsService: mockWidgets as any
             });
 
             // The module resolved chain-parameters during init
@@ -502,7 +619,9 @@ describe('ToolsModule', () => {
                 cacheService: mockCache,
                 menuService: mockMenu,
                 serviceRegistry: mockServiceRegistry,
-                app: mockApp as any
+                app: mockApp as any,
+                pageService: mockPageService as any,
+                widgetsService: mockWidgets as any
             });
 
             await expect(module.run()).rejects.toThrow();
@@ -517,7 +636,9 @@ describe('ToolsModule', () => {
                 cacheService: mockCache,
                 menuService: mockMenu,
                 serviceRegistry: emptyRegistry,
-                app: mockApp as any
+                app: mockApp as any,
+                pageService: mockPageService as any,
+                widgetsService: mockWidgets as any
             })).rejects.toThrow();
         });
     });

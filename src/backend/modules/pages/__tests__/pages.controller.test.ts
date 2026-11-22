@@ -12,6 +12,7 @@ class MockPageService implements IPageService {
     proposeEdit = vi.fn();
     proposePage = vi.fn();
     getPageById = vi.fn();
+    findPageHoldingSlug = vi.fn();
     getPublicPageBySlug = vi.fn();
     findPublicPageByOldSlug = vi.fn();
     listPages = vi.fn();
