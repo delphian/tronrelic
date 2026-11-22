@@ -12,7 +12,9 @@
  *   contain. An external link is any target that is not a plain path on this
  *   site: it has a scheme, starts with `//` or a backslash, or contains `&`,
  *   because Markdown and HTML decode character references and could turn
- *   `/&#47;evil.example` into `//evil.example`.
+ *   `/&#47;evil.example` into `//evil.example`. An address counts wherever
+ *   it appears, a link target included, because a site route such as
+ *   `/tools/approval-checker?address=T...` prefills the wallet it is given.
  * - Listed: a dropped address or external link, a link to this site that
  *   only one side has, and a number that only one side has. A site link
  *   under the translation's own language prefix, such as `/ru/markets`,
@@ -156,14 +158,20 @@ function findAnchors(text: string, language: string): IAnchors {
             externalLinks.add(link);
         }
     }
-    // Remove the links before looking for numbers and addresses, so digits in
-    // a URL are checked as part of the link rather than a second time.
+    // Remove the links before looking for numbers, so digits in a URL are
+    // checked as part of the link rather than a second time.
     const withoutLinks = text
         .replace(ABSOLUTE_URL_PATTERN, ' ')
         .replace(MARKDOWN_TARGET_PATTERN, '] ')
         .replace(REFERENCE_DEFINITION_PATTERN, ' ')
         .replace(HTML_TARGET_PATTERN, ' ');
-    const addresses = new Set<string>(withoutLinks.match(TRON_ADDRESS_PATTERN) ?? []);
+    // Addresses are read from the whole text, link targets included. A link to
+    // this site is only listed for the curator, and site routes such as
+    // `/tools/approval-checker?address=T...` prefill the wallet they are given,
+    // so an address inside a target has to count as an added address. Both
+    // sides are read the same way, so a link the English already carries
+    // contributes its address to both sets and is not refused.
+    const addresses = new Set<string>(text.match(TRON_ADDRESS_PATTERN) ?? []);
     const withoutAddresses = withoutLinks.replace(TRON_ADDRESS_PATTERN, ' ');
     const numbers = new Set<string>();
     for (const match of withoutAddresses.matchAll(NUMBER_PATTERN)) {
