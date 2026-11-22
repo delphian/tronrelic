@@ -224,9 +224,33 @@ describe('ContentTranslationService', () => {
 
         expect(summary[untranslated.id]).toBeUndefined();
         expect(summary[translated.id]).toEqual([
-            { language: 'es', published: false, stale: false, deleted: false, saved: true, proposalPending: false },
-            { language: 'zh', published: true, stale: true, deleted: false, saved: true, proposalPending: false }
+            { language: 'es', published: false, stale: false, custom: false, deleted: false, saved: true, proposalPending: false },
+            { language: 'zh', published: true, stale: true, custom: false, deleted: false, saved: true, proposalPending: false }
         ]);
+    });
+
+    it('never flags a custom translation stale, but still reports that the English changed', async () => {
+        service.registerType(noteType(database), 'test');
+        const note = await service.create<INote>('test:note', { text: 'Hi', paths: ['/hi'] }, curator);
+        await service.translations().saveTranslation('test:note', note.id, 'ru', { values: { text: 'Привет' }, published: true, custom: true }, curator);
+        await service.update('test:note', note.id, { text: 'Hello' }, curator);
+
+        const [translation] = (await service.translations().getOverview('test:note', note.id)).translations;
+        expect(translation).toMatchObject({ custom: true, stale: false, englishChanged: true });
+        expect((await service.translations().summarizeTranslations('test:note', [note.id]))[note.id][0])
+            .toMatchObject({ custom: true, stale: false });
+    });
+
+    it('keeps the custom flag through a save that does not mention it', async () => {
+        service.registerType(noteType(database), 'test');
+        const note = await service.create<INote>('test:note', { text: 'Hi', paths: ['/hi'] }, curator);
+        await service.translations().saveTranslation('test:note', note.id, 'ru', { values: { text: 'Привет' }, published: true, custom: true }, curator);
+
+        const saved = await service.translations().saveTranslation('test:note', note.id, 'ru', { values: { text: 'Здравствуйте' }, published: true }, curator);
+        expect(saved.custom).toBe(true);
+
+        const cleared = await service.translations().saveTranslation('test:note', note.id, 'ru', { values: { text: 'Здравствуйте' }, published: true, custom: false }, curator);
+        expect(cleared.custom).toBe(false);
     });
 
     it('lists only items with a published, live translation into the language', async () => {
@@ -327,7 +351,7 @@ describe('ContentTranslationService proposals', () => {
         expect(curation.items.size).toBe(0);
     });
 
-    it('refuses a proposal whose links, addresses, or numbers differ from the English', async () => {
+    it('refuses a proposal that adds a TRON address the English does not contain', async () => {
         const { id, sourceHash } = await noteWithHash('Send 50 TRX to TLa2f6VPqDgRE67v1736s7bJ8Ray5wYjU7');
 
         await expect(
@@ -338,6 +362,36 @@ describe('ContentTranslationService proposals', () => {
             )
         ).rejects.toThrow(/TRON addresses/);
         expect(curation.items.size).toBe(0);
+    });
+
+    it('holds a proposal whose numbers and site links differ, and lists the differences for the curator', async () => {
+        const { id, sourceHash } = await noteWithHash('Stake 1,000 TRX');
+
+        const outcome = await service.translations().proposeTranslation(
+            'test:note', id, 'zh',
+            { values: { text: '质押 5000 TRX，见 [市场](/resource-markets)' }, sourceHash },
+            agent
+        );
+
+        expect(outcome.pendingReview).toBe(true);
+        expect(outcome.differences.join(' ')).toContain('"1000"');
+        expect(outcome.differences.join(' ')).toContain('"5000"');
+        expect(outcome.differences.join(' ')).toContain('/resource-markets');
+        const descriptor = await curation.types.get('core:content-translation')!.describe(curation.items.get('item-1')!.ref);
+        expect(descriptor.details?.filter((detail) => detail.label === 'Differs from the English')).toHaveLength(3);
+    });
+
+    it('marks the translation custom when a curator approves a proposal asking for it, even after the English changed', async () => {
+        const { id, sourceHash } = await noteWithHash('Hello');
+        await service.translations().proposeTranslation('test:note', id, 'zh', { values: { text: '你好' }, sourceHash, custom: true }, agent);
+        const descriptor = await curation.types.get('core:content-translation')!.describe(curation.items.get('item-1')!.ref);
+        expect(descriptor.details?.some((detail) => detail.label === 'Custom version')).toBe(true);
+        await service.update('test:note', id, { text: 'Hello there' }, curator);
+
+        await curation.approve('item-1');
+
+        const [saved] = (await service.translations().getOverview('test:note', id)).translations;
+        expect(saved).toMatchObject({ values: { text: '你好' }, custom: true, stale: false, englishChanged: true });
     });
 
     it('refuses a proposal into a language that is not enabled', async () => {

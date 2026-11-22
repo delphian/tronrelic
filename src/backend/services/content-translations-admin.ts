@@ -81,7 +81,8 @@ export class ContentTranslationsController {
     /**
      * Create or replace one translation.
      *
-     * @param req - Params: `typeId`, `id`, `language`. Body: `{ values, published }`.
+     * @param req - Params: `typeId`, `id`, `language`. Body: `{ values, published, custom? }`;
+     *   a `custom` that is not a boolean is ignored and the current setting kept.
      * @param res - Receives `{ translation }`.
      */
     saveTranslation = async (req: Request, res: Response): Promise<void> => {
@@ -91,7 +92,11 @@ export class ContentTranslationsController {
                 req.params.typeId,
                 req.params.id,
                 req.params.language,
-                { values: body.values, published: body.published === true },
+                {
+                    values: body.values,
+                    published: body.published === true,
+                    ...(typeof body.custom === 'boolean' ? { custom: body.custom } : {})
+                },
                 actorFromAdminRequest(req)
             );
             res.json({ translation });

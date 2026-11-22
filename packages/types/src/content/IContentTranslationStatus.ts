@@ -18,8 +18,17 @@ export interface IContentTranslationStatus {
     /** Whether visitors are served the translation. */
     published: boolean;
 
-    /** True when the English text has changed since the translation was last saved. */
+    /**
+     * True when the English text has changed since the translation was last
+     * saved and the translation is not custom.
+     */
     stale: boolean;
+
+    /**
+     * True when a curator marked the translation as custom, so it no longer
+     * tracks the English and is never stale. False for a proposal-only language.
+     */
+    custom: boolean;
 
     /** True when the translation is soft-deleted. */
     deleted: boolean;

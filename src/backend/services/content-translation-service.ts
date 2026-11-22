@@ -103,6 +103,38 @@ function fieldText(values: TranslationValues, name: string): string {
     return Array.isArray(value) ? value.join(', ') : (value ?? '');
 }
 
+/**
+ * Decide whether a translation needs another pass. A custom translation is
+ * written for its own readers and never tracks the English, so it is never
+ * stale however the English changes; any other translation is stale once the
+ * English differs from the text it was saved against.
+ *
+ * @param state - The translation's state, holding its saved fingerprint and custom flag.
+ * @param englishHash - Fingerprint of the English as it is now; undefined when
+ *   the item could not be read, which counts as changed.
+ * @returns True when a translator should look at the translation again.
+ */
+function isStale(state: Pick<IContentTranslationStateDocument, 'sourceHash' | 'custom'>, englishHash: string | undefined): boolean {
+    return state.custom !== true && state.sourceHash !== englishHash;
+}
+
+/**
+ * Work out the custom setting a translation will have once a proposal is
+ * approved: the setting the proposal asks for, or the translation's current
+ * one when the proposal asks for none. Approval and the queue item both use
+ * this, so the curator is told exactly what approving will do.
+ *
+ * @param proposal - The proposal's review state.
+ * @param state - The translation's current state, or null when none is saved.
+ * @returns True when the approved translation will be custom.
+ */
+function customAfterApproval(
+    proposal: Pick<IContentTranslationProposalDocument, 'custom'>,
+    state: Pick<IContentTranslationStateDocument, 'custom'> | null
+): boolean {
+    return proposal.custom ?? (state?.custom === true);
+}
+
 /** A registered managed type together with its translation side. */
 interface ITranslatableEntry {
     type: IManagedContentType<IContent, unknown, unknown>;
@@ -124,6 +156,12 @@ export interface IContentTranslationStateDocument {
     published: boolean;
     /** Fingerprint of the English text the translation was last saved against. */
     sourceHash: string;
+    /**
+     * Whether a curator marked the translation custom, so it no longer tracks
+     * the English and is never stale. Absent on rows saved before the flag
+     * existed, which reads as false.
+     */
+    custom?: boolean;
     /** When the translation was first saved. */
     createdAt: Date;
     /** Who first saved it. */
@@ -162,6 +200,11 @@ export interface IContentTranslationProposalDocument {
     proposedBy: string;
     /** What produced it, such as an AI tool name. */
     source?: string;
+    /**
+     * The custom setting approval applies: true marks the translation custom,
+     * false returns it to tracking the English, absent keeps it as it is.
+     */
+    custom?: boolean;
     /** When it was proposed. */
     proposedAt: Date;
 }
@@ -260,7 +303,7 @@ export class ContentTranslationService implements IContentTranslationService {
                 pendingEdit: latest.curation === 'pending' && latestHash !== englishHash
             },
             translations: states.map((state) => this.toTranslation(state, records, englishHash)),
-            proposals: await this.listProposals(entry, id, englishHash)
+            proposals: await this.listProposals(entry, id, englishHash, states)
         };
     }
 
@@ -300,7 +343,8 @@ export class ContentTranslationService implements IContentTranslationService {
             statuses.push({
                 language: state.language,
                 published: state.published,
-                stale: state.sourceHash !== englishHashes.get(state.contentId),
+                stale: isStale(state, englishHashes.get(state.contentId)),
+                custom: state.custom === true,
                 deleted: Boolean(state.deletedAt),
                 saved: true,
                 proposalPending: proposed.has(key)
@@ -316,6 +360,7 @@ export class ContentTranslationService implements IContentTranslationService {
                     language: proposal.language,
                     published: false,
                     stale: false,
+                    custom: false,
                     deleted: false,
                     saved: false,
                     proposalPending: true
@@ -331,12 +376,14 @@ export class ContentTranslationService implements IContentTranslationService {
      * Create or replace a translation. The values are checked against the
      * type's field list before the veto hooks run, so a hook sees exactly what
      * will be stored. A proposal waiting for review in the same language is
-     * closed, because the curator's save replaces what it proposed.
+     * closed, because the curator's save replaces what it proposed. The
+     * custom flag follows `input.custom` when given and is otherwise kept.
      *
      * @param typeId - The managed content type.
      * @param id - Core content id of the item.
      * @param language - Language code of the translation.
-     * @param input - The translated values and the published switch.
+     * @param input - The translated values, the published switch, and
+     *   optionally the custom flag.
      * @param actor - Who is saving; must be a curator.
      * @returns The saved translation.
      */
@@ -356,7 +403,8 @@ export class ContentTranslationService implements IContentTranslationService {
             throw new ContentError('deleted', `The "${language}" translation is deleted; restore it before changing it`);
         }
         const values = this.validateValues(entry.translation.translatableFields, input?.values);
-        const write: IContentTranslationWrite = { values, published: input?.published === true };
+        const custom = typeof input?.custom === 'boolean' ? input.custom : existing?.custom === true;
+        const write: IContentTranslationWrite = { values, published: input?.published === true, custom };
         await this.runVeto(HOOKS.content.beforeUpdate, { operation: 'update', typeId, id, actor, input: write, language });
 
         const englishHash = await this.englishHash(entry, id);
@@ -365,14 +413,14 @@ export class ContentTranslationService implements IContentTranslationService {
         await this.collection().updateOne(
             { contentId: id, language },
             {
-                $set: { typeId, published: write.published, sourceHash: englishHash, updatedAt: now, updatedBy: actor.id },
+                $set: { typeId, published: write.published, custom, sourceHash: englishHash, updatedAt: now, updatedBy: actor.id },
                 $setOnInsert: { createdAt: now, createdBy: actor.id }
             },
             { upsert: true }
         );
         await this.supersedeProposal(entry, id, language, actor);
         await this.notifyChanged(entry, id, language);
-        this.deps.logger.info({ typeId, id, language, actor: actor.id, published: write.published }, 'Content translation saved');
+        this.deps.logger.info({ typeId, id, language, actor: actor.id, published: write.published, custom }, 'Content translation saved');
 
         return this.readOne(entry, id, language, englishHash);
     }
@@ -438,8 +486,8 @@ export class ContentTranslationService implements IContentTranslationService {
 
     /**
      * Ask an AI model to translate an item. The existing translation is sent
-     * along only when it is stale, so the model updates it instead of
-     * starting over.
+     * along as the one to update only when it is stale, so the model updates
+     * it instead of starting over. A custom translation is never stale.
      *
      * @param typeId - The managed content type.
      * @param id - Core content id of the item.
@@ -461,7 +509,7 @@ export class ContentTranslationService implements IContentTranslationService {
         const live = state && !state.deletedAt ? state : null;
         const [record] = live ? await entry.translation.readTranslations([{ id, language }]) : [];
         const existing = record?.values ?? null;
-        const stale = live !== null && live.sourceHash !== this.hashValues(fields, english);
+        const stale = live !== null && isStale(live, this.hashValues(fields, english));
 
         return this.deps.suggestions.suggest(
             { typeId, id, language },
@@ -477,17 +525,21 @@ export class ContentTranslationService implements IContentTranslationService {
      * order that refuses a bad proposal before anything is stored: the type
      * must accept proposals, the language must be enabled, the item must be
      * served, the English must not have changed, and the values must pass the
-     * field list, the type's own rules, and the comparison of links, TRON
-     * addresses, and numbers with the English. Only then are the values held
-     * and a queue item opened. A proposal already open for the language is
-     * replaced, and its queue item is closed as superseded.
+     * field list, the type's own rules, and the anchor comparison, which
+     * refuses a TRON address or external link the English lacks. Only then
+     * are the values held and a queue item opened. A proposal already open
+     * for the language is replaced, and its queue item is closed as
+     * superseded. The other differences the comparison finds are allowed and
+     * returned, and the queue item lists them for the curator.
      *
      * @param typeId - The managed content type.
      * @param id - Core content id of the item.
      * @param language - Language code of the translation.
-     * @param input - The proposed values and the English fingerprint they follow.
+     * @param input - The proposed values, the English fingerprint they
+     *   follow, and an optional custom setting to apply on approval.
      * @param actor - Who is proposing; recorded on the proposal.
-     * @returns Whether the proposal waits for review, and its queue item.
+     * @returns Whether the proposal waits for review, its queue item, and how
+     *   it differs from the English.
      */
     async proposeTranslation(
         typeId: string,
@@ -523,16 +575,17 @@ export class ContentTranslationService implements IContentTranslationService {
             // Error, so its message is what the proposer needs to fix them.
             throw new ContentTranslationInputError(error instanceof Error ? error.message : String(error));
         }
-        const mismatches = findTranslationMismatches(fields, english, values);
-        if (mismatches.length > 0) {
-            throw new ContentTranslationInputError(`The translation must keep every link, TRON address, and number exactly as the English has it. ${mismatches.join(' ')}`);
+        const anchors = findTranslationMismatches(fields, english, values, language);
+        if (anchors.refusals.length > 0) {
+            throw new ContentTranslationInputError(anchors.refusals.join(' '));
         }
+        const custom = typeof input?.custom === 'boolean' ? input.custom : undefined;
         await this.runVeto(HOOKS.content.beforeUpdate, {
             operation: 'update',
             typeId,
             id,
             actor,
-            input: { values, published: state?.published === true },
+            input: { values, published: state?.published === true, custom: custom ?? (state?.custom === true) },
             language
         });
         const curation = this.requireCuration();
@@ -543,11 +596,25 @@ export class ContentTranslationService implements IContentTranslationService {
         // Record the new hold before writing the new text. An approval of the
         // older hold re-reads the hold after reading the text, so once the
         // hold has moved it refuses rather than publishing text it never showed.
+        // Fields a newer proposal leaves out are unset, so nothing an older
+        // proposal asked for, such as its custom request, survives into it.
         await this.proposalCollection().updateOne(
             { contentId: id, language },
             {
-                $set: { typeId, holdId, sourceHash: englishHash, proposedBy: actor.id, proposedAt: new Date(), ...(source ? { source } : {}) },
-                $unset: source ? { curationItemId: '' } : { curationItemId: '', source: '' }
+                $set: {
+                    typeId,
+                    holdId,
+                    sourceHash: englishHash,
+                    proposedBy: actor.id,
+                    proposedAt: new Date(),
+                    ...(source ? { source } : {}),
+                    ...(custom !== undefined ? { custom } : {})
+                },
+                $unset: {
+                    curationItemId: '',
+                    ...(source ? {} : { source: '' }),
+                    ...(custom !== undefined ? {} : { custom: '' })
+                }
             },
             { upsert: true }
         );
@@ -573,14 +640,18 @@ export class ContentTranslationService implements IContentTranslationService {
         const recorded = item.status === 'pending'
             ? (await this.proposalCollection().updateOne({ contentId: id, language, holdId }, { $set: { curationItemId: item.id } })).matchedCount > 0
             : false;
-        this.deps.logger.info({ typeId, id, language, actor: actor.id, curationItemId: item.id, status: item.status }, 'Content translation proposed');
+        this.deps.logger.info(
+            { typeId, id, language, actor: actor.id, curationItemId: item.id, status: item.status, custom, differences: anchors.differences.length },
+            'Content translation proposed'
+        );
 
         return {
             typeId,
             contentId: id,
             language,
             pendingReview: recorded,
-            ...(recorded ? { curationItemId: item.id } : {})
+            ...(recorded ? { curationItemId: item.id } : {}),
+            differences: anchors.differences
         };
     }
 
@@ -612,7 +683,7 @@ export class ContentTranslationService implements IContentTranslationService {
                 source,
                 sourceHash,
                 translation: live && record
-                    ? { values: record.values, stale: live.sourceHash !== sourceHash, updatedAt: live.updatedAt }
+                    ? { values: record.values, stale: isStale(live, sourceHash), custom: live.custom === true, updatedAt: live.updatedAt }
                     : null,
                 proposalPending: (await this.findProposal(id, language)) !== null
             };
@@ -669,8 +740,11 @@ export class ContentTranslationService implements IContentTranslationService {
     /**
      * Render a proposed translation for the curation queue. The body is the
      * proposed text of the type's Markdown field, and the details name the
-     * language, the English title, who proposed it, and whether the English
-     * has changed since, so a curator can judge it without opening the editor.
+     * language, the English title, who proposed it, whether the English has
+     * changed since, any change to the custom setting approval would make,
+     * and every difference in numbers, links, and TRON addresses from the
+     * English, so a curator can judge it without opening the editor or
+     * reading the language.
      *
      * A ref is described only while its hold is still the open proposal. A
      * replaced proposal keeps neither its text nor its proposer, so describing
@@ -694,14 +768,29 @@ export class ContentTranslationService implements IContentTranslationService {
         const values = proposed?.values ?? {};
         const markdownField = fields.find((field) => field.kind === 'markdown') ?? fields.find((field) => field.kind === 'multiline');
         const englishTitle = fieldText(english, 'title');
+        const state = await this.findState(id, language);
+        const customNow = state?.custom === true;
+        const customAfter = customAfterApproval(proposal, state);
         const details = [
             { label: 'Language', value: language },
             { label: 'Content type', value: entry.type.label },
             { label: 'English title', value: englishTitle || id },
-            ...(proposal ? [{ label: 'Proposed by', value: proposal.proposedBy }] : []),
-            ...(proposal?.source ? [{ label: 'Source', value: proposal.source }] : []),
-            ...(proposal && served && proposal.sourceHash !== this.hashValues(fields, english)
+            { label: 'Proposed by', value: proposal.proposedBy },
+            ...(proposal.source ? [{ label: 'Source', value: proposal.source }] : []),
+            ...(customAfter && !customNow
+                ? [{ label: 'Custom version', value: 'Approving marks this version as custom. It stops tracking the English and is never flagged stale.' }]
+                : []),
+            ...(!customAfter && customNow
+                ? [{ label: 'Custom version', value: 'Approving returns this custom version to tracking the English, so it is flagged stale when the English changes.' }]
+                : []),
+            ...(served && !customAfter && proposal.sourceHash !== this.hashValues(fields, english)
                 ? [{ label: 'Warning', value: 'The English changed after this was proposed; approving it will be refused.' }]
+                : []),
+            // Recomputed on every read against the English visitors read now,
+            // so the list matches what approving would put live.
+            ...(served
+                ? findTranslationMismatches(fields, english, values, language).differences
+                    .map((difference) => ({ label: 'Differs from the English', value: difference }))
                 : [])
         ];
         for (const field of fields) {
@@ -712,7 +801,7 @@ export class ContentTranslationService implements IContentTranslationService {
 
         return {
             title: `${entry.type.label} translation (${language}): ${fieldText(values, 'title') || englishTitle || id}`,
-            summary: `A proposed ${language} translation of "${englishTitle || id}". Approving it ${(await this.findState(id, language))?.published ? 'replaces the translation visitors read' : 'saves it as a draft that a curator publishes from the translation editor'}.`,
+            summary: `A proposed ${language} translation of "${englishTitle || id}". Approving it ${state?.published ? 'replaces the translation visitors read' : 'saves it as a draft that a curator publishes from the translation editor'}.`,
             ...(markdownField ? { body: fieldText(values, markdownField.name) } : {}),
             details,
             editable: false
@@ -970,9 +1059,16 @@ export class ContentTranslationService implements IContentTranslationService {
      * @param entry - The translatable type.
      * @param id - Core content id of the item.
      * @param englishHash - Fingerprint of the English as it is now, for the stale flag.
+     * @param states - The item's translation states, so a proposal that would
+     *   leave its translation custom is not reported as stale.
      * @returns The proposals, ordered by language code.
      */
-    private async listProposals(entry: ITranslatableEntry, id: string, englishHash: string): Promise<IContentTranslationProposal[]> {
+    private async listProposals(
+        entry: ITranslatableEntry,
+        id: string,
+        englishHash: string,
+        states: ReadonlyArray<IContentTranslationStateDocument>
+    ): Promise<IContentTranslationProposal[]> {
         const docs = await this.proposalCollection().find({ contentId: id }).sort({ language: 1 }).toArray();
         const records = docs.length > 0 && entry.translation.proposals
             ? await entry.translation.proposals.read(docs.map((doc) => ({ id, language: doc.language })))
@@ -981,7 +1077,9 @@ export class ContentTranslationService implements IContentTranslationService {
         return docs.map((doc) => ({
             language: doc.language,
             values: records.find((record) => record.language === doc.language)?.values ?? {},
-            stale: doc.sourceHash !== englishHash,
+            stale: !customAfterApproval(doc, states.find((state) => state.language === doc.language) ?? null)
+                && doc.sourceHash !== englishHash,
+            ...(doc.custom !== undefined ? { custom: doc.custom } : {}),
             proposedBy: doc.proposedBy,
             ...(doc.source ? { source: doc.source } : {}),
             proposedAt: doc.proposedAt,
@@ -1025,9 +1123,11 @@ export class ContentTranslationService implements IContentTranslationService {
 
     /**
      * Make an approved proposal the saved translation. The English must still
-     * be the text it translated, and neither the item nor the translation may
-     * have been deleted since. Approval keeps the translation's published
-     * state, and saves a language with no translation yet as a draft.
+     * be the text it translated, unless the approved translation will be
+     * custom, which does not track the English. Neither the item nor the
+     * translation may have been deleted since. Approval keeps the
+     * translation's published state, saves a language with no translation
+     * yet as a draft, and applies the custom setting the proposal asked for.
      *
      * @param entry - The translatable type.
      * @param proposal - The proposal being approved.
@@ -1042,7 +1142,7 @@ export class ContentTranslationService implements IContentTranslationService {
         if (state?.deletedAt) {
             throw new ContentError('deleted', `The "${language}" translation was deleted after this was proposed; nothing was changed`);
         }
-        if ((await this.englishHash(entry, id)) !== proposal.sourceHash) {
+        if (!customAfterApproval(proposal, state) && (await this.englishHash(entry, id)) !== proposal.sourceHash) {
             throw new ContentError('source-changed', `The English text changed after this "${language}" translation was proposed; nothing was changed`);
         }
         const [record] = await proposals.read([{ id, language }]);
@@ -1064,7 +1164,13 @@ export class ContentTranslationService implements IContentTranslationService {
         await this.collection().updateOne(
             { contentId: id, language },
             {
-                $set: { typeId: entry.type.typeId, sourceHash: proposal.sourceHash, updatedAt: now, updatedBy: proposal.proposedBy },
+                $set: {
+                    typeId: entry.type.typeId,
+                    sourceHash: proposal.sourceHash,
+                    updatedAt: now,
+                    updatedBy: proposal.proposedBy,
+                    ...(proposal.custom !== undefined ? { custom: proposal.custom } : {})
+                },
                 $setOnInsert: { published: false, createdAt: now, createdBy: proposal.proposedBy }
             },
             { upsert: true }
@@ -1409,7 +1515,8 @@ export class ContentTranslationService implements IContentTranslationService {
      * @param state - The state core keeps.
      * @param records - Values the content type returned; the matching one is used.
      * @param englishHash - Fingerprint of the English text as it is now.
-     * @returns The translation, flagged stale when it was written against different English text.
+     * @returns The translation, flagged stale when it was written against
+     *   different English text and is not custom.
      */
     private toTranslation(
         state: IContentTranslationStateDocument,
@@ -1424,7 +1531,9 @@ export class ContentTranslationService implements IContentTranslationService {
             language: state.language,
             values: record?.values ?? {},
             published: state.published,
-            stale: state.sourceHash !== englishHash,
+            stale: isStale(state, englishHash),
+            custom: state.custom === true,
+            englishChanged: state.sourceHash !== englishHash,
             ...(state.deletedAt ? { deletedAt: state.deletedAt } : {}),
             createdAt: state.createdAt,
             createdBy: state.createdBy,

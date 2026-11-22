@@ -3,25 +3,30 @@
  * translation with the English it translates.
  *
  * A curator approving a proposed translation may not read the language well
- * enough to notice a swapped wallet address, a changed affiliate link, or an
- * altered price. Those are the parts of a text a translation must never
- * change, and they can be found mechanically, so a proposal whose links,
- * addresses, or numbers differ from the English is refused before it reaches
- * the curation queue.
+ * enough to notice a swapped wallet address or a changed affiliate link, and
+ * those can be found mechanically. Language versions of a page may also
+ * differ on purpose, for cultural or search reasons, so most differences are
+ * listed for the curator rather than refused.
  *
- * - Links and TRON addresses must match exactly, in both directions. A link
- *   is a bare http(s) URL, a Markdown link or image target, a reference-link
- *   definition, or a raw HTML `href` or `src`.
- * - Every number in the English must appear in the translation. Grouping and
- *   decimal separators are ignored, because languages write them differently.
- * - A number in the translation that is not in the English is allowed only
- *   when it is a one- or two-digit integer, because a translated date writes
- *   its month or day as a number where English uses a word.
+ * - Refused: a TRON address or an external link the English does not
+ *   contain. An external link is any target that is not a plain path on this
+ *   site: it has a scheme, starts with `//` or a backslash, or contains `&`,
+ *   because Markdown and HTML decode character references and could turn
+ *   `/&#47;evil.example` into `//evil.example`.
+ * - Listed: a dropped address or external link, a link to this site that
+ *   only one side has, and a number that only one side has. A site link
+ *   under the translation's own language prefix, such as `/ru/markets`,
+ *   counts as the same link as `/markets`.
+ * - Numbers ignore grouping and decimal separators, including a plain space
+ *   before a group of exactly three digits, as Russian writes `10 000`. A
+ *   one- or two-digit number only the translation has is not listed, because
+ *   a translated date writes its month or day as a number.
  *
  * @module backend/services/findTranslationMismatches
  */
 
 import type { ITranslatableField, TranslationValues } from '@/types';
+import type { ITranslationAnchorReport } from './ITranslationAnchorReport.js';
 
 /** Absolute links, stopping at whitespace, brackets, and quotes. */
 const ABSOLUTE_URL_PATTERN = /https?:\/\/[^\s<>"'()[\]]+/gi;
@@ -47,22 +52,32 @@ const REFERENCE_DEFINITION_PATTERN = /^[ \t]{0,3}\[[^\]\n]+\]:[ \t]*<?([^\s<>]+)
  */
 const HTML_TARGET_PATTERN = /\b(?:href|src)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'`=<>]+))/gi;
 
+/**
+ * A link that stays on this site: a path starting with one `/`, or a query
+ * or fragment alone. A second slash or a backslash after the first would let
+ * a browser read it as another host, and `&` could be a character reference
+ * that decodes into one, so any of those makes the link external.
+ */
+const SITE_LINK_PATTERN = /^(?:\/(?![/\\])|[?#])[^\s\\&]*$/;
+
 /** A TRON base58 address: `T` followed by 33 base58 characters. */
 const TRON_ADDRESS_PATTERN = /\bT[1-9A-HJ-NP-Za-km-z]{33}\b/g;
 
 /**
  * A number, with digits optionally grouped or split by a comma, a full stop,
- * a no-break space, or a narrow no-break space. A plain space is not a
- * separator, so two numbers in a row stay two numbers.
+ * a no-break space, or a narrow no-break space, or by a plain space before a
+ * group of exactly three digits. Any other plain space ends the number, so
+ * "2 3" stays two numbers.
  */
-const NUMBER_PATTERN = /\d+(?:[.,  ]\d+)*/g;
+const NUMBER_PATTERN = /\d+(?:[.,  ]\d+| \d{3}(?!\d))*/g;
 
 /** Punctuation a sentence can leave stuck to the end of a bare link. */
 const TRAILING_PUNCTUATION = /[.,;:!?。，；：！？]+$/u;
 
-/** The text, links, addresses, and numbers found in one version of the text. */
+/** The links, addresses, and numbers found in one version of the text. */
 interface IAnchors {
-    links: Set<string>;
+    siteLinks: Set<string>;
+    externalLinks: Set<string>;
     addresses: Set<string>;
     numbers: Set<string>;
 }
@@ -85,26 +100,60 @@ function collectText(fields: ReadonlyArray<ITranslatableField>, values: Translat
 }
 
 /**
+ * Reduce a site link under the translation's own language prefix to the
+ * English path, so linking the Russian version of a page is not reported as
+ * a different link from the English one.
+ *
+ * @param link - A link already known to stay on this site.
+ * @param language - The translation's language code.
+ * @returns The link without its language prefix.
+ */
+function withoutLanguagePrefix(link: string, language: string): string {
+    const prefix = `/${language}`;
+    let path = link;
+    if (link === prefix) {
+        path = '/';
+    } else if (link.startsWith(`${prefix}/`) || link.startsWith(`${prefix}?`) || link.startsWith(`${prefix}#`)) {
+        const rest = link.slice(prefix.length);
+        path = rest.startsWith('/') ? rest : `/${rest}`;
+    }
+
+    return path;
+}
+
+/**
  * Find the links, TRON addresses, and numbers in a piece of text.
  *
  * @param text - The combined text of every translatable field.
+ * @param language - The translation's language code, whose prefix is
+ *   removed from site links.
  * @returns Each kind of anchor as a set. Numbers are reduced to their digits.
  */
-function findAnchors(text: string): IAnchors {
-    const links = new Set<string>();
+function findAnchors(text: string, language: string): IAnchors {
+    const links: string[] = [];
     for (const match of text.matchAll(ABSOLUTE_URL_PATTERN)) {
-        links.add(match[0].replace(TRAILING_PUNCTUATION, ''));
+        links.push(match[0]);
     }
     for (const match of text.matchAll(MARKDOWN_TARGET_PATTERN)) {
-        links.add(match[1].replace(TRAILING_PUNCTUATION, ''));
+        links.push(match[1]);
     }
     for (const match of text.matchAll(REFERENCE_DEFINITION_PATTERN)) {
-        links.add(match[1].replace(TRAILING_PUNCTUATION, ''));
+        links.push(match[1]);
     }
     for (const match of text.matchAll(HTML_TARGET_PATTERN)) {
-        const target = match[1] ?? match[2] ?? match[3] ?? '';
-        if (target !== '') {
-            links.add(target.replace(TRAILING_PUNCTUATION, ''));
+        links.push(match[1] ?? match[2] ?? match[3] ?? '');
+    }
+    const siteLinks = new Set<string>();
+    const externalLinks = new Set<string>();
+    for (const raw of links) {
+        const link = raw.replace(TRAILING_PUNCTUATION, '');
+        if (link === '') {
+            continue;
+        }
+        if (SITE_LINK_PATTERN.test(link)) {
+            siteLinks.add(withoutLanguagePrefix(link, language));
+        } else {
+            externalLinks.add(link);
         }
     }
     // Remove the links before looking for numbers and addresses, so digits in
@@ -121,7 +170,7 @@ function findAnchors(text: string): IAnchors {
         numbers.add(match[0].replace(/\D/g, ''));
     }
 
-    return { links, addresses, numbers };
+    return { siteLinks, externalLinks, addresses, numbers };
 }
 
 /**
@@ -132,52 +181,63 @@ function missingFrom(source: Set<string>, target: Set<string>): string[] {
 }
 
 /**
- * Compare a proposed translation with its English and describe every
- * difference in a link, TRON address, or number.
+ * Compare a proposed translation with its English, refusing an added TRON
+ * address or external link and listing every other difference.
  *
  * @param fields - The type's translatable fields; `url` fields are skipped.
  * @param english - The English values the proposal translates.
  * @param proposed - The proposed values.
- * @returns One sentence per kind of difference, written for the proposer to
- *   correct from; empty when the anchors match.
+ * @param language - The translation's language code, so a site link under
+ *   its own prefix matches the English link.
+ * @returns The refusals, written for the proposer, and the differences,
+ *   written for the curator. Both are empty when the anchors match.
  */
 export function findTranslationMismatches(
     fields: ReadonlyArray<ITranslatableField>,
     english: TranslationValues,
-    proposed: TranslationValues
-): string[] {
-    const source = findAnchors(collectText(fields, english));
-    const translation = findAnchors(collectText(fields, proposed));
-    const problems: string[] = [];
+    proposed: TranslationValues,
+    language: string
+): ITranslationAnchorReport {
+    const source = findAnchors(collectText(fields, english), language);
+    const translation = findAnchors(collectText(fields, proposed), language);
+    const refusals: string[] = [];
+    const differences: string[] = [];
 
-    const droppedLinks = missingFrom(source.links, translation.links);
-    const addedLinks = missingFrom(translation.links, source.links);
-    if (droppedLinks.length > 0) {
-        problems.push(`These links in the English are missing from the translation: ${droppedLinks.join(', ')}.`);
+    const addedAddresses = missingFrom(translation.addresses, source.addresses);
+    if (addedAddresses.length > 0) {
+        refusals.push(`These TRON addresses are not in the English: ${addedAddresses.join(', ')}. A translation may not add an address; remove it, or ask an admin to add it to the English first.`);
     }
-    if (addedLinks.length > 0) {
-        problems.push(`These links in the translation are not in the English: ${addedLinks.join(', ')}.`);
+    const addedExternal = missingFrom(translation.externalLinks, source.externalLinks);
+    if (addedExternal.length > 0) {
+        refusals.push(`These links to other sites are not in the English: ${addedExternal.join(', ')}. A translation may not add a link to another site; remove it, or ask an admin to add it to the English first.`);
     }
 
     const droppedAddresses = missingFrom(source.addresses, translation.addresses);
-    const addedAddresses = missingFrom(translation.addresses, source.addresses);
     if (droppedAddresses.length > 0) {
-        problems.push(`These TRON addresses in the English are missing from the translation: ${droppedAddresses.join(', ')}.`);
+        differences.push(`TRON addresses only the English has: ${droppedAddresses.join(', ')}.`);
     }
-    if (addedAddresses.length > 0) {
-        problems.push(`These TRON addresses in the translation are not in the English: ${addedAddresses.join(', ')}.`);
+    const droppedExternal = missingFrom(source.externalLinks, translation.externalLinks);
+    if (droppedExternal.length > 0) {
+        differences.push(`Links to other sites only the English has: ${droppedExternal.join(', ')}.`);
     }
-
+    const addedSite = missingFrom(translation.siteLinks, source.siteLinks);
+    if (addedSite.length > 0) {
+        differences.push(`Links to this site only the translation has: ${addedSite.join(', ')}.`);
+    }
+    const droppedSite = missingFrom(source.siteLinks, translation.siteLinks);
+    if (droppedSite.length > 0) {
+        differences.push(`Links to this site only the English has: ${droppedSite.join(', ')}.`);
+    }
     const droppedNumbers = missingFrom(source.numbers, translation.numbers);
+    if (droppedNumbers.length > 0) {
+        differences.push(`Numbers only the English has: ${droppedNumbers.join(', ')}.`);
+    }
     const addedNumbers = [...translation.numbers]
         .filter((value) => !source.numbers.has(value) && value.length > 2)
         .map((value) => `"${value}"`);
-    if (droppedNumbers.length > 0) {
-        problems.push(`These numbers in the English are missing from the translation; write each in digits: ${droppedNumbers.join(', ')}.`);
-    }
     if (addedNumbers.length > 0) {
-        problems.push(`These numbers in the translation are not in the English: ${addedNumbers.join(', ')}.`);
+        differences.push(`Numbers only the translation has: ${addedNumbers.join(', ')}.`);
     }
 
-    return problems;
+    return { refusals, differences };
 }

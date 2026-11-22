@@ -32,4 +32,12 @@ export interface IContentTranslationProposalInput {
      * Recorded as the curation queue item's source.
      */
     source?: string;
+
+    /**
+     * Ask for the translation to be marked custom (true) or returned to
+     * tracking the English (false) when the proposal is approved. Absent keeps
+     * the current setting. The request is shown on the curation item, so the
+     * curator approves it knowingly.
+     */
+    custom?: boolean;
 }
