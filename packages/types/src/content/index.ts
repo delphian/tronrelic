@@ -78,4 +78,10 @@ export type { IContentTranslationSuggestion } from './IContentTranslationSuggest
 export type { IContentTranslationSettings } from './IContentTranslationSettings.js';
 export type { IContentTranslationService } from './IContentTranslationService.js';
 export type { IContentTranslationStatus } from './IContentTranslationStatus.js';
+export type { ITranslationProposals } from './ITranslationProposals.js';
+export { createValueStoreProposals } from './createValueStoreProposals.js';
+export type { IContentTranslationProposal } from './IContentTranslationProposal.js';
+export type { IContentTranslationProposalInput } from './IContentTranslationProposalInput.js';
+export type { IContentTranslationProposalOutcome } from './IContentTranslationProposalOutcome.js';
+export type { IContentTranslationContext } from './IContentTranslationContext.js';
 export { MAX_TRANSLATION_STATUS_IDS } from './MAX_TRANSLATION_STATUS_IDS.js';

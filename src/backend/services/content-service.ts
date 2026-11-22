@@ -55,6 +55,10 @@ import { resolveReviewedFieldLabels } from './resolveReviewedFieldLabels.js';
 import { createContentCurationType } from './content-curation-adapter.js';
 import { ContentError } from './content-error.js';
 import { ContentTranslationService } from './content-translation-service.js';
+import {
+    CONTENT_TRANSLATION_CURATION_PROVIDER_ID,
+    createTranslationCurationType
+} from './content-translation-curation.js';
 import { ContentTranslationSettingsService } from './content-translation-settings.js';
 import { ContentTranslationSuggestionService } from './content-translation-suggestion.js';
 import { runContentVeto } from './content-veto.js';
@@ -158,8 +162,47 @@ export class ContentService implements IContentService {
                 logger
             }),
             settings,
+            /**
+             * Resolve the curation queue per proposal; curation starts after
+             * this service is built.
+             *
+             * @returns The curation service, or undefined when it is not running.
+             */
+            getCuration: () => serviceRegistry.get<ICurationService>(CURATION_SERVICE),
+            /**
+             * Check whether visitors can reach a language, through the
+             * localization module, which publishes after core starts. With no
+             * localization service there are no enabled languages.
+             *
+             * @param code - Language code such as `zh`.
+             * @returns True when the language exists and is enabled.
+             */
+            isLanguageEnabled: async (code) => {
+                const localization = serviceRegistry.get<ILocalizationService>(LOCALIZATION_SERVICE);
+                const language = localization ? await localization.getLanguage(code) : null;
+
+                return language?.enabled === true;
+            },
             onRoutesChanged: onLocalizedRoutesChanged,
             logger
+        });
+        const translations = this.translationService;
+        serviceRegistry.watch<ICurationService>(CURATION_SERVICE, {
+            /**
+             * Register the proposed-translation binding each time curation
+             * appears, so proposals can be held and decided. Curation replaces
+             * a binding registered under the same id, so this is idempotent.
+             *
+             * @param curation - The curation service that just became available.
+             */
+            onAvailable: (curation) => curation.registerType(
+                createTranslationCurationType({
+                    describe: translations.describeProposal.bind(translations),
+                    describeChanges: translations.describeProposalChanges.bind(translations),
+                    decide: translations.applyProposalDecision.bind(translations)
+                }),
+                CONTENT_TRANSLATION_CURATION_PROVIDER_ID
+            )
         });
     }
 
@@ -843,6 +886,14 @@ export class ContentService implements IContentService {
         for (const method of methods) {
             if (typeof translation?.[method] !== 'function') {
                 throw new Error(`Managed content type '${type.typeId}' translation must implement ${method}()`);
+            }
+        }
+        if (translation?.proposals !== undefined) {
+            const proposalMethods = ['validate', 'read', 'write', 'clear'] as const;
+            for (const method of proposalMethods) {
+                if (typeof translation.proposals[method] !== 'function') {
+                    throw new Error(`Managed content type '${type.typeId}' translation proposals must implement ${method}()`);
+                }
             }
         }
 

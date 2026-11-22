@@ -251,7 +251,8 @@ export {
     CONTENT_DESCRIPTOR_FEATURES,
     CONTENT_SINK_KINDS,
     readContentField,
-    MAX_TRANSLATION_STATUS_IDS
+    MAX_TRANSLATION_STATUS_IDS,
+    createValueStoreProposals
 } from './content/index.js';
 export type {
     ContentEgress,
@@ -304,7 +305,12 @@ export type {
     IContentTranslationSuggestion,
     IContentTranslationSettings,
     IContentTranslationService,
-    IContentTranslationStatus
+    IContentTranslationStatus,
+    ITranslationProposals,
+    IContentTranslationProposal,
+    IContentTranslationProposalInput,
+    IContentTranslationProposalOutcome,
+    IContentTranslationContext
 } from './content/index.js';
 export type {
     ICurationPreview,

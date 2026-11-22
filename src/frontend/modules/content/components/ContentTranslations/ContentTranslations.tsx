@@ -12,13 +12,17 @@
  *
  * An item is served in a language only while it has a published translation
  * into it, so this is also where an administrator opts an item into a
- * language. Only a signed-in admin may save; translations are not reviewed.
+ * language. A signed-in admin's save is live at once. A translation proposed
+ * by anyone else, such as an AI agent, waits in the curation queue; the editor
+ * shows it so the admin knows that saving here replaces it and closes its
+ * review, and can start from the proposed text instead.
  */
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { AlertCircle, Archive, ArrowLeft, Edit, Eye, Plus, RotateCcw, Save, Sparkles, Trash2, X } from 'lucide-react';
+import { AlertCircle, Archive, ArrowLeft, Edit, Eye, Inbox, Plus, RotateCcw, Save, Sparkles, Trash2, X } from 'lucide-react';
 import type {
     IContentTranslation,
+    IContentTranslationProposal,
     IContentTranslationsProps,
     IContentTranslationSource,
     ILanguage,
@@ -124,6 +128,7 @@ function startingValues(source: IContentTranslationSource): Record<string, strin
 export function ContentTranslations({ typeId, contentId, title, publicPath, renderPreview, onClose }: IContentTranslationsProps) {
     const [languages, setLanguages] = useState<ILanguage[]>([]);
     const [translations, setTranslations] = useState<IContentTranslation[]>([]);
+    const [proposals, setProposals] = useState<IContentTranslationProposal[]>([]);
     const [source, setSource] = useState<IContentTranslationSource | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -154,6 +159,8 @@ export function ContentTranslations({ typeId, contentId, title, publicPath, rend
             ]);
             setLanguages(languageList);
             setTranslations(overview.translations);
+            // A server older than proposals sends no list.
+            setProposals(overview.proposals ?? []);
             setSource(overview.source);
             setError(null);
         } catch (err) {
@@ -228,6 +235,19 @@ export function ContentTranslations({ typeId, contentId, title, publicPath, rend
     /** Change one field of the draft. */
     const changeValue = (name: string, value: string) => {
         setDraft((current) => (current ? { ...current, values: { ...current.values, [name]: value } } : current));
+    };
+
+    /**
+     * Put a proposal's text in the editor, so the admin can correct it and
+     * save their own version rather than approving it unchanged in the
+     * curation queue. Saving closes the proposal's review either way.
+     *
+     * @param proposal - The proposal to start from.
+     */
+    const applyProposalText = (proposal: IContentTranslationProposal) => {
+        if (source) {
+            setDraft((current) => (current ? { ...current, values: toInputValues(source.fields, proposal.values) } : current));
+        }
     };
 
     /**
@@ -398,6 +418,7 @@ export function ContentTranslations({ typeId, contentId, title, publicPath, rend
 
     if (draft && source) {
         const translatedPath = publicPath ? localizePath(publicPath, draft.language.code) : null;
+        const draftProposal = proposals.find((candidate) => candidate.language === draft.language.code) ?? null;
         return (
             <div className={styles.container}>
                 <Card padding="md">
@@ -466,6 +487,29 @@ export function ContentTranslations({ typeId, contentId, title, publicPath, rend
                             The English text has changed since this translation was saved. Saving records the
                             translation as matching the current English text.
                         </p>
+                    </Card>
+                )}
+
+                {draftProposal && (
+                    <Card tone="muted" padding="sm">
+                        <div className={styles.proposal_notice}>
+                            <p className={styles.notice}>
+                                A proposed {draft.language.name} translation is waiting for review in
+                                the <a href="/system/curation">curation queue</a>
+                                {draftProposal.source ? ` (from ${draftProposal.source})` : ''}. Saving here replaces it
+                                and closes its review.
+                                {draftProposal.stale && ' The English has changed since it was proposed, so it can no longer be approved as it is.'}
+                            </p>
+                            <Button
+                                variant="secondary"
+                                size="sm"
+                                icon={<Inbox size={16} />}
+                                onClick={() => applyProposalText(draftProposal)}
+                                disabled={saving || suggesting}
+                            >
+                                Use proposed text
+                            </Button>
+                        </div>
                     </Card>
                 )}
 
@@ -539,6 +583,7 @@ export function ContentTranslations({ typeId, contentId, title, publicPath, rend
                     <ul className={styles.list}>
                         {languages.map((language) => {
                             const translation = translations.find((candidate) => candidate.language === language.code) ?? null;
+                            const proposal = proposals.find((candidate) => candidate.language === language.code) ?? null;
                             const translatedPath = publicPath ? localizePath(publicPath, language.code) : null;
                             return (
                                 <li key={language.code} className={styles.row}>
@@ -559,6 +604,9 @@ export function ContentTranslations({ typeId, contentId, title, publicPath, rend
                                             {translation?.deletedAt && (
                                                 <Badge tone="neutral"><Archive size={12} /> Deleted</Badge>
                                             )}
+                                            {proposal && (
+                                                <Badge tone="info"><Inbox size={12} /> Proposal waiting</Badge>
+                                            )}
                                             {!language.enabled && <Badge tone="neutral">Language disabled</Badge>}
                                         </div>
                                         <p className={styles.row_meta}>
@@ -568,6 +616,12 @@ export function ContentTranslations({ typeId, contentId, title, publicPath, rend
                                                     ? 'Served in this language while published.'
                                                     : 'Not served in this language.'}
                                         </p>
+                                        {proposal && (
+                                            <p className={styles.row_meta}>
+                                                A proposed translation is waiting in the <a href="/system/curation">curation queue</a>.
+                                                {translation ? ' Approving it replaces the saved text.' : ' Approving it saves a draft you then publish here.'}
+                                            </p>
+                                        )}
                                     </Stack>
                                     <div className={styles.actions}>
                                         {!translation && (

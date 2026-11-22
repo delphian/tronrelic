@@ -26,7 +26,8 @@ export const CONTENT_ERROR_STATUS: Record<ContentErrorCode, number> = {
     'vetoed': 403,
     'curation-unavailable': 503,
     'superseded': 409,
-    'forbidden': 403
+    'forbidden': 403,
+    'source-changed': 409
 };
 
 /**

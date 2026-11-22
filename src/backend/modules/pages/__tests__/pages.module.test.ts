@@ -103,7 +103,14 @@ describe('PagesModule', () => {
              * @returns A translation service with a store factory.
              */
             translations: () => ({
-                createValueStore: () => ({ ensureIndexes: ensureValueIndexes, read: vi.fn(async () => []), write: vi.fn() })
+                createValueStore: () => ({
+                    ensureIndexes: ensureValueIndexes,
+                    read: vi.fn(async () => []),
+                    write: vi.fn(),
+                    readProposed: vi.fn(async () => []),
+                    writeProposed: vi.fn(),
+                    clearProposed: vi.fn()
+                })
             })
         };
         serviceRegistry = createMockServiceRegistry();

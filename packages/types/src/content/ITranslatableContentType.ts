@@ -26,6 +26,7 @@
 import type { IContent } from './IContent.js';
 import type { IContentTranslationKey } from './IContentTranslationKey.js';
 import type { ITranslatableField } from './ITranslatableField.js';
+import type { ITranslationProposals } from './ITranslationProposals.js';
 import type { ITranslationValueRecord } from './ITranslationValueRecord.js';
 import type { TranslationValues } from './TranslationValues.js';
 
@@ -98,4 +99,12 @@ export interface ITranslatableContentType<T extends IContent = IContent> {
      * @param language - Language code of the translation that changed.
      */
     onTranslationChanged(id: string, language: string): Promise<void>;
+
+    /**
+     * Lets translations of this type be proposed by someone who is not a
+     * curator and held for review. Leave it out and core refuses every
+     * proposal for the type with the `forbidden` code, while curators can
+     * still save translations directly.
+     */
+    readonly proposals?: ITranslationProposals;
 }
