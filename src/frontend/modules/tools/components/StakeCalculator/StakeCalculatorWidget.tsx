@@ -6,7 +6,15 @@
  * block. The widget registry in `widgets.core.ts` maps that id to this
  * component. The server sends no data for it, because the calculator only
  * works from what the visitor types, so the `data` prop is ignored.
+ *
+ * The file is a client module, as every widget component must be: a CMS
+ * page renders its embeds on the server and hands each widget's component to
+ * the client-side `WidgetWithContext`, and React can pass a component across
+ * that boundary only when its module is marked `'use client'`. Without the
+ * directive the page fails with "Functions cannot be passed directly to
+ * Client Components".
  */
+'use client';
 
 import type { IWidgetComponentProps } from '@/types';
 import { StakeCalculatorForm } from './StakeCalculatorForm';
