@@ -157,7 +157,7 @@ export type { LanguageDirection, ILanguage, ILocalizedRoute, ITranslationKey, IT
 export { DEFAULT_LANGUAGE, MAX_TRANSLATION_SUGGESTION_KEYS, MAX_LANGUAGE_PROMPT_LENGTH, LANGUAGE_CODE_PATTERN, matchRoutePattern, isValidRoutePattern, localizePath, localizeHref, isOnSitePath, canNavigateInPage, findPublishedLanguages, resolveLocalizedPath, interpolateTranslation } from './localization/index.js';
 export type { IConsentPublicConfig, IConsentSettings, IConsentChoice, IConsentState, IConsentService, IConsentDailyCount, IConsentPageviewStats } from './consent/index.js';
 export { CONSENT_COOKIE_NAME, CONSENT_COOKIE_MAX_AGE_SECONDS, CONSENT_REGION_COUNTRIES, GOOGLE_ADS_ID_PATTERN, GOOGLE_ADS_CONVERSION_LABEL_PATTERN, isConsentRequiredCountry, parseConsentCookie, serializeConsentCookie, resolveConsentState } from './consent/index.js';
-export type { IAiTool, IAiToolInputSchema, IAiConversationMessage, IAiProvider, IAiStreamChunk, IAiQueryRecord, AiQueryMode, AiQueryOutcome, IAiQueryOptions, IAiQueryResult, AiStopReason, IModelInfo, ISavedPrompt, ISavedPromptTrigger, ISavedPromptTriggerBase, ISavedPromptCronTrigger, ISavedPromptHookTrigger, IAiTranscriptSegment, IAiThinkingSegment, IAiTextSegment, IAiToolUseSegment, IAiToolResultSegment } from './ai-tools/index.js';
+export type { IAiTool, IAiToolInputSchema, IAiConversationMessage, IAiProvider, IAiStreamChunk, IAiQueryRecord, AiQueryMode, AiQueryOutcome, IAiQueryOptions, IAiQueryResult, AiStopReason, IModelInfo, ISavedPrompt, ISavedPromptTrigger, ISavedPromptTriggerBase, ISavedPromptCronTrigger, ISavedPromptHookTrigger, ISavedPromptProposal, SavedPromptProposalStatus, IAiTranscriptSegment, IAiThinkingSegment, IAiTextSegment, IAiToolUseSegment, IAiToolResultSegment } from './ai-tools/index.js';
 export { AI_TOOL_NAME_PATTERN } from './ai-tools/index.js';
 export { UNTRUSTED_CONTENT_NOTICE, UNTRUSTED_CONTENT_SYSTEM_CLAUSE, wrapUntrustedToolResult } from './ai-tools/index.js';
 export { DEFAULT_UNTRUSTED_SCREEN_CONFIG } from './ai-tools/index.js';
@@ -320,6 +320,7 @@ export type {
     CurationItemStatus,
     ICurationType,
     ICurationEditPatch,
+    ICurationCommitContext,
     ICurationService,
     ICurationRegistry,
     ICurationTypeInfo,
@@ -333,7 +334,7 @@ export type {
     ICurationHistoryTypeOption,
     ICurationHistoryPage
 } from './curation/index.js';
-export { CURATION_DECISIONS } from './curation/index.js';
+export { CURATION_DECISIONS, SYSTEM_DECIDER_PREFIX, isSignedInCuratorId } from './curation/index.js';
 export { SYNDICATION_SERVICE, SYNDICATION_LEG_STATUSES } from './syndication/index.js';
 export type {
     SyndicationLegStatus,

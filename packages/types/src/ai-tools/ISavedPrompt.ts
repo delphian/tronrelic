@@ -173,6 +173,16 @@ export interface ISavedPrompt {
     /** ISO timestamp of last update. */
     updatedAt: string;
     /**
+     * Better Auth user id of the admin whose action last changed the prompt:
+     * the admin who saved it on `/system/ai-tools`, or the curator who
+     * approved a proposed edit. Unlike `ownerUserId` it moves with each edit,
+     * so a reader can tell who changed a prompt without the owner having done
+     * so. Absent on prompts last saved before the field existed and on saves
+     * made with the service token. It does not change whose behalf the prompt
+     * runs on; that stays `ownerUserId`.
+     */
+    lastEditedBy?: string;
+    /**
      * The prompt's autonomous firing rules — cron schedules and hook bindings,
      * each with its own enabled flag and run bookkeeping. Absent or empty means
      * the prompt only runs when loaded into the composer by hand. Replaces the

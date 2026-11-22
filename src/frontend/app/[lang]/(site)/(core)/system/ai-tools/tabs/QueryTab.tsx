@@ -98,7 +98,7 @@
  */
 
 import { useEffect, useState, useRef, useCallback, useMemo, type CSSProperties } from 'react';
-import { ArrowUp, ArrowDown, Bot, AlertCircle, Square, X, Plus, PanelLeft, Trash2, AlertTriangle } from 'lucide-react';
+import { ArrowUp, ArrowDown, Bot, AlertCircle, Square, X, Plus, PanelLeft, Trash2, AlertTriangle, Save } from 'lucide-react';
 import type { IAiConversationMessage, IAiQueryRecord, IAiStreamChunk, IAiToolInfo, IAiTranscriptSegment, ISavedPrompt, IToolInvocationRecord, ITrifectaStatus } from '@/types';
 import { hostedToolEntry } from '@/types';
 import { Card } from '../../../../../../../components/ui/Card';
@@ -120,6 +120,7 @@ import {
     getTrifectaPreview,
     runSavedPromptNow,
     listSavedPrompts,
+    listSavedPromptProposals,
     saveSavedPrompt,
     deleteSavedPrompt,
     listPromptTriggerHooks,
@@ -127,6 +128,7 @@ import {
     useViewportFill,
     type IAiProviderModels,
     type IBindableHookInfo,
+    type ISavedPromptProposalSummary,
     type IStreamAck
 } from '../../../../../../../modules/ai-tools';
 import { useToast } from '../../../../../../../components/ui/ToastProvider';
@@ -597,6 +599,12 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
     const [copiedId, setCopiedId] = useState<string | null>(null);
     /** The saved-prompt library, backing the header selector and the editor. */
     const [savedPrompts, setSavedPrompts] = useState<ISavedPrompt[]>([]);
+    /**
+     * Proposed saved-prompt edits waiting in the curation queue. The editor
+     * shows the loaded prompt's count and warns that a direct save or delete
+     * withdraws them.
+     */
+    const [promptProposals, setPromptProposals] = useState<ISavedPromptProposalSummary[]>([]);
     /** Id of the user turn whose "save as prompt" write is in flight, or null when idle. */
     const [savingTurnId, setSavingTurnId] = useState<string | null>(null);
 
@@ -891,6 +899,27 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
         })();
         return () => { cancelled = true; };
     }, []);
+
+    /**
+     * Re-read the pending proposed edits. Secondary data on an admin surface:
+     * a failure keeps the last list rather than breaking the editor.
+     */
+    const refreshPromptProposals = useCallback(async () => {
+        try {
+            const list = await listSavedPromptProposals();
+            if (isMountedRef.current) {
+                setPromptProposals(list);
+            }
+        } catch {
+            /* the notice simply stays as it was */
+        }
+    }, []);
+
+    // Re-read the pending proposals whenever a different prompt is loaded, so
+    // the notice reflects proposals an agent made while the tab was open.
+    useEffect(() => {
+        void refreshPromptProposals();
+    }, [loadedPromptId, refreshPromptProposals]);
 
     // Load the bindable-hook catalog for the triggers editor's hook picker. A
     // quiet failure leaves the picker empty and "Add hook trigger" disabled.
@@ -1893,6 +1922,8 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
                 title: loadedPromptId ? 'Prompt updated' : 'Prompt created',
                 description: `"${trimmedName}" saved.`
             });
+            // The save withdrew any proposed edit for this prompt on the server.
+            void refreshPromptProposals();
         } catch (err) {
             if (isMountedRef.current) {
                 push({
@@ -1906,7 +1937,63 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
                 setPromptSaving(false);
             }
         }
-    }, [promptName, input, modelOverride, loadedPromptId, loadedPrompt, toolSelection, toolsTouched, triggerDrafts, push]);
+    }, [promptName, input, modelOverride, loadedPromptId, loadedPrompt, toolSelection, toolsTouched, triggerDrafts, push, refreshPromptProposals]);
+
+    /** Proposed edits waiting for review on the prompt under edit. */
+    const loadedPromptProposals = useMemo(
+        () => (loadedPromptId ? promptProposals.filter(proposal => proposal.promptId === loadedPromptId) : []),
+        [promptProposals, loadedPromptId]
+    );
+
+    /**
+     * Save, first asking the admin to confirm when the prompt has a proposed
+     * edit waiting. A direct save withdraws that proposal on the server, so
+     * saving without seeing this would silently discard an agent's suggestion.
+     */
+    const requestSavePrompt = useCallback(() => {
+        const count = loadedPromptProposals.length;
+        if (count === 0) {
+            void handleSavePrompt();
+        } else {
+            openWithdrawConfirm(count);
+        }
+
+        /**
+         * Ask before a save that withdraws pending proposals.
+         *
+         * @param pending - How many proposals the save would withdraw.
+         */
+        function openWithdrawConfirm(pending: number): void {
+            const modalId = modal.open({
+                title: 'Withdraw the proposed edit?',
+                size: 'sm',
+                dismissible: true,
+                content: (
+                    <div className={promptStyles.confirm}>
+                        <p className={promptStyles.confirm_text}>
+                            {pending === 1
+                                ? 'This prompt has a proposed edit waiting for review.'
+                                : `This prompt has ${pending} proposed edits waiting for review.`}
+                            {' '}Saving now withdraws it from the curation queue.
+                        </p>
+                        <div className={promptStyles.confirm_actions}>
+                            <Button variant="ghost" size="xs" onClick={() => modal.close(modalId)}>
+                                Cancel
+                            </Button>
+                            <Button
+                                variant="primary"
+                                size="xs"
+                                onClick={() => { modal.close(modalId); void handleSavePrompt(); }}
+                                icon={<Save size={12} />}
+                            >
+                                Save anyway
+                            </Button>
+                        </div>
+                    </div>
+                )
+            });
+        }
+    }, [loadedPromptProposals, handleSavePrompt, modal]);
 
     /**
      * Duplicate the prompt under an auto-suffixed name. The candidate is compared
@@ -1960,6 +2047,8 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
             await deleteSavedPrompt(id);
             savedPromptsWriteRef.current += 1;
             setSavedPrompts(prev => prev.filter(prompt => prompt.id !== id));
+            // The delete withdrew any proposed edit for this prompt on the server.
+            setPromptProposals(prev => prev.filter(proposal => proposal.promptId !== id));
             // Straight to the raw reset: the document is gone, so there is nothing
             // left for the discard guard to protect.
             clearPromptEditor();
@@ -2000,6 +2089,11 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
                             <AlertTriangle size={14} /> Paused triggers will be removed with the prompt.
                         </p>
                     )}
+                    {loadedPromptProposals.length > 0 && (
+                        <p className={promptStyles.confirm_warning}>
+                            <AlertTriangle size={14} /> A proposed edit waiting for review will be withdrawn.
+                        </p>
+                    )}
                     <div className={promptStyles.confirm_actions}>
                         <Button variant="ghost" size="xs" onClick={() => modal.close(modalId)}>
                             Cancel
@@ -2016,7 +2110,7 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
                 </div>
             )
         });
-    }, [modal, loadedPrompt, handleDeletePrompt]);
+    }, [modal, loadedPrompt, handleDeletePrompt, loadedPromptProposals]);
 
     /**
      * Copy arbitrary text to the clipboard, flashing a check on whichever control
@@ -2659,7 +2753,8 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
                             dirty={promptDirty}
                             saving={promptSaving}
                             saveBlockedReason={saveBlockedReason}
-                            onSave={() => { void handleSavePrompt(); }}
+                            onSave={requestSavePrompt}
+                            pendingProposalCount={loadedPromptProposals.length}
                             runBlockedReason={promptDirty
                                 ? 'Save first — Run executes the stored prompt, not your unsaved edits.'
                                 : null}

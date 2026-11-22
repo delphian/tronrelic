@@ -650,6 +650,43 @@ export async function listSavedPrompts(): Promise<ISavedPrompt[]> {
 }
 
 /**
+ * One proposed saved-prompt edit waiting in the curation queue, as the
+ * editor lists it. The proposed body is not included; the curation review
+ * screen shows it with a diff.
+ */
+export interface ISavedPromptProposalSummary {
+    /** Proposal id. */
+    id: string;
+    /** Id of the saved prompt the proposal would change. */
+    promptId: string;
+    /** The prompt's name when the proposal was made. */
+    promptName: string;
+    /** Why the proposer wants the change. */
+    reason: string;
+    /** What produced the proposal, such as the AI tool and trigger path. */
+    source: string;
+    /** Id of the curation item holding it, or null if the hold has not been recorded. */
+    curationItemId: string | null;
+    /** ISO timestamp of when it was proposed. */
+    createdAt: string;
+}
+
+/**
+ * List every proposed saved-prompt edit waiting for review, newest first, so
+ * the editor can tell an admin that a prompt has one and that saving or
+ * deleting the prompt will withdraw it.
+ *
+ * @returns The pending proposals.
+ */
+export async function listSavedPromptProposals(): Promise<ISavedPromptProposalSummary[]> {
+    const data = await parse<{ proposals: ISavedPromptProposalSummary[] }>(
+        await fetch(`${BASE}/query/prompts/proposals`),
+        'load proposed prompt edits'
+    );
+    return data.proposals;
+}
+
+/**
  * Create (no `id`) or update (with `id`) a saved prompt template. Returns the
  * full refreshed list so the caller can replace its shared state in one step.
  *

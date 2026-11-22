@@ -100,6 +100,10 @@ export function createAiToolsAdminRouter(controller: AiToolsController): Router 
     router.get('/query/conversations/:conversationId', requireAdminUser, controller.getConversationHistory);
 
     router.get('/query/prompts/hooks', controller.listPromptHooks);
+    // Pending proposed edits, without their bodies. Stays on the shared gate
+    // like the template listing: it returns names and reasons, never a
+    // variable value.
+    router.get('/query/prompts/proposals', controller.listPromptProposals);
     router.get('/query/prompts', controller.listPrompts);
     // A saved prompt is a stored query, so both of these reach the same
     // expansion `/query` does: executeSavedPrompt substitutes only its per-run

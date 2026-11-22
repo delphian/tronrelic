@@ -42,6 +42,7 @@ import type {
     ISystemLogService,
     CurationItemStatus
 } from '@/types';
+import { SYSTEM_DECIDER_PREFIX, isSignedInCuratorId } from '@/types';
 import { presentDescriptorFeatures } from '../../../services/content-classification.js';
 import { HOOKS } from '../../../hooks/registry.js';
 import { shouldAutoApproveCuration } from './curation-auto-approve-context.js';
@@ -95,7 +96,7 @@ export const CURATIONS_CHANGED_EVENT = 'curation:changed';
  * `curation: 'auto-approve'` policy — a distinct, non-human actor so the audit
  * separates a policy bypass from a curator's decision.
  */
-export const CURATION_AUTO_APPROVE_DECIDED_BY = 'system:policy-auto-approve';
+export const CURATION_AUTO_APPROVE_DECIDED_BY = `${SYSTEM_DECIDER_PREFIX}policy-auto-approve`;
 
 /**
  * Registry + lifecycle orchestrator for the central curation queue.
@@ -315,6 +316,14 @@ export class CurationService implements ICurationService {
                 this.logger.warn(
                     { id: item.id, typeId: item.typeId },
                     'Curation auto-approve skipped — a sink-routed type requires an explicit sink selection'
+                );
+            } else if (entry.type.requiresSignedInCurator) {
+                // The bypass decides under a system id, which a type that
+                // requires a signed-in curator refuses. Leave the item for a
+                // person rather than letting the approval throw out of hold().
+                this.logger.warn(
+                    { id: item.id, typeId: item.typeId },
+                    'Curation auto-approve skipped — this type requires a signed-in curator'
                 );
             } else {
                 this.logger.info({ id: item.id, typeId: item.typeId }, 'Curation auto-approved by tool policy (interactive bypass)');
@@ -650,7 +659,7 @@ export class CurationService implements ICurationService {
                 // pending_approval) for complete safety.
                 const latest = await this.queue.get(id);
                 if (latest && latest.status === 'pending') {
-                    await entry.type.applyEdit(latest.ref, patch);
+                    await entry.type.applyEdit(latest.ref, patch, { actorId: editedBy });
                     // The edit already landed in the provider's record; a failure
                     // to re-derive the preview must not report the edit as failed.
                     // Fall back to patching the cached body so the snapshot still
@@ -781,6 +790,11 @@ export class CurationService implements ICurationService {
                     'Curation decision blocked — owning type is not registered'
                 );
                 result = null;
+            } else if (status === 'approved' && entry.type.requiresSignedInCurator && !isSignedInCuratorId(decidedBy)) {
+                // Refused before anything is recorded, so the item stays
+                // pending for a signed-in curator. The type has said its
+                // approval grants something only a signed-in admin may grant.
+                throw new Error('Only a signed-in admin can approve this item; the service token and automatic approval cannot.');
             } else {
                 // Snapshot what the curator actually saw. The pending queue shows
                 // a live `describe()` (withLivePreview), but the cached preview on
@@ -907,8 +921,16 @@ export class CurationService implements ICurationService {
                     // delivery (observable via scheduler.legDelivered), not this
                     // synchronous seam; firing here would signal a not-yet-live record.
                     // A rejected decision, or a commit that threw, never reaches here.
+                    // A type that declares announcesPublication: false applies a
+                    // change that is not published content, such as a configuration
+                    // edit, so reactors written for published content never see it.
                     // Observer semantics isolate any reactor's failure from the decision.
-                    if (status === 'approved' && entry.type.decisionStatus.approved && this.hookRegistry) {
+                    if (
+                        status === 'approved'
+                        && entry.type.decisionStatus.approved
+                        && entry.type.announcesPublication !== false
+                        && this.hookRegistry
+                    ) {
                         await this.hookRegistry.invoke(HOOKS.content.published, {
                             typeId: existing.typeId,
                             ref: existing.ref,
@@ -1071,7 +1093,8 @@ export class CurationService implements ICurationService {
      * written and the commit is a deliberate no-op. A failure propagates to the
      * caller so the curator learns the provider-side effect did not complete; the
      * decision is already recorded and is not rolled back, so `applyEdit` must be
-     * retry-safe.
+     * retry-safe. The decider travels as the commit context so the type can
+     * attribute the write.
      *
      * @param type - The owning curation type.
      * @param item - The decided envelope.
@@ -1081,7 +1104,7 @@ export class CurationService implements ICurationService {
         const approved = item.status === 'approved';
         const targetStatus = approved ? type.decisionStatus.approved : type.decisionStatus.rejected;
         if (targetStatus) {
-            await type.applyEdit(item.ref, { status: targetStatus });
+            await type.applyEdit(item.ref, { status: targetStatus }, { actorId: item.decidedBy });
         }
     }
 

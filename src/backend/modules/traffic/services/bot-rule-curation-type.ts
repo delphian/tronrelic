@@ -106,6 +106,9 @@ export function createBotRuleCurationType(rules: BotRulesService, logger: ISyste
         typeId: BOT_RULE_CURATION_TYPE_ID,
         label: 'Bot Rule',
         decisionStatus: { approved: 'active', rejected: 'rejected' },
+        // A bot rule is analytics configuration, not published content, so an
+        // approval must not reach reactors bound to `content.published`.
+        announcesPublication: false,
 
         /**
          * Render a held rule for the review screen: its conditions, label, the

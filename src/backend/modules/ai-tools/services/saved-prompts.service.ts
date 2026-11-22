@@ -155,6 +155,12 @@ export interface ISavedPromptUpdate {
      * `[]`, and `[]` must round-trip as `[]` rather than being dropped.
      */
     toolAllowlist?: string[] | null;
+    /**
+     * Better Auth user id of the admin making this save, recorded as the
+     * prompt's `lastEditedBy`. Omitted for a service-token save, which leaves
+     * the previous value in place rather than claiming nobody edited it.
+     */
+    lastEditedBy?: string;
 }
 
 /** Optional construction knobs for {@link SavedPromptsService}. */
@@ -387,6 +393,10 @@ export class SavedPromptsService {
         if (trimmedPrompt !== undefined) {
             setFields.prompt = trimmedPrompt;
         }
+        const editedBy = typeof input.lastEditedBy === 'string' ? input.lastEditedBy.trim() : '';
+        if (editedBy) {
+            setFields.lastEditedBy = editedBy;
+        }
 
         // Triggers: `undefined` preserves; `null`/`[]` clears via `$unset`; an
         // array replaces the whole set after a server-side merge that preserves
@@ -475,6 +485,40 @@ export class SavedPromptsService {
             throw new SavedPromptNotFoundError();
         }
         return stripMongoId(updated as unknown as Record<string, unknown>);
+    }
+
+    /**
+     * Replace a prompt's body only if the prompt has not changed since a given
+     * moment. An approved edit proposal uses this so it can never overwrite a
+     * change an admin made after the proposal was written: the filter matches
+     * the id and the `updatedAt` the proposal was based on, so a prompt saved
+     * or deleted in between matches nothing.
+     *
+     * Run bookkeeping (`recordRunResult` and friends) never touches
+     * `updatedAt`, so a prompt that merely ran in between still matches.
+     *
+     * @param id - The prompt id.
+     * @param expectedUpdatedAt - The `updatedAt` the caller read when it based its change on the prompt.
+     * @param prompt - The new body; validated as non-empty like any save.
+     * @param editedBy - Better Auth user id of the admin whose action this is, stored as `lastEditedBy`.
+     * @returns The updated prompt, or null when the prompt was changed or deleted since `expectedUpdatedAt`.
+     */
+    async updatePromptIfUnchanged(
+        id: string,
+        expectedUpdatedAt: string,
+        prompt: string,
+        editedBy: string
+    ): Promise<ISavedPrompt | null> {
+        const trimmedPrompt = assertNonEmptyString(prompt, 'prompt');
+        const collection = this.database.getCollection<ISavedPrompt>(COLLECTION);
+        const updated = await collection.findOneAndUpdate(
+            // Both values are coerced to primitive strings so the filter can
+            // never carry a Mongo operator object.
+            { id: String(id), updatedAt: String(expectedUpdatedAt) },
+            { $set: { prompt: trimmedPrompt, updatedAt: new Date().toISOString(), lastEditedBy: String(editedBy) } },
+            { returnDocument: 'after' }
+        ) as ISavedPrompt | null;
+        return updated ? stripMongoId(updated as unknown as Record<string, unknown>) : null;
     }
 
     /**

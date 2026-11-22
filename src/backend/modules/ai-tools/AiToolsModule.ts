@@ -34,7 +34,8 @@ import type {
     ISchedulerService,
     IServiceRegistry,
     ISystemConfigService,
-    IUsdtParametersService
+    IUsdtParametersService,
+    IUserGroupService
 } from '@/types';
 import { ADMIN_GROUP_ID } from '@/types';
 import { logger } from '../../lib/logger.js';
@@ -64,6 +65,10 @@ import { createAiToolsAdminRouter } from './api/ai-tools.router.js';
 import { createWebFetchTool } from './web-fetch.js';
 import { buildPromptVariableAiTools } from './buildPromptVariableAiTools.js';
 import { buildSavedPromptAiTools } from './buildSavedPromptAiTools.js';
+import { buildSavedPromptEditAiTool } from './buildSavedPromptEditAiTool.js';
+import { SavedPromptProposalStore } from './services/saved-prompt-proposal-store.js';
+import { SavedPromptEditsService } from './services/saved-prompt-edits.service.js';
+import { createSavedPromptEditCurationType } from './services/saved-prompt-edit-curation-type.js';
 import { buildPromptRunAiTools } from './buildPromptRunAiTools.js';
 import { buildToolInvocationAiTools } from './buildToolInvocationAiTools.js';
 import { WindowedLogLimiter } from '../../lib/WindowedLogLimiter.js';
@@ -345,6 +350,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
     private readonly queryStreams = new QueryStreamRegistry();
     private queryHistory!: AiQueryHistoryService;
     private savedPrompts!: SavedPromptsService;
+    private promptEdits!: SavedPromptEditsService;
     private promptVariables!: PromptVariableRegistry;
     private systemPrompts!: SystemPromptsService;
     private resolveEndUser!: EndUserResolver;
@@ -434,6 +440,18 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
         this.savedPrompts = new SavedPromptsService(this.database, { knownHookIds: BINDABLE_HOOK_IDS });
         await this.savedPrompts.ensureIndexes();
 
+        // Proposed saved-prompt edits, held in the central curation queue until
+        // a signed-in admin approves them. Curation publishes itself in its own
+        // run(), so the service resolves it at call time.
+        const proposalStore = new SavedPromptProposalStore(this.database);
+        await proposalStore.ensureIndexes();
+        this.promptEdits = new SavedPromptEditsService(
+            proposalStore,
+            this.savedPrompts,
+            () => this.serviceRegistry.get<ICurationService>(CURATION_SERVICE),
+            this.logger
+        );
+
         this.promptVariables = new PromptVariableRegistry(this.logger, this.database);
         await this.promptVariables.load();
 
@@ -476,7 +494,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
             () => this.serviceRegistry.get<IAccountDirectoryService>('accounts')
         );
 
-        this.controller = new AiToolsController(this.registry, this.policy, this.audit, this.approvals, this.governor, this.providerRegistry, this.queryHistory, this.savedPrompts, this.promptVariables, this.systemPrompts, this.resolveEndUser, this.screenConfig, this.queryStreams, (id: string, conversationId?: string) => this.runSavedPromptNow(id, conversationId), BINDABLE_HOOK_INFOS, () => this.serviceRegistry.get<IAccountDirectoryService>('accounts'));
+        this.controller = new AiToolsController(this.registry, this.policy, this.audit, this.approvals, this.governor, this.providerRegistry, this.queryHistory, this.savedPrompts, this.promptVariables, this.systemPrompts, this.resolveEndUser, this.screenConfig, this.queryStreams, (id: string, conversationId?: string) => this.runSavedPromptNow(id, conversationId), BINDABLE_HOOK_INFOS, () => this.serviceRegistry.get<IAccountDirectoryService>('accounts'), this.promptEdits);
 
         this.logger.info('ai-tools module initialized');
     }
@@ -604,15 +622,45 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
         // group. It is `secret` for the same reason as the transcript read: a
         // record keeps a secret tool's result digest and any argument a model
         // sent. `this.audit` is constructed in init() before this runs.
+        //
+        // The one write tool in the group proposes a saved-prompt body change.
+        // It never writes the prompt: every proposal is held under
+        // `ai-tools:saved-prompt-edit`, whose approval needs a signed-in admin.
+        // `this.promptEdits` is constructed in init() before this runs.
         const moduleTools = [
             ...buildPromptVariableAiTools(this.promptVariables, this.logger),
             ...buildSavedPromptAiTools(this.savedPrompts, this.logger),
+            buildSavedPromptEditAiTool({
+                savedPrompts: this.savedPrompts,
+                edits: this.promptEdits,
+                isAdminUser: (userId: string) => this.isAdminUser(userId),
+                logger: this.logger
+            }),
             ...buildPromptRunAiTools(this.queryHistory, this.logger),
             ...buildToolInvocationAiTools(this.audit, this.logger)
         ];
         for (const tool of moduleTools) {
             this.registry.registerTool(tool, this.metadata.id);
         }
+    }
+
+    /**
+     * Whether a user is in the `admin` group, for the saved-prompt edit tool's
+     * MCP gate. Resolves the identity module's `'user-groups'` service at call
+     * time, and answers false when it is missing or the lookup fails, so the
+     * gate fails closed.
+     *
+     * @param userId - Better Auth user id of the MCP caller.
+     * @returns True only when the user is confirmed to be an admin.
+     */
+    private async isAdminUser(userId: string): Promise<boolean> {
+        let admin = false;
+        try {
+            admin = (await this.serviceRegistry.get<IUserGroupService>('user-groups')?.isAdmin(userId)) === true;
+        } catch (error) {
+            this.logger.warn({ error, userId }, 'Admin check for the saved prompt edit tool failed; refusing the call');
+        }
+        return admin;
     }
 
     /**
@@ -717,6 +765,17 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
         this.serviceRegistry.register(AI_TOOL_GOVERNOR_SERVICE, this.governor);
         this.serviceRegistry.register(AI_PROVIDERS_SERVICE, this.providerRegistry);
         this.serviceRegistry.register(PROMPT_VARIABLES_SERVICE, this.promptVariables);
+
+        // Register the curation type proposed saved-prompt edits wait under.
+        // Curation runs before this module, so the watch normally fires at
+        // once; watching rather than a one-shot get keeps the order free to
+        // change. The propose tool's `curationTypeId` binding stays inert
+        // until this registration exists.
+        const promptEditType = createSavedPromptEditCurationType(this.promptEdits);
+        this.serviceRegistry.watch<ICurationService>(CURATION_SERVICE, {
+            onAvailable: (curation) => curation.registerType(promptEditType, this.metadata.id),
+            onUnavailable: () => this.logger.warn('Curation unregistered; proposed saved prompt edits cannot be decided until it returns')
+        });
 
         // Declare the scheduled-prompt-run notification category on the
         // notifications service (published by the notifications module, which

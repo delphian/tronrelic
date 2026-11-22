@@ -75,3 +75,5 @@ export type {
     ISavedPromptCronTrigger,
     ISavedPromptHookTrigger
 } from './ISavedPrompt.js';
+export type { ISavedPromptProposal } from './ISavedPromptProposal.js';
+export type { SavedPromptProposalStatus } from './SavedPromptProposalStatus.js';

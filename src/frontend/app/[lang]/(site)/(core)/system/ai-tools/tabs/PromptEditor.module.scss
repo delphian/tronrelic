@@ -135,6 +135,21 @@
     color: var(--color-danger);
 }
 
+/* A proposed edit waiting in curation: a link, so it reads as an action. */
+.bar_meta_proposal {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    color: var(--color-warning);
+    text-decoration: none;
+
+    &:hover,
+    &:focus-visible {
+        color: var(--color-warning);
+        text-decoration: underline;
+    }
+}
+
 /* Pushed to the end so the run status stays first on a narrow card. */
 .bar_meta_hint {
     margin-left: auto;

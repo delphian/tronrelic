@@ -12,7 +12,7 @@
  * beside the field those differences read as bugs. It carries the name field,
  * the unsaved-changes indicator, the single Save, run-now, duplicate, delete,
  * and the toggle that reveals the triggers panel — plus the live "last run /
- * next run" status.
+ * next run" status and a link to any proposed edit waiting in curation.
  *
  * The single Save is the point. Because the composer textarea *is* the prompt
  * body, an operator edits body, model, tools, and triggers in one surface, and
@@ -25,7 +25,8 @@
  */
 
 import { useState, useEffect } from 'react';
-import { Save, Play, CopyPlus, Trash2, CalendarClock, X, AlertCircle, Pencil } from 'lucide-react';
+import Link from 'next/link';
+import { Save, Play, CopyPlus, Trash2, CalendarClock, X, AlertCircle, Pencil, Inbox } from 'lucide-react';
 import type { ISavedPrompt } from '@/types';
 import { Input } from '../../../../../../../components/ui/Input';
 import { Button } from '../../../../../../../components/ui/Button';
@@ -81,6 +82,12 @@ interface PromptEditorBarProps {
     onToggleTriggers: () => void;
     /** How many trigger rows are currently drafted, for the toggle's count. */
     triggerCount: number;
+    /**
+     * How many proposed edits to this prompt wait in the curation queue. When
+     * above zero the strip links to the queue, so an admin knows an agent has
+     * suggested a change before saving over it.
+     */
+    pendingProposalCount: number;
 }
 
 /**
@@ -104,7 +111,8 @@ export function PromptEditorBar({
     onClose,
     triggersOpen,
     onToggleTriggers,
-    triggerCount
+    triggerCount,
+    pendingProposalCount
 }: PromptEditorBarProps) {
     /**
      * Wall-clock backing the live status labels. Ticked here rather than in the
@@ -232,6 +240,14 @@ export function PromptEditorBar({
                     <span className={styles.bar_meta_error}>
                         <AlertCircle size={11} /> {runError}
                     </span>
+                )}
+                {pendingProposalCount > 0 && (
+                    <Link href="/system/curation" className={styles.bar_meta_proposal}>
+                        <Inbox size={11} />
+                        {pendingProposalCount === 1
+                            ? '1 proposed edit waiting for review'
+                            : `${pendingProposalCount} proposed edits waiting for review`}
+                    </Link>
                 )}
                 <span className={styles.bar_meta_hint}>
                     The prompt line above holds this prompt&apos;s text; Send tests it without clearing it.

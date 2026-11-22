@@ -35,6 +35,7 @@ import type { AiQueryHistoryService } from '../services/ai-query-history.service
 import { buildAiQueryRecord } from '../services/ai-query-history.service.js';
 import type { SavedPromptsService } from '../services/saved-prompts.service.js';
 import { SavedPromptValidationError, type ISavedPromptTriggerInput } from '../services/saved-prompts.service.js';
+import type { SavedPromptEditsService } from '../services/saved-prompt-edits.service.js';
 import type { EndUserResolver } from '../services/end-user-resolver.js';
 import type { PromptVariableRegistry } from '../services/prompt-variable-registry.js';
 import { PromptVariableValidationError } from '../services/prompt-variable-registry.js';
@@ -182,6 +183,7 @@ export class AiToolsController {
      * @param screenConfig - Untrusted-content output-screen policy store (Registry tab screen section).
      * @param bindableHooks - Declared hook seams a saved prompt's hook trigger may bind to, with their registry descriptions — served to the editor's hook picker so the UI offers exactly what save-time validation accepts.
      * @param accounts - Reads the identity module's account directory at call time, so the activity feed can name the signed-in people behind the user ids it lists. Returns undefined while identity has not published it, in which case the feed carries ids alone.
+     * @param promptEdits - Proposed saved-prompt edits waiting in curation. A direct save or delete withdraws a prompt's pending proposals, and the editor lists them so an admin knows one is waiting. Null in tests that do not exercise proposals.
      */
     constructor(
         private readonly registry: AiToolRegistry,
@@ -199,7 +201,8 @@ export class AiToolsController {
         private readonly queryStreams: QueryStreamRegistry,
         private readonly runSavedPromptNow: (promptId: string, conversationId?: string) => Promise<void>,
         private readonly bindableHooks: ReadonlyArray<{ id: string; description: string }> = [],
-        private readonly accounts: () => Pick<IAccountDirectoryService, 'getAccountsByIds'> | undefined = () => undefined
+        private readonly accounts: () => Pick<IAccountDirectoryService, 'getAccountsByIds'> | undefined = () => undefined,
+        private readonly promptEdits: Pick<SavedPromptEditsService, 'listPending' | 'supersedeForPrompt'> | null = null
     ) {}
 
     /** GET /tools — registry with capability, provider, and enabled state. */
@@ -1076,6 +1079,50 @@ export class AiToolsController {
         res.json({ hooks: this.bindableHooks });
     };
 
+    /**
+     * GET /query/prompts/proposals — every proposed saved-prompt edit waiting
+     * in the curation queue, newest first. The editor uses it to tell an admin
+     * that a prompt has an edit waiting, and that saving will withdraw it. The
+     * proposed body is left out; the curation review screen shows it with a
+     * diff.
+     */
+    listPromptProposals = async (_req: Request, res: Response): Promise<void> => {
+        try {
+            const pending = this.promptEdits ? await this.promptEdits.listPending() : [];
+            res.json({
+                proposals: pending.map((proposal) => ({
+                    id: proposal.id,
+                    promptId: proposal.promptId,
+                    promptName: proposal.promptName,
+                    reason: proposal.reason,
+                    source: proposal.source,
+                    curationItemId: proposal.curationItemId ?? null,
+                    createdAt: proposal.createdAt
+                }))
+            });
+        } catch (error) {
+            logger.error({ err: error }, 'Failed to list proposed saved prompt edits');
+            res.status(500).json({ error: 'Failed to load proposed prompt edits.' });
+        }
+    };
+
+    /**
+     * Withdraw a prompt's pending edit proposals after a direct save or delete.
+     * The save or delete has already succeeded, so a failure here is logged
+     * and the request still succeeds; a stale proposal left behind can only
+     * fail its stale check if approved.
+     *
+     * @param promptId - The prompt that changed.
+     * @param reason - Logged with each withdrawal.
+     */
+    private async withdrawPromptProposals(promptId: string, reason: string): Promise<void> {
+        try {
+            await this.promptEdits?.supersedeForPrompt(promptId, reason);
+        } catch (error) {
+            logger.warn({ err: error, promptId }, 'Could not withdraw pending edit proposals after a direct prompt change');
+        }
+    }
+
     /** GET /query/prompts — saved prompt templates, newest-updated first. */
     listPrompts = async (_req: Request, res: Response): Promise<void> => {
         try {
@@ -1119,8 +1166,14 @@ export class AiToolsController {
                     // Forwarded raw (undefined omit / null clear-to-all / array
                     // set); the service's validateToolAllowlist rejects a
                     // malformed value as a SavedPromptValidationError → 400.
-                    toolAllowlist: toolAllowlist as string[] | null | undefined
+                    toolAllowlist: toolAllowlist as string[] | null | undefined,
+                    lastEditedBy: actorId(req)
                 });
+                // The save moved the prompt's `updatedAt`, so any pending
+                // proposal was based on a version that no longer exists and
+                // would fail if approved. Withdraw it now rather than leave a
+                // dead item in the curation queue.
+                await this.withdrawPromptProposals(id as string, 'An admin saved the prompt directly.');
             } else {
                 // Stamp ownership from the saving admin. requireAdmin set
                 // req.userId on the session path; a service-token save has none,
@@ -1168,6 +1221,7 @@ export class AiToolsController {
                 res.status(404).json({ error: 'Prompt not found' });
                 return;
             }
+            await this.withdrawPromptProposals(req.params.id, 'An admin deleted the prompt.');
             res.json({ success: true });
         } catch {
             res.status(500).json({ error: 'Failed to delete prompt.' });

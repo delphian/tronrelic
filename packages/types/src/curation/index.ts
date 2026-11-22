@@ -15,6 +15,7 @@ export type {
 } from './ICurationPreview.js';
 export type { ICurationItem, CurationItemStatus } from './ICurationItem.js';
 export type { ICurationType, ICurationEditPatch } from './ICurationType.js';
+export type { ICurationCommitContext } from './ICurationCommitContext.js';
 export type {
     ICurationEligibleSink,
     ICurationSinkSelection,
@@ -28,6 +29,8 @@ export type {
     ICurationHoldInput
 } from './ICurationService.js';
 export { CURATION_DECISIONS } from './CURATION_DECISIONS.js';
+export { SYSTEM_DECIDER_PREFIX } from './SYSTEM_DECIDER_PREFIX.js';
+export { isSignedInCuratorId } from './isSignedInCuratorId.js';
 export type { CurationDecision } from './CurationDecision.js';
 export type { ICurationHistoryListOptions } from './ICurationHistoryListOptions.js';
 export type { ICurationHistoryTypeOption } from './ICurationHistoryTypeOption.js';
