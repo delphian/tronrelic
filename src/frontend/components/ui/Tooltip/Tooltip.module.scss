@@ -35,7 +35,11 @@
     border-radius: var(--radius-sm);
     font-size: var(--font-size-sm);
     line-height: var(--line-height-tight);
-    max-width: 280px;
+    /* 320px, so a full 34-character TRON address fits on one line. At 280px
+       the content box was about 254px after padding and border, a few pixels
+       short of an address at this font size, and the last character wrapped
+       onto a line of its own. */
+    max-width: var(--max-width-xs);
     width: max-content;
     z-index: var(--z-index-tooltip);
     pointer-events: none;

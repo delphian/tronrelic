@@ -51,11 +51,13 @@ const TRONSCAN_TX_URL = 'https://tronscan.org/#/transaction/';
  * base58 characters opening with a fixed `T`, so four leading characters carry
  * three of entropy and still read as an address; a transaction id is 64 hex
  * characters with no prefix and only sixteen possible values per character, so
- * the same window would leave far too many ids looking alike in a list. Eight
- * and eight stays compact while keeping each end independently recognisable.
+ * the same window would leave far too many ids looking alike in a list. Six
+ * and six keeps the chip short enough for a table column while each end still
+ * has over sixteen million possible values, so two ids in one list almost
+ * never look alike.
  */
-const HEAD_CHARS = 8;
-const TAIL_CHARS = 8;
+const HEAD_CHARS = 6;
+const TAIL_CHARS = 6;
 
 /**
  * Props for {@link TronTransactionId}.
