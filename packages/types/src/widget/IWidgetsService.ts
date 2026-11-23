@@ -250,14 +250,15 @@ export interface IWidgetsService {
     ): WidgetsRegistrationDisposer;
 
     /**
-     * Convenience: register a widget type and atomically upsert its
-     * default plugin-source placement. The common one-call form used
-     * by plugins shipping a widget.
+     * Register a widget type and create its default plugin-source
+     * placement, switched on, if that placement does not exist yet.
+     * Prefer {@link registerType} for a new widget, which lets the
+     * operator decide where it appears instead of putting it on a page.
      *
-     * Re-callable: subsequent calls with the same `(ownerId, id)` set
-     * `enabled: true` on the existing placement row without touching
-     * `order`, `routes`, `title`, or `instanceConfig` — operator
-     * customisations survive every enable cycle.
+     * Re-callable: subsequent calls with the same `(ownerId, id)` leave
+     * the existing placement row exactly as the operator last saved it,
+     * `enabled` included, so a placement switched off stays off across
+     * restarts and plugin disable/enable cycles.
      *
      * The original default parameters are cached so
      * `restorePluginDefaults` can revert operator changes later.
@@ -272,11 +273,12 @@ export interface IWidgetsService {
     ): Promise<void>;
 
     /**
-     * Tear down everything `ownerId` registered: soft-disable every
-     * plugin-source placement, dispose every owned type, dispose every
-     * owned zone. Operator customisations to plugin-source placements
-     * survive on disk for the next enable cycle. Called by the plugin
-     * lifecycle on disable and uninstall.
+     * Tear down everything `ownerId` registered: dispose every owned
+     * type and every owned zone. Placement rows are not modified; with
+     * their type gone they stop rendering, and they render again,
+     * switched on or off as the operator left them, when the plugin is
+     * next enabled. Called by the plugin lifecycle on disable and
+     * uninstall.
      *
      * Safe to call with `ownerId === 'core'` — core registrations are
      * never disposed, the call is a no-op.
@@ -336,8 +338,8 @@ export interface IWidgetsService {
 
     /**
      * Permanently delete a placement. Plugin-source rows are refused —
-     * use {@link unregisterAllForOwner} or update `{enabled: false}`
-     * to remove a plugin row from display.
+     * update `{enabled: false}` to remove a plugin row from display,
+     * which stays in effect across restarts.
      *
      * @returns True when a row was deleted, false otherwise.
      * @throws Error when the target is a plugin-source row.

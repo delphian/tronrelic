@@ -274,6 +274,34 @@ describe('WidgetsService.registerWidget', () => {
         expect(restored.routes).toEqual(['/operator-set']);
     });
 
+    /**
+     * Guards the bug where a plugin widget an operator switched off came back
+     * on, because each start and each re-enable wrote `enabled: true`.
+     */
+    it('keeps a placement the operator switched off switched off across a disable/enable cycle', async () => {
+        const { widgets } = buildWidgetsService();
+        widgets.registerZone({ id: 'main-after', label: 'm', description: 'm', host: 'core' }, 'core');
+        const input = {
+            id: 'p:feed',
+            label: 'Feed',
+            description: 'Feed',
+            defaultZoneId: 'main-after',
+            defaultRoutes: ['/'],
+            defaultDataFetcher: async () => ({})
+        };
+
+        await widgets.registerWidget(input, 'p');
+        const [original] = await widgets.listPlacements({ pluginId: 'p' });
+        await widgets.updatePlacement(original.id, { enabled: false });
+        await widgets.unregisterAllForOwner('p');
+        await widgets.registerWidget(input, 'p');
+
+        const [after] = await widgets.listPlacements({ pluginId: 'p' });
+        expect(after.id).toBe(original.id);
+        expect(after.enabled).toBe(false);
+        expect(await widgets.fetchWidgetsForRoute('/')).toEqual([]);
+    });
+
     it("refuses ownerId 'core'", async () => {
         const { widgets } = buildWidgetsService();
         await expect(widgets.registerWidget({
@@ -339,7 +367,7 @@ describe('WidgetsService.registerWidget', () => {
 });
 
 describe('WidgetsService.unregisterAllForOwner', () => {
-    it('soft-disables placements, disposes types, and disposes zones', async () => {
+    it('disposes types and zones and leaves placement rows untouched', async () => {
         const { widgets } = buildWidgetsService();
         widgets.registerZone({ id: 'core-zone', label: 'c', description: 'c', host: 'core' }, 'core');
         widgets.registerZone({ id: 'p:owned', label: 'p', description: 'p', host: 'plugin' }, 'p');
@@ -356,9 +384,11 @@ describe('WidgetsService.unregisterAllForOwner', () => {
 
         expect(widgets.hasZone('p:owned')).toBe(false);
         expect(widgets.hasType('p:feed')).toBe(false);
+        // The row keeps the operator's switch; with its type gone it no
+        // longer renders, which the route-cache tests below cover.
         const placements = await widgets.listPlacements({ pluginId: 'p' });
         expect(placements).toHaveLength(1);
-        expect(placements[0].enabled).toBe(false);
+        expect(placements[0].enabled).toBe(true);
         // Core zone untouched.
         expect(widgets.hasZone('core-zone')).toBe(true);
     });

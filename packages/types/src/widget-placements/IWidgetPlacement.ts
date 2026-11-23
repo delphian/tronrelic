@@ -22,11 +22,11 @@ import type { WidgetShowOn } from './WidgetShowOn.js';
  * operator-created placements. Disable behaviour and admin-UI
  * editability vary between the two.
  *
- * - `'plugin'` — Created via the legacy widget-service compatibility
- *   shim when a plugin registers a widget. Soft-disabled (set
- *   `enabled: false`) on plugin disable so operator customisations
- *   to `order` / `routes` / `title` survive the disable/re-enable
- *   cycle.
+ * - `'plugin'` — Created by `registerWidget` the first time a plugin
+ *   starts, and never modified by plugin lifecycle afterwards, so the
+ *   operator's `enabled` switch and edits to `order` / `routes` /
+ *   `title` survive restarts and disable/re-enable cycles. Cannot be
+ *   deleted through the admin API.
  * - `'operator'` — Created via the admin API by a human operator.
  *   Lifecycle is independent of any plugin's enable state.
  */

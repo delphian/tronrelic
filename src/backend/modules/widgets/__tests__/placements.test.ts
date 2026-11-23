@@ -194,7 +194,7 @@ describe('PlacementService.ensurePluginPlacement', () => {
         expect(placement.order).toBe(100);
     });
 
-    it('preserves operator customisations on re-enable', async () => {
+    it('preserves operator customisations on the next start', async () => {
         const first = await service.ensurePluginPlacement({
             typeId: 'p:t',
             zoneId: 'main-after',
@@ -204,13 +204,11 @@ describe('PlacementService.ensurePluginPlacement', () => {
             pluginId: 'p'
         });
 
-        // Simulate operator customisation
         await service.update(first.id, { order: 5, routes: ['/dashboard'], title: 'Operator Override' });
-        await service.softDisableForPlugin('p');
 
-        // Re-enable — plugin code calls ensurePluginPlacement with its
-        // original defaults again.
-        const reenabled = await service.ensurePluginPlacement({
+        // The next backend start calls ensurePluginPlacement with the
+        // plugin's original defaults again.
+        const restarted = await service.ensurePluginPlacement({
             typeId: 'p:t',
             zoneId: 'main-after',
             routes: ['/'],
@@ -219,10 +217,35 @@ describe('PlacementService.ensurePluginPlacement', () => {
             pluginId: 'p'
         });
 
-        expect(reenabled.enabled).toBe(true);
-        expect(reenabled.order).toBe(5);
-        expect(reenabled.routes).toEqual(['/dashboard']);
-        expect(reenabled.title).toBe('Operator Override');
+        expect(restarted.enabled).toBe(true);
+        expect(restarted.order).toBe(5);
+        expect(restarted.routes).toEqual(['/dashboard']);
+        expect(restarted.title).toBe('Operator Override');
+    });
+
+    /**
+     * Guards the bug where every backend start wrote `enabled: true`, so a
+     * plugin widget an operator switched off came back at the next deploy.
+     */
+    it('keeps a placement the operator switched off switched off', async () => {
+        const first = await service.ensurePluginPlacement({
+            typeId: 'p:t',
+            zoneId: 'main-after',
+            routes: ['/'],
+            pluginId: 'p'
+        });
+
+        await service.update(first.id, { enabled: false });
+
+        const restarted = await service.ensurePluginPlacement({
+            typeId: 'p:t',
+            zoneId: 'main-after',
+            routes: ['/'],
+            pluginId: 'p'
+        });
+
+        expect(restarted.id).toBe(first.id);
+        expect(restarted.enabled).toBe(false);
     });
 
     it('rejects calls without a pluginId', async () => {
@@ -234,52 +257,6 @@ describe('PlacementService.ensurePluginPlacement', () => {
                 pluginId: ''
             })
         ).rejects.toThrow(/requires a pluginId/);
-    });
-});
-
-describe('PlacementService.softDisableForPlugin', () => {
-    let logger: MockLogger;
-    let db: ReturnType<typeof createMockDatabaseService>;
-    let service: PlacementService;
-
-    beforeEach(() => {
-        logger = new MockLogger();
-        db = createMockDatabaseService();
-        PlacementService.__resetForTests();
-        PlacementService.setDependencies(db, logger);
-        service = PlacementService.getInstance();
-    });
-
-    it('flips enabled=false on every plugin-source row for the plugin', async () => {
-        await service.ensurePluginPlacement({ typeId: 'a:t', zoneId: 'main-after', routes: [], pluginId: 'a' });
-        await service.ensurePluginPlacement({ typeId: 'a:u', zoneId: 'main-after', routes: [], pluginId: 'a' });
-        await service.ensurePluginPlacement({ typeId: 'b:t', zoneId: 'main-after', routes: [], pluginId: 'b' });
-
-        const modified = await service.softDisableForPlugin('a');
-
-        expect(modified).toBe(2);
-        const aPlacements = await service.list({ pluginId: 'a' });
-        expect(aPlacements.every(p => p.enabled === false)).toBe(true);
-        const bPlacements = await service.list({ pluginId: 'b' });
-        expect(bPlacements.every(p => p.enabled === true)).toBe(true);
-    });
-
-    it('does not touch operator-source rows', async () => {
-        await service.ensurePluginPlacement({ typeId: 'a:t', zoneId: 'main-after', routes: [], pluginId: 'a' });
-        const op = await service.create(
-            { typeId: 'a:t', zoneId: 'main-after', routes: [] },
-            { source: 'operator' }
-        );
-
-        await service.softDisableForPlugin('a');
-
-        const operatorAfter = await service.findById(op.id);
-        expect(operatorAfter?.enabled).toBe(true);
-    });
-
-    it('returns zero when the plugin owns nothing', async () => {
-        const modified = await service.softDisableForPlugin('phantom');
-        expect(modified).toBe(0);
     });
 });
 
@@ -543,7 +520,6 @@ describe('PlacementResolver', () => {
         (typeRegistry as any).__types = types;
         placementService = {
             ensurePluginPlacement: vi.fn(),
-            softDisableForPlugin: vi.fn(),
             findByRoute: vi.fn(async () => []),
             create: vi.fn(),
             update: vi.fn(),

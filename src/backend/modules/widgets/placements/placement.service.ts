@@ -2,16 +2,17 @@
  * @fileoverview Widget placement service implementation.
  *
  * Singleton that owns the `module_widgets_placements` collection.
- * Plugin lifecycle invokes `ensurePluginPlacement` on enable and
- * `softDisableForPlugin` on disable; the placement resolver queries
- * `findByRoute` per SSR request; the admin API surface (forthcoming)
- * uses `create` / `update` / `delete` / `list`.
+ * `registerWidget` invokes `ensurePluginPlacement` when a plugin starts;
+ * the placement resolver queries `findByRoute` per SSR request; the
+ * admin API uses `create` / `update` / `delete` / `list`.
  *
- * Soft-disable semantics: plugin-source placements with `enabled:
- * false` remain in the database, preserving operator customisations
- * to `order` / `routes` / `title` across the plugin's
- * disable/re-enable cycle. Hard delete is reserved for operator
- * action via the admin API.
+ * `enabled` belongs to the operator. Plugin lifecycle never writes it
+ * on an existing row: a plugin's placement is created switched on, and
+ * then stays however the operator last set it through every restart
+ * and every disable/enable cycle. A disabled plugin's placements stop
+ * rendering because its widget type is unregistered, which the
+ * resolver skips. Hard delete is reserved for operator action via the
+ * admin API.
  *
  * @module backend/modules/widgets/placements/placement.service
  */
@@ -162,33 +163,30 @@ export class PlacementService implements IPlacementService {
             source: 'plugin' as PlacementSource
         };
 
-        // Atomic upsert. `$set` applies on both insert and update so
-        // `enabled` and `updatedAt` always reflect the current call.
-        // `$setOnInsert` applies only on insert so operator
-        // customisations to `order`, `routes`, `title`, and
-        // `instanceConfig` survive plugin disable/re-enable cycles
-        // (the existing row is found by filter and only `enabled` +
-        // `updatedAt` are touched). The sparse unique index on
-        // (typeId, pluginId) created in migration 001 guarantees
-        // atomicity against concurrent enables from multiple
-        // processes: the second writer's $setOnInsert is dropped
-        // because the row already exists.
+        // Atomic insert-if-absent. Every field, `enabled` included, is
+        // written only when the row is created, so an existing row is
+        // left exactly as the operator last saved it. `enabled` must stay
+        // out of `$set`: this runs on every backend start, and writing it
+        // there would switch a placement the operator turned off back on
+        // at the next deploy. The partial unique index on
+        // (typeId, pluginId) guarantees atomicity against concurrent
+        // starts from multiple processes: the second writer's
+        // $setOnInsert is dropped because the row already exists.
         const setOnInsert: Partial<IWidgetPlacementDocument> = {
             zoneId: input.zoneId,
             routes: [...input.routes],
             order: input.order ?? DEFAULT_ORDER,
+            enabled: true,
             source: 'plugin',
-            createdAt: now
+            createdAt: now,
+            updatedAt: now
         };
         if (input.title !== undefined) setOnInsert.title = input.title;
         if (input.instanceConfig !== undefined) setOnInsert.instanceConfig = input.instanceConfig;
 
         await collection.updateOne(
             filter,
-            {
-                $set: { enabled: true, updatedAt: now },
-                $setOnInsert: setOnInsert
-            },
+            { $setOnInsert: setOnInsert },
             { upsert: true }
         );
 
@@ -205,28 +203,6 @@ export class PlacementService implements IPlacementService {
         );
 
         return toPublic(document);
-    }
-
-    async softDisableForPlugin(pluginId: string): Promise<number> {
-        if (!pluginId) {
-            throw new Error('softDisableForPlugin requires a pluginId');
-        }
-
-        const collection = this.database.getCollection<IWidgetPlacementDocument>(WIDGET_PLACEMENT_COLLECTION);
-        const result = await collection.updateMany(
-            { pluginId, source: 'plugin', enabled: true },
-            { $set: { enabled: false, updatedAt: new Date() } }
-        );
-
-        const modified = result.modifiedCount ?? 0;
-        if (modified > 0) {
-            this.logger.info(
-                { pluginId, modified },
-                'Plugin placements soft-disabled'
-            );
-        }
-
-        return modified;
     }
 
     async findByRoute(route: string): Promise<ReadonlyArray<IWidgetPlacement>> {
