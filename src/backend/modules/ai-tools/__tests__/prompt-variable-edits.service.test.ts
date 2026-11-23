@@ -188,6 +188,18 @@ describe('PromptVariableEditsService', () => {
         expect(store.rows.get(proposal.id)?.status).toBe('rejected');
     });
 
+    /**
+     * Guards against a leak: reclassifying a variable secret withdraws its
+     * proposal, the withdrawal freezes this comparison into curation history,
+     * and that history is readable with the shared admin service token.
+     */
+    it('gives no comparison once the variable has been reclassified secret', async () => {
+        const { proposal } = await service.propose({ variableName: 'news-source-urls', proposedContent: 'new text', reason: 'r', source: 's' });
+        variables.statics.set('news-source-urls', { ...SOURCES, sensitivity: 'secret', content: 'new secret', updatedAt: 'later' });
+
+        expect(await service.describeChanges(proposal.id)).toBeNull();
+    });
+
     it('gives the review screen a title, a diff against the live text, and the prompts it reaches', async () => {
         const { proposal } = await service.propose({ variableName: 'news-source-urls', proposedContent: 'new text', reason: 'r', source: 's' });
 

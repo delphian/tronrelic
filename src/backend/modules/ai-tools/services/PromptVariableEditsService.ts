@@ -14,6 +14,8 @@
  *   variables have no stored text to change.
  * - A `secret` variable cannot be proposed against. The read tools withhold
  *   its value, and a proposal would show the old value in the review diff.
+ *   A variable reclassified secret while a proposal waits is no longer
+ *   compared either, so its text never reaches curation history.
  * - One pending proposal per variable. A newer one, or a direct edit,
  *   reclassification, or delete on `/system/ai-tools`, withdraws the older one.
  * - An approval writes only if the variable still carries the `updatedAt` the
@@ -286,14 +288,24 @@ export class PromptVariableEditsService {
      * Compare a proposal with the variable's text as it is now, as a line and
      * word diff.
      *
+     * A variable classified secret now is never compared, although a proposal
+     * can only be made while it is not. Editing or reclassifying a variable
+     * withdraws its pending proposals, and the withdrawal rejects the curation
+     * item, which freezes this comparison into curation history. That history
+     * is served under plain `requireAdmin`, so comparing here would expose the
+     * live secret text to the service token the variable read routes refuse.
+     * The same rule covers a proposal that a failed withdrawal left pending,
+     * whose live comparison is served on the same terms.
+     *
      * @param proposalId - The proposal the curation item points at.
-     * @returns The change set, or null when the proposal or its variable no longer exists.
+     * @returns The change set, or null when the proposal or its variable no
+     *          longer exists, or the variable is now classified secret.
      */
     async describeChanges(proposalId: string): Promise<IContentChangeSet | null> {
         const proposal = await this.store.get(proposalId);
         const variable = proposal ? this.variables.getStatic(proposal.variableName) : undefined;
         let changes: IContentChangeSet | null = null;
-        if (proposal && variable) {
+        if (proposal && variable && variable.sensitivity !== 'secret') {
             changes = buildContentChangeSet(
                 CHANGE_FIELDS,
                 { content: variable.content },
