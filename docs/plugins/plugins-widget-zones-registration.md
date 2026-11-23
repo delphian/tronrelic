@@ -4,7 +4,7 @@ Backend registration is how a plugin tells the platform "I have a renderable wid
 
 ## Why This Matters
 
-Getting registration wrong fails in operator-visible ways: the widget never appears, lands on the wrong routes, fights another plugin for order, or breaks SSR with a slow or throwing data fetcher. Beyond correctness, every plugin-registered placement must be tagged with the calling plugin's id so the platform can soft-disable it on plugin disable without losing operator overrides — that tagging happens automatically when the plugin passes `ownerId` to the unified widgets service.
+Getting registration wrong fails in operator-visible ways: the widget never appears, lands on the wrong routes, fights another plugin for order, or breaks SSR with a slow or throwing data fetcher. Beyond correctness, every widget type and plugin-registered placement must be tagged with the calling plugin's id so the platform can stop rendering it on plugin disable without losing operator overrides — that tagging happens automatically when the plugin passes `ownerId` to the unified widgets service.
 
 ## What You Register
 
@@ -46,7 +46,7 @@ export const myPlugin = definePlugin({
 });
 ```
 
-Note: plugins do *not* implement a `disable()` hook to unregister widgets. The plugin manager calls `widgets.unregisterAllForOwner(pluginId)` automatically on disable — placements soft-disable, types and zones unregister, and operator customisations on placements survive the next enable cycle.
+Note: plugins do *not* implement a `disable()` hook to unregister widgets. The plugin manager calls `widgets.unregisterAllForOwner(pluginId)` automatically on disable — types and zones unregister, which stops their placements rendering, and the placement rows themselves are left exactly as the operator set them for the next enable.
 
 ## Declaring Plugin-Owned Zones
 
@@ -72,7 +72,7 @@ The optional `order` controls where the zone sits **within its host track in the
 
 ## Registering a Type Without a Default Placement
 
-Rare but valid — e.g. a widget meant to be placed only by operators. Use `registerType` instead of `registerWidget`. The type becomes available in the `/system/widgets` type picker; no placement is created automatically.
+Prefer this for a new widget. Use `registerType` instead of `registerWidget`. The type becomes available in the `/system/widgets` type picker and no placement is created, so the widget appears only where an operator puts it. `registerWidget` puts the widget on a live page the first time the plugin starts, which the operator never chose, and the placement it creates can be switched off but not deleted. `trp-whale-alerts` and `trp-relics` both moved their widgets to `registerType`, each with a plugin migration that deletes the placement the old `registerWidget` call left behind.
 
 ```typescript
 widgets.registerType({
@@ -118,9 +118,9 @@ When two plugins target the same zone, set explicit `defaultOrder` to win determ
 
 ## Lifecycle Semantics
 
-**Plugin enable / re-enable.** Each `registerWidget(input, ownerId)` call caches the original args, registers the widget type, and calls `placementService.ensurePluginPlacement(...)` internally. The placement upsert is atomic: it flips `enabled: true` and updates `updatedAt` on existing rows, but uses `$setOnInsert` for `zoneId`, `routes`, `order`, `title`, and `instanceConfig`, so operator customisations on existing rows are preserved across enable cycles.
+**Plugin enable / re-enable.** Each `registerWidget(input, ownerId)` call caches the original args, registers the widget type, and calls `placementService.ensurePluginPlacement(...)` internally. The placement upsert is atomic and writes every field, `enabled` included, with `$setOnInsert`. It creates the row switched on the first time and never changes an existing row, so a placement the operator switched off stays off across restarts and enable cycles, along with their other edits.
 
-**Plugin disable.** `PluginManagerService` calls `widgets.unregisterAllForOwner(pluginId)`, which soft-disables every plugin-source placement (`enabled: false`), removes every widget type the plugin owned, and removes every plugin-declared zone. Placement rows stay in MongoDB. The plugin-default cache is *not* cleared, so restore-defaults continues to work on soft-disabled rows as long as the process is alive.
+**Plugin disable.** `PluginManagerService` calls `widgets.unregisterAllForOwner(pluginId)`, which removes every widget type the plugin owned and every plugin-declared zone. Placement rows are not modified; with their type gone the resolver skips them. The plugin-default cache is *not* cleared, so restore-defaults continues to work while the plugin is disabled, as long as the process is alive.
 
 **Plugin uninstall.** Same path as disable. Rows remain on disk until a future cleanup migration or a manual operator delete (operator-source rows only).
 
@@ -201,7 +201,9 @@ The pre-split read endpoints (`/api/widgets/all`, `/api/widgets/zones/:zone`) ha
 
 **Wrong order.** Set explicit `defaultOrder` in your `registerWidget` call; remember lower-first. If an operator reordered the row, restore-defaults reverts it to your default. Two plugins targeting the same zone with no explicit order get insertion-order — never rely on that.
 
-**Plugin disable removed my placement.** It didn't — it was soft-disabled. Inspect the row at `/api/admin/system/widgets/placements/:id` and confirm `enabled: false, source: 'plugin'`. Re-enable the plugin and the row flips back to `enabled: true` with operator overrides intact.
+**Plugin disable removed my placement.** It didn't — the row is still there, but its widget type is unregistered, so it does not render. Inspect the row at `/api/admin/system/widgets/placements/:id`. Re-enable the plugin and the row renders again with operator overrides intact.
+
+**A widget I switched off came back.** It should not: no plugin lifecycle step writes `enabled` on an existing row. A row an older version switched off on plugin disable is the reverse case, and stays off after the plugin is enabled again until the operator switches it on.
 
 **`services.get('widgets')` returns undefined.** Defensive check only — the widgets service is registered during `WidgetsModule.run()`, which runs before any plugin's `init()`. If the lookup misses, the widgets module failed to bootstrap; check backend startup logs.
 

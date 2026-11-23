@@ -19,11 +19,12 @@ import type { PlacementSource, WidgetShowOn, WidgetTitleSize } from '@/types';
 /**
  * Widget placement document as stored in MongoDB.
  *
- * Placements survive plugin disable/re-enable cycles because plugin
- * lifecycle calls `softDisable` (flip `enabled: false`) rather than
- * deleting rows. Operator customisations to `order`, `routes`,
- * `title`, `titleUrl`, or `instanceConfig` therefore persist across
- * plugin lifecycle events. Hard delete is reserved for the admin API.
+ * Plugin lifecycle never modifies or deletes an existing row: a
+ * disabled plugin's placements stop rendering because its widget type
+ * is unregistered. The operator's `enabled` switch and edits to
+ * `order`, `routes`, `title`, `titleUrl`, or `instanceConfig`
+ * therefore persist across restarts and plugin lifecycle events. Hard
+ * delete is reserved for the admin API.
  */
 export interface IWidgetPlacementDocument {
     _id: ObjectId;

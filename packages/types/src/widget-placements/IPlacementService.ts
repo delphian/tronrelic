@@ -3,15 +3,15 @@
  *
  * `IPlacementService` owns the placement collection — CRUD operations
  * plus the route-based query the resolver uses to populate SSR. The
- * legacy widget-service compatibility shim calls
- * `ensurePluginPlacement` on plugin enable and `softDisableForPlugin`
- * on plugin disable; the admin API surface (future PR) drives the
- * generic CRUD methods.
+ * widgets service calls `ensurePluginPlacement` from `registerWidget`;
+ * the admin API drives the generic CRUD methods.
  *
- * Soft-disable semantics: plugin-source placements with `enabled:
- * false` survive plugin disable, preserving operator customisations
- * to `order` / `routes` / `title` for the next re-enable. Hard delete
- * is reserved for operator action via admin UI.
+ * `enabled` belongs to the operator. Plugin lifecycle never changes it
+ * on an existing row, so a plugin placement the operator switched off
+ * stays off across restarts and plugin disable/enable cycles. A
+ * disabled plugin's placements stop rendering because its widget type
+ * is unregistered. Hard delete is reserved for operator action via the
+ * admin UI.
  *
  * @module types/widget-placements/IPlacementService
  */
@@ -101,30 +101,20 @@ export interface IPlacementPatch {
 export interface IPlacementService {
     /**
      * Ensure a plugin-source placement exists for the given plugin +
-     * widget-type combination. On first call, creates a placement
-     * with all input fields and `enabled: true`. On subsequent calls
-     * (e.g. plugin re-enable after disable), finds the existing row
-     * and sets `enabled: true` without overwriting other fields —
-     * operator customisations to `order` / `routes` / `title` survive.
+     * widget-type combination, so a plugin that ships a default
+     * placement gets one the first time it starts. The first call
+     * creates the row from the input with `enabled: true`. Later calls,
+     * which happen on every backend start, find the existing row and
+     * change nothing on it, so the operator's `enabled` switch and
+     * their edits to `order` / `routes` / `title` all survive.
      *
-     * Called by the legacy widget-service compatibility shim during
-     * plugin install / enable / init.
+     * Called by the widgets service's `registerWidget`.
      *
-     * @param input - Plugin placement parameters.
-     * @returns The resulting placement record (created or re-enabled).
+     * @param input - Plugin placement parameters, used only when the
+     *   row is created.
+     * @returns The placement record, newly created or as already stored.
      */
     ensurePluginPlacement(input: IPluginPlacementInput): Promise<IWidgetPlacement>;
-
-    /**
-     * Soft-disable every plugin-source placement for the given plugin
-     * by setting `enabled: false`. Operator-source placements are
-     * untouched. Called by `PluginManagerService` on plugin disable
-     * and uninstall.
-     *
-     * @param pluginId - Plugin whose placements should be disabled.
-     * @returns Count of placements modified.
-     */
-    softDisableForPlugin(pluginId: string): Promise<number>;
 
     /**
      * Find all placements relevant to the given route, sorted by
@@ -162,8 +152,8 @@ export interface IPlacementService {
 
     /**
      * Permanently delete a placement by id. Reserved for operator
-     * action — plugin lifecycle uses {@link softDisableForPlugin}
-     * instead so customisations survive disable/re-enable.
+     * action — plugin lifecycle never deletes a placement, so
+     * customisations survive disable/re-enable.
      *
      * @param id - Placement id.
      * @returns True when a row was removed; false when no match.

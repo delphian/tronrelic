@@ -180,7 +180,7 @@ export interface MenuNamespaceConfigUpdatePayload {
 
 /**
  * Refetch signal emitted whenever a widget placement is created,
- * updated, soft-disabled, deleted, or restored to plugin defaults via
+ * updated, switched off, deleted, or restored to plugin defaults via
  * the admin API.
  *
  * Broadcast to every connected socket — placements drive what renders

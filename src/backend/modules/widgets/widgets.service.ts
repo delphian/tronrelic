@@ -367,10 +367,9 @@ export class WidgetsService implements IWidgetsService {
             }
         }
 
-        // Upsert the plugin-source placement. Operator customisations
-        // to `order`, `routes`, `title`, `instanceConfig` survive
-        // disable/re-enable cycles thanks to the `$setOnInsert`
-        // semantics in PlacementService.ensurePluginPlacement.
+        // Create the plugin-source placement if it does not exist yet.
+        // An existing row, including its `enabled` switch, is left as the
+        // operator last saved it — see PlacementService.ensurePluginPlacement.
         try {
             await this.placements.ensurePluginPlacement({
                 typeId: input.id,
@@ -400,24 +399,20 @@ export class WidgetsService implements IWidgetsService {
             return;
         }
 
-        // Each teardown phase runs independently. A failure in one
-        // phase — most plausibly a transient Mongo error in
-        // softDisableForPlugin — must not skip disposal of the
-        // in-memory type and zone registries. Otherwise the plugin
-        // manager would mark the plugin disabled while live type/zone
-        // descriptors remain discoverable and renderable.
-        let placementCount = 0;
+        // Placement rows are deliberately left untouched, `enabled`
+        // included. Disposing the widget types below is what stops the
+        // owner's placements rendering, because the resolver skips a
+        // placement whose type is not registered. Writing `enabled: false`
+        // here would also have to be undone on the next enable, which
+        // cannot tell that write apart from an operator switching the
+        // placement off.
+        //
+        // Each teardown phase runs independently, so a failure disposing
+        // types does not skip disposing zones. Otherwise the plugin
+        // manager would mark the plugin disabled while live descriptors
+        // remain discoverable and renderable.
         let typeCount = 0;
         let zoneCount = 0;
-
-        try {
-            placementCount = await this.placements.softDisableForPlugin(ownerId);
-        } catch (err) {
-            this.logger.error(
-                { err, ownerId },
-                'Failed to soft-disable plugin placements; continuing with in-memory registry teardown'
-            );
-        }
 
         try {
             typeCount = this.widgetTypes.disposeForPlugin(ownerId);
@@ -437,13 +432,13 @@ export class WidgetsService implements IWidgetsService {
             );
         }
 
-        // Soft-disabled placements and disposed types must stop rendering on
-        // the next request, not after the cache expires.
+        // Placements of disposed types must stop rendering on the next
+        // request, not after the cache expires.
         this.routeCache.clear();
 
-        if (placementCount > 0 || typeCount > 0 || zoneCount > 0) {
+        if (typeCount > 0 || zoneCount > 0) {
             this.logger.info(
-                { ownerId, placements: placementCount, types: typeCount, zones: zoneCount },
+                { ownerId, types: typeCount, zones: zoneCount },
                 'Widget registrations disposed for owner'
             );
         }

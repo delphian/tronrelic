@@ -99,7 +99,8 @@ export class PluginManagerService {
      * Called once during bootstrap from the plugin loader. Used on
      * plugin disable to look up the unified `'widgets'` service and
      * dispose every widget registration owned by the plugin
-     * (placements soft-disabled, widget types and zones removed).
+     * (widget types and zones removed; placement rows left as the
+     * operator set them).
      *
      * @param registry - Shared service registry instance.
      */
@@ -399,11 +400,11 @@ export class PluginManagerService {
     }
 
     /**
-     * Dispose every widget registration the plugin owns: soft-disable
-     * its plugin-source placements (operator customisations survive),
-     * remove its widget types from the type registry, remove any
-     * plugin-declared zones from the zone registry. One call, one
-     * service.
+     * Dispose every widget registration the plugin owns: remove its
+     * widget types from the type registry and any plugin-declared zones
+     * from the zone registry. Its plugin-source placements are left
+     * untouched and stop rendering because their type is gone. One
+     * call, one service.
      *
      * Looks the service up dynamically on each invocation rather than
      * caching it — the widgets module registers `'widgets'` during its
