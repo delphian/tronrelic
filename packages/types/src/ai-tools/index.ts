@@ -77,3 +77,5 @@ export type {
 } from './ISavedPrompt.js';
 export type { ISavedPromptProposal } from './ISavedPromptProposal.js';
 export type { SavedPromptProposalStatus } from './SavedPromptProposalStatus.js';
+export type { IPromptVariableProposal } from './IPromptVariableProposal.js';
+export type { PromptVariableProposalStatus } from './PromptVariableProposalStatus.js';

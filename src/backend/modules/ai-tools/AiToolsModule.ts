@@ -31,6 +31,8 @@ import type {
     IModule,
     IModuleMetadata,
     INotificationService,
+    IPromptVariableProposal,
+    ISavedPromptProposal,
     ISchedulerService,
     IServiceRegistry,
     ISystemConfigService,
@@ -66,9 +68,12 @@ import { createWebFetchTool } from './web-fetch.js';
 import { buildPromptVariableAiTools } from './buildPromptVariableAiTools.js';
 import { buildSavedPromptAiTools } from './buildSavedPromptAiTools.js';
 import { buildSavedPromptEditAiTool } from './buildSavedPromptEditAiTool.js';
-import { SavedPromptProposalStore } from './services/saved-prompt-proposal-store.js';
-import { SavedPromptEditsService } from './services/saved-prompt-edits.service.js';
+import { buildPromptVariableEditAiTool } from './buildPromptVariableEditAiTool.js';
+import { ProposalStore } from './services/ProposalStore.js';
+import { SAVED_PROMPT_PROPOSALS_COLLECTION, SavedPromptEditsService } from './services/saved-prompt-edits.service.js';
 import { createSavedPromptEditCurationType } from './services/saved-prompt-edit-curation-type.js';
+import { PROMPT_VARIABLE_PROPOSALS_COLLECTION, PromptVariableEditsService } from './services/PromptVariableEditsService.js';
+import { createPromptVariableEditCurationType } from './services/createPromptVariableEditCurationType.js';
 import { buildPromptRunAiTools } from './buildPromptRunAiTools.js';
 import { buildToolInvocationAiTools } from './buildToolInvocationAiTools.js';
 import { WindowedLogLimiter } from '../../lib/WindowedLogLimiter.js';
@@ -352,6 +357,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
     private savedPrompts!: SavedPromptsService;
     private promptEdits!: SavedPromptEditsService;
     private promptVariables!: PromptVariableRegistry;
+    private variableEdits!: PromptVariableEditsService;
     private systemPrompts!: SystemPromptsService;
     private resolveEndUser!: EndUserResolver;
     private controller!: AiToolsController;
@@ -443,10 +449,10 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
         // Proposed saved-prompt edits, held in the central curation queue until
         // a signed-in admin approves them. Curation publishes itself in its own
         // run(), so the service resolves it at call time.
-        const proposalStore = new SavedPromptProposalStore(this.database);
-        await proposalStore.ensureIndexes();
+        const promptProposalStore = new ProposalStore<ISavedPromptProposal>(this.database, SAVED_PROMPT_PROPOSALS_COLLECTION, 'promptId');
+        await promptProposalStore.ensureIndexes();
         this.promptEdits = new SavedPromptEditsService(
-            proposalStore,
+            promptProposalStore,
             this.savedPrompts,
             () => this.serviceRegistry.get<ICurationService>(CURATION_SERVICE),
             this.logger
@@ -454,6 +460,18 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
 
         this.promptVariables = new PromptVariableRegistry(this.logger, this.database);
         await this.promptVariables.load();
+
+        // Proposed changes to static prompt variables' text, held in the same
+        // queue on the same terms as saved-prompt edits.
+        const variableProposalStore = new ProposalStore<IPromptVariableProposal>(this.database, PROMPT_VARIABLE_PROPOSALS_COLLECTION, 'variableName');
+        await variableProposalStore.ensureIndexes();
+        this.variableEdits = new PromptVariableEditsService(
+            variableProposalStore,
+            this.promptVariables,
+            () => this.savedPrompts.list(),
+            () => this.serviceRegistry.get<ICurationService>(CURATION_SERVICE),
+            this.logger
+        );
 
         // Core-owned system prompts (always-on master + audience-scoped
         // additional prompts) composed into every query's injected system
@@ -494,7 +512,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
             () => this.serviceRegistry.get<IAccountDirectoryService>('accounts')
         );
 
-        this.controller = new AiToolsController(this.registry, this.policy, this.audit, this.approvals, this.governor, this.providerRegistry, this.queryHistory, this.savedPrompts, this.promptVariables, this.systemPrompts, this.resolveEndUser, this.screenConfig, this.queryStreams, (id: string, conversationId?: string) => this.runSavedPromptNow(id, conversationId), BINDABLE_HOOK_INFOS, () => this.serviceRegistry.get<IAccountDirectoryService>('accounts'), this.promptEdits);
+        this.controller = new AiToolsController(this.registry, this.policy, this.audit, this.approvals, this.governor, this.providerRegistry, this.queryHistory, this.savedPrompts, this.promptVariables, this.systemPrompts, this.resolveEndUser, this.screenConfig, this.queryStreams, (id: string, conversationId?: string) => this.runSavedPromptNow(id, conversationId), BINDABLE_HOOK_INFOS, () => this.serviceRegistry.get<IAccountDirectoryService>('accounts'), this.promptEdits, this.variableEdits);
 
         this.logger.info('ai-tools module initialized');
     }
@@ -623,12 +641,20 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
         // record keeps a secret tool's result digest and any argument a model
         // sent. `this.audit` is constructed in init() before this runs.
         //
-        // The one write tool in the group proposes a saved-prompt body change.
-        // It never writes the prompt: every proposal is held under
-        // `ai-tools:saved-prompt-edit`, whose approval needs a signed-in admin.
-        // `this.promptEdits` is constructed in init() before this runs.
+        // The two write tools in the group propose a saved-prompt body change
+        // and a static prompt variable's text change. Neither writes anything
+        // itself: every proposal is held under `ai-tools:saved-prompt-edit` or
+        // `ai-tools:prompt-variable-edit`, whose approval needs a signed-in
+        // admin. `this.promptEdits` and `this.variableEdits` are constructed
+        // in init() before this runs.
         const moduleTools = [
             ...buildPromptVariableAiTools(this.promptVariables, this.logger),
+            buildPromptVariableEditAiTool({
+                variables: this.promptVariables,
+                edits: this.variableEdits,
+                isAdminUser: (userId: string) => this.isAdminUser(userId),
+                logger: this.logger
+            }),
             ...buildSavedPromptAiTools(this.savedPrompts, this.logger),
             buildSavedPromptEditAiTool({
                 savedPrompts: this.savedPrompts,
@@ -645,8 +671,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
     }
 
     /**
-     * Whether a user is in the `admin` group, for the saved-prompt edit tool's
-     * MCP gate. Resolves the identity module's `'user-groups'` service at call
+     * Whether a user is in the `admin` group, for the propose tools' MCP gate. Resolves the identity module's `'user-groups'` service at call
      * time, and answers false when it is missing or the lookup fails, so the
      * gate fails closed.
      *
@@ -658,7 +683,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
         try {
             admin = (await this.serviceRegistry.get<IUserGroupService>('user-groups')?.isAdmin(userId)) === true;
         } catch (error) {
-            this.logger.warn({ error, userId }, 'Admin check for the saved prompt edit tool failed; refusing the call');
+            this.logger.warn({ error, userId }, 'Admin check for a propose tool failed; refusing the call');
         }
         return admin;
     }
@@ -766,15 +791,19 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
         this.serviceRegistry.register(AI_PROVIDERS_SERVICE, this.providerRegistry);
         this.serviceRegistry.register(PROMPT_VARIABLES_SERVICE, this.promptVariables);
 
-        // Register the curation type proposed saved-prompt edits wait under.
-        // Curation runs before this module, so the watch normally fires at
-        // once; watching rather than a one-shot get keeps the order free to
-        // change. The propose tool's `curationTypeId` binding stays inert
-        // until this registration exists.
+        // Register the curation types proposed saved-prompt and prompt-variable
+        // edits wait under. Curation runs before this module, so the watch
+        // normally fires at once; watching rather than a one-shot get keeps
+        // the order free to change. Each propose tool's `curationTypeId`
+        // binding stays inert until its registration exists.
         const promptEditType = createSavedPromptEditCurationType(this.promptEdits);
+        const variableEditType = createPromptVariableEditCurationType(this.variableEdits);
         this.serviceRegistry.watch<ICurationService>(CURATION_SERVICE, {
-            onAvailable: (curation) => curation.registerType(promptEditType, this.metadata.id),
-            onUnavailable: () => this.logger.warn('Curation unregistered; proposed saved prompt edits cannot be decided until it returns')
+            onAvailable: (curation) => {
+                curation.registerType(promptEditType, this.metadata.id);
+                curation.registerType(variableEditType, this.metadata.id);
+            },
+            onUnavailable: () => this.logger.warn('Curation unregistered; proposed saved prompt and prompt variable edits cannot be decided until it returns')
         });
 
         // Declare the scheduled-prompt-run notification category on the

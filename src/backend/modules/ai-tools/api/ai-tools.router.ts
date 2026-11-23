@@ -44,6 +44,10 @@ export function createAiToolsAdminRouter(controller: AiToolsController): Router 
     // does. Gated identically; leaving it on the shared token gate would have
     // made gating the reveal route decorative.
     router.get('/variables', requireAdminUser, controller.listVariables);
+    // Pending AI-proposed variable edits: names, reasons, and sources only,
+    // never the proposed text, so it stays on the shared gate like the
+    // matching saved-prompt proposal listing.
+    router.get('/variables/proposals', controller.listVariableProposals);
     // Resolves one variable to its plaintext value, `secret`-classified ones
     // included. A shared environment variable is too broad a key for reading a
     // secret, and it is exactly the act an audit trail needs a named operator

@@ -27,20 +27,18 @@ import type {
     ISavedPromptProposal,
     ISystemLogService
 } from '@/types';
-import { SYSTEM_DECIDER_PREFIX, isSignedInCuratorId } from '@/types';
+import { isSignedInCuratorId } from '@/types';
 import { buildContentChangeSet } from '../../../services/buildContentChangeSet.js';
-import type { SavedPromptProposalStore } from './saved-prompt-proposal-store.js';
+import type { ProposalStore } from './ProposalStore.js';
+import { ProposalCurationQueue } from './ProposalCurationQueue.js';
 import type { SavedPromptsService } from './saved-prompts.service.js';
 import { listPromptVariableTokens } from './prompt-variable-registry.js';
 
 /** Curation type id proposals are held under; the propose tool binds its `curationTypeId` to it. */
 export const SAVED_PROMPT_EDIT_CURATION_TYPE_ID = 'ai-tools:saved-prompt-edit';
 
-/** Decider recorded when a proposal is withdrawn because something newer replaced it. */
-export const SUPERSEDED_DECIDED_BY = `${SYSTEM_DECIDER_PREFIX}superseded`;
-
-/** Decider recorded when a proposal is closed because it could not be held for review. */
-export const HOLD_FAILED_DECIDED_BY = `${SYSTEM_DECIDER_PREFIX}hold-failed`;
+/** Collection saved-prompt edit proposals are stored in (manual `module_<id>_` prefix). */
+export const SAVED_PROMPT_PROPOSALS_COLLECTION = 'module_ai-tools_prompt_proposals';
 
 /** Most proposals allowed to wait for a curator at once, so a looping agent cannot flood the queue. */
 export const MAX_PENDING_PROMPT_PROPOSALS = 20;
@@ -89,19 +87,24 @@ export class SavedPromptEditError extends Error {
  * Orchestrates proposing, deciding, and withdrawing saved-prompt edits.
  */
 export class SavedPromptEditsService {
+    /** Holds and withdraws proposals in the curation queue. */
+    private readonly queue: ProposalCurationQueue<ISavedPromptProposal>;
+
     /**
-     * @param store - Proposal records.
+     * @param store - Proposal records, in {@link SAVED_PROMPT_PROPOSALS_COLLECTION}.
      * @param savedPrompts - The prompt library an approval writes to.
      * @param getCuration - Resolves the central curation service at call time,
      *        because curation publishes itself after this module initialises.
      * @param logger - Module logger.
      */
     constructor(
-        private readonly store: SavedPromptProposalStore,
+        private readonly store: ProposalStore<ISavedPromptProposal>,
         private readonly savedPrompts: Pick<SavedPromptsService, 'get' | 'updatePromptIfUnchanged'>,
-        private readonly getCuration: () => ICurationService | undefined,
+        getCuration: () => ICurationService | undefined,
         private readonly logger: ISystemLogService
-    ) {}
+    ) {
+        this.queue = new ProposalCurationQueue(store, getCuration, SAVED_PROMPT_EDIT_CURATION_TYPE_ID, 'saved prompt edit', logger);
+    }
 
     /**
      * Store a proposal, withdraw any older pending one for the same prompt,
@@ -113,7 +116,7 @@ export class SavedPromptEditsService {
      *         unchanged, too many proposals are waiting, or curation is unavailable.
      */
     async propose(input: ISavedPromptEditProposalInput): Promise<ISavedPromptEditProposalResult> {
-        const curation = this.getCuration();
+        const curation = this.queue.curation();
         if (!curation) {
             throw new SavedPromptEditError('The curation service is unavailable, so the edit cannot be held for review.');
         }
@@ -130,7 +133,7 @@ export class SavedPromptEditsService {
         if (proposedPrompt === prompt.prompt.trim()) {
             throw new SavedPromptEditError('The proposed body is identical to the current body, so there is nothing to review.');
         }
-        const olderPending = await this.store.listPendingForPrompt(prompt.id);
+        const olderPending = await this.store.listPendingFor(prompt.id);
         // Superseding frees a slot, so an agent revising its own proposal is
         // never blocked by the cap it is already counted against.
         if (await this.store.countPending() - olderPending.length >= MAX_PENDING_PROMPT_PROPOSALS) {
@@ -149,32 +152,15 @@ export class SavedPromptEditsService {
             status: 'pending',
             createdAt: new Date().toISOString()
         };
-        const supersededCount = await this.supersedeProposals(olderPending, 'A newer proposal for the same prompt replaced it.');
+        const supersededCount = await this.queue.supersede(olderPending, 'A newer proposal for the same prompt replaced it.');
         await this.store.insert(proposal);
-        // A proposal whose hold failed has no curation item, so no curator can
-        // ever decide it, yet `listPending` would still present it for review
-        // and `countPending` would charge it against the cap. Take the record
-        // out of `pending` before reporting the failure to the caller.
-        let held: Awaited<ReturnType<ICurationService['hold']>>;
-        try {
-            held = await curation.hold({
-                typeId: SAVED_PROMPT_EDIT_CURATION_TYPE_ID,
-                ref: { proposalId: proposal.id },
-                source: input.source
-            });
-        } catch (error) {
-            const failureReason = 'The edit could not be held for review, so it is not waiting for a curator. Propose it again.';
-            await this.store.transition(proposal.id, 'pending', 'failed', { decidedBy: HOLD_FAILED_DECIDED_BY, failureReason });
-            this.logger.error({ error, proposalId: proposal.id, promptId: prompt.id }, 'Could not hold a saved prompt edit for curation; the proposal was marked failed');
-            throw error;
-        }
-        await this.store.setCurationItemId(proposal.id, held.id);
-        this.logger.info({ proposalId: proposal.id, promptId: prompt.id, curationId: held.id, supersededCount }, 'Saved prompt edit proposed and held for curation');
+        const curationItemId = await this.queue.hold(curation, proposal.id, input.source);
+        this.logger.info({ proposalId: proposal.id, promptId: prompt.id, curationId: curationItemId, supersededCount }, 'Saved prompt edit proposed and held for curation');
 
         const current = listPromptVariableTokens(prompt.prompt);
         const proposed = listPromptVariableTokens(proposedPrompt);
         return {
-            proposal: { ...proposal, curationItemId: held.id },
+            proposal: { ...proposal, curationItemId },
             supersededCount,
             variablesAdded: proposed.filter((token) => !current.includes(token)),
             variablesRemoved: current.filter((token) => !proposed.includes(token))
@@ -191,8 +177,8 @@ export class SavedPromptEditsService {
      * @returns How many proposals were withdrawn.
      */
     async supersedeForPrompt(promptId: string, reason: string): Promise<number> {
-        const pending = await this.store.listPendingForPrompt(promptId);
-        return this.supersedeProposals(pending, reason);
+        const pending = await this.store.listPendingFor(promptId);
+        return this.queue.supersede(pending, reason);
     }
 
     /**
@@ -330,36 +316,5 @@ export class SavedPromptEditsService {
             );
         }
         return changes;
-    }
-
-    /**
-     * Withdraw the given proposals. Each is marked `superseded` first, then
-     * its curation item is rejected under a system decider. The rejection
-     * reaches `applyDecision` with the proposal no longer pending, so it
-     * changes nothing further.
-     *
-     * @param proposals - The pending proposals to withdraw.
-     * @param reason - Logged with each withdrawal.
-     * @returns How many were withdrawn.
-     */
-    private async supersedeProposals(proposals: ISavedPromptProposal[], reason: string): Promise<number> {
-        let count = 0;
-        for (const proposal of proposals) {
-            const withdrawn = await this.store.transition(proposal.id, 'pending', 'superseded', { decidedBy: SUPERSEDED_DECIDED_BY });
-            if (withdrawn) {
-                count += 1;
-                if (proposal.curationItemId) {
-                    try {
-                        await this.getCuration()?.reject(proposal.curationItemId, SUPERSEDED_DECIDED_BY);
-                    } catch (error) {
-                        // The proposal is already withdrawn; a curator who
-                        // approves the stale queue item later gets a no-op.
-                        this.logger.warn({ error, proposalId: proposal.id }, 'Could not close the curation item of a superseded prompt edit');
-                    }
-                }
-                this.logger.info({ proposalId: proposal.id, promptId: proposal.promptId, reason }, 'Saved prompt edit superseded');
-            }
-        }
-        return count;
     }
 }

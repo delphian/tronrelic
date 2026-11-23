@@ -409,6 +409,59 @@ export class PromptVariableRegistry implements IPromptVariableRegistry {
         return updated;
     }
 
+    /**
+     * Read one admin-authored variable as stored, including its text and the
+     * `updatedAt` a proposed edit is checked against. Dynamic variables are
+     * not returned, because they hold no stored text to edit.
+     *
+     * @param name - Variable name, without the `{% %}` delimiters.
+     * @returns The static variable, or undefined when no static has that name.
+     */
+    getStatic(name: string): IStaticPromptVariable | undefined {
+        const stat = this.statics.get(name);
+        return stat ? { ...stat } : undefined;
+    }
+
+    /**
+     * Replace a static variable's text only if it has not changed since a
+     * given version, for an approved edit proposal. Any edit, reclassification,
+     * or delete since then moves or removes `updatedAt`, so the write finds no
+     * match and the caller can report the proposal as stale instead of
+     * overwriting the newer change.
+     *
+     * @param name - Variable name.
+     * @param expectedUpdatedAt - The `updatedAt` the proposal was based on.
+     * @param content - The new text.
+     * @returns The updated variable, or null when it was missing or changed.
+     */
+    async updateStaticContentIfUnchanged(
+        name: string,
+        expectedUpdatedAt: string,
+        content: string
+    ): Promise<IStaticPromptVariable | null> {
+        const updatedAt = new Date().toISOString();
+        const collection = this.database.getCollection<IStaticPromptVariable>(COLLECTION);
+        // Both filter values are coerced to primitive strings so the filter can
+        // never carry a Mongo operator object.
+        const result = await collection.updateOne(
+            { name: String(name), updatedAt: String(expectedUpdatedAt) },
+            { $set: { content: String(content), updatedAt } }
+        );
+        let updated: IStaticPromptVariable | null = null;
+        if ((result?.matchedCount ?? 0) > 0) {
+            // Re-read rather than merge into the in-memory copy, because the
+            // document is what was just written and this instance's copy may
+            // be missing or older.
+            const doc = await collection.findOne({ name: String(name) });
+            if (doc) {
+                updated = stripMongoId(doc as unknown as Record<string, unknown>);
+                this.statics.set(name, updated);
+            }
+            this.logger.info({ variable: name }, `Static prompt variable content replaced by an approved edit: ${name}`);
+        }
+        return updated;
+    }
+
     /** @inheritdoc */
     async deleteStatic(name: string): Promise<boolean> {
         const collection = this.database.getCollection<IStaticPromptVariable>(COLLECTION);
