@@ -8,12 +8,19 @@
  * marking a variable `secret` feeds the lethal-trifecta detector's private-data
  * leg, so every mutation calls `onChanged` to refresh the page's trifecta banner.
  *
+ * An AI agent can propose new text for a custom variable, which waits in
+ * `/system/curation` until an admin approves it. A variable with a proposal
+ * waiting carries a link to the queue, and editing, reclassifying, or deleting
+ * it first asks the admin to confirm, because the server withdraws the
+ * proposal when the variable changes underneath it.
+ *
  * Admin surface (behind `requireAdmin`), so it follows the sibling tabs'
  * client-fetch pattern rather than SSR — a loading line on a user-opened section
  * is acceptable here.
  */
 
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { AlertCircle, ChevronDown, ChevronRight, Pencil, Plus, Trash2, X } from 'lucide-react';
 import type { AiToolSensitivity, IPromptVariableInfo } from '@/types';
 import { Stack } from '../../../../../../../components/layout';
@@ -24,8 +31,10 @@ import { Textarea } from '../../../../../../../components/ui/Textarea';
 import { Select } from '../../../../../../../components/ui/Select';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../../../components/ui/Table';
 import { useToast } from '../../../../../../../components/ui/ToastProvider';
+import { useModal } from '../../../../../../../components/ui/ModalProvider';
 import {
     listVariables,
+    listPromptVariableProposals,
     resolveVariable,
     createVariable,
     updateVariable,
@@ -80,7 +89,10 @@ export function VariablesSection({ onChanged }: { onChanged: () => void }) {
     const [formOpen, setFormOpen] = useState(false);
     const [form, setForm] = useState(EMPTY_FORM);
     const [saving, setSaving] = useState(false);
+    // Variable name → how many AI-proposed edits to it wait in curation.
+    const [proposalCounts, setProposalCounts] = useState<Record<string, number>>({});
     const { push } = useToast();
+    const modal = useModal();
 
     const load = useCallback(async () => {
         try {
@@ -91,7 +103,66 @@ export function VariablesSection({ onChanged }: { onChanged: () => void }) {
         } finally {
             setLoading(false);
         }
+        setProposalCounts(await loadProposalCounts());
+
+        /**
+         * Count the pending proposals per variable. They only mark rows and
+         * guard against withdrawing one by accident, so a failed read leaves
+         * the rows unmarked rather than replacing the table with an error.
+         *
+         * @returns Pending proposal counts keyed by variable name.
+         */
+        async function loadProposalCounts(): Promise<Record<string, number>> {
+            const counts: Record<string, number> = {};
+            try {
+                for (const proposal of await listPromptVariableProposals()) {
+                    counts[proposal.variableName] = (counts[proposal.variableName] ?? 0) + 1;
+                }
+            } catch {
+                // Leave the counts empty; the curation queue still lists every proposal.
+            }
+            return counts;
+        }
     }, []);
+
+    /**
+     * Run a change to a variable, first asking the admin to confirm when an
+     * AI-proposed edit to it waits in curation. The server withdraws that
+     * proposal when the variable changes, so going ahead without this would
+     * silently discard the suggestion.
+     *
+     * @param name - The variable about to change.
+     * @param action - What the admin is doing, as the start of a sentence, such as `Saving it`.
+     * @param proceed - The change to run once confirmed, or at once when nothing is waiting.
+     */
+    const confirmWithdraw = useCallback((name: string, action: string, proceed: () => void) => {
+        const pending = proposalCounts[name] ?? 0;
+        if (pending === 0) {
+            proceed();
+        } else {
+            const modalId = modal.open({
+                title: 'Withdraw the proposed edit?',
+                size: 'sm',
+                dismissible: true,
+                content: (
+                    <Stack gap="sm">
+                        <p>
+                            {`{%${name}%} has ${pending === 1 ? 'a proposed edit' : `${pending} proposed edits`} waiting for review. `}
+                            {`${action} now withdraws ${pending === 1 ? 'it' : 'them'} from the curation queue.`}
+                        </p>
+                        <Stack gap="sm" direction="horizontal">
+                            <Button variant="ghost" size="xs" onClick={() => modal.close(modalId)}>
+                                Cancel
+                            </Button>
+                            <Button variant="primary" size="xs" onClick={() => { modal.close(modalId); proceed(); }}>
+                                Continue
+                            </Button>
+                        </Stack>
+                    </Stack>
+                )
+            });
+        }
+    }, [proposalCounts, modal]);
 
     useEffect(() => { void load(); }, [load]);
 
@@ -273,7 +344,14 @@ export function VariablesSection({ onChanged }: { onChanged: () => void }) {
                                         {SENSITIVITIES.map(s => <option key={s} value={s}>{s}</option>)}
                                     </Select>
                                     <Stack gap="sm" direction="horizontal">
-                                        <Button variant="primary" size="sm" onClick={() => void handleSubmit()} disabled={saving}>
+                                        <Button
+                                            variant="primary"
+                                            size="sm"
+                                            onClick={() => (editingName
+                                                ? confirmWithdraw(editingName, 'Saving it', () => void handleSubmit())
+                                                : void handleSubmit())}
+                                            disabled={saving}
+                                        >
                                             {saving ? 'Saving…' : editingName ? 'Save changes' : 'Create variable'}
                                         </Button>
                                         <Button variant="ghost" size="sm" onClick={closeForm} disabled={saving} icon={<X size={16} />}>
@@ -326,6 +404,14 @@ export function VariablesSection({ onChanged }: { onChanged: () => void }) {
                                                         <span className={styles.tool_name}>{variable.pattern}</span>
                                                     </button>
                                                     <div className={styles.tool_desc}>{variable.description}</div>
+                                                    {(proposalCounts[variable.name] ?? 0) > 0 && (
+                                                        <Link
+                                                            href="/system/curation"
+                                                            aria-label={`Review the proposed edit to ${variable.name} in the curation queue`}
+                                                        >
+                                                            <Badge tone="warning" size="xs">Edit proposed</Badge>
+                                                        </Link>
+                                                    )}
                                                 </Td>
                                                 <Td muted label="Category">{variable.category}</Td>
                                                 <Td label="Kind">
@@ -336,7 +422,10 @@ export function VariablesSection({ onChanged }: { onChanged: () => void }) {
                                                 <Td label="Sensitivity">
                                                     <Select
                                                         value={variable.sensitivity}
-                                                        onChange={e => void handleClassify(variable.name, e.target.value as AiToolSensitivity)}
+                                                        onChange={e => {
+                                                            const sensitivity = e.target.value as AiToolSensitivity;
+                                                            confirmWithdraw(variable.name, 'Reclassifying it', () => void handleClassify(variable.name, sensitivity));
+                                                        }}
                                                         disabled={busyName === variable.name}
                                                         aria-label={`Classify ${variable.name}`}
                                                     >
@@ -357,7 +446,7 @@ export function VariablesSection({ onChanged }: { onChanged: () => void }) {
                                                             <Button
                                                                 variant="danger"
                                                                 size="xs"
-                                                                onClick={() => void handleDelete(variable.name)}
+                                                                onClick={() => confirmWithdraw(variable.name, 'Deleting it', () => void handleDelete(variable.name))}
                                                                 disabled={busyName === variable.name}
                                                                 aria-label={`Delete ${variable.name}`}
                                                                 icon={<Trash2 size={14} />}

@@ -36,6 +36,7 @@ import { buildAiQueryRecord } from '../services/ai-query-history.service.js';
 import type { SavedPromptsService } from '../services/saved-prompts.service.js';
 import { SavedPromptValidationError, type ISavedPromptTriggerInput } from '../services/saved-prompts.service.js';
 import type { SavedPromptEditsService } from '../services/saved-prompt-edits.service.js';
+import type { PromptVariableEditsService } from '../services/PromptVariableEditsService.js';
 import type { EndUserResolver } from '../services/end-user-resolver.js';
 import type { PromptVariableRegistry } from '../services/prompt-variable-registry.js';
 import { PromptVariableValidationError } from '../services/prompt-variable-registry.js';
@@ -184,6 +185,7 @@ export class AiToolsController {
      * @param bindableHooks - Declared hook seams a saved prompt's hook trigger may bind to, with their registry descriptions — served to the editor's hook picker so the UI offers exactly what save-time validation accepts.
      * @param accounts - Reads the identity module's account directory at call time, so the activity feed can name the signed-in people behind the user ids it lists. Returns undefined while identity has not published it, in which case the feed carries ids alone.
      * @param promptEdits - Proposed saved-prompt edits waiting in curation. A direct save or delete withdraws a prompt's pending proposals, and the editor lists them so an admin knows one is waiting. Null in tests that do not exercise proposals.
+     * @param variableEdits - Proposed static prompt-variable edits waiting in curation. A direct edit, reclassification, or delete withdraws a variable's pending proposals, and the Variables section lists them so an admin knows one is waiting. Null in tests that do not exercise proposals.
      */
     constructor(
         private readonly registry: AiToolRegistry,
@@ -202,7 +204,8 @@ export class AiToolsController {
         private readonly runSavedPromptNow: (promptId: string, conversationId?: string) => Promise<void>,
         private readonly bindableHooks: ReadonlyArray<{ id: string; description: string }> = [],
         private readonly accounts: () => Pick<IAccountDirectoryService, 'getAccountsByIds'> | undefined = () => undefined,
-        private readonly promptEdits: Pick<SavedPromptEditsService, 'listPending' | 'supersedeForPrompt'> | null = null
+        private readonly promptEdits: Pick<SavedPromptEditsService, 'listPending' | 'supersedeForPrompt'> | null = null,
+        private readonly variableEdits: Pick<PromptVariableEditsService, 'listPending' | 'supersedeForVariable'> | null = null
     ) {}
 
     /** GET /tools — registry with capability, provider, and enabled state. */
@@ -478,6 +481,9 @@ export class AiToolsController {
                 content: content as string | undefined,
                 sensitivity: sensitivity as IStaticPromptVariable['sensitivity'] | undefined
             });
+            // Any field change moves `updatedAt`, so a pending proposal based
+            // on the old version would fail its stale check if approved.
+            await this.withdrawVariableProposals(req.params.name, 'An admin edited the variable directly.');
             res.json({ variable: updated });
         } catch (error: unknown) {
             this.sendVariableError(res, error, 'Failed to update variable.');
@@ -492,6 +498,7 @@ export class AiToolsController {
                 res.status(404).json({ error: 'Variable not found.' });
                 return;
             }
+            await this.withdrawVariableProposals(req.params.name, 'An admin deleted the variable.');
             res.json({ success: true });
         } catch (error: unknown) {
             this.sendVariableError(res, error, 'Failed to delete variable.');
@@ -507,11 +514,57 @@ export class AiToolsController {
         }
         try {
             const info = await this.promptVariables.classify(req.params.name, sensitivity);
+            // Reclassifying a static moves its `updatedAt`. A dynamic variable
+            // has no proposals, so the call finds nothing to withdraw.
+            await this.withdrawVariableProposals(req.params.name, 'An admin reclassified the variable.');
             res.json({ variable: info });
         } catch (error: unknown) {
             this.sendVariableError(res, error, 'Failed to classify variable.');
         }
     };
+
+    /**
+     * GET /variables/proposals — every proposed static-variable edit waiting
+     * in the curation queue, newest first. The Variables section uses it to
+     * mark a variable that has an edit waiting, and to warn that a direct
+     * change will withdraw it. The proposed text is left out; the curation
+     * review screen shows it with a diff.
+     */
+    listVariableProposals = async (_req: Request, res: Response): Promise<void> => {
+        try {
+            const pending = this.variableEdits ? await this.variableEdits.listPending() : [];
+            res.json({
+                proposals: pending.map((proposal) => ({
+                    id: proposal.id,
+                    variableName: proposal.variableName,
+                    reason: proposal.reason,
+                    source: proposal.source,
+                    curationItemId: proposal.curationItemId ?? null,
+                    createdAt: proposal.createdAt
+                }))
+            });
+        } catch (error) {
+            logger.error({ err: error }, 'Failed to list proposed prompt variable edits');
+            res.status(500).json({ error: 'Failed to load proposed variable edits.' });
+        }
+    };
+
+    /**
+     * Withdraw a variable's pending edit proposals after a direct edit,
+     * reclassification, or delete. The change has already succeeded, so a
+     * failure here is logged and the request still succeeds; a stale proposal
+     * left behind can only fail its stale check if approved.
+     *
+     * @param variableName - The variable that changed.
+     * @param reason - Logged with each withdrawal.
+     */
+    private async withdrawVariableProposals(variableName: string, reason: string): Promise<void> {
+        try {
+            await this.variableEdits?.supersedeForVariable(variableName, reason);
+        } catch (error) {
+            logger.warn({ err: error, variableName }, 'Could not withdraw pending edit proposals after a direct variable change');
+        }
+    }
 
     /**
      * GET /variables/:name/value — resolve a single variable to its *current*

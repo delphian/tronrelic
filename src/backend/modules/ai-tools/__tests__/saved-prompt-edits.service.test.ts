@@ -13,10 +13,10 @@ import type { ICurationService, ISavedPrompt, ISavedPromptProposal, ISystemLogSe
 import {
     SavedPromptEditsService,
     SavedPromptEditError,
-    SAVED_PROMPT_EDIT_CURATION_TYPE_ID,
-    SUPERSEDED_DECIDED_BY
+    SAVED_PROMPT_EDIT_CURATION_TYPE_ID
 } from '../services/saved-prompt-edits.service.js';
-import type { SavedPromptProposalStore } from '../services/saved-prompt-proposal-store.js';
+import { SUPERSEDED_DECIDED_BY } from '../services/ProposalCurationQueue.js';
+import type { ProposalStore } from '../services/ProposalStore.js';
 
 /** Logger whose every level is a no-op spy. */
 function createLogger(): ISystemLogService {
@@ -32,7 +32,7 @@ function createStore() {
         insert: vi.fn(async (proposal: ISavedPromptProposal) => { rows.set(proposal.id, { ...proposal }); }),
         get: vi.fn(async (id: string) => rows.get(id) ?? null),
         listPending: vi.fn(async () => [...rows.values()].filter(row => row.status === 'pending')),
-        listPendingForPrompt: vi.fn(async (promptId: string) => [...rows.values()].filter(row => row.promptId === promptId && row.status === 'pending')),
+        listPendingFor: vi.fn(async (promptId: string) => [...rows.values()].filter(row => row.promptId === promptId && row.status === 'pending')),
         countPending: vi.fn(async () => [...rows.values()].filter(row => row.status === 'pending').length),
         setCurationItemId: vi.fn(async (id: string, curationItemId: string) => {
             const row = rows.get(id);
@@ -95,7 +95,7 @@ describe('SavedPromptEditsService', () => {
             reject: vi.fn(async () => null)
         };
         service = new SavedPromptEditsService(
-            store as unknown as SavedPromptProposalStore,
+            store as unknown as ProposalStore<ISavedPromptProposal>,
             prompts,
             () => curation as unknown as ICurationService,
             createLogger()
