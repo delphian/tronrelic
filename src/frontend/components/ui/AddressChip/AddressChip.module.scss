@@ -1,14 +1,11 @@
 /*
  * Address chip styling, shared by TronAddress and TronContractAddress.
  *
- * Layout and affordance treatment for the canonical address chip. Structure is
- * a single inline row (address + one wrench); the tools popover, which holds
- * copy, the explorer link, the tool forwards, and the tag editor, is a
- * viewport-fixed menu rendered in a body portal so no scroll container clips
- * it, positioned from its trigger by the component. All values reference
- * semantic (Layer 2) tokens so the chip themes with the rest of the app — the
- * address uses the shared monospace face (`--font-mono`), and the wrench
- * follows the muted -> primary hover convention used by the bare IconButton.
+ * Layout for the canonical address chip: a single inline row of the address
+ * followed by the wrench. The wrench and its menu are styled by the shared
+ * ChipToolsMenu. All values reference semantic (Layer 2) tokens so the chip
+ * themes with the rest of the app, and the address uses the shared monospace
+ * face (`--font-mono`).
  */
 
 /*
@@ -87,87 +84,4 @@
        fault rather than as one continuous mark. */
     text-decoration-skip-ink: none;
     text-underline-offset: var(--tron-address-tagged-underline-offset);
-}
-
-/* Keep the wrench at its own width so a narrow cell squeezes the address, not
-   the button. */
-.action {
-    flex: 0 0 auto;
-}
-
-/* Trigger wrapper for the tools popover. The menu itself is portaled and
-   viewport-fixed, so this only keeps the wrench inline with the chip's row. */
-.menu_anchor {
-    position: relative;
-    display: inline-flex;
-}
-
-/*
- * Popover surface for the tools menu. Fixed rather than absolute because the
- * menu renders in a `<body>` portal so it escapes whatever scroll container
- * hosts the chip — most often the shared Table wrapper, whose `overflow-x: auto`
- * also clips vertically and used to cut the menu off at the table's edge. Its
- * top/left come from the component, which measures the trigger and flips the
- * menu above it when the viewport has no room below. `--z-index-popover` (not
- * `--z-index-dropdown` or `--z-index-fixed`) because the chip is placed inside
- * modals and toasts as well as tables, and the menu has to paint above the
- * surface that holds the chip. It used `--z-index-fixed` until a menu opened
- * from an address in a toast appeared behind that toast.
- */
-.menu {
-    position: fixed;
-    z-index: var(--z-index-popover);
-    display: flex;
-    flex-direction: column;
-    padding: var(--padding-2xs);
-    background: var(--color-surface);
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-sm);
-    box-shadow: var(--shadow-md);
-}
-
-/* One menu row — the copy button, the explorer link, a tool-forward link, or
-   the tag-editor button. The buttons reset the native button chrome so every
-   row renders identically. A flex row so the copy and explorer entries can put
-   an icon before their text. */
-.menu_item {
-    display: flex;
-    align-items: center;
-    gap: var(--gap-sm);
-    width: 100%;
-    padding: var(--padding-xs) var(--padding-sm);
-    font-family: inherit;
-    font-size: var(--font-size-body-sm);
-    color: var(--color-text);
-    background: none;
-    border: none;
-    border-radius: var(--radius-xs);
-    white-space: nowrap;
-    text-align: left;
-    cursor: pointer;
-    transition: background var(--transition-fast);
-
-    &:hover {
-        background: var(--color-surface-muted);
-    }
-
-    &:focus-visible {
-        outline: var(--border-width-medium) solid var(--color-primary);
-        outline-offset: -2px;
-    }
-}
-
-/* Icon before the copy and explorer entries. Muted so the entry's text stays
-   the thing read first, and fixed in size so a long label never shrinks it. */
-.menu_icon {
-    flex: 0 0 auto;
-    color: var(--color-text-muted);
-}
-
-/* Separates the two actions on the address itself (copy and explorer) from the
-   tool pages and tag editor below them, which act on the address elsewhere. */
-.menu_divider {
-    height: var(--divider-height);
-    margin: var(--gap-2xs) 0;
-    background: var(--divider-background);
 }
