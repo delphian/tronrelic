@@ -24,6 +24,7 @@ import type { GscGranularity } from '../services/IGscArchive.js';
 import type { GscWindowRequest } from '../services/GscWindowRequest.js';
 import { parseGscDayRange } from '../services/parseGscDay.js';
 import type { IgnoredUsersService } from '../services/ignored-users.service.js';
+import { isValidGoalName, isValidGoalPropertyKey } from '../services/validateTrafficGoal.js';
 import { listOwnAiTools } from '../ai-tools.js';
 import { parsePositiveInt, parseNonNegativeInt } from '../../../api/query-params.js';
 
@@ -425,6 +426,88 @@ export class TrafficController {
         } catch (error) {
             this.logger.error({ err: error }, 'Failed to fetch traffic source details');
             res.status(500).json({ error: 'InternalError', message: 'Failed to fetch traffic source details' });
+        }
+    }
+
+    /**
+     * GET /api/admin/users/analytics/goals?period=&bots=exclude&limit=
+     *
+     * Every goal reached in the window with its events, visitors, anonymous
+     * events, and the property keys it carries, so the Goals tab can list the
+     * goals and offer each one's properties for a breakdown.
+     *
+     * @param req - Query carries the window, `bots`, and `limit`.
+     * @param res - Responds `{ data: ITrafficGoalSummaryRow[] }`.
+     */
+    async getGoals(req: Request, res: Response): Promise<void> {
+        const range = resolveAnalyticsRange(req.query);
+        const excludeBots = parseExcludeBots(req.query.bots);
+        const limit = parsePositiveInt(req.query.limit, 50, MAX_LIMIT);
+        try {
+            res.json({ data: await this.trafficService.getGoalSummary(range, excludeBots, limit) });
+        } catch (error) {
+            this.logger.error({ err: error }, 'Failed to fetch goal summary');
+            res.status(500).json({ error: 'InternalError', message: 'Failed to fetch goal summary' });
+        }
+    }
+
+    /**
+     * GET /api/admin/users/analytics/goals/properties?goal=&key=&period=&bots=exclude&limit=
+     *
+     * One goal broken down by the values of one property. Both names are
+     * checked against the recording rules first, so a typo answers 400 rather
+     * than an empty table that reads as "nobody did this".
+     *
+     * @param req - Query carries `goal`, `key`, the window, `bots`, and `limit`.
+     * @param res - Responds `{ data: ITrafficGoalPropertyBucket[] }`.
+     */
+    async getGoalProperties(req: Request, res: Response): Promise<void> {
+        const goal = req.query.goal;
+        const key = req.query.key;
+        if (!isValidGoalName(goal)) {
+            res.status(400).json({ error: 'ValidationError', message: 'goal must be an <owner>:<action> goal name' });
+        } else if (!isValidGoalPropertyKey(key)) {
+            res.status(400).json({ error: 'ValidationError', message: 'key must be a goal property key' });
+        } else {
+            const range = resolveAnalyticsRange(req.query);
+            const excludeBots = parseExcludeBots(req.query.bots);
+            const limit = parsePositiveInt(req.query.limit, 20, MAX_LIMIT);
+            try {
+                res.json({ data: await this.trafficService.getGoalPropertyBreakdown(range, goal, key, excludeBots, limit) });
+            } catch (error) {
+                this.logger.error({ err: error }, 'Failed to fetch goal property breakdown');
+                res.status(500).json({ error: 'InternalError', message: 'Failed to fetch goal property breakdown' });
+            }
+        }
+    }
+
+    /**
+     * GET /api/admin/users/analytics/goals/attribution?goal=&by=source|landing-page&period=&bots=exclude&limit=
+     *
+     * One goal attributed to the session it happened in, by that session's
+     * source or landing page, with explicit buckets for goals that have no
+     * session to credit.
+     *
+     * @param req - Query carries `goal`, `by`, the window, `bots`, and `limit`.
+     * @param res - Responds `{ data: ITrafficGoalAttributionBucket[] }`.
+     */
+    async getGoalAttribution(req: Request, res: Response): Promise<void> {
+        const goal = req.query.goal;
+        const by = req.query.by ?? 'source';
+        if (!isValidGoalName(goal)) {
+            res.status(400).json({ error: 'ValidationError', message: 'goal must be an <owner>:<action> goal name' });
+        } else if (by !== 'source' && by !== 'landing-page') {
+            res.status(400).json({ error: 'ValidationError', message: 'by must be "source" or "landing-page"' });
+        } else {
+            const range = resolveAnalyticsRange(req.query);
+            const excludeBots = parseExcludeBots(req.query.bots);
+            const limit = parsePositiveInt(req.query.limit, 20, MAX_LIMIT);
+            try {
+                res.json({ data: await this.trafficService.getGoalAttribution(range, goal, by, excludeBots, limit) });
+            } catch (error) {
+                this.logger.error({ err: error }, 'Failed to fetch goal attribution');
+                res.status(500).json({ error: 'InternalError', message: 'Failed to fetch goal attribution' });
+            }
         }
     }
 

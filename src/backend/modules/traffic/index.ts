@@ -5,9 +5,11 @@
  * GSC keyword integration, the bot classifier, and geo/IP derivation helpers.
  */
 
-export { TrafficModule, TRAFFIC_IGNORE_LIST_SERVICE } from './TrafficModule.js';
+export { TrafficModule, TRAFFIC_IGNORE_LIST_SERVICE, TRAFFIC_GOALS_SERVICE } from './TrafficModule.js';
 export type { ITrafficModuleDependencies } from './TrafficModule.js';
 export { TrafficIgnoreList } from './services/TrafficIgnoreList.js';
+export { TrafficGoalRecorder } from './services/TrafficGoalRecorder.js';
+export { TrafficGoalValidationError, validateTrafficGoal } from './services/validateTrafficGoal.js';
 
 export { TrafficService, buildTrafficEvent, readCloudflareAsn, ASN_HEADER } from './services/traffic.service.js';
 export type {
@@ -30,7 +32,15 @@ export type {
     IRetentionPoint,
     IBinaryConversionFunnel,
     ICampaignPerformanceBucket,
-    IEngagementMetrics
+    IEngagementMetrics,
+    ITrafficGoalEvent,
+    ITrafficGoalSummaryRow,
+    ITrafficGoalPropertyBucket,
+    ITrafficGoalAttributionBucket,
+    TrafficGoalAttributionDimension,
+    TrafficGoalAttributionKind,
+    ITrafficGoalEventListRow,
+    ITrafficGoalEventListPage
 } from './services/traffic.service.js';
 export { GscService } from './services/gsc.service.js';
 export type { IGscStatus, IGscKeyword, IGscQueryDocument } from './services/gsc.service.js';

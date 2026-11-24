@@ -4,9 +4,9 @@
  * @fileoverview Client shell for /system/traffic.
  *
  * Holds the interactive dashboard surface: the in-page tab row, the global
- * period + bot-filter controls, the live "visitors now" counter, and the ten
- * tab panels (analytics, visitors, crawlers, SEO, redirects, AI, schedules,
- * database, logs, settings). Schedules, Database, and Logs are core components
+ * period + bot-filter controls, the live "visitors now" counter, and the eleven
+ * tab panels (analytics, visitors, goals, crawlers, SEO, redirects, AI,
+ * schedules, database, logs, settings). Schedules, Database, and Logs are core components
  * scoped to this module rather than panels written for this page, so the
  * authority behind them is the same one `/system/scheduler`,
  * `/system/database`, and `/system/logs` use. The tab
@@ -18,9 +18,9 @@
  * `onItemSelect` rather than navigating, and `activeUrl` highlights the active
  * tab since the route is identical across them.
  *
- * One global period picker governs the Analytics and Visitors tabs so an admin
- * never unknowingly compares different windows. The bot filter reaches Analytics
- * and the Visitors tab's New-visitors view only. Crawlers keeps its own
+ * One global period picker governs the Analytics, Visitors, and Goals tabs so
+ * an admin never unknowingly compares different windows, and the bot filter
+ * reaches all three. Crawlers keeps its own
  * `sinceHours` windows and SEO its delay-shifted GSC windows. The Redirects tab
  * manages admin-curated legacy-URL 301/302 rules and, like the Schedules,
  * Database, and Logs tabs, is ungoverned by the period controls.
@@ -34,6 +34,7 @@ import { MenuNavClient } from '../../../../../../components/layout/MenuNav/MenuN
 import { SegmentedControl } from '../../../../../../components/ui/SegmentedControl';
 import {
     AnalyticsDashboard,
+    GoalsDashboard,
     VisitorsExplorer,
     CrawlerDashboard,
     TrafficDashboard,
@@ -56,7 +57,7 @@ import { SchedulerMonitor, type SchedulerJob } from '../../../../../../modules/s
 import styles from './page.module.scss';
 
 /** Tab identifiers for the traffic admin page. */
-type TrafficTab = 'analytics' | 'visitors' | 'crawlers' | 'seo' | 'redirects' | 'ai'
+type TrafficTab = 'analytics' | 'visitors' | 'goals' | 'crawlers' | 'seo' | 'redirects' | 'ai'
     | 'schedules' | 'database' | 'logs' | 'settings';
 
 /** The menu namespace TrafficModule registers the tab nodes under. */
@@ -89,10 +90,17 @@ const COLLECTION_PREFIX = 'module_traffic_';
 
 /**
  * The module's ClickHouse tables, named exactly because module tables share no
- * naming prefix: the visitor events, the served-redirect hits, and the three
- * tables of the permanent Search Console archive.
+ * naming prefix: the visitor events, the goal events, the served-redirect
+ * hits, and the three tables of the permanent Search Console archive.
  */
-const CLICKHOUSE_TABLES = ['traffic_events', 'redirect_events', 'gsc_queries', 'gsc_daily_totals', 'gsc_page_totals'];
+const CLICKHOUSE_TABLES = [
+    'traffic_events',
+    'traffic_goal_events',
+    'redirect_events',
+    'gsc_queries',
+    'gsc_daily_totals',
+    'gsc_page_totals'
+];
 
 /** Log service name the module's `logger.child({ module: 'traffic' })` records under. */
 const LOG_SERVICE = 'tronrelic:traffic';
@@ -107,7 +115,7 @@ function isTrafficJob(job: SchedulerJob): boolean {
 }
 
 /** Tabs governed by the global period picker. */
-const GOVERNED_TABS: ReadonlySet<TrafficTab> = new Set(['analytics', 'visitors']);
+const GOVERNED_TABS: ReadonlySet<TrafficTab> = new Set(['analytics', 'visitors', 'goals']);
 
 /**
  * Bot-filter segments for the governed tabs. A two-segment control rather than
@@ -148,7 +156,7 @@ const DASHBOARD_REFRESH_MS = 60_000;
  * and click routing share one source of truth for valid tabs.
  */
 function isTrafficTab(tab: string | undefined): tab is TrafficTab {
-    return tab === 'analytics' || tab === 'visitors' || tab === 'crawlers'
+    return tab === 'analytics' || tab === 'visitors' || tab === 'goals' || tab === 'crawlers'
         || tab === 'seo' || tab === 'redirects' || tab === 'ai'
         || tab === 'schedules' || tab === 'database' || tab === 'logs' || tab === 'settings';
 }
@@ -211,7 +219,7 @@ export function TrafficDashboardClient({ submenuTree, submenuGeneratedAt, initia
     // own; it pauses while the tab is hidden.
     const dashboardRefresh = useAutoRefresh(
         DASHBOARD_REFRESH_MS,
-        activeTab === 'analytics' || activeTab === 'crawlers'
+        activeTab === 'analytics' || activeTab === 'goals' || activeTab === 'crawlers'
     );
 
     /**
@@ -278,7 +286,7 @@ export function TrafficDashboardClient({ submenuTree, submenuGeneratedAt, initia
     return (
         <AdminPage
             title="Traffic"
-            subtitle="Visitors, crawlers, search performance, and redirects."
+            subtitle="Visitors, goals, crawlers, search performance, and redirects."
         >
             <div className={styles.tab_row}>
                 <div className={styles.submenu}>
@@ -329,6 +337,14 @@ export function TrafficDashboardClient({ submenuTree, submenuGeneratedAt, initia
                         period={period}
                         customRange={customRange}
                         includeBots={includeBots}
+                    />
+                )}
+                {activeTab === 'goals' && (
+                    <GoalsDashboard
+                        period={period}
+                        customRange={customRange}
+                        includeBots={includeBots}
+                        refreshSignal={dashboardRefresh}
                     />
                 )}
                 {activeTab === 'crawlers' && (

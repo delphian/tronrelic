@@ -63,6 +63,22 @@ function createTrafficServiceStub() {
         getTrafficEventSources: vi.fn(async (_range: unknown, _filter: unknown, _groupBy: string, _limit: number) => [
             { key: 'e0d716babf000000', events: 12, pageEvents: 6, distinctTids: 2 }
         ]),
+        // Goal reads, with params declared so the goal tests can assert what
+        // the handlers pass through.
+        getGoalSummary: vi.fn(async (_range: unknown, _excludeBots: boolean, _limit: number, _goal?: string) => [
+            { goal: 'resource-markets:outbound-click', events: 9, visitors: 4, unattributedEvents: 2, propertyKeys: ['market'] }
+        ]),
+        getGoalPropertyBreakdown: vi.fn(async (_range: unknown, _goal: string, _key: string, _excludeBots: boolean, _limit: number) => [
+            { value: 'tronsave', events: 5, visitors: 3 }
+        ]),
+        getGoalAttribution: vi.fn(async (_range: unknown, _goal: string, _dimension: string, _excludeBots: boolean, _limit: number) => [
+            { key: 'google.com', kind: 'session', events: 4, visitors: 3, sessions: 3, channel: 'organic' },
+            { key: '(unattributed)', kind: 'unattributed', events: 2, visitors: 0, sessions: 0, channel: null }
+        ]),
+        listGoalEvents: vi.fn(async (_range: unknown, _filter: unknown, _goal: string | undefined, _limit: number, _offset: number, _order?: string) => ({
+            rows: [{ timestamp: '2026-10-17T05:40:00.000Z', goal: 'resource-markets:outbound-click', tid: null }],
+            hasMore: false
+        })),
         getNewVisitors: vi.fn(async () => ({
             total: 1,
             visitors: [{
@@ -1007,6 +1023,97 @@ describe('traffic AI tools', () => {
             // sorted read, so the model is told to narrow instead.
             await expect(built.get(AI_TOOL_NAMES.events)!.handler({ offset: 5001 }))
                 .rejects.toThrow(/narrow the window or add filters/);
+        });
+    });
+
+    describe('goal views', () => {
+        const GOAL = 'resource-markets:outbound-click';
+
+        it('lists every goal with dimension "goals"', async () => {
+            const stub = createTrafficServiceStub();
+            const built = registerAndCapture(undefined, {}, stub).tools;
+            const result = await built.get(AI_TOOL_NAMES.breakdown)!.handler({ dimension: 'goals' }) as {
+                buckets: unknown[]; attribution: string; goal: string | null;
+            };
+            expect(stub.getGoalSummary).toHaveBeenCalledTimes(1);
+            expect(stub.getGoalSummary.mock.calls[0]![3]).toBeUndefined();
+            expect(result.attribution).toBe('in-window');
+            expect(result.goal).toBeNull();
+        });
+
+        it('narrows "goals" to one goal, and breaks it down by a property when asked', async () => {
+            const stub = createTrafficServiceStub();
+            const built = registerAndCapture(undefined, {}, stub).tools;
+            await built.get(AI_TOOL_NAMES.breakdown)!.handler({ dimension: 'goals', goal: GOAL });
+            expect(stub.getGoalSummary.mock.calls[0]![3]).toBe(GOAL);
+
+            await built.get(AI_TOOL_NAMES.breakdown)!.handler({ dimension: 'goals', goal: GOAL, goalProperty: 'market' });
+            expect(stub.getGoalPropertyBreakdown).toHaveBeenCalledTimes(1);
+            expect(stub.getGoalPropertyBreakdown.mock.calls[0]![1]).toBe(GOAL);
+            expect(stub.getGoalPropertyBreakdown.mock.calls[0]![2]).toBe('market');
+        });
+
+        it('attributes a goal to its session with dimensions "sources" and "landing-pages"', async () => {
+            const stub = createTrafficServiceStub();
+            const built = registerAndCapture(undefined, {}, stub).tools;
+            const sources = await built.get(AI_TOOL_NAMES.breakdown)!.handler({ dimension: 'sources', goal: GOAL }) as {
+                attribution: string;
+            };
+            await built.get(AI_TOOL_NAMES.breakdown)!.handler({ dimension: 'landing-pages', goal: GOAL });
+            expect(stub.getGoalAttribution.mock.calls[0]![2]).toBe('source');
+            expect(stub.getGoalAttribution.mock.calls[1]![2]).toBe('landing-page');
+            // The plain session reads are not used for a goal question.
+            expect(stub.getTrafficSources).not.toHaveBeenCalled();
+            expect(sources.attribution).toMatch(/^session-of-goal/);
+        });
+
+        it('rejects goal arguments where they would be ignored', async () => {
+            const breakdown = tools.get(AI_TOOL_NAMES.breakdown)!;
+            await expect(breakdown.handler({ dimension: 'geo', goal: GOAL })).rejects.toThrow(/only valid with dimension/);
+            await expect(breakdown.handler({ dimension: 'sources', goal: GOAL, goalProperty: 'market' }))
+                .rejects.toThrow(/goalProperty/);
+            await expect(breakdown.handler({ dimension: 'goals', goalProperty: 'market' })).rejects.toThrow(/goalProperty/);
+            await expect(breakdown.handler({ dimension: 'sources', goal: GOAL, source: 'google.com' }))
+                .rejects.toThrow(/cannot be combined/);
+        });
+
+        it('rejects a goal name or property key that could never have been recorded', async () => {
+            const breakdown = tools.get(AI_TOOL_NAMES.breakdown)!;
+            await expect(breakdown.handler({ dimension: 'goals', goal: 'outbound click' })).rejects.toThrow(/goal name/);
+            await expect(breakdown.handler({ dimension: 'goals', goal: GOAL, goalProperty: '1market' }))
+                .rejects.toThrow(/property key/);
+        });
+
+        it('lists goal rows with eventType "goal" and refuses them in the sources view', async () => {
+            const stub = createTrafficServiceStub();
+            const built = registerAndCapture(undefined, {}, stub).tools;
+            const events = built.get(AI_TOOL_NAMES.events)!;
+            const result = await events.handler({ eventType: 'goal', goal: GOAL }) as { measure: string; events: unknown[] };
+            expect(stub.listGoalEvents).toHaveBeenCalledTimes(1);
+            expect(stub.listTrafficEvents).not.toHaveBeenCalled();
+            // The filter handed to the goal read carries no traffic_events event type.
+            expect((stub.listGoalEvents.mock.calls[0]![1] as { eventType?: string }).eventType).toBeUndefined();
+            expect(stub.listGoalEvents.mock.calls[0]![2]).toBe(GOAL);
+            expect(result.measure).toMatch(/goal event rows/);
+
+            await expect(events.handler({ view: 'sources', eventType: 'goal' })).rejects.toThrow(/only valid with view "events"/);
+            await expect(events.handler({ eventType: 'page', goal: GOAL })).rejects.toThrow(/only valid with eventType "goal"/);
+        });
+
+        it('keeps the breakdown and per-event capabilities unchanged so MCP grants survive', () => {
+            expect(tools.get(AI_TOOL_NAMES.breakdown)!.capability).toEqual({
+                sideEffect: 'read', reversible: true, sensitivity: 'internal', surfacesUntrustedContent: true
+            });
+            expect(tools.get(AI_TOOL_NAMES.events)!.capability).toEqual({
+                sideEffect: 'read', reversible: true, sensitivity: 'secret', surfacesUntrustedContent: true
+            });
+        });
+
+        it('tells the model what goals are and how they are attributed', () => {
+            const description = tools.get(AI_TOOL_NAMES.breakdown)!.description;
+            expect(description).toMatch(/SESSION IT HAPPENED IN/);
+            expect(description).toMatch(/unattributed/);
+            expect(tools.get(AI_TOOL_NAMES.events)!.description).toMatch(/eventType "goal"/);
         });
     });
 

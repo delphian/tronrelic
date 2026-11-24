@@ -1,0 +1,50 @@
+/**
+ * GoalsDashboard styles.
+ *
+ * The toolbar, the goals table, then the selected goal's attribution and
+ * property panels side by side once both fit at a readable width. Panels,
+ * tables, and the toolbar carry their own styles; this module lays them out
+ * and marks the selected goal and the buckets that are not a session source.
+ */
+
+.container {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+    min-width: 0;
+}
+
+/* Top alignment keeps the shorter panel at its own height. */
+.band {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--max-width-sm)), 1fr));
+    align-items: start;
+    gap: var(--gap-sm);
+}
+
+/* The goal whose attribution the panels below show. */
+.row_selected {
+    background: var(--color-primary-alpha-15);
+}
+
+/* Goal names, sources, paths, and property values render monospace so
+   separators, trailing slashes, and casing read unambiguously. */
+.code {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+    color: var(--color-text);
+    word-break: break-all;
+}
+
+/* A bucket that is not a session source, such as "(unattributed)": muted so
+   it reads as a note on the figures rather than one more source. */
+.special {
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+    font-style: italic;
+}
+
+.channel {
+    font-family: var(--font-body);
+    color: var(--color-text-muted);
+}

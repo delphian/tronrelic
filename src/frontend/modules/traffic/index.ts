@@ -25,6 +25,7 @@
 
 export { VisitorsExplorer } from './components';
 export { AnalyticsDashboard } from './components';
+export { GoalsDashboard } from './components';
 export { GscSettings } from './components';
 export { IgnoredUsers } from './components';
 export { BotRules } from './components';
