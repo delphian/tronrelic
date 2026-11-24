@@ -33,7 +33,7 @@
  */
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, Check, Copy, ExternalLink, Wrench } from 'lucide-react';
 import { IconButton } from '../IconButton';
@@ -178,6 +178,14 @@ export function AddressChip({
     const [menuPosition, setMenuPosition] = useState<IMenuPosition | null>(null);
     const menuRef = useRef<HTMLDivElement | null>(null);
     const menuListRef = useRef<HTMLDivElement | null>(null);
+    const triggerRef = useRef<HTMLButtonElement | null>(null);
+    /**
+     * Whether focus has already moved into the menu for this opening. The menu
+     * re-measures on every scroll and resize, so without this latch the focus
+     * effect below would drag focus back to the first entry each time the user
+     * scrolled the table under an open menu.
+     */
+    const focusMovedRef = useRef(false);
     const tags = useAddressTags(address);
     const { session } = useAuthSession();
     const modal = useModal();
@@ -186,6 +194,20 @@ export function AddressChip({
     // Copy and explorer are always present, so the menu always has entries.
     // The divider below them appears only when something follows it.
     const hasForwardEntries = kind.forwardTools.length > 0 || canEditTags;
+
+    /**
+     * Close the menu and put focus back on the wrench, why: the entries live in
+     * a `<body>` portal, so an entry that unmounts itself leaves focus on a
+     * removed node and the browser falls back to `<body>`, making a keyboard
+     * user restart from the top of the page. Only the paths the user drove from
+     * inside the menu call this — Escape, choosing an entry, or tabbing out. An
+     * outside click deliberately does not, because focus belongs wherever the
+     * user just put it.
+     */
+    const closeMenu = useCallback((): void => {
+        setMenuOpen(false);
+        triggerRef.current?.focus();
+    }, []);
 
     /**
      * Close the tools popover on any click outside it and on Escape, why: an
@@ -213,9 +235,12 @@ export function AddressChip({
                 setMenuOpen(false);
             }
         }
-        /** Dismiss the menu on Escape so keyboard users are never trapped in it. */
+        /**
+         * Dismiss the menu on Escape so keyboard users are never trapped in it,
+         * handing focus back to the wrench they opened it from.
+         */
         function handleKeyDown(event: globalThis.KeyboardEvent): void {
-            if (event.key === 'Escape') setMenuOpen(false);
+            if (event.key === 'Escape') closeMenu();
         }
         document.addEventListener('pointerdown', handlePointerDown);
         document.addEventListener('keydown', handleKeyDown);
@@ -223,7 +248,7 @@ export function AddressChip({
             document.removeEventListener('pointerdown', handlePointerDown);
             document.removeEventListener('keydown', handleKeyDown);
         };
-    }, [menuOpen]);
+    }, [closeMenu, menuOpen]);
 
     /**
      * Toggle the tools popover. Extracted so the toggle and the outside-click
@@ -232,6 +257,45 @@ export function AddressChip({
     const toggleMenu = useCallback((): void => {
         setMenuOpen(prev => !prev);
     }, []);
+
+    /**
+     * Keyboard movement between the menu entries, why: the menu is portaled, so
+     * the entries are not Tab-reachable from the wrench in any useful order and
+     * the arrow keys are the only traversal a menu offers. Enter and Space
+     * activate an entry natively, because every entry is a real button or link.
+     * Tab closes the menu instead of walking into the end of `<body>`, which is
+     * where the portal put these nodes. Bound to the menu rather than to each
+     * entry because React bubbles a portal's events through the component tree.
+     *
+     * @param event - Key event bubbling up from the focused entry.
+     */
+    const handleMenuKeyDown = useCallback((event: ReactKeyboardEvent<HTMLDivElement>): void => {
+        const items = Array.from(
+            menuListRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? []
+        );
+        const index = items.indexOf(document.activeElement as HTMLElement);
+        const last = items.length - 1;
+        let next: number | null = null;
+
+        if (event.key === 'ArrowDown') {
+            next = index >= last ? 0 : index + 1;
+        } else if (event.key === 'ArrowUp') {
+            next = index <= 0 ? last : index - 1;
+        } else if (event.key === 'Home') {
+            next = 0;
+        } else if (event.key === 'End') {
+            next = last;
+        } else if (event.key === 'Tab') {
+            event.preventDefault();
+            closeMenu();
+        }
+
+        if (next !== null && items.length > 0) {
+            // Suppress the page scroll the arrow keys would otherwise cause.
+            event.preventDefault();
+            items[next]?.focus();
+        }
+    }, [closeMenu]);
 
     /**
      * Resolve the open menu's viewport-fixed coordinates from its trigger, why:
@@ -287,6 +351,28 @@ export function AddressChip({
     }, [menuOpen]);
 
     /**
+     * Move focus to the first entry once the menu is open and placed, why: the
+     * menu is portaled to `<body>`, so its entries sit at the very end of the
+     * tab order, and tabbing from the wrench walks every remaining control on
+     * the page first — hundreds of them in a dense address table. Copying the
+     * address and opening it on Tronscan used to be plain tab stops beside the
+     * chip, so the menu has to claim focus itself or both actions are
+     * mouse-only.
+     *
+     * Deferred until `menuPosition` resolves, because until then the menu
+     * renders hidden to avoid a flash at the viewport origin, and a hidden
+     * element cannot take focus.
+     */
+    useLayoutEffect(() => {
+        if (!menuOpen) {
+            focusMovedRef.current = false;
+        } else if (menuPosition && !focusMovedRef.current) {
+            focusMovedRef.current = true;
+            menuListRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+        }
+    }, [menuOpen, menuPosition]);
+
+    /**
      * Open the freeform tag editor for this address in the shared core modal.
      *
      * The editor lives in the address-tags module and is handed the tags already
@@ -297,7 +383,7 @@ export function AddressChip({
      * string edit the same tags.
      */
     const openTagEditor = useCallback((): void => {
-        setMenuOpen(false);
+        closeMenu();
         const id = `address-tags:${address}`;
         modal.open({
             id,
@@ -311,7 +397,7 @@ export function AddressChip({
                 />
             )
         });
-    }, [address, modal, tags]);
+    }, [address, closeMenu, modal, tags]);
 
     const display = label ?? truncateAddress(address);
     const isTagged = tags.length > 0;
@@ -395,6 +481,7 @@ export function AddressChip({
                 onClick={event => event.stopPropagation()}
             >
                 <IconButton
+                    ref={triggerRef}
                     variant="primary"
                     size="xs"
                     aria-label={kind.toolsLabel}
@@ -418,6 +505,7 @@ export function AddressChip({
                                 : { top: 0, left: 0, visibility: 'hidden' }
                         }
                         onClick={event => event.stopPropagation()}
+                        onKeyDown={handleMenuKeyDown}
                     >
                         {/*
                           * Copy keeps the menu open, why: the entry's own text
@@ -444,7 +532,7 @@ export function AddressChip({
                             href={`${kind.explorerBaseUrl}${address}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            onClick={() => setMenuOpen(false)}
+                            onClick={closeMenu}
                         >
                             <ExternalLink size={MENU_ICON_PX} aria-hidden="true" className={styles.menu_icon} />
                             <span>{kind.explorerLabel}</span>
@@ -475,7 +563,7 @@ export function AddressChip({
                                 href={buildToolForwardUrl(tool.slug, address)}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                onClick={() => setMenuOpen(false)}
+                                onClick={closeMenu}
                             >
                                 {tool.label}
                             </a>
