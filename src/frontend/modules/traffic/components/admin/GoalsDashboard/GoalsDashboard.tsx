@@ -327,8 +327,8 @@ export function GoalsDashboard({ period, customRange, includeBots, refreshSignal
                                 <Tbody>
                                     {(properties.data ?? []).map(row => (
                                         <Tr key={row.value ?? '(not set)'}>
-                                            <Td className={row.value === null ? styles.special : styles.code}>
-                                                {row.value ?? '(not set)'}
+                                            <Td className={row.value === null || row.value === '' ? styles.special : styles.code}>
+                                                {row.value === null ? '(not set)' : row.value === '' ? '(empty)' : row.value}
                                             </Td>
                                             <Td label="Events" numeric>{numberFormatter.format(row.events)}</Td>
                                             <Td label="Visitors" numeric>{numberFormatter.format(row.visitors)}</Td>

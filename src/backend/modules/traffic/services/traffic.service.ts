@@ -4099,8 +4099,11 @@ export class TrafficService {
      *
      * Events that did not set the property are grouped under a `null` value
      * rather than dropped, so the buckets always add up to the goal's total.
-     * The key is bound as a parameter; the caller validates it against the
-     * property-key rule first.
+     * A missing key and an explicitly empty value are different buckets: a
+     * `Map` subscript returns `''` for both, so `mapContains` decides which of
+     * the two a row is, and only a missing key becomes `null`. The key is
+     * bound as a parameter; the caller validates it against the property-key
+     * rule first.
      *
      * @param range - Inclusive window, optionally narrowed to one country.
      * @param goal - The goal name.
@@ -4123,7 +4126,7 @@ export class TrafficService {
             const botFilter = excludeBots ? ` AND ${HUMAN_ROWS_FILTER}` : '';
             const sql = `
                 SELECT
-                    properties[{propertyKey:String}] AS value,
+                    if(mapContains(properties, {propertyKey:String}), properties[{propertyKey:String}], NULL) AS value,
                     count() AS events,
                     uniqExactIf(candidate_uid, ${this.goalVisitorPredicate(clause, botFilter)}) AS visitors
                 FROM ${TRAFFIC_GOAL_EVENTS_TABLE_NAME}
@@ -4133,13 +4136,14 @@ export class TrafficService {
                 LIMIT {goalLimit:UInt32}
             `;
             try {
-                const rows = await clickhouse.query<{ value: string; events: string | number; visitors: string | number }>(
+                const rows = await clickhouse.query<{ value: string | null; events: string | number; visitors: string | number }>(
                     sql,
                     { ...params, noTid: NO_TID, goal, propertyKey, goalLimit: limit }
                 );
-                // A Map lookup for a missing key yields '' in ClickHouse.
+                // `value` is NULL only when the event carried no such key, so an
+                // explicitly empty value keeps a bucket of its own.
                 buckets = rows.map(r => ({
-                    value: r.value === '' ? null : r.value,
+                    value: r.value,
                     events: Number(r.events),
                     visitors: Number(r.visitors)
                 }));
