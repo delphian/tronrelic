@@ -2,18 +2,19 @@
  * Address chip styling, shared by TronAddress and TronContractAddress.
  *
  * Layout and affordance treatment for the canonical address chip. Structure is
- * a single inline row (address + slim icon actions); the tools popover is a
+ * a single inline row (address + one wrench); the tools popover, which holds
+ * copy, the explorer link, the tool forwards, and the tag editor, is a
  * viewport-fixed menu rendered in a body portal so no scroll container clips
  * it, positioned from its trigger by the component. All values reference
  * semantic (Layer 2) tokens so the chip themes with the rest of the app — the
- * address uses the shared monospace face (`--font-mono`), and affordance icons
- * follow the muted -> primary hover convention used by the bare IconButton.
+ * address uses the shared monospace face (`--font-mono`), and the wrench
+ * follows the muted -> primary hover convention used by the bare IconButton.
  */
 
 /*
- * No row gap: the icon controls carry their own padding, so a gap on top of it
- * spread the three affordances further apart than they read as one cluster. The
- * address/label instead pays for its own separation from the icons below.
+ * No row gap: the wrench carries its own padding, so a gap on top of it would
+ * push it away from the address it belongs to. The address/label instead pays
+ * for its own separation from the wrench below.
  */
 .root {
     display: inline-flex;
@@ -88,7 +89,8 @@
     text-underline-offset: var(--tron-address-tagged-underline-offset);
 }
 
-/* Trim the wrapped TrCopyIcon/IconButton so the icons sit slim in the row. */
+/* Keep the wrench at its own width so a narrow cell squeezes the address, not
+   the button. */
 .action {
     flex: 0 0 auto;
 }
@@ -98,29 +100,6 @@
 .menu_anchor {
     position: relative;
     display: inline-flex;
-}
-
-/* Explorer out-link: styled to match the slim icon actions (muted -> primary). */
-.action_link {
-    flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    /* Matches the bare IconButton's xs padding beside it, so the explorer link
-       and the copy/wrench buttons sit on the same rhythm. */
-    padding: var(--icon-button-bare-padding-xs);
-    color: var(--color-text-muted);
-    border-radius: var(--radius-xs);
-    transition: color var(--transition-fast);
-
-    &:hover {
-        color: var(--color-primary);
-    }
-
-    &:focus-visible {
-        outline: var(--border-width-medium) solid var(--color-primary);
-        outline-offset: 2px;
-    }
 }
 
 /*
@@ -147,10 +126,14 @@
     box-shadow: var(--shadow-md);
 }
 
-/* One menu row — a tool-forward link, or the tag-editor button, which resets the
-   native button chrome so both render identically. */
+/* One menu row — the copy button, the explorer link, a tool-forward link, or
+   the tag-editor button. The buttons reset the native button chrome so every
+   row renders identically. A flex row so the copy and explorer entries can put
+   an icon before their text. */
 .menu_item {
-    display: block;
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
     width: 100%;
     padding: var(--padding-xs) var(--padding-sm);
     font-family: inherit;
@@ -172,4 +155,19 @@
         outline: var(--border-width-medium) solid var(--color-primary);
         outline-offset: -2px;
     }
+}
+
+/* Icon before the copy and explorer entries. Muted so the entry's text stays
+   the thing read first, and fixed in size so a long label never shrinks it. */
+.menu_icon {
+    flex: 0 0 auto;
+    color: var(--color-text-muted);
+}
+
+/* Separates the two actions on the address itself (copy and explorer) from the
+   tool pages and tag editor below them, which act on the address elsewhere. */
+.menu_divider {
+    height: var(--divider-height);
+    margin: var(--gap-2xs) 0;
+    background: var(--divider-background);
 }

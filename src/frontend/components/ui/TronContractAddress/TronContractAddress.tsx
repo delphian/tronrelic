@@ -13,7 +13,7 @@
  *
  * This component is the contract counterpart. It is a thin configuration of
  * the shared `AddressChip`, so the truncation, the tag underline and warning
- * marker, the copy icon, the admin tag editor, and the portaled tools menu
+ * marker, and the portaled tools menu with its copy entry and admin tag editor
  * behave exactly as they do on a wallet chip. Tags are keyed by address, so a
  * contract tagged here shows the same tags wherever it appears.
  */
@@ -48,14 +48,12 @@ const CONTRACT_CHIP: IAddressChipKind = {
 export type ITronContractAddressProps = IAddressChipDisplayProps;
 
 /**
- * Render a smart contract address as a compact, monospace chip with copy,
- * contract tools (including the admin tag editor), and a Tronscan contract
- * link.
+ * Render a smart contract address as a compact, monospace chip followed by one
+ * wrench whose menu copies the address, opens Tronscan's contract page, and
+ * offers the contract tools (including the admin tag editor).
  *
  * @param props - {@link ITronContractAddressProps}; `address` is the contract's
- *        base58 address, `label` a pre-resolved name such as a token symbol,
- *        and the affordance booleans default on and can be switched off for a
- *        dense read-only table.
+ *        base58 address and `label` a pre-resolved name such as a token symbol.
  * @returns The contract address chip element.
  */
 export function TronContractAddress(props: ITronContractAddressProps) {

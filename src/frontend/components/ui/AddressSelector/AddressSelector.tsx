@@ -429,7 +429,7 @@ export function AddressSelector({
                     aria-describedby={ariaDescribedBy}
                     aria-required={ariaRequired}
                 />
-                <TronAddress address={value} tools={false} className={styles.selected_address} />
+                <TronAddress address={value} className={styles.selected_address} />
                 <button
                     type="button"
                     className={styles.clear}

@@ -3,21 +3,25 @@
  *
  * A wallet address and a smart contract address are the same base58 string, so
  * they share one chip: the truncated display, the tag underline and warning
- * marker, the copy icon, the portaled tools menu with its tag editor, and the
- * explorer out-link. What differs between them is configuration — which
- * Tronscan page the out-link opens, which tool pages the menu offers, and the
- * wording read to a screen reader. Each public component passes an
- * {@link IAddressChipKind} describing that, so a fix to the chip lands in both
- * at once instead of drifting between two copies.
+ * marker, and the portaled tools menu. What differs between them is
+ * configuration — which Tronscan page the explorer entry opens, which tool
+ * pages the menu offers, and the wording of the menu entries. Each public
+ * component passes an {@link IAddressChipKind} describing that, so a fix to the
+ * chip lands in both at once instead of drifting between two copies.
+ *
+ * Every chip shows exactly one icon after the address: the wrench. Copying the
+ * address and opening it on Tronscan are the first two entries of the wrench
+ * menu, followed by the tool pages and, for admins, the tag editor. Three icons
+ * per address buried the surrounding data in dense rows, and callers turning
+ * icons off to save space left the same address with different abilities on
+ * different pages. The wrench is not optional, so every address everywhere
+ * offers the same actions.
  *
  * The chip renders synchronously from its `address` prop (no async, no data
  * fetch), so it is SSR-first by construction: the truncated text is in the
- * server HTML and only the copy, tools, and explorer affordances are
- * user-triggered after hydration. All three render as bare icons — the copy
- * control is a `<TrCopyIcon>` rather than a `<CopyButton>` so it carries no
- * more visual weight than the wrench and out-link beside it. It is a
- * `'use client'` component purely because those affordances need event handlers
- * and a click-outside listener.
+ * server HTML and only the menu is user-triggered after hydration. It is a
+ * `'use client'` component purely because the menu needs event handlers and a
+ * click-outside listener.
  *
  * The tools menu renders in a `<body>` portal with viewport-fixed coordinates,
  * because an absolutely anchored menu is clipped inside any scrolling ancestor:
@@ -31,11 +35,11 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, ExternalLink, Wrench } from 'lucide-react';
-import { TrCopyIcon } from '../TrCopyIcon';
+import { AlertTriangle, Check, Copy, ExternalLink, Wrench } from 'lucide-react';
 import { IconButton } from '../IconButton';
 import { Tooltip } from '../Tooltip';
 import { useModal } from '../ModalProvider';
+import { useCopyToClipboard } from '../../../lib/hooks/useCopyToClipboard';
 // Deep imports rather than the module barrels: the address-tags barrel re-exports
 // its editor, which imports core UI primitives, so pulling the barrel in here
 // would close an import cycle through this file. The user barrel is skipped for
@@ -72,6 +76,13 @@ const TAIL_CHARS = 4;
 const MENU_VIEWPORT_GAP_PX = 8;
 
 /**
+ * Pixel size of the icons beside the Copy and Tronscan menu entries. Matches
+ * the 14px inline-icon step the UI system uses for text at body-sm size, which
+ * is what the menu rows are set in.
+ */
+const MENU_ICON_PX = 14;
+
+/**
  * Viewport-fixed coordinates for the portaled tools menu, resolved from the
  * trigger's live bounding rect. Held in state (rather than derived in render)
  * because measuring requires the DOM, and `null` marks "not yet measured" so
@@ -90,21 +101,22 @@ interface IMenuPosition {
 export interface IAddressChipKind {
     /** Explorer URL the address is appended to, such as Tronscan's `/#/address/`. */
     explorerBaseUrl: string;
-    /** Screen-reader label for the explorer out-link. */
+    /** Text of the menu entry that opens the address on the explorer. */
     explorerLabel: string;
-    /** Screen-reader label for the copy icon. */
+    /** Text of the menu entry that copies the address. */
     copyLabel: string;
-    /** Screen-reader confirmation announced after a copy. */
+    /** Text the copy entry shows, and a screen reader announces, after a copy. */
     copiedLabel: string;
     /** Screen-reader label for the wrench that opens the tools menu. */
     toolsLabel: string;
-    /** Tool pages the menu offers, in menu order. May be empty. */
+    /** Tool pages the menu offers below copy and explorer, in menu order. May be empty. */
     forwardTools: readonly IForwardableTool[];
 }
 
 /**
- * Display and affordance props every address chip accepts. The public
- * components expose exactly these.
+ * Display props every address chip accepts. The public components expose
+ * exactly these. There is deliberately no switch for the tools menu or its
+ * entries: every address offers the same actions wherever it appears.
  */
 export interface IAddressChipDisplayProps {
     /** Full base58check TRON address (`T…`). The value copied and linked. */
@@ -116,19 +128,13 @@ export interface IAddressChipDisplayProps {
      * callers pass one already resolved (e.g. from an SSR data fetcher).
      */
     label?: string;
-    /** Show the copy-to-clipboard affordance. @default true */
-    copy?: boolean;
-    /** Show the tools menu (tool forwarding and, for admins, the tag editor). @default true */
-    tools?: boolean;
-    /** Show the external Tronscan link. @default true */
-    explorer?: boolean;
     /** Extra class on the root wrapper for spacing in a host layout. */
     className?: string;
 }
 
 /**
  * Props for {@link AddressChip}: the display props plus the kind that
- * configures its explorer link, tools, and labels.
+ * configures its explorer entry, tools, and labels.
  */
 interface IAddressChipProps extends IAddressChipDisplayProps {
     /** The chip kind supplied by the public component wrapping this one. */
@@ -153,21 +159,18 @@ function truncateAddress(address: string): string {
 }
 
 /**
- * Render an address as a compact, monospace chip with copy, tools, and
- * explorer affordances configured by `kind`. See the file overview for why the
- * wallet and contract chips share this one implementation.
+ * Render an address as a compact, monospace chip followed by a single wrench
+ * that opens the tools menu configured by `kind`. See the file overview for why
+ * the wallet and contract chips share this one implementation.
  *
- * @param props - {@link IAddressChipProps}; the affordance booleans default on
- *        so the common case needs only the address, and `kind` comes from the
- *        public component rather than the caller.
+ * @param props - {@link IAddressChipProps}; only `address` is needed in the
+ *        common case, and `kind` comes from the public component rather than
+ *        the caller.
  * @returns The address chip element.
  */
 export function AddressChip({
     address,
     label,
-    copy = true,
-    tools = true,
-    explorer = true,
     className,
     kind
 }: IAddressChipProps) {
@@ -178,11 +181,11 @@ export function AddressChip({
     const tags = useAddressTags(address);
     const { session } = useAuthSession();
     const modal = useModal();
+    const { copied, copy } = useCopyToClipboard(address);
     const canEditTags = session?.user?.groups?.includes(TAG_EDIT_GROUP) ?? false;
-    // The wrench only appears when its menu would hold something. A contract
-    // chip offers few tools, and for a visitor who cannot edit tags a menu with
-    // no entries would open onto nothing.
-    const hasMenuItems = kind.forwardTools.length > 0 || canEditTags;
+    // Copy and explorer are always present, so the menu always has entries.
+    // The divider below them appears only when something follows it.
+    const hasForwardEntries = kind.forwardTools.length > 0 || canEditTags;
 
     /**
      * Close the tools popover on any click outside it and on Escape, why: an
@@ -377,116 +380,122 @@ export function AddressChip({
                 </span>
             </Tooltip>
 
-            {copy && (
-                // Icon-only, matching the wrench and out-link beside it: a
-                // bordered button here made copy read as the chip's primary
-                // action rather than one of three equal affordances.
-                <TrCopyIcon
-                    value={address}
+            {/*
+              * Stop menu clicks from bubbling to an enclosing clickable row
+              * (`<Tr onClick>`), which would navigate or unmount the chip
+              * before the menu is usable. preventDefault is not called, so the
+              * menu links still navigate. The portaled menu is not a
+              * descendant of this wrapper, so it stops propagation itself —
+              * its own DOM position is under `<body>`, but React still bubbles
+              * its events through this tree.
+              */}
+            <div
+                className={styles.menu_anchor}
+                ref={menuRef}
+                onClick={event => event.stopPropagation()}
+            >
+                <IconButton
+                    variant="primary"
                     size="xs"
-                    aria-label={kind.copyLabel}
-                    copiedLabel={kind.copiedLabel}
+                    aria-label={kind.toolsLabel}
+                    aria-haspopup="menu"
+                    aria-expanded={menuOpen}
+                    onClick={toggleMenu}
                     className={styles.action}
-                />
-            )}
-
-            {tools && hasMenuItems && (
-                // Stop tool clicks from bubbling to an enclosing clickable row
-                // (`<Tr onClick>`), which would navigate or unmount the chip
-                // before the menu is usable. Mirrors CopyButton, which stops
-                // propagation for the same reason. preventDefault is not called,
-                // so the tool links still navigate. The portaled menu is not a
-                // descendant of this wrapper, so it stops propagation itself —
-                // its own DOM position is under `<body>`, but React still
-                // bubbles its events through this tree.
-                <div
-                    className={styles.menu_anchor}
-                    ref={menuRef}
-                    onClick={event => event.stopPropagation()}
                 >
-                    <IconButton
-                        variant="primary"
-                        size="xs"
-                        aria-label={kind.toolsLabel}
-                        aria-haspopup="menu"
-                        aria-expanded={menuOpen}
-                        onClick={toggleMenu}
-                        className={styles.action}
+                    <Wrench size={14} />
+                </IconButton>
+                {menuOpen && createPortal(
+                    <div
+                        ref={menuListRef}
+                        className={styles.menu}
+                        role="menu"
+                        // Hidden until measured so the first paint never
+                        // shows the menu parked at the viewport origin.
+                        style={
+                            menuPosition
+                                ? { top: menuPosition.top, left: menuPosition.left }
+                                : { top: 0, left: 0, visibility: 'hidden' }
+                        }
+                        onClick={event => event.stopPropagation()}
                     >
-                        <Wrench size={14} />
-                    </IconButton>
-                    {menuOpen && createPortal(
-                        <div
-                            ref={menuListRef}
-                            className={styles.menu}
-                            role="menu"
-                            // Hidden until measured so the first paint never
-                            // shows the menu parked at the viewport origin.
-                            style={
-                                menuPosition
-                                    ? { top: menuPosition.top, left: menuPosition.left }
-                                    : { top: 0, left: 0, visibility: 'hidden' }
-                            }
-                            onClick={event => event.stopPropagation()}
+                        {/*
+                          * Copy keeps the menu open, why: the entry's own text
+                          * and icon switch to the copied confirmation, and
+                          * closing the menu at once would hide the only sign
+                          * that the copy worked. The label sits in a polite
+                          * live region so a screen reader announces the change
+                          * while focus stays on the entry.
+                          */}
+                        <button
+                            type="button"
+                            role="menuitem"
+                            className={styles.menu_item}
+                            onClick={copy}
                         >
-                            {/*
-                              * Forwarding opens a new tab, why: the chip is an
-                              * aside on whatever the user is actually reading —
-                              * a transaction feed, a ladder, an admin table —
-                              * and sending a tool off in place destroys that
-                              * context (and any in-page state, filters, or live
-                              * stream behind it) for a lookup the user means to
-                              * glance at. A new tab also makes the forward work
-                              * when the target tool *is* the current page: same
-                              * -route client navigation would not remount the
-                              * tool, leaving its mount-only `?address=` pre-fill
-                              * stale and the menu entry looking inert.
-                              * `rel="noopener"` is mandatory with `_blank` —
-                              * without it the opened page gets `window.opener`.
-                              */}
-                            {kind.forwardTools.map(tool => (
-                                <a
-                                    key={tool.slug}
-                                    role="menuitem"
-                                    className={styles.menu_item}
-                                    href={buildToolForwardUrl(tool.slug, address)}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    onClick={() => setMenuOpen(false)}
-                                >
-                                    {tool.label}
-                                </a>
-                            ))}
-                            {canEditTags && (
-                                // A button, not a link: it opens a modal in place
-                                // rather than navigating, so the tool-forward
-                                // links above stay the only anchors here.
-                                <button
-                                    type="button"
-                                    role="menuitem"
-                                    className={styles.menu_item}
-                                    onClick={openTagEditor}
-                                >
-                                    Edit tags
-                                </button>
-                            )}
-                        </div>,
-                        document.body
-                    )}
-                </div>
-            )}
-
-            {explorer && (
-                <a
-                    className={styles.action_link}
-                    href={`${kind.explorerBaseUrl}${address}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    aria-label={kind.explorerLabel}
-                >
-                    <ExternalLink size={14} />
-                </a>
-            )}
+                            {copied
+                                ? <Check size={MENU_ICON_PX} aria-hidden="true" className={styles.menu_icon} />
+                                : <Copy size={MENU_ICON_PX} aria-hidden="true" className={styles.menu_icon} />}
+                            <span aria-live="polite">{copied ? kind.copiedLabel : kind.copyLabel}</span>
+                        </button>
+                        <a
+                            role="menuitem"
+                            className={styles.menu_item}
+                            href={`${kind.explorerBaseUrl}${address}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={() => setMenuOpen(false)}
+                        >
+                            <ExternalLink size={MENU_ICON_PX} aria-hidden="true" className={styles.menu_icon} />
+                            <span>{kind.explorerLabel}</span>
+                        </a>
+                        {hasForwardEntries && (
+                            <div role="separator" className={styles.menu_divider} />
+                        )}
+                        {/*
+                          * The explorer entry and the tool forwards open a new
+                          * tab, why: the chip is an aside on whatever the user
+                          * is actually reading — a transaction feed, a ladder,
+                          * an admin table — and navigating in place destroys
+                          * that context (and any in-page state, filters, or
+                          * live stream behind it) for a lookup the user means
+                          * to glance at. A new tab also makes a forward work
+                          * when the target tool *is* the current page:
+                          * same-route client navigation would not remount the
+                          * tool, leaving its mount-only `?address=` pre-fill
+                          * stale and the menu entry looking inert.
+                          * `rel="noopener"` is mandatory with `_blank` —
+                          * without it the opened page gets `window.opener`.
+                          */}
+                        {kind.forwardTools.map(tool => (
+                            <a
+                                key={tool.slug}
+                                role="menuitem"
+                                className={styles.menu_item}
+                                href={buildToolForwardUrl(tool.slug, address)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={() => setMenuOpen(false)}
+                            >
+                                {tool.label}
+                            </a>
+                        ))}
+                        {canEditTags && (
+                            // A button, not a link: it opens a modal in place
+                            // rather than navigating.
+                            <button
+                                type="button"
+                                role="menuitem"
+                                className={styles.menu_item}
+                                onClick={openTagEditor}
+                            >
+                                Edit tags
+                            </button>
+                        )}
+                    </div>,
+                    document.body
+                )}
+            </div>
         </span>
     );
 }

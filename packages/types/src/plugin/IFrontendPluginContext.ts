@@ -557,29 +557,25 @@ export interface IUIComponents {
      * smart contract address use `TronContractAddress`.
      *
      * Shows the address as a compact monospace chip (`first 4 … last 4`, full
-     * value in a tooltip) with three slim affordances: copy-to-clipboard, a
-     * "forward to a public tool" dropdown, and an external Tronscan link. Use
-     * this instead of hand-truncating an address and hand-building a Tronscan
-     * anchor so every surface — core and plugin — stays visually and
-     * behaviourally identical and only has to be fixed in one place.
+     * value in a tooltip) followed by a single wrench icon. The wrench opens a
+     * menu that copies the address, opens it on Tronscan, forwards it to a
+     * public tool page, and, for admins, edits its tags. The wrench is always
+     * shown and has no switch, so every address offers the same actions
+     * wherever it appears. Use this instead of hand-truncating an address and
+     * hand-building a Tronscan anchor so every surface — core and plugin —
+     * stays visually and behaviourally identical and only has to be fixed in
+     * one place.
      *
      * Renders synchronously from `address`, so it is SSR-safe: pass the address
      * straight from your SSR data. The chip does not resolve labels itself —
      * pass a pre-resolved `label` (from an SSR fetcher) to display a name in
-     * place of the truncation. Trim affordances off with `copy`/`tools`/
-     * `explorer` for dense read-only contexts.
+     * place of the truncation.
      */
     TronAddress: ComponentType<{
         /** Full base58check TRON address (`T…`); the value copied and linked. */
         address: string;
         /** Pre-resolved human label shown in place of the truncated address. */
         label?: string;
-        /** Show the copy-to-clipboard affordance. @default true */
-        copy?: boolean;
-        /** Show the "forward to a tool" dropdown. @default true */
-        tools?: boolean;
-        /** Show the external Tronscan link. @default true */
-        explorer?: boolean;
         className?: string;
     }>;
 
@@ -588,11 +584,12 @@ export interface IUIComponents {
      * address, as `TronAddress` is for a wallet.
      *
      * The same chip as `TronAddress`, with the same props: truncated monospace
-     * address, tag underline and warning marker, copy, and a tools menu that
-     * holds the tag editor for admins. It differs where a contract differs
-     * from a wallet. The out-link opens Tronscan's contract page, which shows
-     * the code and calls, and the tools menu offers only tool pages that accept
-     * a contract, leaving out wallet-only tools such as the Signature Verifier.
+     * address, tag underline and warning marker, and one wrench whose menu
+     * copies the address and holds the tag editor for admins. It differs where
+     * a contract differs from a wallet. The menu's Tronscan entry opens the
+     * contract page, which shows the code and calls, and the menu offers only
+     * tool pages that accept a contract, leaving out wallet-only tools such as
+     * the Signature Verifier.
      *
      * Use it for a token contract, a DEX router, or any other contract, such as
      * an observer's `contract_address`. Renders synchronously from `address`,
@@ -604,12 +601,6 @@ export interface IUIComponents {
         address: string;
         /** Pre-resolved human label, such as a token symbol, shown in place of the truncation. */
         label?: string;
-        /** Show the copy-to-clipboard affordance. @default true */
-        copy?: boolean;
-        /** Show the tools menu (contract tools and, for admins, the tag editor). @default true */
-        tools?: boolean;
-        /** Show the external Tronscan contract link. @default true */
-        explorer?: boolean;
         className?: string;
     }>;
 

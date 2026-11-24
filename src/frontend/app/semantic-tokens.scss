@@ -950,10 +950,10 @@
      *
      * The colour of the glyph that marks value moving from one address to
      * another — the arrow drawn between a sender and a recipient in a transfer
-     * row. It exists because those rows put the arrow inside a strip of muted
-     * icon buttons (copy, tools menu, explorer link), and an arrow drawn in
-     * --color-text-muted reads as one more of those buttons instead of as the
-     * thing that says which way the value went.
+     * row. It exists because those rows put the arrow between the muted tools
+     * icons of the two address chips, and an arrow drawn in --color-text-muted
+     * reads as one more of those buttons instead of as the thing that says
+     * which way the value went.
      *
      * Deliberately not --color-primary: primary means "interactive" site-wide
      * and the arrow is not clickable. Deliberately not success, warning, or

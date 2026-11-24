@@ -3,8 +3,8 @@
  *
  * `<CopyButton>` renders a full `<Button>`, so its chrome (padding, border,
  * hover fill) is right next to a label but visually dominates a dense row of
- * bare icons: in the TronAddress chip it sat beside a bare wrench and a bare
- * out-link and read as the odd one out. This is the same behaviour on the
+ * bare icons, such as the copy icon beside the bare out-link in the
+ * TronTransactionId chip. This is the same behaviour on the
  * `<IconButton>` primitive the other inline row actions already use, so a copy
  * icon matches its neighbours everywhere instead of each caller re-styling
  * `<CopyButton>` back down to bare.

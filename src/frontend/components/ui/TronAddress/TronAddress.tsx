@@ -3,8 +3,9 @@
  *
  * Every surface that shows a wallet address — core pages, admin tables, plugin
  * UIs injected through `context.ui.TronAddress` — should render it through this
- * one component so truncation, copy, explorer linking, and tool-forwarding stay
- * identical everywhere and only have to be fixed in one place. Before this
+ * one component so truncation and the tools menu (copy, explorer link, and
+ * tool forwarding) stay identical everywhere and only have to be fixed in one
+ * place. Before this
  * existed each caller hand-rolled its own slice/tronscan link, drifting in
  * format and affordances.
  *
@@ -38,13 +39,13 @@ const WALLET_CHIP: IAddressChipKind = {
 export type ITronAddressProps = IAddressChipDisplayProps;
 
 /**
- * Render a TRON wallet address as a compact, monospace chip with copy,
- * tool-forward, and explorer affordances. See the file overview for why this is
- * the single canonical wallet address renderer.
+ * Render a TRON wallet address as a compact, monospace chip followed by one
+ * wrench whose menu copies the address, opens it on Tronscan, and forwards it
+ * to a tool page. See the file overview for why this is the single canonical
+ * wallet address renderer.
  *
- * @param props - {@link ITronAddressProps}; `address` is required, the three
- *        affordance booleans default on so the common case needs only the
- *        address, and callers trim affordances off for read-only contexts.
+ * @param props - {@link ITronAddressProps}; `address` is required, and a
+ *        pre-resolved `label` replaces the truncated display when supplied.
  * @returns The address chip element.
  */
 export function TronAddress(props: ITronAddressProps) {
