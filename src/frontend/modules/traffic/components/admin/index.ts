@@ -8,6 +8,7 @@
 
 export { VisitorsExplorer } from './VisitorsExplorer';
 export { AnalyticsDashboard } from './AnalyticsDashboard';
+export { GoalsDashboard } from './GoalsDashboard';
 export { GscSettings } from './GscSettings';
 export { IgnoredUsers } from './IgnoredUsers';
 export { BotRules } from './BotRules';

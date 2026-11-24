@@ -304,6 +304,163 @@ export interface ITrafficEventListPage {
     hasMore: boolean;
 }
 
+/**
+ * The `candidate_uid` a goal is stored under when it has no tid: the visitor
+ * had not allowed analytics, or their browser carried no `tronrelic_tid`
+ * cookie. The column is a non-nullable `UUID` in the sort key, so the all-zero
+ * UUID stands in for "none"; no minted tid can take this value.
+ */
+export const NO_TID = '00000000-0000-0000-0000-000000000000';
+
+/**
+ * Single row written to `traffic_goal_events` (migration 024).
+ *
+ * Field names match the column names so the row passes straight to
+ * `ClickHouseService.insert()`. The request-derived fields are built by the
+ * same `buildTrafficEvent` the page beacon uses, so a goal's bot class,
+ * country, device, network, and address hashes mean exactly what they mean on
+ * a `page` row.
+ */
+export interface ITrafficGoalEvent {
+    /** Server wall clock when the goal was recorded. */
+    timestamp: Date;
+    /** The visitor's `tronrelic_tid`, or {@link NO_TID} when there is none. */
+    candidate_uid: string;
+    /** Better Auth user id when logged in with analytics consent, else `null`. */
+    user_id: string | null;
+    /** The validated `<owner>:<action>` goal name. */
+    goal: string;
+    /** The owner's properties, validated and copied. */
+    properties: Record<string, string>;
+    /**
+     * Path of the page the goal happened on, read from the request's
+     * same-site `Referer`, or `''` when that cannot be determined.
+     */
+    path: string;
+    /** 1 when the visitor allowed analytics; 0 for an anonymous goal. */
+    analytics_consent: 0 | 1;
+    /** Bot class from the classifier and the operator's bot rules. */
+    bot_class: BotClass | null;
+    /** Id of the bot rule that matched, else `null`. */
+    bot_rule: string | null;
+    /** Stored country: Cloudflare's when attested, else the local GeoIP lookup. */
+    country: string | null;
+    /** Device category derived from the User-Agent. */
+    device: string;
+    /** Autonomous system number of the source network, else `null`. */
+    asn: number | null;
+    /** Keyed hash of the client address; `null` for an anonymous goal. */
+    ip_hash: string | null;
+    /** Keyed hash of the client's network; `null` for an anonymous goal. */
+    subnet_hash: string | null;
+}
+
+/** One goal's totals over a window, as {@link TrafficService.getGoalSummary} returns it. */
+export interface ITrafficGoalSummaryRow {
+    /** The goal name, such as `resource-markets:outbound-click`. */
+    goal: string;
+    /** Every goal event in the window, including anonymous ones. */
+    events: number;
+    /**
+     * Distinct visitors who reached the goal: tids that recorded the goal and
+     * meet the Visitor rule (a `page` event in the same window).
+     */
+    visitors: number;
+    /** Events with no tid, from visitors without analytics consent or without a cookie. */
+    unattributedEvents: number;
+    /** Property keys seen on this goal in the window, sorted, for choosing a breakdown. */
+    propertyKeys: string[];
+}
+
+/** One value of one goal property, as {@link TrafficService.getGoalPropertyBreakdown} returns it. */
+export interface ITrafficGoalPropertyBucket {
+    /** The property's value, or `null` for events that did not set it. */
+    value: string | null;
+    /** Goal events carrying this value. */
+    events: number;
+    /** Distinct visitors among them, by the Visitor rule. */
+    visitors: number;
+}
+
+/** Which session attribute {@link TrafficService.getGoalAttribution} groups by. */
+export type TrafficGoalAttributionDimension = 'source' | 'landing-page';
+
+/**
+ * Why a goal event landed in its attribution bucket.
+ *
+ * - `session` — credited to the session it happened in.
+ * - `unattributed` — no tid, so there is no session to look up.
+ * - `no-session` — has a tid, but no `page` session of that tid was running
+ *   when the goal fired (for example a client that never sent page beacons).
+ * - `resumed-session` — the session it happened in was a tab resumed after
+ *   the 30-minute gap, which the source and landing-page panels exclude
+ *   because nobody arrived from anywhere.
+ */
+export type TrafficGoalAttributionKind = 'session' | 'unattributed' | 'no-session' | 'resumed-session';
+
+/** Bucket label for each kind of goal event that has no session source or landing page. */
+export const GOAL_ATTRIBUTION_LABELS: Readonly<Record<Exclude<TrafficGoalAttributionKind, 'session'>, string>> = {
+    'unattributed': '(unattributed)',
+    'no-session': '(no session)',
+    'resumed-session': '(resumed session)'
+};
+
+/** One attribution bucket, as {@link TrafficService.getGoalAttribution} returns it. */
+export interface ITrafficGoalAttributionBucket {
+    /**
+     * The session's source or landing path for a `session` bucket, otherwise
+     * the {@link GOAL_ATTRIBUTION_LABELS} label for its kind.
+     */
+    key: string;
+    /** Why the events landed here. */
+    kind: TrafficGoalAttributionKind;
+    /** Goal events in the bucket. */
+    events: number;
+    /** Distinct visitors among them, by the Visitor rule. */
+    visitors: number;
+    /** Distinct sessions the goal happened in; 0 outside `session` buckets. */
+    sessions: number;
+    /** Acquisition channel of a source bucket, else `null`. */
+    channel: TrafficChannel | null;
+}
+
+/** One `traffic_goal_events` row as the per-event read returns it. */
+export interface ITrafficGoalEventListRow {
+    /** ISO-8601 UTC time the goal was recorded. */
+    timestamp: string;
+    /** The goal name. */
+    goal: string;
+    /** The owner's properties, as written. */
+    properties: Record<string, string>;
+    /** The browser's tid, or `null` for an anonymous goal. */
+    tid: string | null;
+    /** Whether the row carried an account id. The id itself is not returned. */
+    loggedIn: boolean;
+    /** Whether the visitor allowed analytics. */
+    analyticsConsent: boolean;
+    /** Stored country. */
+    country: string | null;
+    /** Device category. */
+    device: string;
+    /** Bot class, or `null` when none was recorded. */
+    botClass: string | null;
+    /** Autonomous system number, or `null` when not recorded. */
+    asn: number | null;
+    /** The page the goal happened on, or `''` when unknown. */
+    path: string;
+    /** Keyed hash of the client address, `null` for an anonymous goal. */
+    ipHash: string | null;
+    /** Keyed hash of the client's network, `null` for an anonymous goal. */
+    subnetHash: string | null;
+}
+
+/** A page of {@link ITrafficGoalEventListRow} rows. */
+export interface ITrafficGoalEventListPage {
+    rows: ITrafficGoalEventListRow[];
+    /** True when at least one more row matched beyond this page. */
+    hasMore: boolean;
+}
+
 /** Which column {@link TrafficService.getTrafficEventSources} groups events by. */
 export type TrafficSourceKey = 'ip' | 'subnet' | 'asn';
 
@@ -1009,6 +1166,22 @@ const TABLE_NAME = TRAFFIC_EVENTS_TABLE_NAME;
  */
 export const REDIRECT_EVENTS_TABLE_NAME = 'redirect_events';
 
+/**
+ * ClickHouse table holding one row per goal a visitor reached (migration
+ * 024). A sibling of `traffic_events` so no visitor or pageview read changes
+ * meaning; goals are joined to page sessions at read time.
+ */
+export const TRAFFIC_GOAL_EVENTS_TABLE_NAME = 'traffic_goal_events';
+
+/**
+ * How far before a window the goal attribution read looks for the session a
+ * goal happened in. A goal early in the window often belongs to a session
+ * that started before it, and the usual one-gap widening would cut such a
+ * session's start off and misread its entry hit. A day covers any realistic
+ * reading session; a longer one is read from its first hit inside the scan.
+ */
+const GOAL_SESSION_LOOKBACK_SECONDS = 24 * 60 * 60;
+
 /** Max rows returned by the per-pattern redirect breakdown. */
 const REDIRECT_PATTERN_LIMIT = 100;
 
@@ -1057,6 +1230,33 @@ function sourceBucketExpr(refererColumn: string, utmSourceColumn: string, source
         ${utmSourceColumn} IS NOT NULL AND ${utmSourceColumn} != '', lower(${utmSourceColumn}),
         ${sourceAppColumn} IS NOT NULL AND ${sourceAppColumn} != '', ${sourceAppColumn},
         'direct')`;
+}
+
+/**
+ * Classify a session-scoped source bucket into an acquisition channel.
+ *
+ * The bucket name is a domain or a `utm_source`, and the classifier's domain
+ * lists match either (ChatGPT tags its links with its own domain). The stored
+ * write-time `channel` is not reachable here: it lives on `bootstrap` rows,
+ * and a session-scoped read groups `page` rows. The cost is paid detection —
+ * an auto-tagged ad click carries a `gclid` whose value is never stored, so it
+ * reads `organic` off its google.com referrer. A bucket named by its source
+ * app (`douyin`) is not a domain, so it is passed as no referrer; otherwise
+ * the classifier reads the app's name as a referrer and files the bucket
+ * under referral before it reaches the source app. Shared by the source panel
+ * and the goal attribution read so a bucket badges the same in both.
+ *
+ * @param source - The bucket name from {@link sourceBucketExpr}.
+ * @param medium - A `utm_medium` from one of the bucket's referrer-less sessions, else null.
+ * @param app - A `source_app` from one of the bucket's referrer-less sessions, else null.
+ * @returns The bucket's channel.
+ */
+function sourceBucketChannel(source: string, medium: string | null, app: string | null): TrafficChannel {
+    return classifyChannel({
+        refererDomain: source === 'direct' || (app !== null && source === app) ? null : source,
+        utmMedium: medium,
+        sourceApp: app
+    });
 }
 
 /**
@@ -1324,6 +1524,31 @@ export class TrafficService {
         this.clickhouse.insert(REDIRECT_EVENTS_TABLE_NAME, [row]).catch((error) => {
             this.logger.warn({ error, pattern: input.pattern }, 'Failed to record redirect hit');
         });
+    }
+
+    /**
+     * Record one goal event in `traffic_goal_events`.
+     *
+     * Awaited rather than fire-and-forget, because `ITrafficGoals.recordGoal`
+     * promises to resolve once the event is handed to the store. With the
+     * async-insert settings `ClickHouseService` uses, that is the moment the
+     * server buffers the row, so the caller does not wait for a flush. A
+     * storage failure is logged and swallowed: the caller is usually serving
+     * the visitor a redirect, and a lost analytics row must not break it.
+     * Without ClickHouse this resolves without recording, as the contract says.
+     *
+     * @param event - The built goal row, from `buildTrafficGoalEvent`.
+     * @returns Resolves once the insert is accepted or has failed and been logged.
+     */
+    async recordGoalEvent(event: ITrafficGoalEvent): Promise<void> {
+        if (this.clickhouse) {
+            const row: Record<string, unknown> = { ...event, timestamp: formatClickHouseDateTime64Utc(event.timestamp) };
+            try {
+                await this.clickhouse.insert(TRAFFIC_GOAL_EVENTS_TABLE_NAME, [row]);
+            } catch (error) {
+                this.logger.warn({ error, goal: event.goal }, 'Failed to record goal event');
+            }
+        }
     }
 
     /**
@@ -2020,12 +2245,17 @@ export class TrafficService {
      * visitor must have a *human* page event. See the canonical-visitor note by
      * {@link SESSION_GAP_SECONDS} and {@link HUMAN_ROWS_FILTER}.
      *
+     * The goal reads apply the same rule to the tids on goal rows, so a goal's
+     * visitor count means what every other visitor count means.
+     *
      * @param windowClause - The timestamp window clause from {@link rangeParams}.
      * @param botFilter - The pre-built bot-filter fragment (may be empty).
-     * @returns A `candidate_uid IN (…)` fragment (no leading AND).
+     * @param column - The outer column holding the tid to test; `candidate_uid`
+     *   except where a join has renamed it.
+     * @returns A `<column> IN (…)` fragment (no leading AND).
      */
-    private pageVisitorMembership(windowClause: string, botFilter: string): string {
-        return `candidate_uid IN (
+    private pageVisitorMembership(windowClause: string, botFilter: string, column = 'candidate_uid'): string {
+        return `${column} IN (
             SELECT DISTINCT candidate_uid FROM ${TABLE_NAME}
             WHERE ${windowClause}${botFilter} AND event_type = 'page'
         )`;
@@ -2044,12 +2274,20 @@ export class TrafficService {
      *
      * @param range - Inclusive date window.
      * @param botFilter - Pre-built bot-filter fragment (may be empty).
+     * @param lookbackSeconds - How far before the window the scan starts. One
+     *   session gap for reads that count sessions starting in the window; the
+     *   goal attribution read passes a longer one because it looks up the
+     *   session already running when a goal fired.
      * @returns WHERE for {@link derivedSessionsSql}, the HAVING fragment,
      *   and the bound params (`sinceWidened` + the normal range params).
      */
-    private sessionRangeParams(range: IAnalyticsDateRange, botFilter: string): { where: string; having: string; params: Record<string, unknown> } {
+    private sessionRangeParams(
+        range: IAnalyticsDateRange,
+        botFilter: string,
+        lookbackSeconds = SESSION_GAP_SECONDS
+    ): { where: string; having: string; params: Record<string, unknown> } {
         const { params } = this.rangeParams(range);
-        params.sinceWidened = formatClickHouseDateTime64Utc(new Date(range.since.getTime() - SESSION_GAP_SECONDS * 1000));
+        params.sinceWidened = formatClickHouseDateTime64Utc(new Date(range.since.getTime() - lookbackSeconds * 1000));
         let where = 'timestamp >= parseDateTimeBestEffort({sinceWidened:String})';
         if (range.until) {
             where += ' AND timestamp <= parseDateTimeBestEffort({until:String})';
@@ -2340,24 +2578,9 @@ export class TrafficService {
                 source: r.source,
                 visitors: Number(r.visitors),
                 count: Number(r.count),
-                // The bucket name is a domain or a `utm_source`, and the
-                // classifier's domain lists match either (ChatGPT tags its
-                // links with its own domain). The stored write-time `channel`
-                // is not reachable here: it lives on `bootstrap` rows, and a
-                // session-scoped read groups `page` rows. The cost is paid
-                // detection — an auto-tagged ad click carries a `gclid` whose
-                // value is never stored, so it reads `organic` off its
-                // google.com referrer. Campaign Performance stays
-                // bootstrap-attributed and remains the surface that sees paid
-                // tagging. A bucket named by its source app (`douyin`) is not
-                // a domain, so it is passed as no referrer; otherwise the
-                // classifier reads the app's name as a referrer and files the
-                // bucket under referral before it reaches the source app.
-                channel: classifyChannel({
-                    refererDomain: r.source === 'direct' || (r.app !== null && r.source === r.app) ? null : r.source,
-                    utmMedium: r.medium,
-                    sourceApp: r.app
-                })
+                // Campaign Performance stays bootstrap-attributed and remains
+                // the surface that sees paid tagging; see sourceBucketChannel.
+                channel: sourceBucketChannel(r.source, r.medium, r.app)
             }));
         } catch (error) {
             this.logger.warn({ error }, 'Failed to read traffic sources');
@@ -3793,6 +4016,342 @@ export class TrafficService {
             this.logger.warn({ error, subject }, 'Failed to read page hits');
             return [];
         }
+    }
+
+    /**
+     * The condition a goal row's tid must meet to count as a visitor.
+     *
+     * A goal visitor follows the Visitor rule of the Metrics Contract: a tid
+     * with a `page` event in the same window. That keeps a client that calls a
+     * goal endpoint directly without ever running the site's JavaScript out of
+     * every visitor figure, the same way it is kept out of the dashboard's. A
+     * goal with no tid ({@link NO_TID}) is never a visitor.
+     *
+     * @param windowClause - The goal read's {@link rangeParams} clause, reused
+     *   so the membership window, ignore list, and country match the goal scan.
+     * @param botFilter - The read's bot-filter fragment, so with bots excluded
+     *   a visitor must have a human page event.
+     * @param column - The outer column holding the goal's tid.
+     * @returns A boolean SQL expression.
+     */
+    private goalVisitorPredicate(windowClause: string, botFilter: string, column = 'candidate_uid'): string {
+        return `${column} != toUUID({noTid:String}) AND ${this.pageVisitorMembership(windowClause, botFilter, column)}`;
+    }
+
+    /**
+     * Totals for every goal reached in a window: events, visitors, and how
+     * many events had no tid to attribute.
+     *
+     * Goes through {@link rangeParams}, so the ignore list and country scope
+     * apply exactly as they do to page views. The ignore list can only drop
+     * goals that carry a tid; anonymous goals were already checked against it
+     * when they were recorded.
+     *
+     * @param range - Inclusive window, optionally narrowed to one country.
+     * @param excludeBots - Restrict to human-classified goal rows (NULL kept).
+     * @param limit - Most goals to return, by events descending.
+     * @param goal - Return only this goal's row, so a caller asking about one
+     *   goal is never cut off by `limit`. Omit for every goal.
+     * @returns One row per goal name, or `[]` without ClickHouse or on failure.
+     */
+    async getGoalSummary(range: IAnalyticsDateRange, excludeBots = false, limit = 50, goal?: string): Promise<ITrafficGoalSummaryRow[]> {
+        let summary: ITrafficGoalSummaryRow[] = [];
+        const clickhouse = this.clickhouse;
+        if (clickhouse) {
+            const { clause, params } = this.rangeParams(range);
+            const botFilter = excludeBots ? ` AND ${HUMAN_ROWS_FILTER}` : '';
+            const goalFilter = goal ? ' AND goal = {goal:String}' : '';
+            const sql = `
+                SELECT
+                    goal,
+                    count() AS events,
+                    uniqExactIf(candidate_uid, ${this.goalVisitorPredicate(clause, botFilter)}) AS visitors,
+                    countIf(candidate_uid = toUUID({noTid:String})) AS unattributed_events,
+                    groupUniqArrayArray(32)(mapKeys(properties)) AS property_keys
+                FROM ${TRAFFIC_GOAL_EVENTS_TABLE_NAME}
+                WHERE ${clause}${goalFilter}${botFilter}
+                GROUP BY goal
+                ORDER BY events DESC, goal ASC
+                LIMIT {goalLimit:UInt32}
+            `;
+            try {
+                const rows = await clickhouse.query<{
+                    goal: string; events: string | number; visitors: string | number;
+                    unattributed_events: string | number; property_keys: string[];
+                }>(sql, { ...params, noTid: NO_TID, goalLimit: limit, ...(goal ? { goal } : {}) });
+                summary = rows.map(r => ({
+                    goal: r.goal,
+                    events: Number(r.events),
+                    visitors: Number(r.visitors),
+                    unattributedEvents: Number(r.unattributed_events),
+                    propertyKeys: [...(r.property_keys ?? [])].sort()
+                }));
+            } catch (error) {
+                this.logger.warn({ error }, 'Failed to read goal summary');
+            }
+        }
+        return summary;
+    }
+
+    /**
+     * One goal broken down by the values of one of its properties, such as
+     * which market an outbound click pointed at.
+     *
+     * Events that did not set the property are grouped under a `null` value
+     * rather than dropped, so the buckets always add up to the goal's total.
+     * The key is bound as a parameter; the caller validates it against the
+     * property-key rule first.
+     *
+     * @param range - Inclusive window, optionally narrowed to one country.
+     * @param goal - The goal name.
+     * @param propertyKey - The property to group by.
+     * @param excludeBots - Restrict to human-classified goal rows (NULL kept).
+     * @param limit - Most values to return, by events descending.
+     * @returns One bucket per value, or `[]` without ClickHouse or on failure.
+     */
+    async getGoalPropertyBreakdown(
+        range: IAnalyticsDateRange,
+        goal: string,
+        propertyKey: string,
+        excludeBots = false,
+        limit = 20
+    ): Promise<ITrafficGoalPropertyBucket[]> {
+        let buckets: ITrafficGoalPropertyBucket[] = [];
+        const clickhouse = this.clickhouse;
+        if (clickhouse) {
+            const { clause, params } = this.rangeParams(range);
+            const botFilter = excludeBots ? ` AND ${HUMAN_ROWS_FILTER}` : '';
+            const sql = `
+                SELECT
+                    properties[{propertyKey:String}] AS value,
+                    count() AS events,
+                    uniqExactIf(candidate_uid, ${this.goalVisitorPredicate(clause, botFilter)}) AS visitors
+                FROM ${TRAFFIC_GOAL_EVENTS_TABLE_NAME}
+                WHERE ${clause} AND goal = {goal:String}${botFilter}
+                GROUP BY value
+                ORDER BY events DESC, value ASC
+                LIMIT {goalLimit:UInt32}
+            `;
+            try {
+                const rows = await clickhouse.query<{ value: string; events: string | number; visitors: string | number }>(
+                    sql,
+                    { ...params, noTid: NO_TID, goal, propertyKey, goalLimit: limit }
+                );
+                // A Map lookup for a missing key yields '' in ClickHouse.
+                buckets = rows.map(r => ({
+                    value: r.value === '' ? null : r.value,
+                    events: Number(r.events),
+                    visitors: Number(r.visitors)
+                }));
+            } catch (error) {
+                this.logger.warn({ error, goal, propertyKey }, 'Failed to read goal property breakdown');
+            }
+        }
+        return buckets;
+    }
+
+    /**
+     * One goal attributed to the session it happened in, grouped by that
+     * session's source or landing page.
+     *
+     * A goal belongs to the session of the same tid whose span contains it:
+     * the latest session that started at or before the goal (an `ASOF` join on
+     * `session_start`), provided the goal came less than one session gap after
+     * that session's last page hit. Sessions are built by
+     * {@link derivedSessionsSql} and named by {@link sessionSourceExpr}, the
+     * same definitions the source and landing-page panels use, so a goal's
+     * source is the source that panel would show for its session.
+     *
+     * Every goal event lands in exactly one bucket, so the buckets add up to
+     * the goal's total. Those with no session source or landing page get an
+     * explicit bucket instead of vanishing; see {@link TrafficGoalAttributionKind}.
+     *
+     * The goal scan uses {@link rangeParams}; the session scan uses
+     * {@link sessionRangeParams} with a {@link GOAL_SESSION_LOOKBACK_SECONDS}
+     * lookback and no session-start filter, because the session a goal fired
+     * in may have started before the window. Both apply the ignore list,
+     * country scope, and bot filter.
+     *
+     * @param range - Inclusive window, optionally narrowed to one country.
+     * @param goal - The goal name.
+     * @param dimension - Group by the session's `source` or its `landing-page`.
+     * @param excludeBots - Restrict goal rows and session page rows to humans.
+     * @param limit - Most session buckets to return; the special buckets are
+     *   always included.
+     * @returns Session buckets by events descending, then the special buckets,
+     *   or `[]` without ClickHouse or on failure.
+     */
+    async getGoalAttribution(
+        range: IAnalyticsDateRange,
+        goal: string,
+        dimension: TrafficGoalAttributionDimension,
+        excludeBots = false,
+        limit = 20
+    ): Promise<ITrafficGoalAttributionBucket[]> {
+        let buckets: ITrafficGoalAttributionBucket[] = [];
+        const clickhouse = this.clickhouse;
+        if (clickhouse) {
+            const botFilter = excludeBots ? ` AND ${HUMAN_ROWS_FILTER}` : '';
+            const goalScope = this.rangeParams(range);
+            const sessionWindow = this.sessionRangeParams(range, botFilter, GOAL_SESSION_LOOKBACK_SECONDS);
+            const siteHost = await this.resolveSiteHost();
+            const arrival = this.acquisitionSessionFilter(siteHost);
+            const keyExpr = dimension === 'source' ? this.sessionSourceExpr() : 'entry_path';
+            // Special buckets sort first so the LIMIT can never cut them off;
+            // the rows are put back in display order below. `matched` is read
+            // through coalesce so an unmatched goal reads as unmatched whether
+            // the server fills a missing join row with defaults or with NULL
+            // (`join_use_nulls`).
+            const sql = `
+                SELECT
+                    multiIf(
+                        goal_uid = toUUID({noTid:String}), 'unattributed',
+                        coalesce(matched, 0) = 0 OR goal_at >= session_end + INTERVAL ${SESSION_GAP_SECONDS} SECOND, 'no-session',
+                        ${arrival ? `NOT ${arrival}` : '0'}, 'resumed-session',
+                        'session') AS kind,
+                    if(kind = 'session', ${keyExpr}, '') AS bucket,
+                    count() AS events,
+                    uniqExactIf(goal_uid, ${this.goalVisitorPredicate(goalScope.clause, botFilter, 'goal_uid')}) AS visitors,
+                    uniqExactIf(tuple(candidate_uid, session_seq), kind = 'session') AS sessions,
+                    anyIf(entry_utm_medium, kind = 'session' AND (entry_referer IS NULL OR entry_referer = '')) AS medium,
+                    anyIf(entry_source_app, kind = 'session' AND (entry_referer IS NULL OR entry_referer = '')) AS app
+                FROM (
+                    SELECT candidate_uid AS goal_uid, timestamp AS goal_at
+                    FROM ${TRAFFIC_GOAL_EVENTS_TABLE_NAME}
+                    WHERE ${goalScope.clause} AND goal = {goal:String}${botFilter}
+                ) AS g
+                ASOF LEFT JOIN (
+                    SELECT *, 1 AS matched
+                    FROM (${this.derivedSessionsSql(sessionWindow.where)})
+                ) AS s
+                ON g.goal_uid = s.candidate_uid AND g.goal_at >= s.session_start
+                GROUP BY kind, bucket
+                ORDER BY kind = 'session' ASC, events DESC, bucket ASC
+                LIMIT {goalLimit:UInt32}
+            `;
+            try {
+                const rows = await clickhouse.query<{
+                    kind: TrafficGoalAttributionKind; bucket: string; events: string | number;
+                    visitors: string | number; sessions: string | number; medium: string | null; app: string | null;
+                }>(sql, {
+                    ...goalScope.params,
+                    ...sessionWindow.params,
+                    ...(siteHost ? { siteHost } : {}),
+                    noTid: NO_TID,
+                    goal,
+                    goalLimit: limit + Object.keys(GOAL_ATTRIBUTION_LABELS).length
+                });
+                const mapped = rows.map(r => ({
+                    key: r.kind === 'session' ? r.bucket : GOAL_ATTRIBUTION_LABELS[r.kind],
+                    kind: r.kind,
+                    events: Number(r.events),
+                    visitors: Number(r.visitors),
+                    sessions: Number(r.sessions),
+                    channel: r.kind === 'session' && dimension === 'source'
+                        ? sourceBucketChannel(r.bucket, r.medium || null, r.app || null)
+                        : null
+                }));
+                const sessionBuckets = mapped
+                    .filter(b => b.kind === 'session')
+                    .sort((a, b) => b.events - a.events || a.key.localeCompare(b.key))
+                    .slice(0, limit);
+                buckets = [...sessionBuckets, ...mapped.filter(b => b.kind !== 'session')];
+            } catch (error) {
+                this.logger.warn({ error, goal, dimension }, 'Failed to read goal attribution');
+            }
+        }
+        return buckets;
+    }
+
+    /**
+     * List goal rows one by one, for diagnosing who reached a goal.
+     *
+     * Shares {@link eventFilterClause} with the `traffic_events` per-event
+     * read, so `ipHash`, `subnetHash`, `asn`, `botClass`, `tid`, and
+     * `pathPrefix` select goal rows the same way they select page rows. The
+     * caller must not set `filter.eventType`, which this table does not have.
+     * Sorted on the full sort key so offset paging is stable.
+     *
+     * @param range - Inclusive window, plus an optional country.
+     * @param filter - Validated filters, without `eventType`.
+     * @param goal - Keep only this goal, or every goal when omitted.
+     * @param limit - Rows to return; the caller caps it.
+     * @param offset - Rows to skip.
+     * @param order - `newest` (the default) or `oldest` first.
+     * @returns The page of rows and whether more matched; empty without
+     *   ClickHouse or on failure.
+     */
+    async listGoalEvents(
+        range: IAnalyticsDateRange,
+        filter: ITrafficEventFilter,
+        goal: string | undefined,
+        limit: number,
+        offset: number,
+        order: 'newest' | 'oldest' = 'newest'
+    ): Promise<ITrafficGoalEventListPage> {
+        let page: ITrafficGoalEventListPage = { rows: [], hasMore: false };
+        const clickhouse = this.clickhouse;
+        if (clickhouse) {
+            const { clause, params } = this.rangeParams(range);
+            const filters = this.eventFilterClause({ ...filter, eventType: undefined });
+            const goalFragment = goal ? ' AND goal = {fGoal:String}' : '';
+            const direction = order === 'oldest' ? 'ASC' : 'DESC';
+            const sql = `
+                SELECT
+                    timestamp,
+                    goal,
+                    properties,
+                    candidate_uid,
+                    user_id IS NOT NULL AS logged_in,
+                    analytics_consent,
+                    country,
+                    device,
+                    bot_class,
+                    asn,
+                    path,
+                    ip_hash,
+                    subnet_hash
+                FROM ${TRAFFIC_GOAL_EVENTS_TABLE_NAME}
+                WHERE ${clause}${filters.fragment}${goalFragment}
+                ORDER BY timestamp ${direction}, candidate_uid ${direction}
+                LIMIT {pageLimit:UInt32} OFFSET {pageOffset:UInt32}
+            `;
+            try {
+                const rows = await clickhouse.query<{
+                    timestamp: string; goal: string; properties: Record<string, string> | null;
+                    candidate_uid: string; logged_in: number | boolean; analytics_consent: number;
+                    country: string | null; device: string; bot_class: string | null; asn: number | null;
+                    path: string; ip_hash: string | null; subnet_hash: string | null;
+                }>(sql, {
+                    ...params,
+                    ...filters.params,
+                    ...(goal ? { fGoal: goal } : {}),
+                    pageLimit: limit + 1,
+                    pageOffset: offset
+                });
+                page = {
+                    rows: rows.slice(0, limit).map(row => ({
+                        timestamp: clickHouseDateToIso(row.timestamp),
+                        goal: row.goal,
+                        properties: row.properties ?? {},
+                        tid: row.candidate_uid === NO_TID ? null : row.candidate_uid,
+                        loggedIn: Boolean(Number(row.logged_in)),
+                        analyticsConsent: Number(row.analytics_consent) === 1,
+                        country: row.country,
+                        device: row.device,
+                        botClass: row.bot_class,
+                        asn: row.asn === null ? null : Number(row.asn),
+                        path: row.path,
+                        ipHash: row.ip_hash,
+                        subnetHash: row.subnet_hash
+                    })),
+                    hasMore: rows.length > limit
+                };
+            } catch (error) {
+                this.logger.warn({ error, filter, goal, limit, offset }, 'Failed to list goal events');
+            }
+        }
+        return page;
     }
 }
 

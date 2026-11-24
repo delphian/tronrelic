@@ -54,7 +54,11 @@ export {
     adminGetGscKeywordTrend,
     // Crawler analytics functions
     adminGetBotTrend,
-    adminGetBotPaths
+    adminGetBotPaths,
+    // Goal functions
+    adminGetGoals,
+    adminGetGoalProperties,
+    adminGetGoalAttribution
 } from './client';
 
 export type {
@@ -106,5 +110,11 @@ export type {
     IRedirectRuleInput,
     IRedirectAnalytics,
     IRedirectTrendPoint,
-    IRedirectPatternStat
+    IRedirectPatternStat,
+    ITrafficGoalSummary,
+    ITrafficGoalPropertyBucket,
+    ITrafficGoalAttributionBucket,
+    GoalAttributionDimension,
+    GoalAttributionKind,
+    IGoalReadOptions
 } from './client';

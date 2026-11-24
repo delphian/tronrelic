@@ -1428,6 +1428,125 @@ export async function adminGetRedirectAnalytics(
 }
 
 // ============================================================================
+// Goals
+// ============================================================================
+
+/**
+ * One goal's totals for the window. Mirrors the backend
+ * `ITrafficGoalSummaryRow`: a goal is a visitor action another component
+ * reports through the `'traffic-goals'` service, such as a click on a link
+ * to a rental market.
+ */
+export interface ITrafficGoalSummary {
+    /** The goal name, such as `resource-markets:outbound-click`. */
+    goal: string;
+    /** Every goal event in the window, anonymous ones included. */
+    events: number;
+    /** Distinct visitors who reached it, by the dashboard's Visitor rule. */
+    visitors: number;
+    /** Events with no tid: visitors without analytics consent or without a cookie. */
+    unattributedEvents: number;
+    /** Property keys the goal carried in the window, for the breakdown picker. */
+    propertyKeys: string[];
+}
+
+/** One value of one goal property. `value` is null for events that did not set it. */
+export interface ITrafficGoalPropertyBucket {
+    value: string | null;
+    events: number;
+    visitors: number;
+}
+
+/** Which session attribute a goal is attributed by. */
+export type GoalAttributionDimension = 'source' | 'landing-page';
+
+/**
+ * Why a goal event landed in its attribution bucket: credited to its
+ * session, or one of the three buckets for goals with no session source.
+ */
+export type GoalAttributionKind = 'session' | 'unattributed' | 'no-session' | 'resumed-session';
+
+/** One attribution bucket. Mirrors the backend `ITrafficGoalAttributionBucket`. */
+export interface ITrafficGoalAttributionBucket {
+    /** Source or landing path for a `session` bucket, else the label of its kind. */
+    key: string;
+    kind: GoalAttributionKind;
+    events: number;
+    visitors: number;
+    /** Distinct sessions the goal happened in; 0 outside `session` buckets. */
+    sessions: number;
+    /** Acquisition channel of a source bucket, else null. */
+    channel: string | null;
+}
+
+/** Window and bot-filter options shared by the goal reads, as the global picker supplies them. */
+export interface IGoalReadOptions {
+    period: AnalyticsPeriod;
+    customRange?: ICustomDateRange;
+    excludeBots?: boolean;
+}
+
+/**
+ * Build the query parameters every goal read sends: the custom range when
+ * one is set, else the preset period, plus the bot filter.
+ *
+ * @param options - The window and bot filter from the page's global controls.
+ * @returns Query parameters for the analytics router.
+ */
+function goalWindowParams(options: IGoalReadOptions): Record<string, string> {
+    return {
+        ...(options.customRange ? { ...options.customRange } : { period: options.period }),
+        ...(options.excludeBots ? { bots: 'exclude' } : {})
+    };
+}
+
+/**
+ * List every goal reached in the window with its events and visitors.
+ *
+ * @param options - Window and bot filter.
+ * @returns One row per goal, most events first.
+ */
+export async function adminGetGoals(options: IGoalReadOptions): Promise<ITrafficGoalSummary[]> {
+    const response = await apiClient.get('/admin/users/analytics/goals', { params: goalWindowParams(options) });
+    return (response.data as { data?: ITrafficGoalSummary[] }).data ?? [];
+}
+
+/**
+ * Break one goal down by the values of one of its properties.
+ *
+ * @param goal - The goal name.
+ * @param key - The property key, one of the goal's `propertyKeys`.
+ * @param options - Window and bot filter.
+ * @returns One bucket per value, most events first.
+ */
+export async function adminGetGoalProperties(goal: string, key: string, options: IGoalReadOptions): Promise<ITrafficGoalPropertyBucket[]> {
+    const response = await apiClient.get('/admin/users/analytics/goals/properties', {
+        params: { ...goalWindowParams(options), goal, key }
+    });
+    return (response.data as { data?: ITrafficGoalPropertyBucket[] }).data ?? [];
+}
+
+/**
+ * Attribute one goal to the session it happened in, by that session's
+ * source or landing page.
+ *
+ * @param goal - The goal name.
+ * @param by - Group by session source or by landing page.
+ * @param options - Window and bot filter.
+ * @returns Session buckets by events, then the buckets for goals with no session source.
+ */
+export async function adminGetGoalAttribution(
+    goal: string,
+    by: GoalAttributionDimension,
+    options: IGoalReadOptions
+): Promise<ITrafficGoalAttributionBucket[]> {
+    const response = await apiClient.get('/admin/users/analytics/goals/attribution', {
+        params: { ...goalWindowParams(options), goal, by }
+    });
+    return (response.data as { data?: ITrafficGoalAttributionBucket[] }).data ?? [];
+}
+
+// ============================================================================
 // AI Tools (registry proxy)
 // ============================================================================
 

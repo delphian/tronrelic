@@ -7,6 +7,7 @@
 export {
     VisitorsExplorer,
     AnalyticsDashboard,
+    GoalsDashboard,
     GscSettings,
     IgnoredUsers,
     BotRules,

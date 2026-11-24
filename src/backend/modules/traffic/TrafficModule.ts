@@ -7,7 +7,9 @@
  * public traffic-event ingestion endpoints. Mounts
  * `/api/admin/users/{traffic,analytics}`, the public `/api/user/bootstrap`
  * (first touch) and `/api/user/track` (page navigation), and registers the
- * daily `gsc:fetch` job.
+ * daily `gsc:fetch` job. Publishes `'traffic-ignore-list'` and
+ * `'traffic-goals'`, the goal-recording service other components report
+ * visitor goals through.
  *
  * Analytics are keyed off the cookieless `tronrelic_tid`, independent of
  * identity.
@@ -27,6 +29,7 @@ import { GscArchive } from './services/GscArchive.js';
 import { TrafficService } from './services/traffic.service.js';
 import { IgnoredUsersService } from './services/ignored-users.service.js';
 import { TrafficIgnoreList } from './services/TrafficIgnoreList.js';
+import { TrafficGoalRecorder } from './services/TrafficGoalRecorder.js';
 import { BotRulesService } from './services/bot-rules.service.js';
 import { BotRuleAnalyticsService } from './services/bot-rule-analytics.service.js';
 import { createBotRuleCurationType } from './services/bot-rule-curation-type.js';
@@ -91,6 +94,13 @@ export interface ITrafficModuleDependencies {
 export const TRAFFIC_IGNORE_LIST_SERVICE = 'traffic-ignore-list';
 
 /**
+ * Service registry name for recording goal events (`ITrafficGoals`). Plugins
+ * cannot import this constant at runtime, so they use the same string literal;
+ * the traffic README records it.
+ */
+export const TRAFFIC_GOALS_SERVICE = 'traffic-goals';
+
+/**
  * Service registry name of the central curation queue. Spelled here rather
  * than imported from the curation module, which inits after this one, so the
  * traffic module does not depend on its code.
@@ -118,22 +128,25 @@ const TRAFFIC_SUBMENU_NAMESPACE = 'traffic';
 const TRAFFIC_SUBMENU_TABS: ReadonlyArray<{ label: string; tab: string; icon: string; order: number }> = [
     { label: 'Analytics', tab: 'analytics', icon: 'BarChart3', order: 0 },
     { label: 'Visitors', tab: 'visitors', icon: 'Users', order: 1 },
-    { label: 'Crawlers', tab: 'crawlers', icon: 'Bot', order: 2 },
-    { label: 'SEO', tab: 'seo', icon: 'Search', order: 3 },
-    { label: 'Redirects', tab: 'redirects', icon: 'CornerUpRight', order: 4 },
-    { label: 'AI', tab: 'ai', icon: 'Sparkles', order: 5 },
+    // Goals sits beside the visitor views because it answers the question
+    // they lead to: what those visitors went on to do, and where they came from.
+    { label: 'Goals', tab: 'goals', icon: 'Target', order: 2 },
+    { label: 'Crawlers', tab: 'crawlers', icon: 'Bot', order: 3 },
+    { label: 'SEO', tab: 'seo', icon: 'Search', order: 4 },
+    { label: 'Redirects', tab: 'redirects', icon: 'CornerUpRight', order: 5 },
+    { label: 'AI', tab: 'ai', icon: 'Sparkles', order: 6 },
     // Schedules, Database, and Logs put this module's job, its MongoDB
     // collections and ClickHouse tables, and its log entries on its own page,
     // so an operator looking into a stale Search Console fetch or a missing
     // bot label does not leave for /system/scheduler, /system/database, or
     // /system/logs and pick this module's rows out of the whole deployment's.
     // Each panel is a core component scoped to this module.
-    { label: 'Schedules', tab: 'schedules', icon: 'Clock', order: 6 },
-    { label: 'Database', tab: 'database', icon: 'Database', order: 7 },
-    { label: 'Logs', tab: 'logs', icon: 'ScrollText', order: 8 },
+    { label: 'Schedules', tab: 'schedules', icon: 'Clock', order: 7 },
+    { label: 'Database', tab: 'database', icon: 'Database', order: 8 },
+    { label: 'Logs', tab: 'logs', icon: 'ScrollText', order: 9 },
     // Settings sits last, after every tab that reports what the module is
     // doing, because it changes that state and is opened far less often.
-    { label: 'Settings', tab: 'settings', icon: 'Settings', order: 9 }
+    { label: 'Settings', tab: 'settings', icon: 'Settings', order: 10 }
 ];
 
 /**
@@ -186,6 +199,7 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
     private trafficService!: TrafficService;
     private ignoredUsersService!: IgnoredUsersService;
     private trafficIgnoreList!: TrafficIgnoreList;
+    private trafficGoalRecorder!: TrafficGoalRecorder;
     private botRulesService!: BotRulesService;
     private botRuleAnalytics!: BotRuleAnalyticsService;
     private redirectService!: RedirectService;
@@ -245,6 +259,18 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
         await this.botRulesService.createIndexes();
         await this.botRulesService.load();
         this.botRuleAnalytics = new BotRuleAnalyticsService(dependencies.clickhouse, this.logger);
+
+        // Goal recording for other components, published in run(). It shares
+        // the page beacon's bot rules and consent rule, and asks the ignore
+        // list only for goals from visitors without analytics consent, whose
+        // rows carry no tid to filter at read time.
+        this.trafficGoalRecorder = new TrafficGoalRecorder(
+            this.trafficService,
+            this.botRulesService,
+            dependencies.consent,
+            this.trafficIgnoreList,
+            this.logger
+        );
 
         // RedirectService — admin-managed legacy-URL 301/302 map. Rules live in
         // Mongo and are served to the edge middleware, so operators add
@@ -408,6 +434,13 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
         // visible only once the module is fully running.
         this.serviceRegistry.register(TRAFFIC_IGNORE_LIST_SERVICE, this.trafficIgnoreList);
         this.logger.info(`Ignore-list check published as '${TRAFFIC_IGNORE_LIST_SERVICE}'`);
+
+        // Publish goal recording so components that own a visitor action
+        // worth measuring (such as resource-markets' outbound market links)
+        // get it attributed with this module's rules instead of counting it
+        // themselves.
+        this.serviceRegistry.register(TRAFFIC_GOALS_SERVICE, this.trafficGoalRecorder);
+        this.logger.info(`Goal recording published as '${TRAFFIC_GOALS_SERVICE}'`);
 
         // Daily GSC fetch (3 AM). SchedulerService supports late registration.
         // Skipped without ClickHouse, where the fetch has nowhere to go, or

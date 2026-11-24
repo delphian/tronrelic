@@ -59,6 +59,11 @@ export function createAdminAnalyticsRouter(controller: TrafficController): Route
     router.get('/engagement', controller.getEngagementMetrics.bind(controller));
     router.get('/overview', controller.getOverview.bind(controller));
 
+    // Goals tab — goal events reported through the 'traffic-goals' service.
+    router.get('/goals', controller.getGoals.bind(controller));
+    router.get('/goals/properties', controller.getGoalProperties.bind(controller));
+    router.get('/goals/attribution', controller.getGoalAttribution.bind(controller));
+
     router.get('/ignored-users', controller.getIgnoredUsers.bind(controller));
     router.post('/ignored-users', controller.addIgnoredUser.bind(controller));
     router.delete('/ignored-users/:userId', controller.removeIgnoredUser.bind(controller));

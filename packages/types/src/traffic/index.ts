@@ -1,13 +1,15 @@
 /**
  * @fileoverview Barrel for the traffic domain contracts.
  *
- * Re-exports the published ignore-list contract, the campaign-tagging and
- * UTM-reading helpers, and the bot-rule contracts so the root types index can
- * surface them with explicit export lines.
+ * Re-exports the published ignore-list and goal-recording contracts, the
+ * campaign-tagging and UTM-reading helpers, and the bot-rule contracts so the
+ * root types index can surface them with explicit export lines.
  */
 
 export type { ITrafficIgnoreSubject } from './ITrafficIgnoreSubject.js';
 export type { ITrafficIgnoreList } from './ITrafficIgnoreList.js';
+export type { ITrafficGoal } from './ITrafficGoal.js';
+export type { ITrafficGoals } from './ITrafficGoals.js';
 export type { ICampaignParams } from './ICampaignParams.js';
 export type { IUtmParams } from './IUtmParams.js';
 export { appendCampaignParams } from './appendCampaignParams.js';
