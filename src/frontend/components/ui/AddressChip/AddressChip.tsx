@@ -3,43 +3,34 @@
  *
  * A wallet address and a smart contract address are the same base58 string, so
  * they share one chip: the truncated display, the tag underline and warning
- * marker, and the portaled tools menu. What differs between them is
- * configuration — which Tronscan page the explorer entry opens, which tool
- * pages the menu offers, and the wording of the menu entries. Each public
- * component passes an {@link IAddressChipKind} describing that, so a fix to the
- * chip lands in both at once instead of drifting between two copies.
+ * marker, and the wrench menu. What differs between them is configuration —
+ * which Tronscan page the explorer entry opens, which tool pages the menu
+ * offers, and the wording of the menu entries. Each public component passes an
+ * {@link IAddressChipKind} describing that, so a fix to the chip lands in both
+ * at once instead of drifting between two copies.
  *
- * Every chip shows exactly one icon after the address: the wrench. Copying the
- * address and opening it on Tronscan are the first two entries of the wrench
- * menu, followed by the tool pages and, for admins, the tag editor. Three icons
- * per address buried the surrounding data in dense rows, and callers turning
- * icons off to save space left the same address with different abilities on
- * different pages. The wrench is not optional, so every address everywhere
- * offers the same actions.
+ * Every chip shows exactly one icon after the address: the wrench from the
+ * shared `ChipToolsMenu`. Copying the address and opening it on Tronscan are
+ * the first two entries of its menu, followed by the tool pages and, for
+ * admins, the tag editor. Three icons per address buried the surrounding data
+ * in dense rows, and callers turning icons off to save space left the same
+ * address with different abilities on different pages. The wrench is not
+ * optional, so every address everywhere offers the same actions.
  *
  * The chip renders synchronously from its `address` prop (no async, no data
  * fetch), so it is SSR-first by construction: the truncated text is in the
- * server HTML and only the menu is user-triggered after hydration. It is a
- * `'use client'` component purely because the menu needs event handlers and a
- * click-outside listener.
- *
- * The tools menu renders in a `<body>` portal with viewport-fixed coordinates,
- * because an absolutely anchored menu is clipped inside any scrolling ancestor:
- * the shared `Table` wrapper sets `overflow-x: auto`, CSS turns the other axis
- * into `auto` too, and a menu opening below a row is cut at the table's edge.
+ * server HTML and only the menu is user-triggered after hydration.
  *
  * This component is internal to `components/ui/`. Callers render
  * `<TronAddress>` or `<TronContractAddress>`, never the chip directly.
  */
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
-import { createPortal } from 'react-dom';
-import { AlertTriangle, Check, Copy, ExternalLink, Wrench } from 'lucide-react';
-import { IconButton } from '../IconButton';
+import { useCallback, useMemo } from 'react';
+import { AlertTriangle } from 'lucide-react';
 import { Tooltip } from '../Tooltip';
 import { useModal } from '../ModalProvider';
-import { useCopyToClipboard } from '../../../lib/hooks/useCopyToClipboard';
+import { ChipToolsMenu, type ChipToolsMenuEntry } from '../ChipToolsMenu';
 // Deep imports rather than the module barrels: the address-tags barrel re-exports
 // its editor, which imports core UI primitives, so pulling the barrel in here
 // would close an import cycle through this file. The user barrel is skipped for
@@ -67,31 +58,6 @@ const TAG_EDIT_GROUP = 'admin';
  */
 const HEAD_CHARS = 4;
 const TAIL_CHARS = 4;
-
-/**
- * Minimum gap (px) to keep between the open tools menu and both its trigger and
- * the viewport edge. The menu flips above its trigger only when the space below
- * cannot fit the menu plus this breathing room.
- */
-const MENU_VIEWPORT_GAP_PX = 8;
-
-/**
- * Pixel size of the icons beside the Copy and Tronscan menu entries. Matches
- * the 14px inline-icon step the UI system uses for text at body-sm size, which
- * is what the menu rows are set in.
- */
-const MENU_ICON_PX = 14;
-
-/**
- * Viewport-fixed coordinates for the portaled tools menu, resolved from the
- * trigger's live bounding rect. Held in state (rather than derived in render)
- * because measuring requires the DOM, and `null` marks "not yet measured" so
- * the menu stays invisible instead of flashing at the origin.
- */
-interface IMenuPosition {
-    top: number;
-    left: number;
-}
 
 /**
  * What distinguishes one kind of address chip from another. Each public chip
@@ -174,203 +140,10 @@ export function AddressChip({
     className,
     kind
 }: IAddressChipProps) {
-    const [menuOpen, setMenuOpen] = useState(false);
-    const [menuPosition, setMenuPosition] = useState<IMenuPosition | null>(null);
-    const menuRef = useRef<HTMLDivElement | null>(null);
-    const menuListRef = useRef<HTMLDivElement | null>(null);
-    const triggerRef = useRef<HTMLButtonElement | null>(null);
-    /**
-     * Whether focus has already moved into the menu for this opening. The menu
-     * re-measures on every scroll and resize, so without this latch the focus
-     * effect below would drag focus back to the first entry each time the user
-     * scrolled the table under an open menu.
-     */
-    const focusMovedRef = useRef(false);
     const tags = useAddressTags(address);
     const { session } = useAuthSession();
     const modal = useModal();
-    const { copied, copy } = useCopyToClipboard(address);
     const canEditTags = session?.user?.groups?.includes(TAG_EDIT_GROUP) ?? false;
-    // Copy and explorer are always present, so the menu always has entries.
-    // The divider below them appears only when something follows it.
-    const hasForwardEntries = kind.forwardTools.length > 0 || canEditTags;
-
-    /**
-     * Close the menu and put focus back on the wrench, why: the entries live in
-     * a `<body>` portal, so an entry that unmounts itself leaves focus on a
-     * removed node and the browser falls back to `<body>`, making a keyboard
-     * user restart from the top of the page. Only the paths the user drove from
-     * inside the menu call this — Escape, choosing an entry, or tabbing out. An
-     * outside click deliberately does not, because focus belongs wherever the
-     * user just put it.
-     */
-    const closeMenu = useCallback((): void => {
-        setMenuOpen(false);
-        triggerRef.current?.focus();
-    }, []);
-
-    /**
-     * Close the tools popover on any click outside it and on Escape, why: an
-     * anchored menu that only dismisses via its own toggle is a well-known
-     * usability trap. The listeners attach only while the menu is open, so
-     * they are a no-op in the common closed state. Mirrors the Tooltip
-     * primitive's outside-pointer handling. The menu itself is portaled to
-     * `<body>`, so it is not a descendant of the anchor — both nodes are
-     * checked or clicking a tool link would dismiss before it navigates.
-     */
-    useEffect(() => {
-        if (!menuOpen) return undefined;
-        /**
-         * Dismiss the menu when a pointer lands outside both the trigger and
-         * the portaled menu.
-         *
-         * @param event - The document-level pointer event being tested.
-         */
-        function handlePointerDown(event: globalThis.PointerEvent): void {
-            const anchor = menuRef.current;
-            const menu = menuListRef.current;
-            const target = event.target as Node;
-            const inside = Boolean(anchor?.contains(target)) || Boolean(menu?.contains(target));
-            if (!inside) {
-                setMenuOpen(false);
-            }
-        }
-        /**
-         * Dismiss the menu on Escape so keyboard users are never trapped in it,
-         * handing focus back to the wrench they opened it from.
-         */
-        function handleKeyDown(event: globalThis.KeyboardEvent): void {
-            if (event.key === 'Escape') closeMenu();
-        }
-        document.addEventListener('pointerdown', handlePointerDown);
-        document.addEventListener('keydown', handleKeyDown);
-        return () => {
-            document.removeEventListener('pointerdown', handlePointerDown);
-            document.removeEventListener('keydown', handleKeyDown);
-        };
-    }, [closeMenu, menuOpen]);
-
-    /**
-     * Toggle the tools popover. Extracted so the toggle and the outside-click
-     * effect share one piece of state and the button stays a pure view.
-     */
-    const toggleMenu = useCallback((): void => {
-        setMenuOpen(prev => !prev);
-    }, []);
-
-    /**
-     * Keyboard movement between the menu entries, why: the menu is portaled, so
-     * the entries are not Tab-reachable from the wrench in any useful order and
-     * the arrow keys are the only traversal a menu offers. Enter and Space
-     * activate an entry natively, because every entry is a real button or link.
-     * Tab closes the menu instead of walking into the end of `<body>`, which is
-     * where the portal put these nodes. Bound to the menu rather than to each
-     * entry because React bubbles a portal's events through the component tree.
-     *
-     * @param event - Key event bubbling up from the focused entry.
-     */
-    const handleMenuKeyDown = useCallback((event: ReactKeyboardEvent<HTMLDivElement>): void => {
-        const items = Array.from(
-            menuListRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? []
-        );
-        const index = items.indexOf(document.activeElement as HTMLElement);
-        const last = items.length - 1;
-        let next: number | null = null;
-
-        if (event.key === 'ArrowDown') {
-            next = index >= last ? 0 : index + 1;
-        } else if (event.key === 'ArrowUp') {
-            next = index <= 0 ? last : index - 1;
-        } else if (event.key === 'Home') {
-            next = 0;
-        } else if (event.key === 'End') {
-            next = last;
-        } else if (event.key === 'Tab') {
-            event.preventDefault();
-            closeMenu();
-        }
-
-        if (next !== null && items.length > 0) {
-            // Suppress the page scroll the arrow keys would otherwise cause.
-            event.preventDefault();
-            items[next]?.focus();
-        }
-    }, [closeMenu]);
-
-    /**
-     * Resolve the open menu's viewport-fixed coordinates from its trigger, why:
-     * an absolutely-positioned menu cannot escape an ancestor's overflow box, and
-     * the chip's most common home is a scroll container — the shared `Table`
-     * wrapper sets `overflow-x: auto`, which per CSS also clips vertically, so a
-     * menu opening below a row was cut off at the table's edge no matter how much
-     * viewport space remained. The menu therefore renders in a `<body>` portal and
-     * is placed here: below the trigger when the viewport has room, flipped above
-     * it when not, and clamped so it never runs off the right edge.
-     *
-     * Runs in a layout effect so the position is set before paint (no flash at the
-     * origin), and re-measures on scroll and resize because a fixed menu does not
-     * follow its trigger the way an anchored one does. Scroll is captured so
-     * scrolling the *table* — not just the window — repositions too. Measuring
-     * needs the menu mounted, so this depends on `menuOpen`.
-     */
-    useLayoutEffect(() => {
-        if (!menuOpen) {
-            setMenuPosition(null);
-            return undefined;
-        }
-        /**
-         * Measure the trigger and the menu, then place the menu below or above
-         * the trigger and inside the viewport.
-         */
-        function updatePosition(): void {
-            const anchor = menuRef.current;
-            const menu = menuListRef.current;
-            if (!anchor || !menu) return;
-            const anchorRect = anchor.getBoundingClientRect();
-            const menuRect = menu.getBoundingClientRect();
-            const viewportHeight = document.documentElement.clientHeight;
-            const viewportWidth = document.documentElement.clientWidth;
-            const spaceBelow = viewportHeight - anchorRect.bottom;
-            const spaceAbove = anchorRect.top;
-            const fitsBelow = spaceBelow >= menuRect.height + MENU_VIEWPORT_GAP_PX;
-            const openAbove = !fitsBelow && spaceAbove > spaceBelow;
-            const top = openAbove
-                ? anchorRect.top - menuRect.height - MENU_VIEWPORT_GAP_PX
-                : anchorRect.bottom + MENU_VIEWPORT_GAP_PX;
-            const maxLeft = viewportWidth - menuRect.width - MENU_VIEWPORT_GAP_PX;
-            const left = Math.max(MENU_VIEWPORT_GAP_PX, Math.min(anchorRect.left, maxLeft));
-            setMenuPosition({ top, left });
-        }
-        updatePosition();
-        window.addEventListener('resize', updatePosition);
-        window.addEventListener('scroll', updatePosition, true);
-        return () => {
-            window.removeEventListener('resize', updatePosition);
-            window.removeEventListener('scroll', updatePosition, true);
-        };
-    }, [menuOpen]);
-
-    /**
-     * Move focus to the first entry once the menu is open and placed, why: the
-     * menu is portaled to `<body>`, so its entries sit at the very end of the
-     * tab order, and tabbing from the wrench walks every remaining control on
-     * the page first — hundreds of them in a dense address table. Copying the
-     * address and opening it on Tronscan used to be plain tab stops beside the
-     * chip, so the menu has to claim focus itself or both actions are
-     * mouse-only.
-     *
-     * Deferred until `menuPosition` resolves, because until then the menu
-     * renders hidden to avoid a flash at the viewport origin, and a hidden
-     * element cannot take focus.
-     */
-    useLayoutEffect(() => {
-        if (!menuOpen) {
-            focusMovedRef.current = false;
-        } else if (menuPosition && !focusMovedRef.current) {
-            focusMovedRef.current = true;
-            menuListRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
-        }
-    }, [menuOpen, menuPosition]);
 
     /**
      * Open the freeform tag editor for this address in the shared core modal.
@@ -380,10 +153,10 @@ export function AddressChip({
      * modal is closed by id from inside the editor, which also invalidates the
      * shared read cache so every chip on the page picks the change up. Tags are
      * keyed by address alone, so a wallet chip and a contract chip for the same
-     * string edit the same tags.
+     * string edit the same tags. The shared menu closes itself before calling
+     * this, so focus is already back on the wrench when the modal opens.
      */
     const openTagEditor = useCallback((): void => {
-        closeMenu();
         const id = `address-tags:${address}`;
         modal.open({
             id,
@@ -397,7 +170,28 @@ export function AddressChip({
                 />
             )
         });
-    }, [address, closeMenu, modal, tags]);
+    }, [address, modal, tags]);
+
+    /**
+     * Build the address chip's own menu entries below copy and explorer, why:
+     * those two are common to every chip, while the tool pages and the tag
+     * editor belong to addresses alone. Lists the tool pages for this kind of
+     * address, then the tag editor for an admin. Memoized so the menu does not
+     * see a new list on every tooltip hover.
+     *
+     * @returns The entries the shared menu shows under its divider.
+     */
+    const entries = useMemo((): ChipToolsMenuEntry[] => {
+        const list: ChipToolsMenuEntry[] = kind.forwardTools.map(tool => ({
+            key: tool.slug,
+            label: tool.label,
+            href: buildToolForwardUrl(tool.slug, address)
+        }));
+        if (canEditTags) {
+            list.push({ key: 'edit-tags', label: 'Edit tags', onSelect: openTagEditor });
+        }
+        return list;
+    }, [address, canEditTags, kind.forwardTools, openTagEditor]);
 
     const display = label ?? truncateAddress(address);
     const isTagged = tags.length > 0;
@@ -466,124 +260,15 @@ export function AddressChip({
                 </span>
             </Tooltip>
 
-            {/*
-              * Stop menu clicks from bubbling to an enclosing clickable row
-              * (`<Tr onClick>`), which would navigate or unmount the chip
-              * before the menu is usable. preventDefault is not called, so the
-              * menu links still navigate. The portaled menu is not a
-              * descendant of this wrapper, so it stops propagation itself —
-              * its own DOM position is under `<body>`, but React still bubbles
-              * its events through this tree.
-              */}
-            <div
-                className={styles.menu_anchor}
-                ref={menuRef}
-                onClick={event => event.stopPropagation()}
-            >
-                <IconButton
-                    ref={triggerRef}
-                    variant="primary"
-                    size="xs"
-                    aria-label={kind.toolsLabel}
-                    aria-haspopup="menu"
-                    aria-expanded={menuOpen}
-                    onClick={toggleMenu}
-                    className={styles.action}
-                >
-                    <Wrench size={14} />
-                </IconButton>
-                {menuOpen && createPortal(
-                    <div
-                        ref={menuListRef}
-                        className={styles.menu}
-                        role="menu"
-                        // Hidden until measured so the first paint never
-                        // shows the menu parked at the viewport origin.
-                        style={
-                            menuPosition
-                                ? { top: menuPosition.top, left: menuPosition.left }
-                                : { top: 0, left: 0, visibility: 'hidden' }
-                        }
-                        onClick={event => event.stopPropagation()}
-                        onKeyDown={handleMenuKeyDown}
-                    >
-                        {/*
-                          * Copy keeps the menu open, why: the entry's own text
-                          * and icon switch to the copied confirmation, and
-                          * closing the menu at once would hide the only sign
-                          * that the copy worked. The label sits in a polite
-                          * live region so a screen reader announces the change
-                          * while focus stays on the entry.
-                          */}
-                        <button
-                            type="button"
-                            role="menuitem"
-                            className={styles.menu_item}
-                            onClick={copy}
-                        >
-                            {copied
-                                ? <Check size={MENU_ICON_PX} aria-hidden="true" className={styles.menu_icon} />
-                                : <Copy size={MENU_ICON_PX} aria-hidden="true" className={styles.menu_icon} />}
-                            <span aria-live="polite">{copied ? kind.copiedLabel : kind.copyLabel}</span>
-                        </button>
-                        <a
-                            role="menuitem"
-                            className={styles.menu_item}
-                            href={`${kind.explorerBaseUrl}${address}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={closeMenu}
-                        >
-                            <ExternalLink size={MENU_ICON_PX} aria-hidden="true" className={styles.menu_icon} />
-                            <span>{kind.explorerLabel}</span>
-                        </a>
-                        {hasForwardEntries && (
-                            <div role="separator" className={styles.menu_divider} />
-                        )}
-                        {/*
-                          * The explorer entry and the tool forwards open a new
-                          * tab, why: the chip is an aside on whatever the user
-                          * is actually reading — a transaction feed, a ladder,
-                          * an admin table — and navigating in place destroys
-                          * that context (and any in-page state, filters, or
-                          * live stream behind it) for a lookup the user means
-                          * to glance at. A new tab also makes a forward work
-                          * when the target tool *is* the current page:
-                          * same-route client navigation would not remount the
-                          * tool, leaving its mount-only `?address=` pre-fill
-                          * stale and the menu entry looking inert.
-                          * `rel="noopener"` is mandatory with `_blank` —
-                          * without it the opened page gets `window.opener`.
-                          */}
-                        {kind.forwardTools.map(tool => (
-                            <a
-                                key={tool.slug}
-                                role="menuitem"
-                                className={styles.menu_item}
-                                href={buildToolForwardUrl(tool.slug, address)}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                onClick={closeMenu}
-                            >
-                                {tool.label}
-                            </a>
-                        ))}
-                        {canEditTags && (
-                            // A button, not a link: it opens a modal in place
-                            // rather than navigating.
-                            <button
-                                type="button"
-                                role="menuitem"
-                                className={styles.menu_item}
-                                onClick={openTagEditor}
-                            >
-                                Edit tags
-                            </button>
-                        )}
-                    </div>,
-                    document.body
-                )}
-            </div>
+            <ChipToolsMenu
+                value={address}
+                triggerLabel={kind.toolsLabel}
+                copyLabel={kind.copyLabel}
+                copiedLabel={kind.copiedLabel}
+                explorerHref={`${kind.explorerBaseUrl}${address}`}
+                explorerLabel={kind.explorerLabel}
+                entries={entries}
+            />
         </span>
     );
 }

@@ -608,11 +608,12 @@ export interface IUIComponents {
      * TronTransactionId — the canonical way to render a transaction id, as
      * `TronAddress` is for an address.
      *
-     * Shows the id as a compact monospace chip (`first 8 … last 8`, full value
-     * in a tooltip) with two slim affordances: copy-to-clipboard and an
-     * external Tronscan link. There is no tools dropdown — tool pages consume
-     * an address, none consumes a transaction id — and no tags, since a
-     * transaction is a one-off event with nothing to name.
+     * Shows the id as a compact monospace chip (`first 6 … last 6`, full value
+     * in a tooltip) followed by a single wrench icon, as on `TronAddress`. The
+     * wrench opens a menu that copies the id and opens it on Tronscan. It has
+     * no tool entries — tool pages consume an address, none consumes a
+     * transaction id — and no tags, since a transaction is a one-off event
+     * with nothing to name. The wrench is always shown and has no switch.
      *
      * Use this instead of an icon-only Tronscan anchor. A link labelled by
      * nothing but an out-arrow tells the reader neither which transaction it
@@ -622,16 +623,11 @@ export interface IUIComponents {
      * stay distinguishable in a list.
      *
      * Renders synchronously from `txId`, so it is SSR-safe: pass the id
-     * straight from your SSR data. Trim affordances off with `copy`/`explorer`
-     * for dense read-only contexts.
+     * straight from your SSR data.
      */
     TronTransactionId: ComponentType<{
         /** Full transaction id (64-character hex); the value copied and linked. */
         txId: string;
-        /** Show the copy-to-clipboard affordance. @default true */
-        copy?: boolean;
-        /** Show the external Tronscan link. @default true */
-        explorer?: boolean;
         className?: string;
     }>;
 
