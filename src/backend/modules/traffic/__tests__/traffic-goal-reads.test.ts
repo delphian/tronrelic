@@ -101,16 +101,19 @@ describe('TrafficService goal reads', () => {
         ]);
     });
 
-    it('breaks one goal down by a bound property key and reports unset values as null', async () => {
+    it('breaks one goal down by a bound property key, keeping an empty value apart from a missing one', async () => {
         const captured = install([
             { value: 'tronsave', events: '5', visitors: '3' },
-            { value: '', events: '1', visitors: '0' }
+            { value: '', events: '2', visitors: '1' },
+            { value: null, events: '1', visitors: '0' }
         ]);
         const rows = await TrafficService.getInstance().getGoalPropertyBreakdown(range, GOAL, 'market');
-        expect(captured.sqls[0]).toContain('properties[{propertyKey:String}] AS value');
+        expect(captured.sqls[0]).toContain('mapContains(properties, {propertyKey:String})');
         expect(captured.sqls[0]).toContain('goal = {goal:String}');
         expect(captured.params[0]!.propertyKey).toBe('market');
-        expect(rows[1]!.value).toBeNull();
+        // A goal may legally set a property to '', so only a missing key is null.
+        expect(rows[1]!.value).toBe('');
+        expect(rows[2]!.value).toBeNull();
     });
 
     it('attributes a goal to the session it happened in, using the panels\' session definition', async () => {
