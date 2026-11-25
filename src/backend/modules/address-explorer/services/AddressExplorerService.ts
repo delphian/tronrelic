@@ -2,31 +2,32 @@
  * @fileoverview Assembles the `/a/<address>` page from the chain reads.
  *
  * The reader answers one bounded question at a time. This service decides
- * which questions the page asks and in what order:
+ * how each of the page's sections is asked:
  *
- * - Summary sections read the span the visitor picked. When a 21-day read is
- *   too large for a busy wallet, the section is read again over 7 days and
- *   marked as narrowed, so the visitor sees something rather than an error.
+ * - Span sections read the span the visitor picked, one section per request,
+ *   so the page reads them in parallel and shows each as soon as it is ready.
+ *   When a 21-day read is too large for a busy wallet, the section is read
+ *   again over 7 days and marked as narrowed, so the visitor sees something
+ *   rather than an error.
  * - The transfers list is read one week at a time, newest first, back to the
  *   start of the stored history. Weeks with no transfers are skipped in the
  *   same request, so "Load older" always shows rows or reaches the end.
- * - Reads run one after another. The page's ClickHouse account allows only a
- *   few queries at once across all visitors, and one visitor's page load
- *   should hold one of those slots, not all of them. A read refused because
- *   the slots were full is retried once after a short pause.
+ * - Parallel reads cannot overrun the ClickHouse account: its shared reader's
+ *   connection pool is the size of the account's concurrency limit, and reads
+ *   beyond it wait in this process for a free connection. A read ClickHouse
+ *   still refuses because its slots were full, which happens only when an
+ *   admin sets the limit below the pool size, is retried once after a pause.
  */
 
 import { mergeAddressExplorerCoverage } from '@/types';
 import type {
     AddressExplorerPeriod,
     AddressExplorerSection,
+    AddressExplorerSpanSection,
+    IAddressActivityQuery,
     IAddressActivityReader,
-    IAddressExplorerCounterparties,
     IAddressExplorerCoverage,
-    IAddressExplorerDelegations,
-    IAddressExplorerOverview,
-    IAddressExplorerPermissions,
-    IAddressExplorerProfile,
+    IAddressExplorerSpanSections,
     IAddressExplorerTransfers,
     IAddressExplorerTransfersCursor,
     ISystemLogService
@@ -58,6 +59,13 @@ const BUSY_RETRY_DELAY_MS = 500;
 /** The spans the page offers, in the order the selector lists them. */
 export const ADDRESS_EXPLORER_PERIODS: readonly AddressExplorerPeriod[] = ['24h', '7d', '21d'];
 
+/** The sections read over the visitor's span, each requested on its own. */
+export const ADDRESS_EXPLORER_SPAN_SECTIONS: readonly AddressExplorerSpanSection[] = ['profile', 'counterparties', 'delegations', 'permissions'];
+
+/** Reads one span section from the chain for a query. */
+type SpanSectionRead<K extends AddressExplorerSpanSection> =
+    (query: IAddressActivityQuery) => Promise<AddressExplorerSection<IAddressExplorerSpanSections[K]>>;
+
 /** Clock and pause, injectable so tests run without waiting. */
 export interface IAddressExplorerServiceOptions {
     /** The current time. */
@@ -74,6 +82,7 @@ export interface IAddressExplorerServiceOptions {
 export class AddressExplorerService {
     private readonly now: () => Date;
     private readonly sleep: (ms: number) => Promise<void>;
+    private readonly spanReads: { [K in AddressExplorerSpanSection]: SpanSectionRead<K> };
 
     /**
      * @param reader - The chain reads, served by the blockchain module.
@@ -87,23 +96,31 @@ export class AddressExplorerService {
     ) {
         this.now = options.now ?? (() => new Date());
         this.sleep = options.sleep ?? ((ms) => new Promise(resolve => setTimeout(resolve, ms)));
+        this.spanReads = {
+            profile: (query) => this.reader.profile(query),
+            counterparties: (query) => this.reader.counterparties(query),
+            delegations: (query) => this.reader.delegations(query),
+            permissions: (query) => this.reader.permissions(query)
+        };
     }
 
     /**
-     * Read every section of the address page.
+     * Read one of the page's span sections.
      *
+     * @param section - Which section to read.
      * @param address - The wallet, base58, already checksum-verified.
-     * @param period - The span for the summary sections.
+     * @param period - The span the visitor picked.
      * @param quotaKey - The visitor's user id, which the hourly read quota is counted under.
-     * @returns The page's sections, each read or failed on its own.
+     * @returns The section, read or failed, and marked as narrowed when a 21-day read fell back to 7 days.
      */
-    async getOverview(address: string, period: AddressExplorerPeriod, quotaKey: string): Promise<IAddressExplorerOverview> {
-        const profile = await this.readSummary<IAddressExplorerProfile>(period, (hours) => this.reader.profile({ address, hours, quotaKey }));
-        const counterparties = await this.readSummary<IAddressExplorerCounterparties>(period, (hours) => this.reader.counterparties({ address, hours, quotaKey }));
-        const transfers = await this.getTransfers(address, quotaKey);
-        const delegations = await this.readSummary<IAddressExplorerDelegations>(period, (hours) => this.reader.delegations({ address, hours, quotaKey }));
-        const permissions = await this.readSummary<IAddressExplorerPermissions>(period, (hours) => this.reader.permissions({ address, hours, quotaKey }));
-        return { address, period, profile, counterparties, transfers, delegations, permissions };
+    async getSpanSection<K extends AddressExplorerSpanSection>(
+        section: K,
+        address: string,
+        period: AddressExplorerPeriod,
+        quotaKey: string
+    ): Promise<AddressExplorerSection<IAddressExplorerSpanSections[K]>> {
+        const read: SpanSectionRead<K> = this.spanReads[section];
+        return await this.readSummary(period, (hours) => read({ address, hours, quotaKey }));
     }
 
     /**

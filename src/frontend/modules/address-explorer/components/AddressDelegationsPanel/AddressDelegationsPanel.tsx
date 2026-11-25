@@ -17,18 +17,17 @@ import { Table, Tbody, Td, Th, Thead, Tr } from '../../../../components/ui/Table
 import { TronAddress } from '../../../../components/ui/TronAddress';
 import { TronTransactionId } from '../../../../components/ui/TronTransactionId';
 import { useTranslation } from '../../../localization/hooks/useTranslation';
+import { useAddressExplorer } from '../../hooks/useAddressExplorer';
+import { useSpanSection } from '../../hooks/useSpanSection';
 import { formatAmount } from '../../lib/formatAmount';
+import { sectionTitle } from '../../lib/sectionTitle';
 import { AddressSectionNotice } from '../AddressSectionNotice';
 import styles from '../addressExplorerPanel.module.scss';
 
 /** Props for {@link AddressDelegationsPanel}. */
 export interface IAddressDelegationsPanelProps {
-    /** The address the page is about, to tell which side of each delegation it is on. */
-    address: string;
-    /** The delegations section. */
-    section: AddressExplorerSection<IAddressExplorerDelegations>;
-    /** Reloads the page's sections after a failure a retry can fix. */
-    onRetry: () => void;
+    /** The delegations section the server streamed, read over the page's initial span. */
+    initialSection: AddressExplorerSection<IAddressExplorerDelegations>;
 }
 
 /**
@@ -44,21 +43,23 @@ function otherParty(event: IAddressExplorerDelegation, address: string): { party
 }
 
 /**
- * Render the delegations section.
+ * Render the delegations section, refetching it when the chosen span changes.
  *
  * @param props - {@link IAddressDelegationsPanelProps}.
  * @returns The delegations panel.
  */
-export function AddressDelegationsPanel({ address, section, onRetry }: IAddressDelegationsPanelProps) {
+export function AddressDelegationsPanel({ initialSection }: IAddressDelegationsPanelProps) {
     const { t } = useTranslation();
+    const { address } = useAddressExplorer();
+    const { section, loading, retry } = useSpanSection('delegations', initialSection);
     const baseUnits = t('addressExplorer.baseUnits', 'base units');
     const data = section.status === 'ok' ? section.data : null;
     const meta = data?.truncated ? t('addressExplorer.delegations.truncated', 'The newest {count} in this span', { count: String(data.events.length) }) : undefined;
 
     return (
-        <Panel title={t('addressExplorer.delegations.title', 'Energy and bandwidth delegations')} titleAs="h2" meta={meta}>
+        <Panel title={sectionTitle(t, 'delegations')} titleAs="h2" meta={meta} className={loading ? styles.loading : undefined}>
             <>
-                <AddressSectionNotice section={section} coverageField="blocksComplete" onRetry={onRetry} />
+                <AddressSectionNotice section={section} coverageField="blocksComplete" onRetry={retry} />
                 {data && data.events.length === 0 && (
                     <p className={styles.empty}>{t('addressExplorer.delegations.empty', 'This address made or received no delegations in this span.')}</p>
                 )}

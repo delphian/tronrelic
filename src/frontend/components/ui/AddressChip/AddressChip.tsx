@@ -70,6 +70,8 @@ export interface IAddressChipKind {
     explorerBaseUrl: string;
     /** Text of the menu entry that opens that page. */
     explorerLabel: string;
+    /** Open that page in the current tab, for the site's own page; an outside site opens in a new tab. */
+    explorerInPlace: boolean;
     /** Text of the menu entry that copies the address. */
     copyLabel: string;
     /** Text the copy entry shows, and a screen reader announces, after a copy. */
@@ -268,6 +270,7 @@ export function AddressChip({
                 copiedLabel={kind.copiedLabel}
                 explorerHref={`${kind.explorerBaseUrl}${address}`}
                 explorerLabel={kind.explorerLabel}
+                explorerInPlace={kind.explorerInPlace}
                 entries={entries}
             />
         </span>

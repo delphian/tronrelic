@@ -19,15 +19,15 @@ import { Table, Tbody, Td, Th, Thead, Tr } from '../../../../components/ui/Table
 import { TronAddress } from '../../../../components/ui/TronAddress';
 import { TronTransactionId } from '../../../../components/ui/TronTransactionId';
 import { useTranslation } from '../../../localization/hooks/useTranslation';
+import { useSpanSection } from '../../hooks/useSpanSection';
+import { sectionTitle } from '../../lib/sectionTitle';
 import { AddressSectionNotice } from '../AddressSectionNotice';
 import styles from '../addressExplorerPanel.module.scss';
 
 /** Props for {@link AddressPermissionsPanel}. */
 export interface IAddressPermissionsPanelProps {
-    /** The permission changes section. */
-    section: AddressExplorerSection<IAddressExplorerPermissions>;
-    /** Reloads the page's sections after a failure a retry can fix. */
-    onRetry: () => void;
+    /** The permission changes section the server streamed, read over the page's initial span. */
+    initialSection: AddressExplorerSection<IAddressExplorerPermissions>;
 }
 
 /** The badge tone for each kind of owner control; a transfer is the one that warns. */
@@ -39,13 +39,14 @@ const CONTROL_TONES: Record<AddressExplorerOwnerControl, BadgeTone> = {
 };
 
 /**
- * Render the permission changes section.
+ * Render the permission changes section, refetching it when the chosen span changes.
  *
  * @param props - {@link IAddressPermissionsPanelProps}.
  * @returns The permission changes panel.
  */
-export function AddressPermissionsPanel({ section, onRetry }: IAddressPermissionsPanelProps) {
+export function AddressPermissionsPanel({ initialSection }: IAddressPermissionsPanelProps) {
     const { t } = useTranslation();
+    const { section, loading, retry } = useSpanSection('permissions', initialSection);
     const data = section.status === 'ok' ? section.data : null;
     const controlLabels: Record<AddressExplorerOwnerControl, string> = {
         'self-controlled': t('addressExplorer.permissions.self', 'Own key in control'),
@@ -56,9 +57,9 @@ export function AddressPermissionsPanel({ section, onRetry }: IAddressPermission
     const meta = data?.truncated ? t('addressExplorer.permissions.truncated', 'The newest {count} in this span', { count: String(data.updates.length) }) : undefined;
 
     return (
-        <Panel title={t('addressExplorer.permissions.title', 'Permission changes')} titleAs="h2" meta={meta}>
+        <Panel title={sectionTitle(t, 'permissions')} titleAs="h2" meta={meta} className={loading ? styles.loading : undefined}>
             <>
-                <AddressSectionNotice section={section} coverageField="blocksComplete" onRetry={onRetry} />
+                <AddressSectionNotice section={section} coverageField="blocksComplete" onRetry={retry} />
                 {data && data.updates.length === 0 && (
                     <p className={styles.empty}>{t('addressExplorer.permissions.empty', 'This address did not change its permissions in this span.')}</p>
                 )}

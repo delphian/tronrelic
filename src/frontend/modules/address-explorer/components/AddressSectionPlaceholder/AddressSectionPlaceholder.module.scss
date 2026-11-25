@@ -1,0 +1,12 @@
+/**
+ * AddressSectionPlaceholder styles.
+ *
+ * Stacks the loading bars a section shows until its content streams in.
+ * Tokens only.
+ */
+
+.bars {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+}

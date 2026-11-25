@@ -3,11 +3,11 @@
 /**
  * @fileoverview The transfers section of the address page.
  *
- * Starts with the newest page the server rendered and grows downward as the
+ * Starts with the newest page the server streamed and grows downward as the
  * reader asks for older transfers, back to the start of the stored history.
  * The span selector does not limit this list: it always reaches the full 21
  * days, a page at a time, which keeps every read small however busy the
- * wallet is.
+ * wallet is, and a span change does not reload it.
  */
 
 import { useCallback, useState } from 'react';
@@ -30,18 +30,38 @@ import { TronAddress } from '../../../../components/ui/TronAddress';
 import { TronTransactionId } from '../../../../components/ui/TronTransactionId';
 import { useTranslation } from '../../../localization/hooks/useTranslation';
 import { fetchAddressTransfers } from '../../api/addressExplorer.api';
+import { useAddressExplorer } from '../../hooks/useAddressExplorer';
+import { sectionTitle } from '../../lib/sectionTitle';
 import { AddressSectionNotice } from '../AddressSectionNotice';
 import { TokenAmount } from '../TokenAmount';
 import styles from '../addressExplorerPanel.module.scss';
 
 /** Props for {@link AddressTransfersPanel}. */
 export interface IAddressTransfersPanelProps {
-    /** The address the page is about. */
-    address: string;
-    /** The newest page, rendered on the server. */
+    /** The newest page, streamed by the server. */
     initialSection: AddressExplorerSection<IAddressExplorerTransfers>;
-    /** Reloads the page's sections after the first page failed. */
-    onRetry: () => void;
+}
+
+/**
+ * Everything the list shows, held together so a reload of the newest page
+ * replaces all of it at once.
+ */
+interface ITransferListState {
+    /** The newest page, which the section's notice and retry are about. */
+    first: AddressExplorerSection<IAddressExplorerTransfers>;
+    /** Every row loaded so far, newest first. */
+    rows: IAddressExplorerTransfer[];
+    /** Token details for every loaded row. */
+    tokens: Record<string, IAddressExplorerToken>;
+    /** Where older transfers continue, or null at the start of the stored history. */
+    next: IAddressExplorerTransfersCursor | null;
+    /** The start of the oldest loaded window, for the panel's meta line. */
+    oldest: string | null;
+    /**
+     * Coverage of every page on screen. A gap in an older week hides transfers
+     * as badly as one in the newest, so the notice speaks for the whole list.
+     */
+    coverage: IAddressExplorerCoverage | null;
 }
 
 /**
@@ -57,23 +77,37 @@ function rowKey(row: IAddressExplorerTransfer, index: number): string {
 }
 
 /**
+ * Start the list over from a newest page, for the first render and a reload.
+ *
+ * @param first - The newest page, read or failed.
+ * @returns The list showing only that page.
+ */
+function listFrom(first: AddressExplorerSection<IAddressExplorerTransfers>): ITransferListState {
+    const ok = first.status === 'ok' ? first : null;
+    return {
+        first,
+        rows: ok?.data.transfers ?? [],
+        tokens: ok?.tokens ?? {},
+        next: ok?.data.next ?? null,
+        oldest: ok?.window.from ?? null,
+        coverage: ok?.coverage ?? null
+    };
+}
+
+/**
  * Render the transfers section.
  *
  * @param props - {@link IAddressTransfersPanelProps}.
  * @returns The transfers panel.
  */
-export function AddressTransfersPanel({ address, initialSection, onRetry }: IAddressTransfersPanelProps) {
+export function AddressTransfersPanel({ initialSection }: IAddressTransfersPanelProps) {
     const { t } = useTranslation();
-    const initialOk = initialSection.status === 'ok' ? initialSection : null;
-    const [rows, setRows] = useState<IAddressExplorerTransfer[]>(initialOk?.data.transfers ?? []);
-    const [tokens, setTokens] = useState<Record<string, IAddressExplorerToken>>(initialOk?.tokens ?? {});
-    const [next, setNext] = useState<IAddressExplorerTransfersCursor | null>(initialOk?.data.next ?? null);
-    const [oldest, setOldest] = useState<string | null>(initialOk?.window.from ?? null);
-    // Coverage of every page on screen. A gap in an older week hides transfers
-    // as badly as one in the newest, so the notice speaks for the whole list.
-    const [coverage, setCoverage] = useState<IAddressExplorerCoverage | null>(initialOk?.coverage ?? null);
+    const { address } = useAddressExplorer();
+    const [list, setList] = useState<ITransferListState>(() => listFrom(initialSection));
     const [olderError, setOlderError] = useState<AddressExplorerErrorReason | null>(null);
-    const [loading, setLoading] = useState(false);
+    const [loadingOlder, setLoadingOlder] = useState(false);
+    const [reloading, setReloading] = useState(false);
+    const { next } = list;
 
     /**
      * Load the next older page and append it. A failure is shown under the
@@ -81,47 +115,68 @@ export function AddressTransfersPanel({ address, initialSection, onRetry }: IAdd
      */
     const loadOlder = useCallback(async () => {
         if (next) {
-            setLoading(true);
+            setLoadingOlder(true);
             setOlderError(null);
             try {
                 const section = await fetchAddressTransfers(address, next);
                 if (section.status === 'ok') {
-                    setRows(current => [...current, ...section.data.transfers]);
-                    setTokens(current => ({ ...current, ...section.tokens }));
-                    setNext(section.data.next);
-                    setOldest(section.window.from);
-                    setCoverage(current => (current ? mergeAddressExplorerCoverage(current, section.coverage) : section.coverage));
+                    setList(current => ({
+                        ...current,
+                        rows: [...current.rows, ...section.data.transfers],
+                        tokens: { ...current.tokens, ...section.tokens },
+                        next: section.data.next,
+                        oldest: section.window.from,
+                        coverage: current.coverage ? mergeAddressExplorerCoverage(current.coverage, section.coverage) : section.coverage
+                    }));
                 } else {
                     setOlderError(section.reason);
                 }
             } catch {
                 setOlderError('failed');
             } finally {
-                setLoading(false);
+                setLoadingOlder(false);
             }
         }
     }, [address, next]);
 
-    const meta = oldest
-        ? <>{t('addressExplorer.transfers.meta', 'Newest first, back to')} <ClientTime date={oldest} format="short" /></>
+    /**
+     * Read the newest page again after it failed, and start the list over
+     * from it. Only this section reloads; the rest of the page is untouched.
+     */
+    const reload = useCallback(async () => {
+        setReloading(true);
+        let first: AddressExplorerSection<IAddressExplorerTransfers>;
+        try {
+            first = await fetchAddressTransfers(address);
+        } catch {
+            first = { status: 'error', reason: 'failed' };
+        }
+        setList(listFrom(first));
+        setOlderError(null);
+        setReloading(false);
+    }, [address]);
+
+    const firstOk = list.first.status === 'ok' ? list.first : null;
+    const meta = list.oldest
+        ? <>{t('addressExplorer.transfers.meta', 'Newest first, back to')} <ClientTime date={list.oldest} format="short" /></>
         : undefined;
     // The notice describes every page on screen, the same range the meta line names.
-    const noticeSection: AddressExplorerSection<IAddressExplorerTransfers> = initialOk && coverage
-        ? { ...initialOk, coverage }
-        : initialSection;
+    const noticeSection: AddressExplorerSection<IAddressExplorerTransfers> = firstOk && list.coverage
+        ? { ...firstOk, coverage: list.coverage }
+        : list.first;
 
     return (
-        <Panel title={t('addressExplorer.transfers.title', 'Transfers')} titleAs="h2" meta={meta}>
+        <Panel title={sectionTitle(t, 'transfers')} titleAs="h2" meta={meta} className={reloading ? styles.loading : undefined}>
             <>
-                <AddressSectionNotice section={noticeSection} coverageField="complete" onRetry={onRetry} />
-                {initialOk && rows.length === 0 && (
+                <AddressSectionNotice section={noticeSection} coverageField="complete" onRetry={() => { void reload(); }} />
+                {firstOk && list.rows.length === 0 && (
                     <p className={styles.empty}>
                         {next
                             ? t('addressExplorer.transfers.emptyRecent', 'No transfers in the most recent weeks. Load older to keep looking.')
                             : t('addressExplorer.transfers.empty', 'No transfers are stored for this address.')}
                     </p>
                 )}
-                {rows.length > 0 && (
+                {list.rows.length > 0 && (
                     <Table variant="compact" stackAt="tablet">
                         <Thead>
                             <Tr>
@@ -133,7 +188,7 @@ export function AddressTransfersPanel({ address, initialSection, onRetry }: IAdd
                             </Tr>
                         </Thead>
                         <Tbody>
-                            {rows.map((row, index) => (
+                            {list.rows.map((row, index) => (
                                 <Tr key={rowKey(row, index)}>
                                     <Td><ClientTime date={row.time} format="short" /></Td>
                                     <Td label={t('addressExplorer.col.direction', 'Direction')}>
@@ -143,7 +198,7 @@ export function AddressTransfersPanel({ address, initialSection, onRetry }: IAdd
                                     </Td>
                                     <Td label={t('addressExplorer.col.counterparty', 'Counterparty')}><TronAddress address={row.counterparty} /></Td>
                                     <Td numeric label={t('addressExplorer.col.amount', 'Amount')}>
-                                        <TokenAmount amount={row.amount} tokenKey={row.token} token={tokens[row.token]} usd={row.usd} />
+                                        <TokenAmount amount={row.amount} tokenKey={row.token} token={list.tokens[row.token]} usd={row.usd} />
                                     </Td>
                                     <Td label={t('addressExplorer.col.transaction', 'Transaction')}><TronTransactionId txId={row.txId} /></Td>
                                 </Tr>
@@ -151,10 +206,10 @@ export function AddressTransfersPanel({ address, initialSection, onRetry }: IAdd
                         </Tbody>
                     </Table>
                 )}
-                {initialOk && (next || rows.length > 0) && (
+                {firstOk && (next || list.rows.length > 0) && (
                     <div className={styles.footer}>
                         {next ? (
-                            <Button variant="secondary" loading={loading} onClick={() => { void loadOlder(); }}>
+                            <Button variant="secondary" loading={loadingOlder} onClick={() => { void loadOlder(); }}>
                                 {t('addressExplorer.transfers.loadOlder', 'Load older')}
                             </Button>
                         ) : (
