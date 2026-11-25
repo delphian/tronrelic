@@ -155,7 +155,7 @@ export class AddressExplorerService {
                     ? { before: new Date(windowEnd).toISOString(), cursor: page.data.nextCursor }
                     : olderRemains ? { before: new Date(fromMs).toISOString() } : null;
                 const lastWeek = week === MAX_TRANSFER_WEEKS_PER_REQUEST - 1;
-                const coverage = skippedCoverage ? mergeAddressExplorerCoverage(skippedCoverage, page.coverage) : page.coverage;
+                const coverage: IAddressExplorerCoverage = skippedCoverage ? mergeAddressExplorerCoverage(skippedCoverage, page.coverage) : page.coverage;
                 scanEnd = scanEnd ?? page.window.to;
                 if (page.data.transfers.length > 0 || next === null || next.cursor || lastWeek) {
                     section = {
