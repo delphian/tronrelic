@@ -19,6 +19,7 @@ import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import type { IAddressExplorerOverview } from '@/types';
 import { getServerSideApiUrlWithPath } from '../../../../../../lib/api-url';
+import { resolveVisitorForwardedFor } from '../../../../../../lib/resolveVisitorForwardedFor';
 import { isValidTronAddress } from '../../../../../../lib/tronAddress';
 import { Page } from '../../../../../../components/layout';
 import { getServerSession } from '../../../../../../modules/user/lib/session-server';
@@ -61,15 +62,29 @@ export async function generateMetadata({ params }: { params: Promise<IAddressPag
  * visitor's cookie so the backend's login gate sees their session. A failure
  * returns null, and the view then offers a retry instead of breaking the page.
  *
+ * The visitor's address goes out as `X-Forwarded-For` as well. This call
+ * leaves from the frontend container, so without it the backend's per-IP rate
+ * limit on `/api/address-explorer` would count every visitor as one client,
+ * and a few dozen page loads across all visitors would lock everyone out.
+ *
  * @param address - The base58 address.
  * @returns The overview, or null when the request failed.
  */
 async function fetchInitialOverview(address: string): Promise<IAddressExplorerOverview | null> {
     let overview: IAddressExplorerOverview | null = null;
     try {
-        const cookie = (await headers()).get('cookie');
+        const requestHeaders = await headers();
+        const cookie = requestHeaders.get('cookie');
+        const forwardedFor = resolveVisitorForwardedFor(requestHeaders);
+        const outboundHeaders: Record<string, string> = {};
+        if (cookie) {
+            outboundHeaders.Cookie = cookie;
+        }
+        if (forwardedFor) {
+            outboundHeaders['x-forwarded-for'] = forwardedFor;
+        }
         const response = await fetch(`${getServerSideApiUrlWithPath()}/address-explorer/${encodeURIComponent(address)}?period=7d`, {
-            headers: cookie ? { Cookie: cookie } : undefined,
+            headers: outboundHeaders,
             cache: 'no-store'
         });
         if (response.ok) {

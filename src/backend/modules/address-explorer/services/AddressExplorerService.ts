@@ -16,11 +16,13 @@
  *   the slots were full is retried once after a short pause.
  */
 
+import { mergeAddressExplorerCoverage } from '@/types';
 import type {
     AddressExplorerPeriod,
     AddressExplorerSection,
     IAddressActivityReader,
     IAddressExplorerCounterparties,
+    IAddressExplorerCoverage,
     IAddressExplorerDelegations,
     IAddressExplorerOverview,
     IAddressExplorerPermissions,
@@ -111,6 +113,11 @@ export class AddressExplorerService {
      * continuing inside it from `position.cursor` when given. An empty week
      * with older weeks still stored is skipped, up to the whole history.
      *
+     * A page that skipped weeks reports the window and coverage of every week
+     * it scanned. A week can look empty precisely because its blocks or
+     * receipts are missing, so dropping a skipped week's coverage would hide
+     * the gap the visitor needs to be told about.
+     *
      * @param address - The wallet, base58, already checksum-verified.
      * @param quotaKey - The visitor's user id.
      * @param position - Where the previous page said to continue, or undefined for the newest page.
@@ -126,6 +133,8 @@ export class AddressExplorerService {
         let toMs = position ? Math.min(Date.parse(position.before), nowMs) : nowMs;
         let cursor = position?.cursor;
         let section: AddressExplorerSection<IAddressExplorerTransfers> | null = null;
+        let skippedCoverage: IAddressExplorerCoverage | null = null;
+        let scanEnd: string | null = null;
 
         for (let week = 0; week < MAX_TRANSFER_WEEKS_PER_REQUEST && section === null; week += 1) {
             const fromMs = Math.max(toMs - WEEK_MS, retentionStartMs);
@@ -146,9 +155,17 @@ export class AddressExplorerService {
                     ? { before: new Date(windowEnd).toISOString(), cursor: page.data.nextCursor }
                     : olderRemains ? { before: new Date(fromMs).toISOString() } : null;
                 const lastWeek = week === MAX_TRANSFER_WEEKS_PER_REQUEST - 1;
+                const coverage = skippedCoverage ? mergeAddressExplorerCoverage(skippedCoverage, page.coverage) : page.coverage;
+                scanEnd = scanEnd ?? page.window.to;
                 if (page.data.transfers.length > 0 || next === null || next.cursor || lastWeek) {
-                    section = { ...page, data: { transfers: page.data.transfers, next } };
+                    section = {
+                        ...page,
+                        window: { from: page.window.from, to: scanEnd },
+                        coverage,
+                        data: { transfers: page.data.transfers, next }
+                    };
                 } else {
+                    skippedCoverage = coverage;
                     toMs = fromMs;
                     cursor = undefined;
                 }
