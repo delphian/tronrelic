@@ -3,13 +3,15 @@
  *
  * Both are same-origin fetches, so the browser attaches the session cookie and
  * the backend's login gate sees the visitor. The first page load is rendered
- * on the server; these back the span selector and "Load older" only.
+ * and streamed by the server; these back the span selector, each section's
+ * retry, and "Load older" only.
  */
 
 import type {
     AddressExplorerPeriod,
     AddressExplorerSection,
-    IAddressExplorerOverview,
+    AddressExplorerSpanSection,
+    IAddressExplorerSpanSections,
     IAddressExplorerTransfers,
     IAddressExplorerTransfersCursor
 } from '@/types';
@@ -33,34 +35,42 @@ async function readJson<T>(response: Response): Promise<T> {
 }
 
 /**
- * Fetch every section of the address page for a summary span.
+ * Fetch one span section of the address page.
  *
  * @param address - The base58 address the page is showing.
+ * @param section - Which section to read.
  * @param period - The span the visitor picked.
- * @returns The page's sections.
+ * @returns The section, read or failed.
+ * @throws Error when the request itself failed.
  */
-export async function fetchAddressOverview(address: string, period: AddressExplorerPeriod): Promise<IAddressExplorerOverview> {
+export async function fetchAddressSpanSection<K extends AddressExplorerSpanSection>(
+    address: string,
+    section: K,
+    period: AddressExplorerPeriod
+): Promise<AddressExplorerSection<IAddressExplorerSpanSections[K]>> {
     const params = new URLSearchParams({ period });
-    const body = await readJson<{ overview: IAddressExplorerOverview }>(
-        await fetch(`${API_BASE}/${encodeURIComponent(address)}?${params.toString()}`, { cache: 'no-store' })
+    const body = await readJson<{ section: AddressExplorerSection<IAddressExplorerSpanSections[K]> }>(
+        await fetch(`${API_BASE}/${encodeURIComponent(address)}/sections/${section}?${params.toString()}`, { cache: 'no-store' })
     );
-    return body.overview;
+    return body.section;
 }
 
 /**
- * Fetch the next older page of transfers.
+ * Fetch a page of transfers: the newest page, or the next older one.
  *
  * @param address - The base58 address the page is showing.
- * @param next - The `next` position the previous page returned, passed back unchanged.
+ * @param next - The `next` position the previous page returned, passed back unchanged, or omitted for the newest page.
  * @returns The page, read or failed.
+ * @throws Error when the request itself failed.
  */
 export async function fetchAddressTransfers(
     address: string,
-    next: IAddressExplorerTransfersCursor
+    next?: IAddressExplorerTransfersCursor
 ): Promise<AddressExplorerSection<IAddressExplorerTransfers>> {
-    const params = new URLSearchParams({ before: next.before, ...(next.cursor ? { cursor: next.cursor } : {}) });
+    const params = new URLSearchParams(next ? { before: next.before, ...(next.cursor ? { cursor: next.cursor } : {}) } : {});
+    const query = params.toString();
     const body = await readJson<{ transfers: AddressExplorerSection<IAddressExplorerTransfers> }>(
-        await fetch(`${API_BASE}/${encodeURIComponent(address)}/transfers?${params.toString()}`, { cache: 'no-store' })
+        await fetch(`${API_BASE}/${encodeURIComponent(address)}/transfers${query ? `?${query}` : ''}`, { cache: 'no-store' })
     );
     return body.transfers;
 }

@@ -15,27 +15,28 @@ import { Panel } from '../../../../components/ui/Panel';
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../../../components/ui/Table';
 import { TronAddress } from '../../../../components/ui/TronAddress';
 import { useTranslation } from '../../../localization/hooks/useTranslation';
+import { useSpanSection } from '../../hooks/useSpanSection';
 import { formatCount } from '../../lib/formatCount';
+import { sectionTitle } from '../../lib/sectionTitle';
 import { AddressSectionNotice } from '../AddressSectionNotice';
 import { TokenAmount } from '../TokenAmount';
 import styles from '../addressExplorerPanel.module.scss';
 
 /** Props for {@link AddressCounterpartiesPanel}. */
 export interface IAddressCounterpartiesPanelProps {
-    /** The counterparties section. */
-    section: AddressExplorerSection<IAddressExplorerCounterparties>;
-    /** Reloads the page's sections after a failure a retry can fix. */
-    onRetry: () => void;
+    /** The counterparties section the server streamed, read over the page's initial span. */
+    initialSection: AddressExplorerSection<IAddressExplorerCounterparties>;
 }
 
 /**
- * Render the counterparties section.
+ * Render the counterparties section, refetching it when the chosen span changes.
  *
  * @param props - {@link IAddressCounterpartiesPanelProps}.
  * @returns The counterparties panel.
  */
-export function AddressCounterpartiesPanel({ section, onRetry }: IAddressCounterpartiesPanelProps) {
+export function AddressCounterpartiesPanel({ initialSection }: IAddressCounterpartiesPanelProps) {
     const { t } = useTranslation();
+    const { section, loading, retry } = useSpanSection('counterparties', initialSection);
     const data = section.status === 'ok' ? section.data : null;
     const meta = data && data.counterparties.length > 0
         ? t('addressExplorer.counterparties.meta', 'Top {shown} of {total} by number of transfers', {
@@ -45,9 +46,9 @@ export function AddressCounterpartiesPanel({ section, onRetry }: IAddressCounter
         : undefined;
 
     return (
-        <Panel title={t('addressExplorer.counterparties.title', 'Counterparties')} titleAs="h2" meta={meta}>
+        <Panel title={sectionTitle(t, 'counterparties')} titleAs="h2" meta={meta} className={loading ? styles.loading : undefined}>
             <>
-                <AddressSectionNotice section={section} coverageField="complete" onRetry={onRetry} />
+                <AddressSectionNotice section={section} coverageField="complete" onRetry={retry} />
                 {data && section.status === 'ok' && data.counterparties.length === 0 && (
                     <p className={styles.empty}>{t('addressExplorer.counterparties.empty', 'No value moved to or from this address in this span.')}</p>
                 )}

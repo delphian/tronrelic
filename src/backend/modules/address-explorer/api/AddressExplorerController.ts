@@ -11,7 +11,11 @@
 import type { Request, Response } from 'express';
 import type { AddressExplorerPeriod, IAddressExplorerTransfersCursor, ISystemLogService } from '@/types';
 import { toVerifiedBase58 } from '../../../lib/tron-address.js';
-import { ADDRESS_EXPLORER_PERIODS, type AddressExplorerService } from '../services/AddressExplorerService.js';
+import {
+    ADDRESS_EXPLORER_PERIODS,
+    ADDRESS_EXPLORER_SPAN_SECTIONS,
+    type AddressExplorerService
+} from '../services/AddressExplorerService.js';
 
 /** The span used when the request names none. */
 const DEFAULT_PERIOD: AddressExplorerPeriod = '7d';
@@ -33,7 +37,7 @@ function readAddress(req: Request): string | null {
 }
 
 /**
- * Handlers for the address page's overview and transfers routes.
+ * Handlers for the address page's section and transfers routes.
  */
 export class AddressExplorerController {
     /**
@@ -46,31 +50,36 @@ export class AddressExplorerController {
     ) {}
 
     /**
-     * GET /:address?period=24h|7d|21d — every section of the page.
+     * GET /:address/sections/:section?period=24h|7d|21d — one span section of the page.
      *
-     * Responds 400 for an invalid address or span, and otherwise 200 with
-     * `{ overview }`, even when some sections failed: each section carries its
-     * own failure reason so the rest of the page still renders.
+     * The page requests each section separately so they are read in parallel
+     * and each reaches the visitor as soon as it is ready. Responds 400 for an
+     * invalid address, section, or span, and otherwise 200 with `{ section }`,
+     * even when the read failed: the section carries its own failure reason.
      *
      * @param req - The request; `req.userId` is set by `requireLogin`.
      * @param res - The response.
      */
-    getOverview = async (req: Request, res: Response): Promise<void> => {
+    getSpanSection = async (req: Request, res: Response): Promise<void> => {
         const address = readAddress(req);
+        const sectionParam = String(req.params.section ?? '');
+        const name = ADDRESS_EXPLORER_SPAN_SECTIONS.find(item => item === sectionParam);
         const periodParam = req.query.period === undefined ? DEFAULT_PERIOD : String(req.query.period);
         const period = ADDRESS_EXPLORER_PERIODS.find(item => item === periodParam);
         if (!req.userId) {
             res.status(401).json({ error: 'Authentication required' });
         } else if (!address) {
             res.status(400).json({ error: 'Not a valid TRON address' });
+        } else if (!name) {
+            res.status(400).json({ error: `section must be one of ${ADDRESS_EXPLORER_SPAN_SECTIONS.join(', ')}` });
         } else if (!period) {
             res.status(400).json({ error: `period must be one of ${ADDRESS_EXPLORER_PERIODS.join(', ')}` });
         } else {
             try {
-                const overview = await this.service.getOverview(address, period, req.userId);
-                res.json({ overview });
+                const section = await this.service.getSpanSection(name, address, period, req.userId);
+                res.json({ section });
             } catch (error) {
-                this.logger.error({ error, address, period }, 'Failed to build the address page overview');
+                this.logger.error({ error, address, section: name, period }, 'Failed to read an address page section');
                 res.status(500).json({ error: 'Failed to load address activity' });
             }
         }

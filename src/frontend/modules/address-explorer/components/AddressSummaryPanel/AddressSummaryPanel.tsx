@@ -17,37 +17,39 @@ import { StatGrid, StatTile } from '../../../../components/ui/StatTile';
 import { Table, Tbody, Td, Th, Thead, Tr } from '../../../../components/ui/Table';
 import { TronAddress } from '../../../../components/ui/TronAddress';
 import { useTranslation } from '../../../localization/hooks/useTranslation';
+import { useAddressExplorer } from '../../hooks/useAddressExplorer';
+import { useSpanSection } from '../../hooks/useSpanSection';
 import { formatCount } from '../../lib/formatCount';
+import { sectionTitle } from '../../lib/sectionTitle';
 import { AddressSectionNotice } from '../AddressSectionNotice';
 import { TokenAmount } from '../TokenAmount';
 import { TokenLabel } from '../TokenLabel';
+import panelStyles from '../addressExplorerPanel.module.scss';
 import styles from './AddressSummaryPanel.module.scss';
 
 /** Props for {@link AddressSummaryPanel}. */
 export interface IAddressSummaryPanelProps {
-    /** The address the page is about, for picking out its own tags. */
-    address: string;
-    /** The summary section. */
-    section: AddressExplorerSection<IAddressExplorerProfile>;
-    /** Reloads the page's sections after a failure a retry can fix. */
-    onRetry: () => void;
+    /** The summary section the server streamed, read over the page's initial span. */
+    initialSection: AddressExplorerSection<IAddressExplorerProfile>;
 }
 
 /**
- * Render the summary section.
+ * Render the summary section, refetching it when the chosen span changes.
  *
  * @param props - {@link IAddressSummaryPanelProps}.
  * @returns The summary panel.
  */
-export function AddressSummaryPanel({ address, section, onRetry }: IAddressSummaryPanelProps) {
+export function AddressSummaryPanel({ initialSection }: IAddressSummaryPanelProps) {
     const { t } = useTranslation();
+    const { address } = useAddressExplorer();
+    const { section, loading, retry } = useSpanSection('profile', initialSection);
     const profile = section.status === 'ok' ? section.data : null;
     const tags = section.status === 'ok' ? section.addressTags[address] ?? [] : [];
 
     return (
-        <Panel title={t('addressExplorer.summary.title', 'Summary')} titleAs="h2">
+        <Panel title={sectionTitle(t, 'profile')} titleAs="h2" className={loading ? panelStyles.loading : undefined}>
             <div className={styles.body}>
-                <AddressSectionNotice section={section} coverageField="complete" onRetry={onRetry} />
+                <AddressSectionNotice section={section} coverageField="complete" onRetry={retry} />
                 {profile && section.status === 'ok' && (
                     <>
                         {/* The small tile's column floor puts two figures on a phone's

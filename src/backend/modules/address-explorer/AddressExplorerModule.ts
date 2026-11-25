@@ -66,8 +66,11 @@ export class AddressExplorerModule implements IModule<IAddressExplorerModuleDepe
      * Phase 2: mount the router behind a per-IP rate limit and the login gate.
      *
      * The limiter runs first so an unauthenticated flood is turned away before
-     * the session lookup. One page load makes one request; switching the span
-     * or loading older transfers makes one more each.
+     * the session lookup. One page load makes five requests, one per section,
+     * so the sections can be read in parallel; switching the span makes four,
+     * and loading older transfers one. 120 a minute allows about two dozen
+     * page loads. The ClickHouse account's per-visitor hourly quota, not this
+     * limit, is what bounds how much chain data one visitor can read.
      *
      * @throws Error when called before `init()`.
      */
@@ -77,7 +80,7 @@ export class AddressExplorerModule implements IModule<IAddressExplorerModuleDepe
         }
         this.app.use(
             ADDRESS_EXPLORER_API_PATH,
-            createRateLimiter({ windowSeconds: 60, maxRequests: 30, keyPrefix: 'address-explorer' }),
+            createRateLimiter({ windowSeconds: 60, maxRequests: 120, keyPrefix: 'address-explorer' }),
             requireLogin,
             createAddressExplorerRouter(this.controller)
         );

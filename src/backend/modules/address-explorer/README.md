@@ -9,8 +9,8 @@ Serves the data behind the `/a/<address>` page: history and analytics for any TR
 | Module id | `address-explorer` |
 | Module class | `src/backend/modules/address-explorer/AddressExplorerModule.ts` |
 | Service registry name | None. Nothing else consumes the page's reads |
-| Mounted routes | `/api/address-explorer/*` (`createRateLimiter` 30 a minute per IP, then `requireLogin`) |
-| Frontend page | `src/frontend/app/[lang]/(site)/(core)/a/[address]/page.tsx`, components in `src/frontend/modules/address-explorer/` |
+| Mounted routes | `/api/address-explorer/*` (`createRateLimiter` 120 a minute per IP, then `requireLogin`) |
+| Frontend page | `src/frontend/app/[lang]/(site)/(core)/a/[address]/page.tsx`, which renders `AddressExplorerStream` from `src/frontend/modules/address-explorer/server.ts`; components in `src/frontend/modules/address-explorer/` |
 | Chain reads | `IAddressActivityReader`, implemented by `AddressActivityReader` in `src/backend/modules/blockchain/chain-query/` |
 | ClickHouse account | `address-explorer` (`tronrelic_address_explorer`), declared in the [ClickHouse Accounts module](../clickhouse-accounts/README.md); limits tuned on the ClickHouse tab of `/system/system` |
 | Types | `packages/types/src/address-explorer/` |
@@ -31,7 +31,9 @@ The page is `noindex, nofollow`, sent both as a robots meta tag and as an `X-Rob
 
 ## How the Page Is Read
 
-`AddressExplorerService` turns a page load into a sequence of bounded reads through the injected reader.
+Each section is its own request. On a page load the server starts all five at once and streams each section into the page as its read finishes, behind a placeholder until then, so the first section appears after the fastest read rather than after all five. The response carries `X-Accel-Buffering: no` (`next.config.mjs`) so Nginx passes the stream through instead of buffering the whole page. Changing the span refetches the four span sections from the browser, each updating on its own, and a section's retry reloads only that section.
+
+`AddressExplorerService` serves each request as one bounded read through the injected reader.
 
 | Section | Read | Span |
 |---|---|---|
@@ -47,7 +49,7 @@ Three rules shape those reads.
 
 **Transfers are read a week at a time.** A 21-day newest-first read of a busy wallet would scan its whole history to sort it, so the list never reads more than a week. Each page returns `next`, either a position inside the same week or the end of the next older week. A request that finds an empty week moves straight on to the next one, up to three weeks, so "Load older" always shows rows or reaches the end. Such a page reports the window and the combined coverage of every week it scanned (`mergeAddressExplorerCoverage` in the types package), because a week can look empty only because its blocks are missing. The page combines the coverage of every page it has loaded the same way, so its gap warning covers the whole list on screen.
 
-**Reads run one after another.** The ClickHouse account allows four queries at once across every visitor. Running a page's five sections in parallel would let one visitor fill every slot. A read refused because the slots were full is retried once after half a second; a used-up hourly quota is not retried.
+**Parallel reads queue instead of overrunning the account.** The ClickHouse account allows four queries at once across every visitor, and its shared reader's connection pool (`poolSize`) is also four. A read beyond that waits in the backend for a free connection rather than being sent and refused. Keep `poolSize` no larger than the account's `maxConcurrentQueries`: if an admin lowers the limit below the pool on `/system/system`, ClickHouse refuses the extra reads, and a read refused because the slots were full is retried once after half a second. A used-up hourly quota is not retried.
 
 ## Reuse of the Chain Query Tools
 
@@ -68,12 +70,14 @@ The reader charges every read to the visitor's Better Auth user id as the ClickH
 
 ## REST API
 
-Both routes return 400 for an invalid address and 401 without a session. Each section succeeds or fails on its own, so a 200 response can still carry failed sections.
+Both routes return 400 for an invalid address, section, or span and 401 without a session. A 200 response can still carry a failed section, with its reason.
 
 | Method | Path | Query | Returns |
 |---|---|---|---|
-| GET | `/api/address-explorer/:address` | `period` = `24h`, `7d` (default), or `21d` | `{ overview: IAddressExplorerOverview }` |
-| GET | `/api/address-explorer/:address/transfers` | `before` (ISO time) and optional `cursor`, both copied from the previous page's `next` | `{ transfers: AddressExplorerSection<IAddressExplorerTransfers> }` |
+| GET | `/api/address-explorer/:address/sections/:section` | `:section` = `profile`, `counterparties`, `delegations`, or `permissions`; `period` = `24h`, `7d` (default), or `21d` | `{ section: AddressExplorerSection<IAddressExplorerSpanSections[section]> }` |
+| GET | `/api/address-explorer/:address/transfers` | `before` (ISO time) and optional `cursor`, both copied from the previous page's `next`; neither for the newest page | `{ transfers: AddressExplorerSection<IAddressExplorerTransfers> }` |
+
+A page load makes five requests and a span change four, which is why the rate limit is 120 a minute. The account's per-visitor hourly quota, not the rate limit, bounds how much chain data one visitor can read.
 
 `:address` accepts base58 or hex and is checksum-verified with `toVerifiedBase58`. A `cursor` must be base64url text of at most 2,048 characters and needs `before`.
 
@@ -82,7 +86,7 @@ Both routes return 400 for an invalid address and 401 without a session. Each se
 | Path | Responsibility |
 |---|---|
 | `AddressExplorerModule.ts` | Lifecycle: builds the service in `init()`, mounts the router in `run()` |
-| `services/AddressExplorerService.ts` | Section order, the 21-to-7-day fallback, week-by-week transfers, the busy retry |
+| `services/AddressExplorerService.ts` | One read per span section, the 21-to-7-day fallback, week-by-week transfers, the busy retry |
 | `api/AddressExplorerController.ts` | Request validation and responses |
 | `api/createAddressExplorerRouter.ts` | Route declarations |
 | `__tests__/` | Lifecycle tests and service tests against a fake reader |

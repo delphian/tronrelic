@@ -9,6 +9,13 @@
  * table's header row onto the panel title. Tokens only.
  */
 
+/* A section refetching for a new span or a retry keeps its old figures on
+   screen, dimmed, until the new ones arrive, so the page does not jump. */
+.loading {
+    opacity: var(--opacity-60);
+    transition: opacity var(--transition-base);
+}
+
 .empty {
     margin: 0;
     font-size: var(--font-size-body-sm);

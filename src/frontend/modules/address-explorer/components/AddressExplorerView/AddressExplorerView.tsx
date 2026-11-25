@@ -3,79 +3,46 @@
 /**
  * @fileoverview The signed-in body of the `/a/<address>` page.
  *
- * Renders the overview the server fetched, so the page arrives with its
- * content and no loading state. Changing the span refetches the overview in
- * the browser; while it loads, the current sections stay on screen, dimmed,
- * so the page does not jump. When the server could not fetch the overview at
- * all, the view shows one retry panel instead of five empty sections.
+ * Holds the span selector and shares the chosen span with the sections below
+ * it. The sections themselves arrive as children: the server streams each one
+ * in as its chain read finishes, so the page shows its first section without
+ * waiting for its slowest. Changing the span does not reload the page; each
+ * span section refetches itself and updates as soon as its own data arrives.
  */
 
-import { useCallback, useState } from 'react';
-import type { AddressExplorerPeriod, IAddressExplorerOverview } from '@/types';
-import { Button } from '../../../../components/ui/Button';
-import { Panel } from '../../../../components/ui/Panel';
+import { useMemo, useState, type ReactNode } from 'react';
+import type { AddressExplorerPeriod } from '@/types';
 import { SegmentedControl } from '../../../../components/ui/SegmentedControl';
 import { useTranslation } from '../../../localization/hooks/useTranslation';
-import { fetchAddressOverview } from '../../api/addressExplorer.api';
-import { AddressCounterpartiesPanel } from '../AddressCounterpartiesPanel';
-import { AddressDelegationsPanel } from '../AddressDelegationsPanel';
-import { AddressPermissionsPanel } from '../AddressPermissionsPanel';
-import { AddressSummaryPanel } from '../AddressSummaryPanel';
-import { AddressTransfersPanel } from '../AddressTransfersPanel';
+import { AddressExplorerContext, type IAddressExplorerContextValue } from '../../hooks/useAddressExplorer';
 import styles from './AddressExplorerView.module.scss';
 
 /** Props for {@link AddressExplorerView}. */
 export interface IAddressExplorerViewProps {
     /** The base58 address the page is about. */
     address: string;
-    /** The overview the server fetched, or null when that request failed. */
-    initialOverview: IAddressExplorerOverview | null;
+    /** The span the server read the streamed sections over. */
+    initialPeriod: AddressExplorerPeriod;
+    /** The page's sections, each streamed in by the server. */
+    children: ReactNode;
 }
 
-/** The span shown when the server sent no overview to take it from. */
-const DEFAULT_PERIOD: AddressExplorerPeriod = '7d';
-
 /**
- * Render the address page's sections with the span selector above them.
+ * Render the span selector above the page's sections and share the chosen
+ * span with them.
  *
  * @param props - {@link IAddressExplorerViewProps}.
  * @returns The signed-in body of the page.
  */
-export function AddressExplorerView({ address, initialOverview }: IAddressExplorerViewProps) {
+export function AddressExplorerView({ address, initialPeriod, children }: IAddressExplorerViewProps) {
     const { t } = useTranslation();
-    const [overview, setOverview] = useState<IAddressExplorerOverview | null>(initialOverview);
-    const [period, setPeriod] = useState<AddressExplorerPeriod>(initialOverview?.period ?? DEFAULT_PERIOD);
-    const [loading, setLoading] = useState(false);
-    const [loadFailed, setLoadFailed] = useState(initialOverview === null);
-    // Bumped on every successful load, so the transfers list restarts from the
-    // newest page the new overview carries instead of keeping older pages.
-    const [version, setVersion] = useState(0);
-
-    /**
-     * Fetch the overview for a span and show it. A failure keeps whatever is
-     * on screen and offers a retry.
-     *
-     * @param nextPeriod - The span to load.
-     */
-    const load = useCallback(async (nextPeriod: AddressExplorerPeriod) => {
-        setPeriod(nextPeriod);
-        setLoading(true);
-        try {
-            const next = await fetchAddressOverview(address, nextPeriod);
-            setOverview(next);
-            setVersion(current => current + 1);
-            setLoadFailed(false);
-        } catch {
-            setLoadFailed(true);
-        } finally {
-            setLoading(false);
-        }
-    }, [address]);
-
-    /** Reload the current span, for a section's retry button. */
-    const retry = useCallback(() => {
-        void load(period);
-    }, [load, period]);
+    const [period, setPeriod] = useState<AddressExplorerPeriod>(initialPeriod);
+    // A new object only when a value changes, so the sections re-render for a
+    // span change and not for every render of this component.
+    const context = useMemo<IAddressExplorerContextValue>(
+        () => ({ address, period, initialPeriod }),
+        [address, period, initialPeriod]
+    );
 
     const periodOptions = [
         { id: '24h' as const, label: t('addressExplorer.period.24h', '24 hours') },
@@ -84,42 +51,21 @@ export function AddressExplorerView({ address, initialOverview }: IAddressExplor
     ];
 
     return (
-        <div className={styles.view}>
-            <div className={styles.toolbar}>
-                <SegmentedControl
-                    options={periodOptions}
-                    value={period}
-                    onChange={(id) => { void load(id); }}
-                    label={t('addressExplorer.period.label', 'Summary span')}
-                    disabled={loading}
-                />
-                <span className={styles.hint}>
-                    {t('addressExplorer.period.hint', 'Applies to the summary, counterparties, delegations, and permission changes.')}
-                </span>
-            </div>
-
-            {loadFailed && (
-                <Panel title={t('addressExplorer.loadFailed.title', 'Activity could not be loaded')} titleAs="h2">
-                    <div className={styles.failed}>
-                        <p className={styles.failed_text}>
-                            {t('addressExplorer.loadFailed.body', 'The request for this address\'s activity failed. Your connection or our server may be having trouble.')}
-                        </p>
-                        <Button variant="secondary" loading={loading} onClick={retry}>
-                            {t('addressExplorer.error.retry', 'Retry')}
-                        </Button>
-                    </div>
-                </Panel>
-            )}
-
-            {overview && (
-                <div className={loading ? `${styles.sections} ${styles['sections--loading']}` : styles.sections} aria-busy={loading}>
-                    <AddressSummaryPanel address={address} section={overview.profile} onRetry={retry} />
-                    <AddressCounterpartiesPanel section={overview.counterparties} onRetry={retry} />
-                    <AddressTransfersPanel key={version} address={address} initialSection={overview.transfers} onRetry={retry} />
-                    <AddressDelegationsPanel address={address} section={overview.delegations} onRetry={retry} />
-                    <AddressPermissionsPanel section={overview.permissions} onRetry={retry} />
+        <AddressExplorerContext.Provider value={context}>
+            <div className={styles.view}>
+                <div className={styles.toolbar}>
+                    <SegmentedControl
+                        options={periodOptions}
+                        value={period}
+                        onChange={setPeriod}
+                        label={t('addressExplorer.period.label', 'Summary span')}
+                    />
+                    <span className={styles.hint}>
+                        {t('addressExplorer.period.hint', 'Applies to the summary, counterparties, delegations, and permission changes.')}
+                    </span>
                 </div>
-            )}
-        </div>
+                {children}
+            </div>
+        </AddressExplorerContext.Provider>
     );
 }

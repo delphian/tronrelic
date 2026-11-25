@@ -343,18 +343,31 @@ const nextConfig = {
                 ],
             },
             // The address page (/a/<address>) must never be indexed. The
-            // header backs up the page's robots meta tag, and also covers a
-            // response that never renders the page, such as an error. The
-            // path stays out of robots.txt on purpose: a crawler refused the
-            // URL there never sees noindex and can still list the bare URL.
+            // robots header backs up the page's robots meta tag, and also
+            // covers a response that never renders the page, such as an
+            // error. The path stays out of robots.txt on purpose: a crawler
+            // refused the URL there never sees noindex and can still list the
+            // bare URL.
+            //
+            // The page streams each section in as its chain read finishes.
+            // Nginx buffers proxied responses by default, which would hold the
+            // whole page back until the slowest section is done;
+            // X-Accel-Buffering: no turns that off for this response only.
+            //
             // The second entry covers the same page under a language prefix.
             {
                 source: '/a/:path*',
-                headers: [{ key: 'X-Robots-Tag', value: 'noindex, nofollow' }],
+                headers: [
+                    { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
+                    { key: 'X-Accel-Buffering', value: 'no' },
+                ],
             },
             {
                 source: '/:lang([a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*)/a/:path*',
-                headers: [{ key: 'X-Robots-Tag', value: 'noindex, nofollow' }],
+                headers: [
+                    { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
+                    { key: 'X-Accel-Buffering', value: 'no' },
+                ],
             },
         ];
     },

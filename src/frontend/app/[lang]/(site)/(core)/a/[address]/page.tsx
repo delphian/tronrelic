@@ -2,8 +2,8 @@
  * @fileoverview `/a/<address>` — history and analytics for one TRON address.
  *
  * Every visitor gets the header, with the full address and a Tronscan link.
- * A signed-in visitor also gets the address's activity, fetched here on the
- * server so it arrives with the page; a signed-out visitor gets a sign-in
+ * A signed-in visitor also gets the address's activity, streamed in section by
+ * section as each chain read finishes; a signed-out visitor gets a sign-in
  * prompt instead. Signing in through that prompt refreshes this route, which
  * then renders the activity. The activity costs ClickHouse queries, which is
  * why it is gated, and the backend refuses it without a session anyway.
@@ -14,17 +14,14 @@
  * `noindex` and could still list the bare URL.
  */
 
-import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
-import type { IAddressExplorerOverview } from '@/types';
-import { getServerSideApiUrlWithPath } from '../../../../../../lib/api-url';
-import { resolveVisitorForwardedFor } from '../../../../../../lib/resolveVisitorForwardedFor';
 import { isValidTronAddress } from '../../../../../../lib/tronAddress';
 import { Page } from '../../../../../../components/layout';
 import { getServerSession } from '../../../../../../modules/user/lib/session-server';
 import { getServerTranslator } from '../../../../../../modules/localization/server';
-import { AddressExplorerHeader, AddressExplorerView, AddressSignInPrompt } from '../../../../../../modules/address-explorer';
+import { AddressExplorerHeader, AddressSignInPrompt } from '../../../../../../modules/address-explorer';
+import { AddressExplorerStream } from '../../../../../../modules/address-explorer/server';
 
 /** Route parameters of the page. */
 interface IAddressPageParams {
@@ -58,46 +55,6 @@ export async function generateMetadata({ params }: { params: Promise<IAddressPag
 }
 
 /**
- * Fetch the address page's sections during the server render, forwarding the
- * visitor's cookie so the backend's login gate sees their session. A failure
- * returns null, and the view then offers a retry instead of breaking the page.
- *
- * The visitor's address goes out as `X-Forwarded-For` as well. This call
- * leaves from the frontend container, so without it the backend's per-IP rate
- * limit on `/api/address-explorer` would count every visitor as one client,
- * and a few dozen page loads across all visitors would lock everyone out.
- *
- * @param address - The base58 address.
- * @returns The overview, or null when the request failed.
- */
-async function fetchInitialOverview(address: string): Promise<IAddressExplorerOverview | null> {
-    let overview: IAddressExplorerOverview | null = null;
-    try {
-        const requestHeaders = await headers();
-        const cookie = requestHeaders.get('cookie');
-        const forwardedFor = resolveVisitorForwardedFor(requestHeaders);
-        const outboundHeaders: Record<string, string> = {};
-        if (cookie) {
-            outboundHeaders.Cookie = cookie;
-        }
-        if (forwardedFor) {
-            outboundHeaders['x-forwarded-for'] = forwardedFor;
-        }
-        const response = await fetch(`${getServerSideApiUrlWithPath()}/address-explorer/${encodeURIComponent(address)}?period=7d`, {
-            headers: outboundHeaders,
-            cache: 'no-store'
-        });
-        if (response.ok) {
-            const body = await response.json() as { overview?: IAddressExplorerOverview };
-            overview = body.overview ?? null;
-        }
-    } catch {
-        overview = null;
-    }
-    return overview;
-}
-
-/**
  * Address page server component.
  *
  * @param props - Route props; `params.address` is the address from the URL.
@@ -109,13 +66,12 @@ export default async function AddressPage({ params }: { params: Promise<IAddress
         notFound();
     }
     const session = await getServerSession();
-    const overview = session ? await fetchInitialOverview(address) : null;
 
     return (
         <Page>
             <AddressExplorerHeader address={address} />
             {session
-                ? <AddressExplorerView address={address} initialOverview={overview} />
+                ? <AddressExplorerStream address={address} />
                 : <AddressSignInPrompt />}
         </Page>
     );

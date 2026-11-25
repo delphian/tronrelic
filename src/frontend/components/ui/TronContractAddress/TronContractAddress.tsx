@@ -34,6 +34,7 @@ import {
 const CONTRACT_CHIP: IAddressChipKind = {
     explorerBaseUrl: 'https://tronscan.org/#/contract/',
     explorerLabel: 'View contract on Tronscan',
+    explorerInPlace: false,
     copyLabel: 'Copy contract address',
     copiedLabel: 'Contract address copied',
     toolsLabel: 'Contract tools',

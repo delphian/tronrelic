@@ -23,9 +23,11 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, Copy, ExternalLink, Wrench } from 'lucide-react';
+import { ArrowRight, Check, Copy, ExternalLink, Wrench } from 'lucide-react';
 import { IconButton } from '../IconButton';
+import { SiteLink } from '../SiteLink';
 import { useCopyToClipboard } from '../../../lib/hooks/useCopyToClipboard';
+import { useLocalizedHref } from '../../../modules/localization';
 import styles from './ChipToolsMenu.module.scss';
 
 /**
@@ -74,10 +76,17 @@ export interface IChipToolsMenuProps {
     copyLabel: string;
     /** Text the copy entry shows, and a screen reader announces, after a copy. */
     copiedLabel: string;
-    /** Explorer page for the value, opened in a new tab. */
+    /** Explorer page for the value. */
     explorerHref: string;
     /** Text of the entry that opens the explorer page. */
     explorerLabel: string;
+    /**
+     * Open the explorer page in the current tab rather than a new one. For a
+     * page on this site, such as the wallet chip's `/a/<address>`, which the
+     * reader goes to rather than glances at. Defaults to a new tab, which is
+     * right for an outside site such as Tronscan.
+     */
+    explorerInPlace?: boolean;
     /** Chip-specific entries shown below a divider, in menu order. May be empty. */
     entries?: readonly ChipToolsMenuEntry[];
 }
@@ -98,8 +107,10 @@ export function ChipToolsMenu({
     copiedLabel,
     explorerHref,
     explorerLabel,
+    explorerInPlace = false,
     entries = []
 }: IChipToolsMenuProps) {
+    const localize = useLocalizedHref();
     const [menuOpen, setMenuOpen] = useState(false);
     const [menuPosition, setMenuPosition] = useState<IMenuPosition | null>(null);
     const anchorRef = useRef<HTMLDivElement | null>(null);
@@ -344,30 +355,51 @@ export function ChipToolsMenu({
                         <span aria-live="polite">{copied ? copiedLabel : copyLabel}</span>
                     </button>
                     {/*
-                      * The explorer entry and every link entry open a new tab,
-                      * why: the chip is an aside on whatever the user is
-                      * actually reading — a transaction feed, a ladder, an
-                      * admin table — and navigating in place destroys that
-                      * context (and any in-page state, filters, or live stream
-                      * behind it) for a lookup the user means to glance at. A
-                      * new tab also makes a tool forward work when the target
-                      * tool *is* the current page: same-route client navigation
-                      * would not remount the tool, leaving its mount-only
-                      * pre-fill stale. `rel="noopener"` is mandatory with
-                      * `_blank` — without it the opened page gets
+                      * Every link entry, and an outside explorer such as
+                      * Tronscan, opens a new tab, why: the chip is an aside on
+                      * whatever the user is actually reading — a transaction
+                      * feed, a ladder, an admin table — and navigating in place
+                      * destroys that context (and any in-page state, filters,
+                      * or live stream behind it) for a lookup the user means to
+                      * glance at. A new tab also makes a tool forward work when
+                      * the target tool *is* the current page: same-route client
+                      * navigation would not remount the tool, leaving its
+                      * mount-only pre-fill stale. `rel="noopener"` is mandatory
+                      * with `_blank` — without it the opened page gets
                       * `window.opener`.
+                      *
+                      * The one exception is an explorer page on this site that
+                      * the chip asks to open in place, which is the wallet
+                      * chip's "View address": the reader goes to that page to
+                      * study the address rather than glancing at it, so it
+                      * replaces the current page like any other site link.
+                      * It is localized so a reader on a translated page stays
+                      * in their language, and `SiteLink` navigates without a
+                      * full page load where that is safe.
                       */}
-                    <a
-                        role="menuitem"
-                        className={styles.menu_item}
-                        href={explorerHref}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={closeMenu}
-                    >
-                        <ExternalLink size={MENU_ICON_PX} aria-hidden="true" className={styles.menu_icon} />
-                        <span>{explorerLabel}</span>
-                    </a>
+                    {explorerInPlace ? (
+                        <SiteLink
+                            role="menuitem"
+                            className={styles.menu_item}
+                            href={localize(explorerHref)}
+                            onClick={closeMenu}
+                        >
+                            <ArrowRight size={MENU_ICON_PX} aria-hidden="true" className={styles.menu_icon} />
+                            <span>{explorerLabel}</span>
+                        </SiteLink>
+                    ) : (
+                        <a
+                            role="menuitem"
+                            className={styles.menu_item}
+                            href={explorerHref}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={closeMenu}
+                        >
+                            <ExternalLink size={MENU_ICON_PX} aria-hidden="true" className={styles.menu_icon} />
+                            <span>{explorerLabel}</span>
+                        </a>
+                    )}
                     {entries.length > 0 && (
                         <div role="separator" className={styles.menu_divider} />
                     )}

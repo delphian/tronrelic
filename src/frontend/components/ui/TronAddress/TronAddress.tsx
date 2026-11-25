@@ -24,12 +24,14 @@ import { AddressChip, FORWARDABLE_TOOLS, type IAddressChipDisplayProps, type IAd
 /**
  * Wallet configuration for the shared chip. The explorer entry points at the
  * site's own address page rather than Tronscan, so a reader stays on the site;
- * that page carries the Tronscan link. Keeping the path in one constant means
- * a future change touches one line rather than every caller.
+ * that page carries the Tronscan link. It opens in the current tab like any
+ * other link on the site. Keeping the path in one constant means a future
+ * change touches one line rather than every caller.
  */
 const WALLET_CHIP: IAddressChipKind = {
     explorerBaseUrl: '/a/',
     explorerLabel: 'View address',
+    explorerInPlace: true,
     copyLabel: 'Copy address',
     copiedLabel: 'Address copied',
     toolsLabel: 'Forward address to a tool',

@@ -1,12 +1,11 @@
 /**
- * Unit tests for the address page's section assembly, against a fake reader.
+ * Unit tests for the address page's section reads, against a fake reader.
  *
- * These pin the decisions the service makes on top of the reads: a 21-day
- * summary too large for a busy wallet falls back to 7 days and says so, a
- * read refused only because the query slots were full is retried once, the
- * transfers list walks back one week at a time to the start of the stored
- * history, and reads run one after another so a page load holds one query
- * slot at a time.
+ * These pin the decisions the service makes on top of the reads: each span
+ * section reads only its own data, a 21-day read too large for a busy wallet
+ * falls back to 7 days and says so, a read refused only because the query
+ * slots were full is retried once, and the transfers list walks back one week
+ * at a time to the start of the stored history.
  */
 import { describe, it, expect, vi } from 'vitest';
 import type {
@@ -59,10 +58,11 @@ function ok<T>(data: T): IAddressExplorerSectionOk<T> {
 const TRANSFER = { txId: 'aa' } as unknown as IAddressExplorerTransfer;
 
 /**
- * A fake reader whose summary reads answer with `summary` and whose transfer
- * reads answer with `transfers`, recording every call.
+ * A fake reader whose span section reads answer with `summary` and whose
+ * transfer reads answer with `transfers`, recording every call and which
+ * section each span read asked for.
  *
- * @param summary - Answers a summary read for a number of hours.
+ * @param summary - Answers a span section read for a number of hours.
  * @param transfers - Answers a transfers read for its query.
  * @returns The reader and its recorded calls.
  */
@@ -71,38 +71,32 @@ function fakeReader(
     transfers: (query: IAddressActivityTransfersQuery) => AddressExplorerSection<IAddressActivityTransfersPage> = () => ok({ transfers: [TRANSFER], nextCursor: null })
 ) {
     const summaryCalls: IAddressActivityQuery[] = [];
+    const sections: string[] = [];
     const transferCalls: IAddressActivityTransfersQuery[] = [];
-    let running = 0;
-    let maxRunning = 0;
     /**
-     * Wrap a read so the fake can tell whether two reads overlapped.
+     * Build the fake read for one span section, so a test can tell which
+     * section the service asked for.
      *
-     * @param answer - Produces the read's result.
-     * @returns The result, after yielding once to the event loop.
+     * @param name - The section the read stands in for.
+     * @returns A read that records its query and section, then answers.
      */
-    const track = async <T>(answer: () => T): Promise<T> => {
-        running += 1;
-        maxRunning = Math.max(maxRunning, running);
-        await Promise.resolve();
-        running -= 1;
-        return answer();
-    };
-    const summaryRead = (query: IAddressActivityQuery) => {
+    const summaryRead = (name: string) => async (query: IAddressActivityQuery) => {
         summaryCalls.push(query);
-        return track(() => summary(query.hours));
+        sections.push(name);
+        return summary(query.hours);
     };
     const reader = {
         retentionDays: 21,
-        profile: summaryRead,
-        counterparties: summaryRead,
-        delegations: summaryRead,
-        permissions: summaryRead,
-        transfers: (query: IAddressActivityTransfersQuery) => {
+        profile: summaryRead('profile'),
+        counterparties: summaryRead('counterparties'),
+        delegations: summaryRead('delegations'),
+        permissions: summaryRead('permissions'),
+        transfers: async (query: IAddressActivityTransfersQuery) => {
             transferCalls.push(query);
-            return track(() => transfers(query));
+            return transfers(query);
         }
     } as unknown as IAddressActivityReader;
-    return { reader, summaryCalls, transferCalls, maxRunning: () => maxRunning };
+    return { reader, summaryCalls, transferCalls, calledSections: () => sections };
 }
 
 /**
@@ -116,33 +110,32 @@ function buildService(reader: IAddressActivityReader, sleep = vi.fn(async () => 
     return new AddressExplorerService(reader, silentLogger(), { now: () => NOW, sleep });
 }
 
-describe('AddressExplorerService.getOverview', () => {
-    it('reads every section one at a time, charged to the visitor', async () => {
+describe('AddressExplorerService.getSpanSection', () => {
+    it('reads only the named section over the chosen span, charged to the visitor', async () => {
         const fake = fakeReader(() => ok({}));
 
-        const overview = await buildService(fake.reader).getOverview(WALLET, '7d', 'user-1');
+        const section = await buildService(fake.reader).getSpanSection('delegations', WALLET, '7d', 'user-1');
 
-        expect(overview.period).toBe('7d');
-        expect([overview.profile, overview.counterparties, overview.transfers, overview.delegations, overview.permissions].every(section => section.status === 'ok')).toBe(true);
-        expect(fake.summaryCalls).toHaveLength(4);
-        expect(fake.summaryCalls.every(call => call.hours === 168 && call.quotaKey === 'user-1')).toBe(true);
-        expect(fake.maxRunning()).toBe(1);
+        expect(section.status).toBe('ok');
+        expect(fake.summaryCalls).toEqual([{ address: WALLET, hours: 168, quotaKey: 'user-1' }]);
+        expect(fake.calledSections()).toEqual(['delegations']);
+        expect(fake.transferCalls).toHaveLength(0);
     });
 
     it('falls back to 7 days and marks the section when 21 days is too large', async () => {
         const fake = fakeReader((hours) => (hours === 504 ? { status: 'error', reason: 'too-large' } : ok({ hours })));
 
-        const overview = await buildService(fake.reader).getOverview(WALLET, '21d', 'user-1');
+        const section = await buildService(fake.reader).getSpanSection('profile', WALLET, '21d', 'user-1');
 
-        expect(overview.profile).toEqual(expect.objectContaining({ status: 'ok', narrowedFrom: '21d', data: { hours: 168 } }));
+        expect(section).toEqual(expect.objectContaining({ status: 'ok', narrowedFrom: '21d', data: { hours: 168 } }));
     });
 
     it('reports a too-large 7-day read rather than narrowing further', async () => {
         const fake = fakeReader(() => ({ status: 'error', reason: 'too-large' }));
 
-        const overview = await buildService(fake.reader).getOverview(WALLET, '7d', 'user-1');
+        const section = await buildService(fake.reader).getSpanSection('counterparties', WALLET, '7d', 'user-1');
 
-        expect(overview.profile).toEqual({ status: 'error', reason: 'too-large' });
+        expect(section).toEqual({ status: 'error', reason: 'too-large' });
         expect(fake.summaryCalls.filter(call => call.hours !== 168)).toHaveLength(0);
     });
 
@@ -154,9 +147,9 @@ describe('AddressExplorerService.getOverview', () => {
         });
         const sleep = vi.fn(async () => undefined);
 
-        const overview = await buildService(fake.reader, sleep).getOverview(WALLET, '24h', 'user-1');
+        const section = await buildService(fake.reader, sleep).getSpanSection('permissions', WALLET, '24h', 'user-1');
 
-        expect(overview.profile.status).toBe('ok');
+        expect(section.status).toBe('ok');
         expect(sleep).toHaveBeenCalledTimes(1);
     });
 
@@ -164,9 +157,9 @@ describe('AddressExplorerService.getOverview', () => {
         const fake = fakeReader(() => ({ status: 'error', reason: 'quota' }));
         const sleep = vi.fn(async () => undefined);
 
-        const overview = await buildService(fake.reader, sleep).getOverview(WALLET, '24h', 'user-1');
+        const section = await buildService(fake.reader, sleep).getSpanSection('profile', WALLET, '24h', 'user-1');
 
-        expect(overview.profile).toEqual({ status: 'error', reason: 'quota' });
+        expect(section).toEqual({ status: 'error', reason: 'quota' });
         expect(sleep).not.toHaveBeenCalled();
     });
 });

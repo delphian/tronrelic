@@ -30,7 +30,8 @@ export type { IAddressExplorerPermissionKey } from './IAddressExplorerPermission
 export type { IAddressExplorerPermission } from './IAddressExplorerPermission.js';
 export type { IAddressExplorerPermissionUpdate } from './IAddressExplorerPermissionUpdate.js';
 export type { IAddressExplorerPermissions } from './IAddressExplorerPermissions.js';
-export type { IAddressExplorerOverview } from './IAddressExplorerOverview.js';
+export type { IAddressExplorerSpanSections } from './IAddressExplorerSpanSections.js';
+export type { AddressExplorerSpanSection } from './AddressExplorerSpanSection.js';
 export type { IAddressActivityQuery } from './IAddressActivityQuery.js';
 export type { IAddressActivityTransfersQuery } from './IAddressActivityTransfersQuery.js';
 export type { IAddressActivityTransfersPage } from './IAddressActivityTransfersPage.js';
