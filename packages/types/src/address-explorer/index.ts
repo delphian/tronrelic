@@ -35,3 +35,4 @@ export type { IAddressActivityQuery } from './IAddressActivityQuery.js';
 export type { IAddressActivityTransfersQuery } from './IAddressActivityTransfersQuery.js';
 export type { IAddressActivityTransfersPage } from './IAddressActivityTransfersPage.js';
 export type { IAddressActivityReader } from './IAddressActivityReader.js';
+export { mergeAddressExplorerCoverage } from './mergeAddressExplorerCoverage.js';

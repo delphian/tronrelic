@@ -11,9 +11,11 @@
  */
 
 import { useCallback, useState } from 'react';
+import { mergeAddressExplorerCoverage } from '@/types';
 import type {
     AddressExplorerErrorReason,
     AddressExplorerSection,
+    IAddressExplorerCoverage,
     IAddressExplorerToken,
     IAddressExplorerTransfer,
     IAddressExplorerTransfers,
@@ -67,6 +69,9 @@ export function AddressTransfersPanel({ address, initialSection, onRetry }: IAdd
     const [tokens, setTokens] = useState<Record<string, IAddressExplorerToken>>(initialOk?.tokens ?? {});
     const [next, setNext] = useState<IAddressExplorerTransfersCursor | null>(initialOk?.data.next ?? null);
     const [oldest, setOldest] = useState<string | null>(initialOk?.window.from ?? null);
+    // Coverage of every page on screen. A gap in an older week hides transfers
+    // as badly as one in the newest, so the notice speaks for the whole list.
+    const [coverage, setCoverage] = useState<IAddressExplorerCoverage | null>(initialOk?.coverage ?? null);
     const [olderError, setOlderError] = useState<AddressExplorerErrorReason | null>(null);
     const [loading, setLoading] = useState(false);
 
@@ -85,6 +90,7 @@ export function AddressTransfersPanel({ address, initialSection, onRetry }: IAdd
                     setTokens(current => ({ ...current, ...section.tokens }));
                     setNext(section.data.next);
                     setOldest(section.window.from);
+                    setCoverage(current => (current ? mergeAddressExplorerCoverage(current, section.coverage) : section.coverage));
                 } else {
                     setOlderError(section.reason);
                 }
@@ -99,11 +105,15 @@ export function AddressTransfersPanel({ address, initialSection, onRetry }: IAdd
     const meta = oldest
         ? <>{t('addressExplorer.transfers.meta', 'Newest first, back to')} <ClientTime date={oldest} format="short" /></>
         : undefined;
+    // The notice describes every page on screen, the same range the meta line names.
+    const noticeSection: AddressExplorerSection<IAddressExplorerTransfers> = initialOk && coverage
+        ? { ...initialOk, coverage }
+        : initialSection;
 
     return (
         <Panel title={t('addressExplorer.transfers.title', 'Transfers')} titleAs="h2" meta={meta}>
             <>
-                <AddressSectionNotice section={initialSection} coverageField="complete" onRetry={onRetry} />
+                <AddressSectionNotice section={noticeSection} coverageField="complete" onRetry={onRetry} />
                 {initialOk && rows.length === 0 && (
                     <p className={styles.empty}>
                         {next

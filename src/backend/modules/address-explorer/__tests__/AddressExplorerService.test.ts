@@ -16,6 +16,7 @@ import type {
     IAddressActivityTransfersPage,
     IAddressActivityTransfersQuery,
     IAddressExplorerCoverage,
+    IAddressExplorerSectionOk,
     IAddressExplorerTransfer,
     ISystemLogService
 } from '@/types';
@@ -47,9 +48,10 @@ const COVERAGE: IAddressExplorerCoverage = {
  * A successful section carrying the given data.
  *
  * @param data - The section's data.
- * @returns The section.
+ * @returns The section, typed as a success so a test can spread it and
+ * replace its window or coverage.
  */
-function ok<T>(data: T): AddressExplorerSection<T> {
+function ok<T>(data: T): IAddressExplorerSectionOk<T> {
     return { status: 'ok', window: { from: 'a', to: 'b' }, coverage: COVERAGE, tokens: {}, addressTags: {}, data };
 }
 
@@ -203,6 +205,26 @@ describe('AddressExplorerService.getTransfers', () => {
         expect(fake.transferCalls).toHaveLength(3);
         expect(fake.transferCalls[2].from).toBe(new Date(NOW.getTime() - 21 * DAY_MS).toISOString());
         expect(page).toEqual(expect.objectContaining({ status: 'ok', data: { transfers: [], next: null } }));
+    });
+
+    /** Guards against a week that looks empty only because its blocks are missing hiding that gap. */
+    it('reports the coverage and window of every week a page scanned, not only the last', async () => {
+        let call = 0;
+        const fake = fakeReader(() => ok({}), () => {
+            call += 1;
+            return call === 1
+                ? { ...ok({ transfers: [], nextCursor: null }), window: { from: 'week1-from', to: 'week1-to' }, coverage: { ...COVERAGE, presentBlocks: 90, missingBlocks: 10, complete: false, blocksComplete: false } }
+                : { ...ok({ transfers: [TRANSFER], nextCursor: null }), window: { from: 'week2-from', to: 'week2-to' } };
+        });
+
+        const page = await buildService(fake.reader).getTransfers(WALLET, 'user-1');
+
+        expect(fake.transferCalls).toHaveLength(2);
+        expect(page).toEqual(expect.objectContaining({
+            status: 'ok',
+            window: { from: 'week2-from', to: 'week1-to' },
+            coverage: expect.objectContaining({ expectedBlocks: 200, presentBlocks: 190, missingBlocks: 10, complete: false, blocksComplete: false })
+        }));
     });
 
     it('starts from the position the previous page gave', async () => {
