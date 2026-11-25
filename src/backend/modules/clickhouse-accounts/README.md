@@ -1,6 +1,6 @@
 # ClickHouse Accounts
 
-Provisions ClickHouse users so that different kinds of caller reach ClickHouse under limits the server enforces, and gives admins configuration, an audit trail, and usage history for each one. The first managed account is `ai-agent`, a read-only user for AI tools that read the `tron` chain database.
+Provisions ClickHouse users so that different kinds of caller reach ClickHouse under limits the server enforces, and gives admins configuration, an audit trail, and usage history for each one. Two managed accounts read the `tron` chain database: `ai-agent` for AI tools, and `address-explorer` for the signed-in `/a/<address>` page.
 
 A **ClickHouse account** here is a ClickHouse user together with its settings profile (per-query limits) and quota (per-hour limits). A **managed** account is created and maintained by this module. An **observed** account is only reported on.
 
@@ -42,12 +42,15 @@ Accounts are declared in `buildAccountDefinitions.ts`, not created from the admi
 |---|---|---|---|
 | `default` | `CLICKHOUSE_USER` | Observed | Whatever the server gives it |
 | `ai-agent` | `tronrelic_ai_agent` | Managed | `SELECT` on `tron.*` |
+| `address-explorer` | `tronrelic_address_explorer` | Managed | `SELECT` on `tron.*` |
+
+`address-explorer` serves the [Address Explorer module](../address-explorer/README.md). It starts with the `ai-agent` limits except `maxConcurrentQueries`, which is 4 rather than 2 and is what caps the page's total load. The page passes each visitor's user id as the quota key, so the hourly limits apply per visitor. It is a separate account so page visitors and AI agents cannot use up each other's slots or quota.
 
 `default` stays observed. The chain writer, migrations, table creation, and the admin table browser use it, and a limit that stopped one of the writer's inserts would leave a gap in the chain data. For the same reason its queries cannot be stopped from the admin page.
 
 ## What a Managed Account Enforces
 
-| Limit field | ClickHouse setting or quota | `ai-agent` default | Ceiling |
+| Limit field | ClickHouse setting or quota | `ai-agent` default (`address-explorer` matches unless noted above) | Ceiling |
 |---|---|---|---|
 | `maxExecutionSeconds` | `max_execution_time` | 10 | 60 |
 | `maxRowsToRead` | `max_rows_to_read` | 50M | 500M |

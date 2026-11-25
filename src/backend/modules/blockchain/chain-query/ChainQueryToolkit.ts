@@ -20,17 +20,26 @@ import { CHAIN_DATA_RETENTION_DAYS } from '../chain-data/buildChainDataSchema.js
 import { AddressTagLookup } from './AddressTagLookup.js';
 import { ChainCoverageReader } from './ChainCoverageReader.js';
 import { ChainQueryError } from './ChainQueryError.js';
-import { ChainQuerySession } from './ChainQuerySession.js';
+import { CHAIN_QUERY_ACCOUNT_ID, CHAIN_QUERY_DEADLINE_MS, ChainQuerySession } from './ChainQuerySession.js';
 import { TokenCatalog } from './TokenCatalog.js';
 import { UsdPricer } from './UsdPricer.js';
 
-/** The ClickHouse account every chain query tool reads as. */
-export const CHAIN_QUERY_ACCOUNT_ID = 'ai-agent';
+export { CHAIN_QUERY_ACCOUNT_ID };
+
+/** Choices that differ between the callers that build a toolkit. */
+export interface IChainQueryToolkitOptions {
+    /**
+     * The managed ClickHouse account every session reads as. Defaults to
+     * `ai-agent`. The address page passes its own account so a busy page
+     * cannot spend the AI tools' limits, or the other way round.
+     */
+    accountId?: string;
+}
 
 /** What a chain query tool is built from. */
 export interface IChainQueryToolkit {
     /**
-     * Open a session reading as the `ai-agent` account for one tool call.
+     * Open a session reading as the toolkit's ClickHouse account for one tool call.
      *
      * @param context - The run identity the governor passed to the handler.
      * @param toolName - The calling tool, so the session's limit errors carry
@@ -65,12 +74,15 @@ export interface IChainQueryToolkit {
  *                      Passed in by the registration code that knows the
  *                      tools, so this module does not depend on them. A tool
  *                      missing from it gets the session's default advice.
+ * @param options - Which ClickHouse account the sessions read as.
  * @returns The toolkit every chain query tool is built from.
  */
 export function createChainQueryToolkit(
     serviceRegistry: IServiceRegistry,
-    limitAdvice: Readonly<Record<string, string>> = {}
+    limitAdvice: Readonly<Record<string, string>> = {},
+    options: IChainQueryToolkitOptions = {}
 ): IChainQueryToolkit {
+    const accountId = options.accountId ?? CHAIN_QUERY_ACCOUNT_ID;
     return {
         openSession: (context, toolName) => {
             const accounts = serviceRegistry.get<IClickHouseAccountService>('clickhouse-accounts');
@@ -80,13 +92,15 @@ export function createChainQueryToolkit(
             let session: ChainQuerySession;
             try {
                 session = new ChainQuerySession(
-                    accounts.reader(CHAIN_QUERY_ACCOUNT_ID),
+                    accounts.reader(accountId),
                     context,
-                    toolName ? limitAdvice[toolName] : undefined
+                    toolName ? limitAdvice[toolName] : undefined,
+                    CHAIN_QUERY_DEADLINE_MS,
+                    accountId
                 );
             } catch {
                 throw new ChainQueryError(
-                    'Chain data cannot be read right now: the ai-agent ClickHouse account is not active. An operator can check it on the ClickHouse tab of /system/system.',
+                    `Chain data cannot be read right now: the ${accountId} ClickHouse account is not active. An operator can check it on the ClickHouse tab of /system/system.`,
                     'unavailable'
                 );
             }

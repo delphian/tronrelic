@@ -13,6 +13,11 @@
 # /_next/ is deliberately not disallowed. Next.js serves every page's CSS and
 # JavaScript from there, and Google renders pages with them; blocking it makes
 # Googlebot see unstyled pages and misjudge mobile layout.
+#
+# /a/ (the address pages) is deliberately not disallowed either, although
+# those pages must never be indexed. They send noindex as a meta tag and an
+# X-Robots-Tag header, and a crawler refused a URL here never fetches it, so
+# it never sees the noindex and can still list the bare URL from links.
 
 User-agent: *
 Allow: /

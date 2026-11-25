@@ -1,0 +1,40 @@
+/**
+ * AddressExplorerHeader styles.
+ *
+ * The full address is long and unbroken, so it may wrap anywhere rather than
+ * push the page wider than a phone. The Tronscan link reads as a link, with
+ * its out-arrow, and keeps to one line. Tokens only.
+ */
+
+.address_row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-xs) var(--gap-sm);
+    min-width: 0;
+}
+
+.address {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-body);
+    color: var(--color-text);
+    overflow-wrap: anywhere;
+    min-width: 0;
+}
+
+.tronscan_link {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    margin-left: auto;
+    color: var(--color-primary);
+    font-size: var(--font-size-body-sm);
+    font-weight: var(--font-weight-medium);
+    white-space: nowrap;
+    transition: color var(--transition-base);
+
+    &:hover {
+        color: var(--color-secondary);
+        text-decoration: underline;
+    }
+}

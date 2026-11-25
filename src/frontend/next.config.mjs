@@ -342,6 +342,20 @@ const nextConfig = {
                     { key: 'Cache-Control', value: 'no-store' },
                 ],
             },
+            // The address page (/a/<address>) must never be indexed. The
+            // header backs up the page's robots meta tag, and also covers a
+            // response that never renders the page, such as an error. The
+            // path stays out of robots.txt on purpose: a crawler refused the
+            // URL there never sees noindex and can still list the bare URL.
+            // The second entry covers the same page under a language prefix.
+            {
+                source: '/a/:path*',
+                headers: [{ key: 'X-Robots-Tag', value: 'noindex, nofollow' }],
+            },
+            {
+                source: '/:lang([a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*)/a/:path*',
+                headers: [{ key: 'X-Robots-Tag', value: 'noindex, nofollow' }],
+            },
         ];
     },
     // Redirects moved to middleware.ts for referrer preservation

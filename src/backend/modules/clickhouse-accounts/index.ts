@@ -12,4 +12,4 @@ export {
     CLICKHOUSE_ACCOUNTS_SERVICE_NAME
 } from './ClickHouseAccountsModule.js';
 export type { IClickHouseAccountsModuleDependencies } from './ClickHouseAccountsModule.js';
-export { AI_AGENT_ACCOUNT_ID, DEFAULT_ACCOUNT_ID } from './services/buildAccountDefinitions.js';
+export { ADDRESS_EXPLORER_ACCOUNT_ID, AI_AGENT_ACCOUNT_ID, DEFAULT_ACCOUNT_ID } from './services/buildAccountDefinitions.js';

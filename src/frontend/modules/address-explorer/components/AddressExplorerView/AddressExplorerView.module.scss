@@ -1,0 +1,50 @@
+/**
+ * AddressExplorerView styles.
+ *
+ * The span selector sits above the sections with a short hint that wraps
+ * under it on a narrow screen. While a new span loads, the sections dim so
+ * the reader can tell the figures are about to change. Tokens only.
+ */
+
+.view {
+    display: flex;
+    flex-direction: column;
+    gap: var(--stack-gap-lg);
+    min-width: 0;
+}
+
+.toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-sm) var(--gap-md);
+}
+
+.hint {
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+}
+
+.sections {
+    display: flex;
+    flex-direction: column;
+    gap: var(--stack-gap-lg);
+    min-width: 0;
+    transition: opacity var(--transition-base);
+}
+
+.sections--loading {
+    opacity: var(--opacity-60);
+}
+
+.failed {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--gap-md);
+}
+
+.failed_text {
+    margin: 0;
+    color: var(--color-text-muted);
+}

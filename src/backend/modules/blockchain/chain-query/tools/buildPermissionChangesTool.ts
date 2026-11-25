@@ -52,7 +52,8 @@ import {
     timeTxCursorCondition,
     windowCondition,
     windowParams,
-    windowProperties
+    windowProperties,
+    type IChainQueryToolOptions
 } from './chainQueryToolShared.js';
 
 /** The window for permission updates: a small table, so the whole retention. */
@@ -237,9 +238,14 @@ function classifyOwnerControl(account: string, owner: IPermissionView | null): s
  * Build the permission changes tool.
  *
  * @param toolkit - The shared chain query dependencies.
+ * @param options - A wider window for the updates view narrowed to one
+ *                  address, for a caller other than the AI tool registry; the
+ *                  registered tool omits it. The chain-wide updates read and
+ *                  the permission-transactions view keep this tool's own rules.
  * @returns The tool, ready to register.
  */
-export function buildPermissionChangesTool(toolkit: IChainQueryToolkit): IAiTool {
+export function buildPermissionChangesTool(toolkit: IChainQueryToolkit, options: IChainQueryToolOptions = {}): IAiTool {
+    const addressUpdateWindowRules = options.addressWindowRules ?? UPDATE_WINDOW_RULES;
     return {
         name: AI_TOOL_NAMES.permissionChanges,
         title: 'Find account permission changes',
@@ -275,8 +281,9 @@ export function buildPermissionChangesTool(toolkit: IChainQueryToolkit): IAiTool
         ],
         handler: async (input, _principal, context) => runChainQueryTool(toolkit, context, AI_TOOL_NAMES.permissionChanges, async (session) => {
             const view = parseChoice(input.view, 'view', VIEWS, 'updates');
-            const rules = view === 'updates' ? UPDATE_WINDOW_RULES : SIGNED_WINDOW_RULES;
             const address = parseOptionalAddress(input.address, 'address');
+            const updateRules = address ? addressUpdateWindowRules : UPDATE_WINDOW_RULES;
+            const rules = view === 'updates' ? updateRules : SIGNED_WINDOW_RULES;
             const onlyTransferred = parseFlag(input.onlyTransferred, 'onlyTransferred', false);
             const includeFailed = parseFlag(input.includeFailed, 'includeFailed', false);
             const recoverSigners = parseFlag(input.recoverSigners, 'recoverSigners', false);

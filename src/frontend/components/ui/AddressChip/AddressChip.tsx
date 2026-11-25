@@ -4,14 +4,15 @@
  * A wallet address and a smart contract address are the same base58 string, so
  * they share one chip: the truncated display, the tag underline and warning
  * marker, and the wrench menu. What differs between them is configuration —
- * which Tronscan page the explorer entry opens, which tool pages the menu
+ * which page the explorer entry opens (the site's own address page for a
+ * wallet, Tronscan's contract page for a contract), which tool pages the menu
  * offers, and the wording of the menu entries. Each public component passes an
  * {@link IAddressChipKind} describing that, so a fix to the chip lands in both
  * at once instead of drifting between two copies.
  *
  * Every chip shows exactly one icon after the address: the wrench from the
- * shared `ChipToolsMenu`. Copying the address and opening it on Tronscan are
- * the first two entries of its menu, followed by the tool pages and, for
+ * shared `ChipToolsMenu`. Copying the address and opening its page are the
+ * first two entries of its menu, followed by the tool pages and, for
  * admins, the tag editor. Three icons per address buried the surrounding data
  * in dense rows, and callers turning icons off to save space left the same
  * address with different abilities on different pages. The wrench is not
@@ -65,9 +66,9 @@ const TAIL_CHARS = 4;
  * never branches on "is this a wallet" itself.
  */
 export interface IAddressChipKind {
-    /** Explorer URL the address is appended to, such as Tronscan's `/#/address/`. */
+    /** URL the address is appended to: the site's `/a/` page, or a Tronscan page such as `/#/contract/`. */
     explorerBaseUrl: string;
-    /** Text of the menu entry that opens the address on the explorer. */
+    /** Text of the menu entry that opens that page. */
     explorerLabel: string;
     /** Text of the menu entry that copies the address. */
     copyLabel: string;

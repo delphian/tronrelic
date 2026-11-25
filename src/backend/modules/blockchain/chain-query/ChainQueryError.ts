@@ -14,11 +14,26 @@
  * What went wrong, from the caller's point of view.
  *
  * - `input`: an argument was invalid; fix it and call again.
- * - `limit`: the `ai-agent` account's limits stopped a query; ask for less.
+ * - `limit`: the ClickHouse account's limits stopped a query; ask for less.
  * - `unavailable`: chain data cannot be read right now; retrying later may work.
  * - `failed`: anything else; the details are in the server log, not the message.
  */
 export type ChainQueryErrorKind = 'input' | 'limit' | 'unavailable' | 'failed';
+
+/**
+ * Which limit stopped a read, for an error of kind `limit`.
+ *
+ * A caller that is not a model, such as the address page, has to react
+ * differently to each: a read that was too big can be retried over a shorter
+ * window, while a used-up hourly quota or a full concurrency slot cannot be
+ * fixed by asking for less.
+ *
+ * - `size`: a per-query limit on rows, bytes, memory, or running time.
+ * - `deadline`: the call's own reading time ran out.
+ * - `quota`: the caller's hourly quota is used up.
+ * - `concurrency`: too many of the account's queries were already running.
+ */
+export type ChainQueryLimitReason = 'size' | 'deadline' | 'quota' | 'concurrency';
 
 /**
  * An error whose message is safe and useful to show a model.
@@ -29,8 +44,13 @@ export class ChainQueryError extends Error {
      *                  Shown to the model as-is, so it must not carry SQL,
      *                  credentials, or internal hostnames.
      * @param kind - Whether a retry with different input can help.
+     * @param reason - Which limit stopped the read, set only for kind `limit`.
      */
-    constructor(message: string, public readonly kind: ChainQueryErrorKind) {
+    constructor(
+        message: string,
+        public readonly kind: ChainQueryErrorKind,
+        public readonly reason?: ChainQueryLimitReason
+    ) {
         super(message);
         this.name = 'ChainQueryError';
     }

@@ -3,7 +3,8 @@
  *
  * Every identifier chip (`TronAddress`, `TronContractAddress`,
  * `TronTransactionId`) shows exactly one icon after its value: a wrench. Its
- * menu always starts with copying the value and opening it on Tronscan, and a
+ * menu always starts with copying the value and opening its page (the site's
+ * own address page for a wallet, Tronscan otherwise), and a
  * chip may add entries below a divider, such as the address chip's tool pages
  * and tag editor. One icon per value keeps dense rows readable, and keeping
  * the menu in one component means the chips cannot drift apart in how the

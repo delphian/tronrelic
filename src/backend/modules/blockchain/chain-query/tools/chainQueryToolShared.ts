@@ -57,6 +57,22 @@ export const CHAIN_QUERY_CAPABILITY: IAiToolCapability = {
     surfacesUntrustedContent: true
 };
 
+/**
+ * Choices a caller other than the AI tool registry may make when it builds an
+ * address tool for its own use, such as the address page, which reuses these
+ * tools' queries rather than keeping a second copy of them.
+ */
+export interface IChainQueryToolOptions {
+    /**
+     * Replaces the tool's default and widest window for a read narrowed to one
+     * address. The AI tools keep a week per call so a model paces itself; the
+     * address page reads one wallet for a person who asked to see all the
+     * stored days at once, under its own ClickHouse account and limits. A read
+     * no address narrows keeps the tool's own rules whatever is passed here.
+     */
+    addressWindowRules?: IWindowRules;
+}
+
 /** The USDT contract, named in descriptions because symbols are refused as token filters. */
 export const USDT_CONTRACT = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
 
