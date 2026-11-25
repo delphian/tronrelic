@@ -35,10 +35,10 @@ import { fromClickHouseTime, utcDay } from '../clickHouseTime.js';
 import { LOOKALIKE_NOTE, lookalikePatternSql, otherLookalikes } from '../lookalikes.js';
 import { toChainAmount, tokenKey } from '../TokenCatalog.js';
 import { priceKey, toUsdValue } from '../UsdPricer.js';
-import { AI_TOOL_NAMES, CHAIN_QUERY_CAPABILITY, SHARED_DESCRIPTION, USDT_CONTRACT, windowProperties } from './chainQueryToolShared.js';
+import { AI_TOOL_NAMES, CHAIN_QUERY_CAPABILITY, SHARED_DESCRIPTION, USDT_CONTRACT, windowProperties, type IChainQueryToolOptions } from './chainQueryToolShared.js';
 
-/** The window this tool accepts. */
-const WINDOW_RULES: IWindowRules = { defaultHours: 24, maxHours: 168 };
+/** The window this tool accepts unless its builder is given wider rules. */
+const DEFAULT_WINDOW_RULES: IWindowRules = { defaultHours: 24, maxHours: 168 };
 
 /** Groups returned when the caller does not say. */
 const DEFAULT_LIMIT = 25;
@@ -68,9 +68,12 @@ interface ICounterpartyRow {
  * Build the address counterparties tool.
  *
  * @param toolkit - The shared chain query dependencies.
+ * @param options - A wider window for a caller other than the AI tool
+ *                  registry; the registered tool omits it.
  * @returns The tool, ready to register.
  */
-export function buildAddressCounterpartiesTool(toolkit: IChainQueryToolkit): IAiTool {
+export function buildAddressCounterpartiesTool(toolkit: IChainQueryToolkit, options: IChainQueryToolOptions = {}): IAiTool {
+    const windowRules = options.addressWindowRules ?? DEFAULT_WINDOW_RULES;
     return {
         name: AI_TOOL_NAMES.addressCounterparties,
         title: 'Summarize address counterparties',
@@ -93,7 +96,7 @@ export function buildAddressCounterpartiesTool(toolkit: IChainQueryToolkit): IAi
                 token: { type: 'string', description: `"TRX", a TRC-20 contract address (USDT is ${USDT_CONTRACT}), or a numeric TRC-10 id. Omit for every asset.` },
                 sortBy: { type: 'string', enum: ['count', 'amount'], description: '"count" (default) orders by number of transfers; "amount" orders by total and requires token.' },
                 includeZeroValue: { type: 'boolean', description: 'Count zero-amount transfers too. Default false; they are mostly poisoning spam.' },
-                ...windowProperties(WINDOW_RULES),
+                ...windowProperties(windowRules),
                 limit: { type: 'integer', minimum: 1, maximum: MAX_LIMIT, description: `Rows per page. Default ${DEFAULT_LIMIT}, at most ${MAX_LIMIT}.` },
                 cursor: { type: 'string', description: 'nextCursor from the previous response, to fetch the next page. Keep every other argument the same.' }
             },
@@ -112,7 +115,7 @@ export function buildAddressCounterpartiesTool(toolkit: IChainQueryToolkit): IAi
             const includeZeroValue = parseFlag(input.includeZeroValue, 'includeZeroValue', false);
             const limit = parseInteger(input.limit, 'limit', DEFAULT_LIMIT, 1, MAX_LIMIT);
             const cursor = decodeCursor(input.cursor, ['offset', ...WINDOW_CURSOR_KEYS]);
-            const window = pinWindowToCursor(cursor, parseWindow(input, WINDOW_RULES, toolkit.now(), toolkit.retentionDays), WINDOW_RULES);
+            const window = pinWindowToCursor(cursor, parseWindow(input, windowRules, toolkit.now(), toolkit.retentionDays), windowRules);
             const offset = Number(cursor?.offset ?? 0);
             if (!Number.isInteger(offset) || offset < 0) {
                 throw new ChainQueryError('cursor is not one this tool issued. Pass back nextCursor exactly, or omit it.', 'input');

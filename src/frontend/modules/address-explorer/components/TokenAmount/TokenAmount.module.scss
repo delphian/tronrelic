@@ -1,0 +1,27 @@
+/**
+ * TokenAmount styles.
+ *
+ * The amount and token sit on one line, aligned to the cell's end like the
+ * other numeric columns, with the dollar value muted beneath. Tokens only.
+ */
+
+.amount {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: var(--gap-2xs);
+    line-height: var(--line-height-dense);
+}
+
+.value {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--gap-xs);
+}
+
+.usd {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}

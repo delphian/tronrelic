@@ -77,7 +77,8 @@ import {
     timeTxCursorCondition,
     windowCondition,
     windowParams,
-    windowProperties
+    windowProperties,
+    type IChainQueryToolOptions
 } from './chainQueryToolShared.js';
 
 /**
@@ -275,9 +276,14 @@ function fitsAddressWindow(input: Record<string, unknown>, toolkit: IChainQueryT
  * Build the delegations tool.
  *
  * @param toolkit - The shared chain query dependencies.
+ * @param options - A wider window for reads narrowed to one address, for a
+ *                  caller other than the AI tool registry; the registered tool
+ *                  omits it. Chain-wide reads, including the staking view
+ *                  without an address, keep this tool's own rules.
  * @returns The tool, ready to register.
  */
-export function buildResourceDelegationsTool(toolkit: IChainQueryToolkit): IAiTool {
+export function buildResourceDelegationsTool(toolkit: IChainQueryToolkit, options: IChainQueryToolOptions = {}): IAiTool {
+    const addressWindowRules = options.addressWindowRules ?? WINDOW_RULES;
     return {
         name: AI_TOOL_NAMES.resourceDelegations,
         title: 'Show energy and bandwidth delegations',
@@ -334,7 +340,7 @@ export function buildResourceDelegationsTool(toolkit: IChainQueryToolkit): IAiTo
             const limit = parseInteger(input.limit, 'limit', DEFAULT_LIMIT, 1, MAX_LIMIT);
             const cursor = view === 'events' ? decodeCursor(input.cursor, TIME_TX_CURSOR_KEYS) : undefined;
             const chainWide = view === 'top-delegators' || view === 'top-receivers' || (view === 'events' && !address);
-            const rules = chainWide ? CHAIN_WIDE_WINDOW_RULES : WINDOW_RULES;
+            const rules = chainWide ? CHAIN_WIDE_WINDOW_RULES : address ? addressWindowRules : WINDOW_RULES;
             const window = pinWindowToCursor(cursor, parseChainWideWindow(input, rules, chainWide, toolkit), rules);
 
             if (view === 'counterparties' && !address) {

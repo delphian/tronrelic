@@ -1,0 +1,19 @@
+/**
+ * AddressSignInPrompt styles.
+ *
+ * A short explanation followed by the sign-in button, left-aligned so the
+ * prompt reads as part of the page rather than as a modal. Tokens only.
+ */
+
+.prompt {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--gap-md);
+}
+
+.text {
+    margin: 0;
+    max-width: var(--max-width-prose);
+    color: var(--color-text-muted);
+}

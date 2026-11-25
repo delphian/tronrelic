@@ -44,7 +44,8 @@ import { MenuModule, MAIN_SYSTEM_CONTAINER_ID } from './modules/menu/index.js';
 import { LogsModule } from './modules/logs/index.js';
 import { DatabaseModule } from './modules/database/index.js';
 import { ClickHouseModule } from './modules/clickhouse/index.js';
-import { ClickHouseAccountsModule } from './modules/clickhouse-accounts/index.js';
+import { ClickHouseAccountsModule, ADDRESS_EXPLORER_ACCOUNT_ID } from './modules/clickhouse-accounts/index.js';
+import { AddressExplorerModule } from './modules/address-explorer/index.js';
 import { MarkdownModule } from './modules/markdown/index.js';
 import { PagesModule, PageService } from './modules/pages/index.js';
 import { WidgetsModule } from './modules/widgets/index.js';
@@ -72,6 +73,7 @@ import { BlockchainService } from './modules/blockchain/blockchain.service.js';
 import { TransactionDetailService } from './modules/blockchain/transaction-detail.service.js';
 import { registerTransactionAiTools } from './modules/blockchain/transaction-ai-tools.js';
 import { registerChainQueryAiTools } from './modules/blockchain/chain-query/registerChainQueryAiTools.js';
+import { createAddressActivityReader } from './modules/blockchain/chain-query/AddressActivityReader.js';
 import { TronGridClient } from './modules/blockchain/tron-grid.client.js';
 import { BlockEmitter } from './modules/blockchain/block-emitter.js';
 import { UsdtParametersFetcher } from './modules/usdt-parameters/usdt-parameters-fetcher.js';
@@ -318,6 +320,7 @@ interface BootstrapContext {
         providers: ProvidersModule;
         valuation: ValuationModule;
         addressTags: AddressTagsModule;
+        addressExplorer: AddressExplorerModule;
         localization: LocalizationModule;
         consent: ConsentModule;
         tools: ToolsModule;
@@ -581,6 +584,16 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     // sanctions/freeze ingestion jobs (nullable, so ENABLE_SCHEDULER=false
     // switches all ingestion off).
     await addressTagsModule.init({ database: coreDatabase, serviceRegistry, menuService, app, scheduler: schedulerService });
+    // Address explorer: the signed-in /a/<address> page. Its chain reads reuse
+    // the chain query tools' queries under the page's own ClickHouse account,
+    // so visitors and AI agents never spend each other's limits. The reader
+    // resolves that account, tags, and prices from the registry per request,
+    // so it can be built before those modules publish.
+    const addressExplorerModule = new AddressExplorerModule();
+    await addressExplorerModule.init({
+        reader: createAddressActivityReader(serviceRegistry, ADDRESS_EXPLORER_ACCOUNT_ID),
+        app
+    });
     // Localization: languages, per-route publishing, and translations. Inert
     // until an administrator enables a language and publishes a route in it.
     // The two listers are resolved per call: CMS pages and menu entries change
@@ -738,6 +751,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
             providers: providersModule,
             valuation: valuationModule,
             addressTags: addressTagsModule,
+            addressExplorer: addressExplorerModule,
             localization: localizationModule,
             consent: consentModule,
             tools: toolsModule,
@@ -813,6 +827,8 @@ async function bootstrapRun(ctx: BootstrapContext): Promise<void> {
     // Address-tags publishes 'address-tags' and mounts its gated routers; no
     // ordering constraint beyond menu having run (menu runs early above).
     await modules.addressTags.run();
+    // Address explorer mounts its login-gated router; no ordering constraint.
+    await modules.addressExplorer.run();
     // Localization publishes 'localization' and mounts its public and admin
     // routers; no ordering constraint beyond menu having run.
     await modules.localization.run();

@@ -1,0 +1,50 @@
+/**
+ * Styles shared by the address page's table panels.
+ *
+ * The counterparties, transfers, delegations, and permission changes panels
+ * place their notice, table or empty message, and footer directly in the
+ * panel, which already stacks its children. They must not wrap them in a
+ * container of their own: a flush table that is the first child of its
+ * container pulls itself up over the card's top padding, which would drag the
+ * table's header row onto the panel title. Tokens only.
+ */
+
+.empty {
+    margin: 0;
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+}
+
+.footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-sm) var(--gap-md);
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+}
+
+/* A cell holding a main value with a quieter line under it, so a phone's
+   stacked row shows two facts on one labelled line instead of two. */
+.stacked {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--gap-2xs);
+    line-height: var(--line-height-dense);
+}
+
+.stacked--end {
+    align-items: flex-end;
+}
+
+.secondary {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-xs) var(--gap-sm);
+}

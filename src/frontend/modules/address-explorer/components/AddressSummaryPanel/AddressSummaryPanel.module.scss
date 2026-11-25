@@ -1,0 +1,70 @@
+/**
+ * AddressSummaryPanel styles.
+ *
+ * Stacks the figures, tags, poisoning warning, and token table one gap apart.
+ * Lookalike address groups wrap their chips rather than widening the panel on
+ * a phone. Tokens only.
+ */
+
+.body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--stack-gap-md);
+    min-width: 0;
+}
+
+.tags {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-xs) var(--gap-sm);
+}
+
+.label {
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: var(--letter-spacing-wide);
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+}
+
+.lookalikes {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+}
+
+.warning {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--gap-sm);
+    margin: 0;
+    font-size: var(--font-size-body-sm);
+    color: var(--color-warning-text);
+
+    svg {
+        flex-shrink: 0;
+        margin-top: var(--gap-2xs);
+    }
+}
+
+.groups {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-xs);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-xs) var(--gap-sm);
+}
+
+.note {
+    margin: 0;
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+}

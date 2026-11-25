@@ -119,7 +119,8 @@ export function buildChainResponse(parts: IChainResponseParts, payload: Record<s
  * @param toolName - The tool's name, which selects the advice its limit errors
  *                   carry and labels the log line on an unexpected failure.
  * @param body - The tool's work, given the open session.
- * @returns `{ success: true, cost, ... }` or `{ success: false, error, errorKind, cost }`.
+ * @returns `{ success: true, cost, ... }` or `{ success: false, error, errorKind, errorReason?, cost }`,
+ *          where `errorReason` names the limit that stopped a `limit` error.
  */
 export async function runChainQueryTool(
     toolkit: IChainQueryToolkit,
@@ -136,7 +137,13 @@ export async function runChainQueryTool(
     } catch (error) {
         const cost: IChainQueryCost | undefined = session?.cost();
         if (error instanceof ChainQueryError) {
-            response = { success: false, error: error.message, errorKind: error.kind, ...(cost ? { cost } : {}) };
+            response = {
+                success: false,
+                error: error.message,
+                errorKind: error.kind,
+                ...(error.reason ? { errorReason: error.reason } : {}),
+                ...(cost ? { cost } : {})
+            };
         } else {
             logger.error({ error, tool: toolName, queryId: context?.queryId }, 'Chain query tool failed unexpectedly');
             response = { success: false, error: 'The chain query tool failed unexpectedly. This is not caused by your input.', errorKind: 'failed', ...(cost ? { cost } : {}) };

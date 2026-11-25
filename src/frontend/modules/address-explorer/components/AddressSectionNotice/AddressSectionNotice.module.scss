@@ -1,0 +1,35 @@
+/**
+ * AddressSectionNotice styles.
+ *
+ * A quiet line under a section heading: the icon, then the text, which wraps
+ * beside the icon rather than under it, then a retry button when there is
+ * one. The warning variant colours failures so they read as a problem rather
+ * than as a caveat. Tokens only.
+ */
+
+.notice {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--gap-sm);
+    font-size: var(--font-size-body-sm);
+    line-height: var(--line-height-normal);
+    color: var(--color-text-muted);
+
+    > svg {
+        flex-shrink: 0;
+        margin-top: var(--gap-2xs);
+    }
+
+    > span {
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+
+    > button {
+        flex-shrink: 0;
+    }
+}
+
+.notice--warning {
+    color: var(--color-warning-text);
+}

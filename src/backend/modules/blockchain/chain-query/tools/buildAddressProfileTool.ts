@@ -20,14 +20,14 @@ import { fromClickHouseTime, utcDay } from '../clickHouseTime.js';
 import { LOOKALIKE_NOTE, lookalikePatternSql } from '../lookalikes.js';
 import { toChainAmount, tokenKey } from '../TokenCatalog.js';
 import { priceKey, toUsdValue } from '../UsdPricer.js';
-import { AI_TOOL_NAMES, CHAIN_QUERY_CAPABILITY, SHARED_DESCRIPTION, windowProperties } from './chainQueryToolShared.js';
+import { AI_TOOL_NAMES, CHAIN_QUERY_CAPABILITY, SHARED_DESCRIPTION, windowProperties, type IChainQueryToolOptions } from './chainQueryToolShared.js';
 
 /**
  * The window this tool accepts: a whole week by default, since a profile is a
  * summary. The retention is longer than one read may span, so a caller who
  * wants the whole stored history places a second window behind the first.
  */
-const WINDOW_RULES: IWindowRules = { defaultHours: 168, maxHours: 168 };
+const DEFAULT_WINDOW_RULES: IWindowRules = { defaultHours: 168, maxHours: 168 };
 
 /** Most token-and-direction rows returned; a wallet active in more tokens than this is rare. */
 const MAX_TOKEN_ROWS = 50;
@@ -75,9 +75,12 @@ interface ILookalikeRow {
  * Build the address profile tool.
  *
  * @param toolkit - The shared chain query dependencies.
+ * @param options - A wider window for a caller other than the AI tool
+ *                  registry; the registered tool omits it.
  * @returns The tool, ready to register.
  */
-export function buildAddressProfileTool(toolkit: IChainQueryToolkit): IAiTool {
+export function buildAddressProfileTool(toolkit: IChainQueryToolkit, options: IChainQueryToolOptions = {}): IAiTool {
+    const windowRules = options.addressWindowRules ?? DEFAULT_WINDOW_RULES;
     return {
         name: AI_TOOL_NAMES.addressProfile,
         title: 'Get an address overview',
@@ -85,7 +88,7 @@ export function buildAddressProfileTool(toolkit: IChainQueryToolkit): IAiTool {
             'Get an overview of one TRON address\'s value movements: totals (transfers, transactions, distinct counterparties, first and last activity), a breakdown per token and direction (count, zero-value count, total, usd, counterparties), its address tags, and groups of its counterparties that look like address poisoning. ' +
             'Use this first when asked about a wallet, to decide where to look next: ' + AI_TOOL_NAMES.addressCounterparties + ' for who it deals with, ' + AI_TOOL_NAMES.addressTransfers + ' for individual transfers. ' +
             'A high zeroValueTransfers count on "in" rows means the address is being targeted by poisoning spam. Staking, delegation, and voting are not value movements and are not covered. ' +
-            `Parameters: address (required); hours or since/until (default and maximum ${WINDOW_RULES.maxHours} hours per call; the stored history is ${CHAIN_DATA_RETENTION_DAYS} days, so further calls with since/until moved back ${WINDOW_RULES.maxHours} hours at a time cover the rest). ` +
+            `Parameters: address (required); hours or since/until (default and maximum ${windowRules.maxHours} hours per call; the stored history is ${CHAIN_DATA_RETENTION_DAYS} days, so further calls with since/until moved back ${windowRules.maxHours} hours at a time cover the rest). ` +
             SHARED_DESCRIPTION,
         capability: CHAIN_QUERY_CAPABILITY,
         inputSchema: {
@@ -93,14 +96,14 @@ export function buildAddressProfileTool(toolkit: IChainQueryToolkit): IAiTool {
             description: 'Which address to profile.',
             properties: {
                 address: { type: 'string', description: 'The TRON address to profile, base58 (T…) or hex (41…).' },
-                ...windowProperties(WINDOW_RULES)
+                ...windowProperties(windowRules)
             },
             required: ['address'],
             additionalProperties: false
         },
         handler: async (input, _principal, context) => runChainQueryTool(toolkit, context, AI_TOOL_NAMES.addressProfile, async (session) => {
             const address = parseAddress(input.address, 'address');
-            const window = parseWindow(input, WINDOW_RULES, toolkit.now(), toolkit.retentionDays);
+            const window = parseWindow(input, windowRules, toolkit.now(), toolkit.retentionDays);
             const params = {
                 address,
                 from: formatClickHouseDateTime64Utc(window.from),

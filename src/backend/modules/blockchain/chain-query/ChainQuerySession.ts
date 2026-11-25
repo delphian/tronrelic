@@ -1,9 +1,10 @@
 /**
  * @fileoverview The ClickHouse connection one chain query tool call reads through.
  *
- * Every read runs as the `ai-agent` account, whose settings profile and hourly
- * quota ClickHouse enforces on every query. A session adds the three things a
- * single tool call needs on top of that:
+ * Every read runs as a managed ClickHouse account — `ai-agent` for the AI
+ * tools, `address-explorer` for the address page — whose settings profile and
+ * hourly quota ClickHouse enforces on every query. A session adds the three
+ * things a single tool call needs on top of that:
  *
  * - It charges each read to the agent run that made it, by passing the run's
  *   query id as the quota key, so one busy run cannot spend every other run's
@@ -56,19 +57,22 @@ export interface IChainQueryCost {
  */
 export const CHAIN_QUERY_DEADLINE_MS = 25_000;
 
+/** The ClickHouse account the chain query AI tools read as, and a session's default. */
+export const CHAIN_QUERY_ACCOUNT_ID = 'ai-agent';
+
 /**
- * What to tell a model when a ClickHouse error code means a limit stopped the
- * query. Codes come from ClickHouse's `ErrorCodes`; the same set is counted
- * as limit hits on the admin page (`limitErrorCodes.ts` in the ClickHouse
- * accounts module).
+ * What to tell a model when a ClickHouse error code means a per-query limit
+ * stopped the query, given the account's id. Codes come from ClickHouse's
+ * `ErrorCodes`; the same set is counted as limit hits on the admin page
+ * (`limitErrorCodes.ts` in the ClickHouse accounts module).
  */
-const LIMIT_MESSAGES: Readonly<Record<number, string>> = {
-    158: 'The query would read more rows than the ai-agent account allows (TOO_MANY_ROWS).',
-    159: 'The query ran longer than the ai-agent account allows (TIMEOUT_EXCEEDED).',
-    160: 'The query was stopped for running too slowly (TOO_SLOW).',
-    241: 'The query needed more memory than the ai-agent account allows (MEMORY_LIMIT_EXCEEDED).',
-    307: 'The query would read more data than the ai-agent account allows (TOO_MANY_BYTES).',
-    396: 'The query would return or read more rows than the ai-agent account allows (TOO_MANY_ROWS_OR_BYTES).'
+const LIMIT_MESSAGES: Readonly<Record<number, (accountId: string) => string>> = {
+    158: (accountId) => `The query would read more rows than the ${accountId} account allows (TOO_MANY_ROWS).`,
+    159: (accountId) => `The query ran longer than the ${accountId} account allows (TIMEOUT_EXCEEDED).`,
+    160: () => 'The query was stopped for running too slowly (TOO_SLOW).',
+    241: (accountId) => `The query needed more memory than the ${accountId} account allows (MEMORY_LIMIT_EXCEEDED).`,
+    307: (accountId) => `The query would read more data than the ${accountId} account allows (TOO_MANY_BYTES).`,
+    396: (accountId) => `The query would return or read more rows than the ${accountId} account allows (TOO_MANY_ROWS_OR_BYTES).`
 };
 
 /**
@@ -109,7 +113,7 @@ export class ChainQuerySession {
     };
 
     /**
-     * @param reader - The `ai-agent` account's read-only connection.
+     * @param reader - The account's read-only connection.
      * @param context - The run identity from the governor. Its `quotaKey`, or
      *                  failing that its `queryId` or `conversationId`, becomes the
      *                  ClickHouse quota key. With none of them the call counts
@@ -119,12 +123,16 @@ export class ChainQuerySession {
      *                          the change that helps depends on what that
      *                          tool's reads grow with.
      * @param deadlineMs - How long the call may spend reading before every read is cancelled.
+     * @param accountId - The account `reader` reads as, named in limit errors
+     *                    so an operator reading one knows which account's
+     *                    limits to look at on the admin page.
      */
     constructor(
         private readonly reader: IClickHouseReader,
         private readonly context: IToolHandlerContext | undefined,
         private readonly narrowingAdvice: string = DEFAULT_NARROWING_ADVICE,
-        deadlineMs: number = CHAIN_QUERY_DEADLINE_MS
+        deadlineMs: number = CHAIN_QUERY_DEADLINE_MS,
+        private readonly accountId: string = CHAIN_QUERY_ACCOUNT_ID
     ) {
         this.timer = setTimeout(() => this.controller.abort(), deadlineMs);
     }
@@ -196,7 +204,8 @@ export class ChainQuerySession {
     private deadlineError(): ChainQueryError {
         return new ChainQueryError(
             `This call ran out of its ${Math.round(CHAIN_QUERY_DEADLINE_MS / 1000)}-second reading time and its queries were cancelled. ${this.narrowingAdvice}`,
-            'limit'
+            'limit',
+            'deadline'
         );
     }
 
@@ -218,16 +227,18 @@ export class ChainQuerySession {
         if (this.controller.signal.aborted) {
             translated = this.deadlineError();
         } else if (code !== null && LIMIT_MESSAGES[code]) {
-            translated = new ChainQueryError(`${LIMIT_MESSAGES[code]} ${this.narrowingAdvice}`, 'limit');
+            translated = new ChainQueryError(`${LIMIT_MESSAGES[code](this.accountId)} ${this.narrowingAdvice}`, 'limit', 'size');
         } else if (code === 201) {
             translated = new ChainQueryError(
                 'This run has used up its hourly chain-query quota (QUOTA_EXCEEDED). Stop querying and answer with what you have; the quota resets within the hour.',
-                'limit'
+                'limit',
+                'quota'
             );
         } else if (code === 202) {
             translated = new ChainQueryError(
-                'Too many chain queries are running at once for the ai-agent account (TOO_MANY_SIMULTANEOUS_QUERIES). Make calls one at a time and retry this one.',
-                'limit'
+                `Too many chain queries are running at once for the ${this.accountId} account (TOO_MANY_SIMULTANEOUS_QUERIES). Make calls one at a time and retry this one.`,
+                'limit',
+                'concurrency'
             );
         } else {
             logger.error({ error, code, queryId: this.context?.queryId }, 'Chain query tool read failed');
