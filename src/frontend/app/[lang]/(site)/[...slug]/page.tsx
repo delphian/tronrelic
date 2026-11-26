@@ -5,7 +5,7 @@ import { cache } from 'react';
 import { PluginPageWithZones } from '../../../../components/PluginPageWithZones';
 import { CorePageZones } from '../../../../components/widgets';
 import { CategoryLandingPage } from '../../../../modules/menu';
-import { CmsPageArticle } from '../../../../modules/pages';
+import { CmsPageArticle } from '../../../../modules/pages/server';
 import { fetchPublicPageMetadata, fetchPublicPageRender } from '../../../../modules/pages/server';
 import { getServerSideApiUrlWithPath } from '../../../../lib/api-url';
 import { buildMetadata, localizedAbsoluteUrl, toOpenGraphLocale } from '../../../../lib/seo';

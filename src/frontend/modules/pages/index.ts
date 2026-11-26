@@ -1,13 +1,15 @@
 /**
  * @fileoverview Pages frontend module entry point.
  *
- * Rendering for CMS pages managed by the backend pages module, shared by every
- * route that serves one. Server-only fetch helpers are exported from
- * `./server` instead, so a client bundle importing this barrel never pulls
- * them in.
+ * What a client bundle may import from the pages module: the Bootstrap panel
+ * the tools module and plugins render, and the public page response types.
+ * Anything that reaches server-only code, such as `next/headers`, is exported
+ * from `./server` instead. That includes `CmsPageArticle`, whose widget
+ * rendering imports the server-side widget fetch; exported here, it pulled
+ * that fetch into every client bundle that imported this barrel and failed
+ * the production build.
  */
 
-export { CmsPageArticle } from './components/CmsPageArticle';
 export { PageBootstrapPanel } from './components/PageBootstrapPanel';
 export type { IPublicPageResponse } from './types/IPublicPageResponse';
 export type { IPublicPageRenderResponse } from './types/IPublicPageRenderResponse';

@@ -23,7 +23,7 @@ import { buildMetadata } from '../../../../../../lib/seo';
 import { getServerConfig } from '../../../../../../lib/serverConfig';
 import { translateKeywords } from '../../../../../../lib/translateKeywords';
 import { getServerTranslator, resolveMetadataLanguage } from '../../../../../../modules/localization/server';
-import { CmsPageArticle } from '../../../../../../modules/pages';
+import { CmsPageArticle } from '../../../../../../modules/pages/server';
 import type { IPublicPageRenderResponse, IPublicPageResponse } from '../../../../../../modules/pages';
 import { fetchPublicPageMetadata, fetchPublicPageRender } from '../../../../../../modules/pages/server';
 import { StakingRewards } from '../../../../../../modules/tools';
