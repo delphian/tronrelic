@@ -54,7 +54,9 @@ modules/pages/
 │   ├── page-translatable.ts  # core:page translation side (ITranslatableContentType)
 │   ├── page-translation.service.ts # IPageTranslationService singleton; renders served translations
 │   ├── markdown.service.ts   # Frontmatter parsing, render caching; HTML comes from the markdown module
-│   └── page-embeds.ts        # Fetches embedded widget data for the public renders, through 'widgets'
+│   ├── page-embeds.ts        # Fetches embedded widget data for the public renders, through 'widgets'
+│   ├── page-embed-requirements.ts # Withholds a page whose required embedded widget is unregistered
+│   └── page-bootstrap.service.ts  # IPageBootstrapService singleton, published as 'page-bootstrap'
 ├── __tests__/
 ├── ai-tools.ts               # AI tools: pages-list, pages-search, pages-get, and the review-held pages-propose-edit and pages-propose-page
 ├── PagesModule.ts            # IModule implementation
@@ -62,7 +64,13 @@ modules/pages/
 └── README.md
 ```
 
-**Two-phase lifecycle.** `init()` configures `PageService` and `PageTranslationService` with the injected `IContentService` and the shared markdown renderer, creates the translation values index, and builds the controllers. `run()` registers `core:page`, which carries its translation side, on the core content service, registers the `/system/pages` menu item under the System container and the page's tab row in the `pages` menu namespace, mounts the admin router at `/api/admin/pages` and the public router at `/api/pages`, and watches the service registry for `'ai-tools'` so the page AI tools register whenever that registry is available.
+**Two-phase lifecycle.** `init()` configures `PageService`, `PageTranslationService`, and `PageBootstrapService` with the injected `IContentService`, the shared markdown renderer, and one `PageEmbedRequirements` gate shared by both page services, creates the translation values index, and builds the controllers. `run()` registers `core:page`, which carries its translation side, on the core content service, registers the `/system/pages` menu item under the System container and the page's tab row in the `pages` menu namespace, mounts the admin router at `/api/admin/pages` and the public router at `/api/pages`, publishes `'page-bootstrap'`, and watches the service registry for `'ai-tools'` so the page AI tools register whenever that registry is available.
+
+| Published service | Contract | Who uses it |
+|---|---|---|
+| `'page-bootstrap'` (`PAGE_BOOTSTRAP_SERVICE`) | `IPageBootstrapService` in `@/types` | The tools module (passed in at init) and any plugin that ships a default CMS page. See [Page Bootstrap](#page-bootstrap) |
+
+`IPageService` itself is not on the registry. It can write as a curator, which publishes without review, and it edits the route blacklist, so it is passed only to core code that needs it.
 
 ## Managed Content Contract
 
@@ -85,7 +93,7 @@ modules/pages/
 
 The Database tab shows two read-only collection browsers, because the storage has two naming schemes: the `page` prefix reaches `pages` and `page_settings`, which predate the `module_<id>_` convention, and `module_pages_` reaches the translated text. Editing is off because a change made there would skip the core content service. The Logs tab shows entries under `tronrelic:pages`. The module registers no scheduler jobs, so there is no Schedules tab.
 
-**Embedding widgets.** The editor's **Insert widget** button opens a picker listing every embeddable widget type, with the type's settings form, and writes a ` ```widget ` block at the cursor. The preview shows each embed as a labelled outline rather than the live widget. See [Embedded widgets](../widgets/README.md#embedded-widgets).
+**Embedding widgets.** The editor's **Insert widget** button opens a picker listing every embeddable widget type, with the type's settings form and a **Required** switch, and writes a ` ```widget ` block at the cursor. The preview shows each embed as a labelled outline rather than the live widget. See [Embedded widgets](../widgets/README.md#embedded-widgets) and [Required Embeds](#required-embeds).
 
 **No file dependencies.** Page editors that need attachments use `/system/files` to upload files, then paste the resulting URL into markdown. Pages does not own any file storage.
 
@@ -102,10 +110,46 @@ Singleton implementing `IPageService`. Owns the `pages` and `page_settings` coll
 - `listPublicPages` and `getPublicPages` return `IPublicPage` from `@/types`: the served version reduced to id, slug, title, description, keywords, Open Graph image, and the markdown body with its frontmatter, HTML comments, and scripts removed. The listing loads every visible page and filters in memory, because only core knows which of a page's two stored versions a visitor is served, so a database search could match text no visitor sees
 - `proposeEdit` and `proposePage`, for automated callers: apply a field-level edit, or create a new page, as a non-curator so core always holds it for review; see [`pages-propose-edit`](#pages-propose-edit) and [`pages-propose-page`](#pages-propose-page)
 - Admin listing decorated with review state; filtering by review state asks core for the ids first
-- `findPageHoldingSlug(slug)` → `IPageSlugHolder | null`: the page holding an address in any review or deletion state, as its slug or in its redirect history, matching what the create-time slug check refuses on. The tools module's Bootstrap tab uses it to say whether a page can be created, and why not
+- `findPageHoldingSlug(slug)` → `IPageSlugHolder | null`: the page holding an address in any review or deletion state, as its slug or in its redirect history, matching what the create-time slug check refuses on. `PageBootstrapService` uses it to say whether a page can be created, and why not
+- Every public read applies the [required-embed rule](#required-embeds): a page whose required embedded widget is unregistered is treated as missing
 - `PageInputError` is exported from the module's `index.ts`, so another module calling `proposePage` can tell an input or slug refusal apart from a failure
 - Settings management (route blacklist only)
 - Markdown rendering with Redis cache, including a public-render fast path that hits cache before the database
+
+### Required Embeds
+
+A page built around one widget, such as the whale-alerts dashboard page, makes no sense while that widget is missing. An author marks such an embed `"required": true` in its ` ```widget ` block, or switches **Required** on in the Insert widget dialog. `parseWidgetEmbed` keeps the flag only when it is exactly `true`, and the markdown renderer stores it in the placeholder.
+
+`PageEmbedRequirements` (`services/page-embed-requirements.ts`) reads the required types from a page's rendered HTML with `listRequiredWidgetTypes` from `@/types`, and asks the `'widgets'` service `hasType` for each. While any is unregistered, which is usually because its plugin is disabled, the page is withheld:
+
+| Read | Effect |
+|---|---|
+| `getPublicPageBySlug`, `findPublicPageByOldSlug` (and so `GET /api/pages/:slug` and every translated read) | null, so the address answers 404 and the site's catch-all route falls through to whatever else owns it |
+| `renderPublicPageBySlug` | null, including when the render is already cached; the cached HTML is checked before it is returned |
+| `renderPublicTranslation` | A cached translated render is checked against its own translated body; an uncached one resolves the English page, which is checked |
+| `listSitemapPages`, `listPublicPages`, `getPublicPages` | The page is left out |
+
+Nothing is stored, so the page comes back as soon as the plugin is enabled again; the frontend's 60-second fetch cache bounds how long a visitor may still see the old answer. If the widgets service itself is missing, a page with a required embed is withheld, because the embed would render as nothing, which is what the flag exists to prevent. A page with no required embed is never affected. A translation whose body leaves out a block the English body requires is still served from its cache until the cache expires, so copy the block into translations unchanged.
+
+### Page Bootstrap
+
+`PageBootstrapService` (`services/page-bootstrap.service.ts`) lets a module or plugin offer default CMS pages that an admin creates from a Bootstrap tab, such as a tool page whose text admins then edit without a deploy. It is the only page access the registry offers.
+
+| Member | Behaviour |
+|---|---|
+| `createCatalog(items, logger)` → `IPageBootstrapCatalog` | Binds the owner's `IPageBootstrapItem` list. Throws when two entries share an id. Pass the owner's logger so created pages are logged on its Logs tab |
+| `catalog.list()` → `IPageBootstrapRow[]` | One row per entry, with the `PageBootstrapState` of its address from `findPageHoldingSlug` |
+| `catalog.create(id)` → `IPageBootstrapCreateResult` | Proposes the entry's page through `proposePage` when its address is free, so it waits in `/system/curation`. A refusal is returned rather than thrown, as `{ created: false, reason, message }`, because a plugin cannot recognise core's error classes; only a failure with no known cause throws |
+
+| Refusal `reason` | Cause | Status (`PAGE_BOOTSTRAP_REFUSAL_STATUS`) |
+|---|---|---|
+| `unknown-entry` | No entry with that id | 404 |
+| `address-held` | A page holds the address, including a deleted or rejected one, or took it between the check and the write | 409 |
+| `invalid-proposal` | `PageInputError` on a field while the address was still free | 409 |
+| `vetoed` | A `content.beforeCreate` hook refused | 403 |
+| `curation-unavailable` | The curation queue is not running, so nothing was created unreviewed | 503 |
+
+The frontend half is `PageBootstrapPanel` in `src/frontend/modules/pages`, given to plugins as `context.system.PageBootstrapPanel`. The owner supplies the rows and an `onCreate` that calls its own admin route. The tools module's Bootstrap tab on `/system/tools` and the whale-alerts plugin's Bootstrap tab are the two users.
 
 ### PageContentType (`IManagedContentType`)
 

@@ -7,7 +7,7 @@
  */
 
 import { cookies } from 'next/headers';
-import type { IToolsBootstrapPage } from '@/types';
+import type { IPageBootstrapRow } from '@/types';
 import { TOOLS_ADMIN_SUBMENU_NAMESPACE } from '@/types';
 import { getServerSideApiUrl } from '../../../../../../lib/api-url';
 import { fetchMenuNamespace } from '../../../../../../modules/menu/server';
@@ -20,8 +20,8 @@ import { ToolsAdminClient } from '../../../../../../modules/tools';
  * @returns The rows, or null when the backend could not be read, which the
  *   tab shows as a load failure rather than as an empty list.
  */
-async function fetchBootstrapPages(cookieHeader: string): Promise<IToolsBootstrapPage[] | null> {
-    let pages: IToolsBootstrapPage[] | null = null;
+async function fetchBootstrapPages(cookieHeader: string): Promise<IPageBootstrapRow[] | null> {
+    let pages: IPageBootstrapRow[] | null = null;
     try {
         const response = await fetch(`${getServerSideApiUrl()}/api/admin/tools/bootstrap`, {
             // Admin-only and changes on every create, so never cached.
@@ -29,7 +29,7 @@ async function fetchBootstrapPages(cookieHeader: string): Promise<IToolsBootstra
             headers: cookieHeader ? { Cookie: cookieHeader } : undefined
         });
         if (response.ok) {
-            pages = (await response.json() as { pages: IToolsBootstrapPage[] }).pages;
+            pages = (await response.json() as { pages: IPageBootstrapRow[] }).pages;
         } else {
             console.error('Failed to fetch tools bootstrap pages:', response.status, response.statusText);
         }

@@ -15,10 +15,16 @@ import { WIDGET_EMBED_MARKUP, type IWidgetEmbed } from '@/types';
  * converts top-level blocks, and a block typed directly under a list item
  * would otherwise be read as part of it.
  *
- * @param embed - The widget type and the settings the author chose.
+ * `required` is written only when the author set it, so an optional embed
+ * produces the same block it always has.
+ *
+ * @param embed - The widget type, the settings, and whether the page needs it.
  * @returns The markdown to insert.
  */
 export function formatWidgetEmbedBlock(embed: IWidgetEmbed): string {
-    const json = JSON.stringify({ type: embed.type, config: embed.config }, null, 2);
+    const written = embed.required === true
+        ? { type: embed.type, config: embed.config, required: true }
+        : { type: embed.type, config: embed.config };
+    const json = JSON.stringify(written, null, 2);
     return `\n\n\`\`\`${WIDGET_EMBED_MARKUP.fenceLanguage}\n${json}\n\`\`\`\n\n`;
 }

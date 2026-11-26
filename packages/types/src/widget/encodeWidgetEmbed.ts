@@ -12,9 +12,16 @@ import type { IWidgetEmbed } from './IWidgetEmbed.js';
 /**
  * Encode an embed as the value of `WIDGET_EMBED_MARKUP.embedAttribute`.
  *
+ * `required` is written only when set, so an optional embed stores the same
+ * value it always has and HTML cached before the flag existed stays valid.
+ *
  * @param embed - The checked embed to store.
  * @returns URI-encoded JSON, safe to write into a double-quoted attribute.
  */
 export function encodeWidgetEmbed(embed: IWidgetEmbed): string {
-    return encodeURIComponent(JSON.stringify({ type: embed.type, config: embed.config }));
+    const stored = embed.required === true
+        ? { type: embed.type, config: embed.config, required: true }
+        : { type: embed.type, config: embed.config };
+
+    return encodeURIComponent(JSON.stringify(stored));
 }

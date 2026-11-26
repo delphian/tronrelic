@@ -21,11 +21,13 @@ const WIDGET_TYPE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
  * Return the value as an embed, or null when it does not have an embed's
  * shape.
  *
- * Accepts an object with a string `type` that could be a widget type id and
- * an optional plain-object `config`. A missing `config` becomes `{}`. Keys
- * other than these two are dropped, so nothing else an author wrote travels
- * into the stored HTML. Whether the type exists, may be embedded, and accepts
- * the settings is decided later, when the embed is resolved.
+ * Accepts an object with a string `type` that could be a widget type id, an
+ * optional plain-object `config`, and an optional `required` flag. A missing
+ * `config` becomes `{}`. `required` is kept only when it is exactly `true`,
+ * so a quoted `"true"` or any other value leaves the embed optional. Other
+ * keys are dropped, so nothing else an author wrote travels into the stored
+ * HTML. Whether the type exists, may be embedded, and accepts the settings
+ * is decided later, when the embed is resolved.
  *
  * @param value - Parsed JSON from a fenced block or a placeholder attribute.
  * @returns The embed, or null when the value cannot be one.
@@ -40,6 +42,9 @@ export function parseWidgetEmbed(value: unknown): IWidgetEmbed | null {
         const configIsValid = typeof config === 'object' && config !== null && !Array.isArray(config);
         if (typeIsValid && configIsValid) {
             result = { type, config: config as Record<string, unknown> };
+            if (candidate.required === true) {
+                result.required = true;
+            }
         }
     }
     return result;

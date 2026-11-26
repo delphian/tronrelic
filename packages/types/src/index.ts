@@ -47,7 +47,8 @@ export {
     WIDGET_EMBED_MARKUP,
     parseWidgetEmbed,
     encodeWidgetEmbed,
-    splitWidgetEmbeds
+    splitWidgetEmbeds,
+    listRequiredWidgetTypes
 } from './widget/index.js';
 export type { ISystemConfig, ISystemConfigService } from './system-config/index.js';
 export type { ISystemLogService, ISystemLogQuery, ISystemLogPaginatedResponse, ISaveLogData, LogLevel } from './system-log/index.js';
@@ -66,6 +67,7 @@ export type { ISystemLogsMonitorProps } from './ui/ISystemLogsMonitorProps.js';
 export type { IAiToolSchemaViewProps } from './ui/IAiToolSchemaViewProps.js';
 export type { IContentTranslationsProps } from './ui/IContentTranslationsProps.js';
 export type { ITranslationStatusBadgesProps } from './ui/ITranslationStatusBadgesProps.js';
+export type { IPageBootstrapPanelProps } from './ui/IPageBootstrapPanelProps.js';
 export type { IPanelProps } from './ui/IPanelProps.js';
 export type { IEmbeddedContentProps } from './ui/IEmbeddedContentProps.js';
 export type { ILinkProps } from './ui/ILinkProps.js';
@@ -100,7 +102,8 @@ export type {
     IClickHouseReader,
     IClickHouseReadResult
 } from './clickhouse/index.js';
-export type { IPage, IPageContent, IPublicPage, IPageSettings, IPageService, IPageListOptions, IPageListPage, IPageEditProposal, IPageEditProposalResult, IPageProposal, IPageProposalResult, IPageSlugHolder, IMarkdownService, IFrontmatterData, IParsedMarkdown, IPublicPageRender, IPublicPageTranslationMetadata, IPageTranslationService } from './pages/index.js';
+export type { IPage, IPageContent, IPublicPage, IPageSettings, IPageService, IPageListOptions, IPageListPage, IPageEditProposal, IPageEditProposalResult, IPageProposal, IPageProposalResult, IPageSlugHolder, IMarkdownService, IFrontmatterData, IParsedMarkdown, IPublicPageRender, IPublicPageTranslationMetadata, IPageTranslationService, PageBootstrapState, IPageBootstrapRow, IPageBootstrapItem, PageBootstrapRefusalReason, IPageBootstrapCreateResult, IPageBootstrapCatalog, IPageBootstrapService } from './pages/index.js';
+export { PAGE_BOOTSTRAP_SERVICE, PAGE_BOOTSTRAP_REFUSAL_STATUS } from './pages/index.js';
 export type { IStorageProvider, IStorageObjectStat, IFileService, IFileRecord, IFileSource, IFileUploadOptions, IFileListFilter, IVariantOptions, IVariantFit, IFileVariant, ICropRegion, ICropOptions, IFilesSettings, IFilesSettingsService } from './files/index.js';
 export { FILE_SOURCE_KINDS, FileValidationError, FileSizeExceededError } from './files/index.js';
 export type { IModule, IModuleMetadata } from './module/index.js';
@@ -141,7 +144,7 @@ export type { ITrc10, ITrc10FrozenSupply } from './trc10/index.js';
 export type { ITrc20TokenInfo } from './trc20/index.js';
 export type { IPipelineStatus, IPipelineHealth, IPipelineHealthReason, IPipelineChainData, IPipelineError, IPipelineBlockRecord, IPipelineStageTiming, PipelineReceiptOutcome, PipelineReleaseMode, PipelineTone } from './pipeline/index.js';
 export type { IBlockStats, IBlock, IBlockTransaction, IBlockTransactionParty, IBlockTransactionContract, IResourceUsage, IValueTransfer, ValueTransferOrigin, ValueAssetType, IBlockchainService, IActivatingTransaction, IActivationAncestry, ActivationClimbStopReason, IActivationClimbOptions, ITransactionTimeseriesPoint, IOverviewTimeseriesPoint, OverviewTimeseriesWindow, ITransactionDetailService } from './blockchain/index.js';
-export type { IToolsService, IAddressConversionResult, IAddressValidationResult, IToolsBootstrapPage, ToolsBootstrapPageState, ISuperRepresentativeReward, IStakingRewardsSnapshot } from './tools/index.js';
+export type { IToolsService, IAddressConversionResult, IAddressValidationResult, ISuperRepresentativeReward, IStakingRewardsSnapshot } from './tools/index.js';
 export { STAKE_CALCULATOR_WIDGET_TYPE_ID, STAKE_CALCULATOR_PATH, TOOLS_ADMIN_SUBMENU_NAMESPACE, STAKING_REWARDS_PATH, STAKING_REWARDS_WIDGET_TYPE_ID, TOOLS_JOB_PREFIX } from './tools/index.js';
 export type { AccountIngestionStatus, AccountHistoryTickKind, AccountHistoryTickSkipReason, IAccountHistorySourceFlags, IAccountHistorySourcePages, IAccountHistoryTickAccountOutcome, IAccountHistoryTickOutcome, ITrackedAccount, IAccountIngestionProgress, IAccountHistorySettings, IAccountHistoryAccountStats, IAccountHistoryStats, IAddTrackedAccountInput, IAccountTransactionQuery, IValueTransferCursor, IValueTransferQuery, IAccountTransactionPage, IActivityCalendarBucket, IWalletActivityStats, IWalletResourceTotals, FlowGranularity, IWalletFlowBucket, IWalletCounterparty, IWalletActivitySummary, IWalletValuationSummary, IAccountTokenBalance, IAccountBalanceSnapshot, ITokenMetadata, IAccountHistoryService } from './account-history/index.js';
 export { PRICE_ASSET_TRX } from './price-history/index.js';

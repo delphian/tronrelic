@@ -18,6 +18,7 @@ import type {
     IServiceRegistry,
     ServiceWatchDisposer,
 } from '@/types';
+import { PAGE_BOOTSTRAP_SERVICE } from '@/types';
 import { logger } from '../../lib/logger.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
 import { PageService } from './services/page.service.js';
@@ -30,6 +31,8 @@ import { requireAdmin } from '../../api/middleware/admin-auth.js';
 import { createAdminRateLimiter } from '../../api/middleware/rate-limit.js';
 import { registerPageAiTools } from './ai-tools.js';
 import { PageEmbeds } from './services/page-embeds.js';
+import { PageEmbedRequirements } from './services/page-embed-requirements.js';
+import { PageBootstrapService } from './services/page-bootstrap.service.js';
 
 /**
  * Menu namespace for the tab row on `/system/pages`. Kept out of `main` so
@@ -73,7 +76,8 @@ export interface IPagesModuleDependencies {
     /**
      * The service registry, watched for the core `'ai-tools'` registry so the
      * page tools (three reads and the review-held edit tool) are registered
-     * whenever it is available.
+     * whenever it is available, read for `'widgets'` when a page's required
+     * embeds are checked, and the place `'page-bootstrap'` is published.
      */
     serviceRegistry: IServiceRegistry;
     app: Express;
@@ -93,12 +97,13 @@ export interface IPagesModuleDependencies {
  * Pages module class.
  *
  * Lifecycle:
- * - `init()` — store deps, configure the `PageService` and
- *   `PageTranslationService` singletons, ensure the translation values index,
- *   and build the controllers.
+ * - `init()` — store deps, configure the `PageService`,
+ *   `PageTranslationService`, and `PageBootstrapService` singletons, ensure
+ *   the translation values index, and build the controllers.
  * - `run()` — register the `core:page` managed content type (which carries its
  *   translation side), register the `/system/pages` menu item and the page's
- *   tab row, mount admin and public routers, and register the page AI tools.
+ *   tab row, mount admin and public routers, publish `'page-bootstrap'`, and
+ *   register the page AI tools.
  *
  * No file dependencies — uploads go through the Files module's
  * `/api/admin/files` admin surface, which is registered before Pages so
@@ -120,6 +125,7 @@ export class PagesModule implements IModule<IPagesModuleDependencies> {
     private serviceRegistry!: IServiceRegistry;
     private app!: Express;
     private pageService!: PageService;
+    private pageBootstrapService!: PageBootstrapService;
     private controller!: PagesController;
     private translationsController!: PageTranslationsController;
 
@@ -148,13 +154,19 @@ export class PagesModule implements IModule<IPagesModuleDependencies> {
         this.serviceRegistry = dependencies.serviceRegistry;
         this.app = dependencies.app;
 
+        // One gate for every public read, English and translated, so a page
+        // whose required widget belongs to a disabled plugin is missing
+        // everywhere at once.
+        const servingGate = new PageEmbedRequirements(this.serviceRegistry, this.logger);
+
         PageService.setDependencies(
             this.database,
             this.cacheService,
             this.contentService,
             dependencies.markdownRenderer,
             this.logger,
-            dependencies.onLocalizedRoutesChanged ?? (() => undefined)
+            dependencies.onLocalizedRoutesChanged ?? (() => undefined),
+            servingGate
         );
         this.pageService = PageService.getInstance();
         await this.pageService.ensureTranslationIndexes();
@@ -163,8 +175,12 @@ export class PagesModule implements IModule<IPagesModuleDependencies> {
             cacheService: this.cacheService,
             contentService: this.contentService,
             pages: this.pageService,
-            markdownRenderer: dependencies.markdownRenderer
+            markdownRenderer: dependencies.markdownRenderer,
+            servingGate
         });
+
+        PageBootstrapService.setDependencies(this.pageService);
+        this.pageBootstrapService = PageBootstrapService.getInstance();
 
         // Both public render endpoints send each embedded widget's data
         // beside the cached HTML, through one resolver.
@@ -239,6 +255,13 @@ export class PagesModule implements IModule<IPagesModuleDependencies> {
         this.app.use('/api/pages', publicRouter);
         this.logger.info('Public pages router mounted at /api/pages');
 
+        // The only page access plugins get: list a Bootstrap tab's rows and
+        // propose a page for review. Published in run() so `core:page` is
+        // registered before any plugin can propose one; plugins load after
+        // every module has run.
+        this.serviceRegistry.register(PAGE_BOOTSTRAP_SERVICE, this.pageBootstrapService);
+        this.logger.info('Page bootstrap service published as page-bootstrap');
+
         // After the type registration above, because the tools read through
         // core and core refuses reads for an unregistered type.
         this.unwatchAiTools = registerPageAiTools(this.serviceRegistry, this.pageService, this.logger);
@@ -255,5 +278,21 @@ export class PagesModule implements IModule<IPagesModuleDependencies> {
             throw new Error('PagesModule not initialized - call init() first');
         }
         return this.pageService;
+    }
+
+    /**
+     * Accessor for the `PageBootstrapService` singleton, which bootstrap hands
+     * to the tools module so its Bootstrap tab uses the same catalog logic
+     * plugins reach through the registry. Should only be called after
+     * `init()` completes.
+     *
+     * @returns The bootstrap service.
+     * @throws When `init()` has not run yet.
+     */
+    getPageBootstrapService(): PageBootstrapService {
+        if (!this.pageBootstrapService) {
+            throw new Error('PagesModule not initialized - call init() first');
+        }
+        return this.pageBootstrapService;
     }
 }

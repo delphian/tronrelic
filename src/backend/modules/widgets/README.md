@@ -283,11 +283,13 @@ The page editor on `/system/pages` and the post editor on `/system/blog` have an
 
 | Check | When it fails |
 |-------|---------------|
-| The type is registered | `null`; debug log. Usually a disabled plugin, and the embed returns when it is re-enabled |
+| The type is registered | `null`; debug log. Usually a disabled plugin, and the embed returns when it is re-enabled. An embed written with `"required": true` takes its whole page down instead; see below |
 | The type's `embeddable` is true | `null`; warning |
 | The settings pass the type's `configSchema` through `InstanceConfigValidator` | `null`; warning listing the fields |
 | The body holds at most `MAX_EMBEDS_PER_BODY` (20) embeds | `null` for each one past the limit; one warning |
 | The fetcher returns JSON-safe data within 5 seconds, and not a bare `null` | `null`; error log, the same as a placed widget |
+
+**A required embed withholds its page.** An embed may carry `"required": true` beside `type` and `config`, which the Insert widget dialog writes when its **Required** switch is on. The resolver itself ignores the flag and returns `null` for a missing type as usual; the pages module reads it from the rendered HTML with `listRequiredWidgetTypes` and treats a page whose required type is unregistered as missing, so a page built around a disabled plugin's widget answers 404 instead of showing an empty space. `parseWidgetEmbed` keeps the flag only when it is exactly `true`, and `encodeWidgetEmbed` writes it only when set, so optional embeds store the same placeholder they always have. The blog does not apply the rule. See [Required Embeds](../pages/README.md#required-embeds).
 
 **`embeddable` defaults to true.** A type opts out with `embeddable: false` on `registerType`/`registerWidget`. Core sets it false on `core:raw-html`, which renders markup from its settings and must stay operator-only, on `core:layout-group`, which has no component, and on the site chrome types `core:auth-button`, `core:site-logo`, `core:main-menu`, `core:language-switcher`, and `core:tab-bar`. The widget-types snapshot carries `embeddable`, and the Insert widget picker lists only embeddable types.
 

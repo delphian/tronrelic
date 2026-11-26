@@ -14,7 +14,7 @@
 
 import { useCallback, useState } from 'react';
 import type { MenuNodeSerialized } from '@/shared';
-import type { IToolsBootstrapPage } from '@/types';
+import type { IPageBootstrapRow } from '@/types';
 import { TOOLS_ADMIN_SUBMENU_NAMESPACE, TOOLS_JOB_PREFIX } from '@/types';
 import { AdminPage } from '../../../../components/layout';
 import { MenuNavClient } from '../../../../components/layout/MenuNav/MenuNavClient';
@@ -82,7 +82,7 @@ interface IToolsAdminClientProps {
     /** When the backend produced the tab row, seeded onto the menu store. */
     submenuGeneratedAt: string;
     /** The bootstrap rows read on the server, so the Bootstrap tab opens with data; null when the read failed. */
-    initialBootstrapPages: IToolsBootstrapPage[] | null;
+    initialBootstrapPages: IPageBootstrapRow[] | null;
     /** The `?tab=` value from the request; an unknown or absent value opens Bootstrap. */
     initialTab?: string;
 }
@@ -95,7 +95,7 @@ interface IToolsAdminClientProps {
  */
 export function ToolsAdminClient({ submenuTree, submenuGeneratedAt, initialBootstrapPages, initialTab }: IToolsAdminClientProps) {
     const [activeTab, setActiveTab] = useState<ToolsAdminTabId>(isToolsAdminTabId(initialTab) ? initialTab : 'bootstrap');
-    const [bootstrapPages, setBootstrapPages] = useState<IToolsBootstrapPage[] | null>(initialBootstrapPages);
+    const [bootstrapPages, setBootstrapPages] = useState<IPageBootstrapRow[] | null>(initialBootstrapPages);
 
     /**
      * Switch panels and rewrite the address in place, because `MenuNavClient`
@@ -117,7 +117,7 @@ export function ToolsAdminClient({ submenuTree, submenuGeneratedAt, initialBoots
      *
      * @param page - The row the create call returned, replacing the row with the same id.
      */
-    const handleBootstrapPageUpdated = useCallback((page: IToolsBootstrapPage) => {
+    const handleBootstrapPageUpdated = useCallback((page: IPageBootstrapRow) => {
         setBootstrapPages(current => (current === null ? current : current.map(item => (item.id === page.id ? page : item))));
     }, []);
 

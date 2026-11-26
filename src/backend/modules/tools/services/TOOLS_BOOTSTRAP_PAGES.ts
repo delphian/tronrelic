@@ -6,14 +6,14 @@
  * and the endpoints pick it up with no other change.
  */
 
-import type { IToolsBootstrapItem } from './IToolsBootstrapItem.js';
+import type { IPageBootstrapItem } from '@/types';
 import { STAKE_CALCULATOR_PAGE_PROPOSAL } from './STAKE_CALCULATOR_PAGE_PROPOSAL.js';
 import { STAKING_REWARDS_PAGE_PROPOSAL } from './STAKING_REWARDS_PAGE_PROPOSAL.js';
 
 /**
  * Pages offered on the Bootstrap tab, in display order.
  */
-export const TOOLS_BOOTSTRAP_PAGES: ReadonlyArray<IToolsBootstrapItem> = [
+export const TOOLS_BOOTSTRAP_PAGES: ReadonlyArray<IPageBootstrapItem> = [
     {
         id: 'stake-calculator',
         label: 'Stake Calculator page',

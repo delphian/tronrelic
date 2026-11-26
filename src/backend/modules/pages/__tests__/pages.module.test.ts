@@ -7,8 +7,10 @@ import type { IPagesModuleDependencies } from '../index.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../../menu/index.js';
 import { PageService } from '../services/page.service.js';
 import { PageTranslationService } from '../services/page-translation.service.js';
+import { PageBootstrapService } from '../services/page-bootstrap.service.js';
 import { AI_TOOL_NAMES } from '../ai-tools.js';
 import type { IAiToolRegistry, ICacheService, IMenuService, IServiceRegistry } from '@/types';
+import { PAGE_BOOTSTRAP_SERVICE } from '@/types';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 import { createMockServiceRegistry } from '../../../tests/vitest/mocks/service-registry.js';
 import { createTestMarkdownRenderer } from '../../../tests/vitest/mocks/markdown-renderer.js';
@@ -89,6 +91,7 @@ describe('PagesModule', () => {
         vi.clearAllMocks();
         PageService.resetForTests();
         PageTranslationService.resetForTests();
+        PageBootstrapService.resetForTests();
         mockDatabase = createMockDatabaseService();
         mockCache = new MockCacheService();
         mockMenu = new MockMenuService();
@@ -163,12 +166,26 @@ describe('PagesModule', () => {
             await module.init(deps());
             expect(registerTool).not.toHaveBeenCalled();
         });
+
+        it('does not publish the page bootstrap service during init()', async () => {
+            const module = new PagesModule();
+            await module.init(deps());
+            expect(serviceRegistry.get(PAGE_BOOTSTRAP_SERVICE)).toBeUndefined();
+        });
     });
 
     describe('run()', () => {
         it('throws when called before init()', async () => {
             const module = new PagesModule();
             await expect(module.run()).rejects.toThrow();
+        });
+
+        /** Plugins reach the pages module only through this name. */
+        it('publishes the page bootstrap service during run()', async () => {
+            const module = new PagesModule();
+            await module.init(deps());
+            await module.run();
+            expect(serviceRegistry.get(PAGE_BOOTSTRAP_SERVICE)).toBe(module.getPageBootstrapService());
         });
 
         it('registers core:page as managed content', async () => {

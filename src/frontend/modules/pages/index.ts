@@ -8,5 +8,6 @@
  */
 
 export { CmsPageArticle } from './components/CmsPageArticle';
+export { PageBootstrapPanel } from './components/PageBootstrapPanel';
 export type { IPublicPageResponse } from './types/IPublicPageResponse';
 export type { IPublicPageRenderResponse } from './types/IPublicPageRenderResponse';

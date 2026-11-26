@@ -22,7 +22,7 @@ import type {
     IMenuService,
     IModule,
     IModuleMetadata,
-    IPageService,
+    IPageBootstrapService,
     ISchedulerService,
     IServiceRegistry,
     IWidgetsService
@@ -46,7 +46,6 @@ import { ToolsController } from './api/tools.controller.js';
 import { createToolsRouter } from './api/tools.router.js';
 import { ToolsAdminController } from './api/ToolsAdminController.js';
 import { createToolsAdminRouter } from './api/createToolsAdminRouter.js';
-import { ToolsBootstrapService } from './services/ToolsBootstrapService.js';
 import { TOOLS_BOOTSTRAP_PAGES } from './services/TOOLS_BOOTSTRAP_PAGES.js';
 import { STAKE_CALCULATOR_WIDGET_TYPE } from './services/STAKE_CALCULATOR_WIDGET_TYPE.js';
 import { StakingRewardsService } from './services/StakingRewardsService.js';
@@ -97,8 +96,12 @@ export interface IToolsModuleDependencies {
     serviceRegistry: IServiceRegistry;
     /** Express application instance for mounting routers. */
     app: Express;
-    /** The pages module's service, used by the Bootstrap tab to read and create the module's CMS pages. */
-    pageService: IPageService;
+    /**
+     * The pages module's bootstrap service, which binds the module's CMS pages
+     * into the catalog the Bootstrap tab lists and creates through. Plugins
+     * reach the same service as `'page-bootstrap'`.
+     */
+    pageBootstrap: IPageBootstrapService;
     /** The widgets service, used to register the calculators as embeddable widgets. */
     widgetsService: IWidgetsService;
     /**
@@ -128,7 +131,7 @@ export interface IToolsModuleDependencies {
  * - Creates SignatureService for wallet verification
  * - Creates ToolsController with both services
  * - Creates the staking rewards service, which owns the stored rewards snapshot
- * - Creates the bootstrap service and the admin controller for `/system/tools`
+ * - Creates the bootstrap catalog and the admin controller for `/system/tools`
  * - Does NOT mount routes or register menu items
  *
  * ### run() phase:
@@ -226,8 +229,8 @@ export class ToolsModule implements IModule<IToolsModuleDependencies> {
             this.stakingRewardsService
         );
 
-        const bootstrapService = new ToolsBootstrapService(dependencies.pageService, TOOLS_BOOTSTRAP_PAGES, this.logger);
-        this.adminController = new ToolsAdminController(bootstrapService, this.logger);
+        const bootstrapCatalog = dependencies.pageBootstrap.createCatalog(TOOLS_BOOTSTRAP_PAGES, this.logger);
+        this.adminController = new ToolsAdminController(bootstrapCatalog, this.logger);
 
         this.logger.info('Tools module initialized');
     }

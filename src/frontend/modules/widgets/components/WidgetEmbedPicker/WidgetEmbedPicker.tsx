@@ -10,6 +10,11 @@
  * same way here, and the result passes the same schema check when the embed
  * is resolved.
  *
+ * The Required switch marks the embed `required`, for a page built around
+ * the widget: while the widget's type is unregistered, usually because its
+ * plugin is disabled, the page is treated as missing instead of showing an
+ * empty space where the widget belongs.
+ *
  * The type list loads when the dialog opens, which is a user action, so a
  * loading line is shown until it arrives.
  */
@@ -19,6 +24,7 @@ import type { IWidgetTypeSnapshot } from '@/types';
 import { Button } from '../../../../components/ui/Button';
 import { Field } from '../../../../components/ui/Field';
 import { Select } from '../../../../components/ui/Select';
+import { Switch } from '../../../../components/ui/Switch';
 import { fetchWidgetTypes } from '../../api/client';
 import { buildStructuredConfig, coerceInitialConfig, extractConfigFields, fieldSpansRow } from '../../lib/configSchema';
 import { formatWidgetEmbedBlock } from '../../lib/formatWidgetEmbedBlock';
@@ -64,6 +70,7 @@ export function WidgetEmbedPicker({ onInsert, onCancel }: IWidgetEmbedPickerProp
     const [typeId, setTypeId] = useState('');
     const [configValue, setConfigValue] = useState<Record<string, unknown>>({});
     const [configError, setConfigError] = useState<string | null>(null);
+    const [required, setRequired] = useState(false);
 
     useEffect(() => {
         let cancelled = false;
@@ -91,9 +98,9 @@ export function WidgetEmbedPicker({ onInsert, onCancel }: IWidgetEmbedPickerProp
         if (built.error) {
             setConfigError(built.error);
         } else if (typeId) {
-            onInsert(formatWidgetEmbedBlock({ type: typeId, config: built.value ?? {} }));
+            onInsert(formatWidgetEmbedBlock({ type: typeId, config: built.value ?? {}, ...(required ? { required: true as const } : {}) }));
         }
-    }, [configFields, configValue, typeId, onInsert]);
+    }, [configFields, configValue, typeId, required, onInsert]);
 
     let body: JSX.Element;
     if (loadError) {
@@ -131,6 +138,14 @@ export function WidgetEmbedPicker({ onInsert, onCancel }: IWidgetEmbedPickerProp
                     </div>
                 )}
                 {configError && <p className={styles.error} role="alert">{configError}</p>}
+                <Field
+                    inline
+                    label="Required"
+                    htmlFor={`${formId}-required`}
+                    hint="Hide the whole page while this widget is unavailable, such as when its plugin is disabled. Leave off for a widget the page can do without."
+                >
+                    <Switch id={`${formId}-required`} size="sm" on={required} onChange={setRequired} aria-label="Required" />
+                </Field>
             </>
         );
     }

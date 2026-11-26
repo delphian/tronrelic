@@ -165,7 +165,7 @@ describe('ToolsModule', () => {
     let mockChainParams: MockChainParametersService;
     let mockServiceRegistry: IServiceRegistry;
     let mockApp: MockExpressApp;
-    let mockPageService: { proposePage: ReturnType<typeof vi.fn> };
+    let mockPageBootstrap: { createCatalog: ReturnType<typeof vi.fn> };
     let mockWidgets: { registerType: ReturnType<typeof vi.fn> };
 
     beforeEach(() => {
@@ -177,8 +177,8 @@ describe('ToolsModule', () => {
         mockChainParams = new MockChainParametersService();
         mockServiceRegistry = createMockServiceRegistry({ 'chain-parameters': mockChainParams });
         mockApp = new MockExpressApp();
-        mockPageService = {
-            proposePage: vi.fn().mockResolvedValue({ pageId: 'page-1', slug: '/tools/stake-calculator', pendingReview: true, curationId: 'cur-1' })
+        mockPageBootstrap = {
+            createCatalog: vi.fn(() => ({ list: vi.fn().mockResolvedValue([]), create: vi.fn() }))
         };
         mockWidgets = { registerType: vi.fn(() => () => undefined) };
     });
@@ -213,7 +213,7 @@ describe('ToolsModule', () => {
                 menuService: mockMenu,
                 serviceRegistry: mockServiceRegistry,
                 app: mockApp as any,
-                pageService: mockPageService as any,
+                pageBootstrap: mockPageBootstrap as any,
                 widgetsService: mockWidgets as any
             })).resolves.not.toThrow();
         });
@@ -227,7 +227,7 @@ describe('ToolsModule', () => {
                 menuService: mockMenu,
                 serviceRegistry: mockServiceRegistry,
                 app: mockApp as any,
-                pageService: mockPageService as any,
+                pageBootstrap: mockPageBootstrap as any,
                 widgetsService: mockWidgets as any
             });
 
@@ -244,7 +244,7 @@ describe('ToolsModule', () => {
                 menuService: mockMenu,
                 serviceRegistry: mockServiceRegistry,
                 app: mockApp as any,
-                pageService: mockPageService as any,
+                pageBootstrap: mockPageBootstrap as any,
                 widgetsService: mockWidgets as any
             });
 
@@ -260,7 +260,7 @@ describe('ToolsModule', () => {
                 menuService: mockMenu,
                 serviceRegistry: mockServiceRegistry,
                 app: mockApp as any,
-                pageService: mockPageService as any,
+                pageBootstrap: mockPageBootstrap as any,
                 widgetsService: mockWidgets as any
             });
 
@@ -277,7 +277,7 @@ describe('ToolsModule', () => {
                 menuService: mockMenu,
                 serviceRegistry: emptyRegistry,
                 app: mockApp as any,
-                pageService: mockPageService as any,
+                pageBootstrap: mockPageBootstrap as any,
                 widgetsService: mockWidgets as any
             })).rejects.toThrow('ChainParametersService not found on service registry');
         });
@@ -292,7 +292,7 @@ describe('ToolsModule', () => {
                 menuService: mockMenu,
                 serviceRegistry: mockServiceRegistry,
                 app: mockApp as any,
-                pageService: mockPageService as any,
+                pageBootstrap: mockPageBootstrap as any,
                 widgetsService: mockWidgets as any
             });
 
@@ -320,7 +320,7 @@ describe('ToolsModule', () => {
                 menuService: mockMenu,
                 serviceRegistry: mockServiceRegistry,
                 app: mockApp as any,
-                pageService: mockPageService as any,
+                pageBootstrap: mockPageBootstrap as any,
                 widgetsService: mockWidgets as any
             });
 
@@ -347,7 +347,7 @@ describe('ToolsModule', () => {
                 menuService: mockMenu,
                 serviceRegistry: mockServiceRegistry,
                 app: mockApp as any,
-                pageService: mockPageService as any,
+                pageBootstrap: mockPageBootstrap as any,
                 widgetsService: mockWidgets as any
             });
 
@@ -387,7 +387,7 @@ describe('ToolsModule', () => {
                 menuService: mockMenu,
                 serviceRegistry: mockServiceRegistry,
                 app: mockApp as any,
-                pageService: mockPageService as any,
+                pageBootstrap: mockPageBootstrap as any,
                 widgetsService: mockWidgets as any
             });
 
@@ -407,7 +407,7 @@ describe('ToolsModule', () => {
                 menuService: mockMenu,
                 serviceRegistry: mockServiceRegistry,
                 app: mockApp as any,
-                pageService: mockPageService as any,
+                pageBootstrap: mockPageBootstrap as any,
                 widgetsService: mockWidgets as any
             });
 
@@ -428,7 +428,7 @@ describe('ToolsModule', () => {
                 menuService: mockMenu,
                 serviceRegistry: mockServiceRegistry,
                 app: mockApp as any,
-                pageService: mockPageService as any,
+                pageBootstrap: mockPageBootstrap as any,
                 widgetsService: mockWidgets as any
             });
             expect(mockWidgets.registerType).not.toHaveBeenCalled();
@@ -464,7 +464,7 @@ describe('ToolsModule', () => {
                 menuService: mockMenu,
                 serviceRegistry: mockServiceRegistry,
                 app: mockApp as any,
-                pageService: mockPageService as any,
+                pageBootstrap: mockPageBootstrap as any,
                 widgetsService: mockWidgets as any,
                 scheduler: scheduler as any
             });
@@ -488,13 +488,15 @@ describe('ToolsModule', () => {
                 menuService: mockMenu,
                 serviceRegistry: mockServiceRegistry,
                 app: mockApp as any,
-                pageService: mockPageService as any,
+                pageBootstrap: mockPageBootstrap as any,
                 widgetsService: mockWidgets as any
             });
             await module.run();
             mockServiceRegistry.register('curation', {});
 
-            expect(mockPageService.proposePage).not.toHaveBeenCalled();
+            const catalog = mockPageBootstrap.createCatalog.mock.results[0].value;
+            expect(mockPageBootstrap.createCatalog).toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({ id: 'stake-calculator' })]), expect.anything());
+            expect(catalog.create).not.toHaveBeenCalled();
         });
 
         it('should register the /system/tools entry and its Bootstrap and Logs tabs during run()', async () => {
@@ -506,7 +508,7 @@ describe('ToolsModule', () => {
                 menuService: mockMenu,
                 serviceRegistry: mockServiceRegistry,
                 app: mockApp as any,
-                pageService: mockPageService as any,
+                pageBootstrap: mockPageBootstrap as any,
                 widgetsService: mockWidgets as any
             });
             await module.run();
@@ -527,7 +529,7 @@ describe('ToolsModule', () => {
                 menuService: mockMenu,
                 serviceRegistry: mockServiceRegistry,
                 app: mockApp as any,
-                pageService: mockPageService as any,
+                pageBootstrap: mockPageBootstrap as any,
                 widgetsService: mockWidgets as any
             });
 
@@ -549,7 +551,7 @@ describe('ToolsModule', () => {
                 menuService: mockMenu,
                 serviceRegistry: mockServiceRegistry,
                 app: mockApp as any,
-                pageService: mockPageService as any,
+                pageBootstrap: mockPageBootstrap as any,
                 widgetsService: mockWidgets as any
             });
 
@@ -578,7 +580,7 @@ describe('ToolsModule', () => {
                 menuService: mockMenu,
                 serviceRegistry: mockServiceRegistry,
                 app: mockApp as any,
-                pageService: mockPageService as any,
+                pageBootstrap: mockPageBootstrap as any,
                 widgetsService: mockWidgets as any
             });
 
@@ -596,7 +598,7 @@ describe('ToolsModule', () => {
                 menuService: mockMenu,
                 serviceRegistry: mockServiceRegistry,
                 app: mockApp as any,
-                pageService: mockPageService as any,
+                pageBootstrap: mockPageBootstrap as any,
                 widgetsService: mockWidgets as any
             });
 
@@ -614,7 +616,7 @@ describe('ToolsModule', () => {
                 menuService: mockMenu,
                 serviceRegistry: mockServiceRegistry,
                 app: mockApp as any,
-                pageService: mockPageService as any,
+                pageBootstrap: mockPageBootstrap as any,
                 widgetsService: mockWidgets as any
             });
 
@@ -633,7 +635,7 @@ describe('ToolsModule', () => {
                 menuService: mockMenu,
                 serviceRegistry: mockServiceRegistry,
                 app: mockApp as any,
-                pageService: mockPageService as any,
+                pageBootstrap: mockPageBootstrap as any,
                 widgetsService: mockWidgets as any
             });
 
@@ -658,7 +660,7 @@ describe('ToolsModule', () => {
                 menuService: mockMenu,
                 serviceRegistry: mockServiceRegistry,
                 app: mockApp as any,
-                pageService: mockPageService as any,
+                pageBootstrap: mockPageBootstrap as any,
                 widgetsService: mockWidgets as any
             });
 
@@ -675,7 +677,7 @@ describe('ToolsModule', () => {
                 menuService: mockMenu,
                 serviceRegistry: emptyRegistry,
                 app: mockApp as any,
-                pageService: mockPageService as any,
+                pageBootstrap: mockPageBootstrap as any,
                 widgetsService: mockWidgets as any
             })).rejects.toThrow();
         });

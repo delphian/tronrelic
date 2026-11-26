@@ -50,6 +50,7 @@ import { CollectionBrowser, ClickHouseTableBrowser } from '../modules/database';
 import { SystemLogsMonitor } from '../modules/logs';
 import { AiToolSchemaView } from '../modules/ai-tools';
 import { ContentTranslations, TranslationStatusBadges } from '../modules/content';
+import { PageBootstrapPanel } from '../modules/pages';
 import { Page, PageHeader, AdminPage, Stack, Grid, Section } from '../components/layout';
 // Imported by direct path, not the layout barrel: the barrel is kept
 // client-safe and excludes MenuNav (MenuNavSSR pulls next/headers). SubMenu
@@ -456,7 +457,8 @@ export function FrontendPluginContextProvider({ children }: { children: React.Re
             SystemLogsMonitor,
             AiToolSchemaView,
             ContentTranslations,
-            TranslationStatusBadges
+            TranslationStatusBadges,
+            PageBootstrapPanel
         };
 
         const api = new ApiClient();
@@ -591,7 +593,8 @@ export function createPluginContext(pluginId: string): IFrontendPluginContext {
         SystemLogsMonitor,
         AiToolSchemaView,
         ContentTranslations,
-        TranslationStatusBadges
+        TranslationStatusBadges,
+        PageBootstrapPanel
     };
 
     const api = new ApiClient();
