@@ -620,14 +620,15 @@ async function bootstrapInit(): Promise<BootstrapContext> {
         // routes, whatever module or plugin owns the content.
         listContentRoutes: () => contentService.translations().listLocalizedRoutes()
     });
-    // Tools receives the page service for its Bootstrap tab, which creates the
-    // module's CMS pages for review, and the widgets service to register its
-    // calculators as embeddable widgets. Both modules finished init() above.
+    // Tools receives the page bootstrap service for its Bootstrap tab, which
+    // creates the module's CMS pages for review (plugins reach the same service
+    // as 'page-bootstrap'), and the widgets service to register its calculators
+    // as embeddable widgets. Both modules finished init() above.
     // The scheduler drives the staking rewards refresh (nullable, so
     // ENABLE_SCHEDULER=false switches it off).
     await toolsModule.init({
         ...sharedDeps,
-        pageService: pagesModule.getPageService(),
+        pageBootstrap: pagesModule.getPageBootstrapService(),
         widgetsService: widgetsModule.getWidgetsService(),
         scheduler: schedulerService
     });

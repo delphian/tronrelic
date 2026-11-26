@@ -1,16 +1,16 @@
 /**
- * @fileoverview A CMS page the tools module can create, with its current state.
+ * @fileoverview A CMS page a component offers to create, with the state of its address.
  */
 
-import type { ToolsBootstrapPageState } from './ToolsBootstrapPageState.js';
+import type { PageBootstrapState } from './PageBootstrapState.js';
 
 /**
- * One row of the Bootstrap tab on `/system/tools`: a page the tools module
- * ships, the address it would take, and whether a page already holds that
- * address. Returned by `GET /api/admin/tools/bootstrap` and by the create
- * endpoint after it proposes the page.
+ * One row of a Bootstrap tab: a page a module or plugin ships, the address
+ * it would take, and whether a page already holds that address. A catalog
+ * returns these from `list()` and from `create()` after it proposes a page,
+ * and the admin route serving the tab sends them unchanged.
  */
-export interface IToolsBootstrapPage {
+export interface IPageBootstrapRow {
     /** Stable id of the bootstrap entry, used in the create endpoint's path. */
     id: string;
 
@@ -24,7 +24,7 @@ export interface IToolsBootstrapPage {
     slug: string;
 
     /** Whether a page holds the address, and in what state. */
-    state: ToolsBootstrapPageState;
+    state: PageBootstrapState;
 
     /**
      * The page holding the address, so the admin can find it on

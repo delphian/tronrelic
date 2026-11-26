@@ -622,4 +622,73 @@ describe('PageService', () => {
             expect(await service.isSlugBlacklisted('/about')).toBe(false);
         });
     });
+
+    /**
+     * A page built around a disabled plugin's widget must be missing from
+     * every public read, including a render already in the cache, and come
+     * back when the plugin is enabled again.
+     */
+    describe('required embeds', () => {
+        let widgetAvailable: boolean;
+
+        beforeEach(() => {
+            widgetAvailable = false;
+            PageService.resetForTests();
+            ContentService.resetForTests();
+            ContentService.setDependencies(
+                mockDatabase,
+                new HookRegistry(mockLogger),
+                createMockServiceRegistry({ curation: curation as unknown as ICurationService }),
+                mockLogger
+            );
+            const contentService = ContentService.getInstance();
+            PageService.setDependencies(
+                mockDatabase,
+                mockCache,
+                contentService,
+                createTestMarkdownRenderer(),
+                mockLogger,
+                () => undefined,
+                // Stands in for the widgets lookup: a body naming the widget
+                // is servable only while it is "registered".
+                { isServable: (html: string) => widgetAvailable || !html.includes('Dashboard widget') }
+            );
+            service = PageService.getInstance();
+            contentService.registerType(service.getContentType(), 'pages');
+        });
+
+        it('hides the page from every public read while its required widget is missing', async () => {
+            const created = await service.createPage(
+                makePageMarkdown({ title: 'Whales', slug: '/tools/whales', published: true, body: 'Dashboard widget' }),
+                curator
+            );
+
+            expect(await service.getPublicPageBySlug('/tools/whales')).toBeNull();
+            expect(await service.renderPublicPageBySlug('/tools/whales')).toBeNull();
+            expect((await service.listSitemapPages()).map((page) => page.slug)).not.toContain('/tools/whales');
+            expect((await service.listPublicPages()).total).toBe(0);
+            expect(await service.getPublicPages([created.contentId!])).toEqual([null]);
+        });
+
+        it('withholds a cached render once the widget goes missing and serves it again when it returns', async () => {
+            await service.createPage(
+                makePageMarkdown({ title: 'Whales', slug: '/tools/whales', published: true, body: 'Dashboard widget' }),
+                curator
+            );
+            widgetAvailable = true;
+            expect(await service.renderPublicPageBySlug('/tools/whales')).not.toBeNull();
+
+            widgetAvailable = false;
+            expect(await service.renderPublicPageBySlug('/tools/whales')).toBeNull();
+
+            widgetAvailable = true;
+            expect((await service.renderPublicPageBySlug('/tools/whales'))?.html).toContain('Dashboard widget');
+        });
+
+        it('keeps serving a page that requires nothing', async () => {
+            await service.createPage(makePageMarkdown({ title: 'About', slug: '/about', published: true }), curator);
+
+            expect(await service.getPublicPageBySlug('/about')).not.toBeNull();
+        });
+    });
 });

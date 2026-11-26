@@ -32,6 +32,7 @@ import { PageContentType, PAGE_CONTENT_TYPE_ID } from './page-content-type.js';
 import type { IPageWriteInput } from './page-content-type.js';
 import { PageTranslatable } from './page-translatable.js';
 import { PageInputError } from './PageInputError.js';
+import { SERVE_EVERY_PAGE, type IPageServingGate } from './page-embed-requirements.js';
 import { ContentError } from '../../../services/content-error.js';
 import { ObjectId } from 'mongodb';
 
@@ -149,6 +150,9 @@ export class PageService implements IPageService {
      *   page addresses visitors reach, so the localization snapshot that lists
      *   translated page addresses is rebuilt instead of naming a page that
      *   moved or went away.
+     * @param servingGate - Withholds a page whose required embedded widget is
+     *   unregistered, so a page built around a disabled plugin's widget is
+     *   treated as missing by every public read.
      */
     private constructor(
         private readonly database: IDatabaseService,
@@ -156,7 +160,8 @@ export class PageService implements IPageService {
         private readonly contentService: IContentService,
         markdownRenderer: IMarkdownRendererService,
         private readonly logger: ISystemLogService,
-        private readonly onPublicPagesChanged: () => void
+        private readonly onPublicPagesChanged: () => void,
+        private readonly servingGate: IPageServingGate
     ) {
         this.markdownService = new MarkdownService(cacheService, markdownRenderer);
         this.pagesCollection = database.getCollection<IPageDocument>('pages');
@@ -209,6 +214,9 @@ export class PageService implements IPageService {
      * @param onPublicPagesChanged - Called after a change that can alter which
      *   page addresses visitors reach. Defaults to doing nothing, for callers
      *   such as tests that have no localization snapshot to refresh.
+     * @param servingGate - Decides whether a page's required embeds allow it
+     *   to be served. Defaults to serving every page, for callers such as
+     *   tests that have no widgets to check.
      */
     public static setDependencies(
         database: IDatabaseService,
@@ -216,7 +224,8 @@ export class PageService implements IPageService {
         contentService: IContentService,
         markdownRenderer: IMarkdownRendererService,
         logger: ISystemLogService,
-        onPublicPagesChanged: () => void = () => undefined
+        onPublicPagesChanged: () => void = () => undefined,
+        servingGate: IPageServingGate = SERVE_EVERY_PAGE
     ): void {
         if (!PageService.instance) {
             PageService.instance = new PageService(
@@ -225,7 +234,8 @@ export class PageService implements IPageService {
                 contentService,
                 markdownRenderer,
                 logger,
-                onPublicPagesChanged
+                onPublicPagesChanged,
+                servingGate
             );
         }
     }
@@ -852,10 +862,9 @@ export class PageService implements IPageService {
         const byId = new Map<string, IPage>();
         if (ids.length > 0) {
             const served = await this.contentService.readPublic<IPageContent>(PAGE_CONTENT_TYPE_ID, ids);
-            for (const page of served) {
-                if (page.published) {
-                    byId.set(page.id, this.toIPageFromContent(page));
-                }
+            const published = served.filter((page) => page.published).map((page) => this.toIPageFromContent(page));
+            for (const page of await this.keepServable(published)) {
+                byId.set(page.contentId as string, page);
             }
         }
 
@@ -940,15 +949,34 @@ export class PageService implements IPageService {
      * compare-and-set. That stale entry lasts until the next change to the
      * page or the cache TTL.
      *
+     * A cached render is checked against the page's required embeds before it
+     * is returned, because a plugin can be disabled long after its page was
+     * cached. The uncached path is checked inside `getPublicPageBySlug`.
+     *
      * @param slug - The requested path.
-     * @returns The render, or null when no visible, published page is served there.
+     * @returns The render, or null when no visible, published page is served
+     *   there, or when a widget the page requires is unregistered.
      */
     async renderPublicPageBySlug(slug: string): Promise<IPublicPageRender | null> {
         const cached = await this.markdownService.getCachedRender(slug);
+        let response: IPublicPageRender | null = null;
         if (cached) {
-            return cached;
+            response = this.servingGate.isServable(cached.html) ? cached : null;
+        } else {
+            response = await this.renderUncached(slug);
         }
 
+        return response;
+    }
+
+    /**
+     * Resolve, render, and cache the page served at a slug, for a render the
+     * cache did not hold.
+     *
+     * @param slug - The requested path.
+     * @returns The render, or null when no servable page is served there.
+     */
+    private async renderUncached(slug: string): Promise<IPublicPageRender | null> {
         const page = await this.getPublicPageBySlug(slug);
         let response: IPublicPageRender | null = null;
         if (page) {
@@ -1085,6 +1113,10 @@ export class PageService implements IPageService {
      * is tested against the version core serves. A page the migration has not
      * adopted yet is judged by its own `published` flag and deletion marker.
      *
+     * The match must also pass the serving gate, so a page whose required
+     * embedded widget is unregistered is not found. Every slug-based public
+     * read, including translated pages and redirects, comes through here.
+     *
      * @param filter - Finds candidate documents by working or approved slug.
      * @param matches - Tests a served page against the requested slug.
      * @returns The visible page, or null.
@@ -1100,8 +1132,34 @@ export class PageService implements IPageService {
         const managedIds = docs.filter((doc) => doc.contentId).map((doc) => doc.contentId as string);
         const served = await this.contentService.readPublic<IPageContent>(PAGE_CONTENT_TYPE_ID, managedIds);
         const candidates = [...served.map((page) => this.toIPageFromContent(page)), ...legacy];
+        const match = candidates.find((page) => page.published && matches(page)) ?? null;
+        const servable = match ? await this.isServable(match) : false;
 
-        return candidates.find((page) => page.published && matches(page)) ?? null;
+        return servable ? match : null;
+    }
+
+    /**
+     * Whether a visible page's required embeds allow it to be served. Reads
+     * the page's rendered HTML, which `renderPageHtml` takes from the cache
+     * when it can, so the check costs one cache read on a warm page.
+     *
+     * @param page - A page already known to be visible and published.
+     * @returns False while a widget type the page requires is unregistered.
+     */
+    private async isServable(page: IPage): Promise<boolean> {
+        return this.servingGate.isServable(await this.renderPageHtml(page));
+    }
+
+    /**
+     * Keep only the pages whose required embeds allow them to be served.
+     *
+     * @param pages - Pages already known to be visible and published.
+     * @returns The servable pages, in the order given.
+     */
+    private async keepServable(pages: IPage[]): Promise<IPage[]> {
+        const servable = await Promise.all(pages.map((page) => this.isServable(page)));
+
+        return pages.filter((_page, index) => servable[index]);
     }
 
     /**
@@ -1111,7 +1169,8 @@ export class PageService implements IPageService {
      * visibility rule: managed pages are resolved through core, which drops
      * deleted pages and pages whose only version is waiting for review, and
      * the served version must be published. A page the adoption migration has
-     * not reached is judged by its own `published` flag.
+     * not reached is judged by its own `published` flag. A page whose required
+     * embedded widget is unregistered is left out as well.
      *
      * @returns The visible pages, in no particular order.
      */
@@ -1126,7 +1185,7 @@ export class PageService implements IPageService {
             .filter((page) => page.published)
             .map((page) => this.toIPageFromContent(page));
 
-        return [...managed, ...legacy];
+        return this.keepServable([...managed, ...legacy]);
     }
 
     /**

@@ -12,4 +12,4 @@ export {
     createAddressOriginsStream,
     convertTimestamp
 } from './client';
-export { createBootstrapPage, bootstrapErrorMessage } from './bootstrap';
+export { createBootstrapPage } from './bootstrap';

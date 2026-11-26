@@ -80,6 +80,7 @@ import type { SystemLogsMonitor as Impl_SystemLogsMonitor } from '../modules/log
 import type { AiToolSchemaView as Impl_AiToolSchemaView } from '../modules/ai-tools';
 import type { ContentTranslations as Impl_ContentTranslations } from '../modules/content';
 import type { TranslationStatusBadges as Impl_TranslationStatusBadges } from '../modules/content';
+import type { PageBootstrapPanel as Impl_PageBootstrapPanel } from '../modules/pages';
 
 /**
  * The props a declaration exposes to plugins that the implementation would
@@ -158,5 +159,6 @@ type _Conformance_SystemLogsMonitor = AssertConformant<NoPhantomProps<ComponentP
 type _Conformance_AiToolSchemaView = AssertConformant<NoPhantomProps<ComponentProps<ISystemComponents['AiToolSchemaView']>, ComponentProps<typeof Impl_AiToolSchemaView>>>;
 type _Conformance_ContentTranslations = AssertConformant<NoPhantomProps<ComponentProps<ISystemComponents['ContentTranslations']>, ComponentProps<typeof Impl_ContentTranslations>>>;
 type _Conformance_TranslationStatusBadges = AssertConformant<NoPhantomProps<ComponentProps<ISystemComponents['TranslationStatusBadges']>, ComponentProps<typeof Impl_TranslationStatusBadges>>>;
+type _Conformance_PageBootstrapPanel = AssertConformant<NoPhantomProps<ComponentProps<ISystemComponents['PageBootstrapPanel']>, ComponentProps<typeof Impl_PageBootstrapPanel>>>;
 
 export type {};

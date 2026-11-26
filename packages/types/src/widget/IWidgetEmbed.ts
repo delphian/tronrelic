@@ -19,4 +19,14 @@ export interface IWidgetEmbed {
      * the embed is resolved. An embed written without settings carries `{}`.
      */
     config: Record<string, unknown>;
+
+    /**
+     * When true, the page holding the embed is not served while the widget
+     * type is unregistered, which is usually because the plugin that owns
+     * it is disabled. A page built around one widget, such as a dashboard
+     * page, would otherwise keep serving its text with an empty space where
+     * the widget belongs. Present only when the author set it; an embed
+     * without it is optional, and a missing type renders as nothing.
+     */
+    required?: true;
 }

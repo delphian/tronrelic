@@ -14,7 +14,7 @@ interface IFrontendPluginContext {
     layout: ILayoutComponents;     // Page, PageHeader, AdminPage, Stack, Grid, Section, SubMenu
     ui: IUIComponents;             // Card, Panel, EmbeddedContent, FigureList, Badge, Button, CopyButton, IconButton, Switch, Input, Select, Textarea, Skeleton, StatTile, StatGrid, ClientTime, Tooltip, TronAddress, TronTransactionId, IconPickerModal, ConfirmDialog, AccountPicker, AddressSelector, Table family, Link
     charts: IChartComponents;      // LineChart, BarChart, PriceRail
-    system: ISystemComponents;     // SchedulerMonitor, CollectionBrowser, ClickHouseTableBrowser, SystemLogsMonitor, AiToolSchemaView, ContentTranslations, TranslationStatusBadges (admin)
+    system: ISystemComponents;     // SchedulerMonitor, CollectionBrowser, ClickHouseTableBrowser, SystemLogsMonitor, AiToolSchemaView, ContentTranslations, TranslationStatusBadges, PageBootstrapPanel (admin)
     api: IApiClient;               // get/post/put/patch/delete with runtime base URL
     websocket: IWebSocketClient;   // socket + auto-prefixed helpers
     useUser: () => IPluginUserState;
@@ -44,9 +44,9 @@ The `definePlugin({ pages: [{ path, component }] })` registration wires `context
 
 ## Admin Surfaces (`context.system`)
 
-Seven core admin components are republished to plugins so a plugin's own admin
-page can offer Schedules, Database, Logs, and AI Tools tabs, and translate its
-managed content, without sending the operator back to `/system`. Import them from the context — never by relative path across
+Eight core admin components are republished to plugins so a plugin's own admin
+page can offer Schedules, Database, Logs, AI Tools, and Bootstrap tabs, and
+translate its managed content, without sending the operator back to `/system`. Import them from the context — never by relative path across
 the workspace.
 
 **A plugin that registers a scheduler job or owns storage must offer those
@@ -67,6 +67,14 @@ the `trp-onchain-typologies` workbench page is the reference implementation.
 | `AiToolSchemaView` | One AI tool's input parameters, read-only | None — pass `schema`, the tool's `inputSchema` |
 | `ContentTranslations` | The translation editor for one managed content item | `typeId` and `contentId` of the item |
 | `TranslationStatusBadges` | One item's translations as a badge row for an admin list | None — pass that item's `statuses` |
+| `PageBootstrapPanel` | The Bootstrap tab: default CMS pages the plugin offers, each address's state, and a Create button | None — pass `rows` from your admin route and an `onCreate` that calls it |
+
+`PageBootstrapPanel` is for a plugin that ships a default CMS page, such as a
+page that embeds its dashboard as a widget so admins can write the text around
+it on `/system/pages`. The backend half is the core `'page-bootstrap'` service
+(see [plugins-service-registry.md](./plugins-service-registry.md#platform-provided-services-page-bootstrap)):
+your admin routes list and create through a catalog it builds, and the panel
+draws the rows those routes return. `trp-whale-alerts` is the reference.
 
 `ContentTranslations` and `TranslationStatusBadges` are for a plugin whose
 managed content type sets `translation` (see

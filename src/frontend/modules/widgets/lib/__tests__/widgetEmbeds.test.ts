@@ -27,6 +27,14 @@ describe('formatWidgetEmbedBlock', () => {
         expect(parseWidgetEmbed(JSON.parse(match![1]))).toEqual({ type: 'core:world-clocks', config: { zones: ['UTC'] } });
     });
 
+    it('writes required only when the author switched it on', () => {
+        const required = formatWidgetEmbedBlock({ type: 'x:dash', config: {}, required: true });
+        const optional = formatWidgetEmbedBlock({ type: 'x:dash', config: {} });
+
+        expect(parseWidgetEmbed(JSON.parse(/```widget\n([\s\S]*?)\n```/.exec(required)![1]))).toEqual({ type: 'x:dash', config: {}, required: true });
+        expect(optional).not.toContain('required');
+    });
+
     it('surrounds the block with blank lines so it stays a top-level block', () => {
         const block = formatWidgetEmbedBlock({ type: 'core:world-clocks', config: {} });
         expect(block.startsWith('\n\n')).toBe(true);

@@ -30,6 +30,7 @@ import type {
 import { LANGUAGE_CODE_PATTERN } from '@/types';
 import { MarkdownService } from './markdown.service.js';
 import { PAGE_CONTENT_TYPE_ID } from './page-content-type.js';
+import { SERVE_EVERY_PAGE, type IPageServingGate } from './page-embed-requirements.js';
 
 /**
  * The page lookup the translation service needs. Declared narrowly so the
@@ -55,6 +56,13 @@ export interface IPageTranslationServiceDependencies {
     pages: IPublicPageLookup;
     /** The shared markdown renderer translated bodies are rendered through. */
     markdownRenderer: IMarkdownRendererService;
+    /**
+     * Withholds a cached translated render whose required embedded widget is
+     * unregistered. An uncached render needs no check here, because it
+     * resolves the English page through `pages`, which already applies it.
+     * Defaults to serving every page, for tests with no widgets to check.
+     */
+    servingGate?: IPageServingGate;
 }
 
 /**
@@ -69,12 +77,14 @@ export class PageTranslationService implements IPageTranslationService {
     private readonly contentService: IContentService;
     private readonly pages: IPublicPageLookup;
     private readonly markdown: MarkdownService;
+    private readonly servingGate: IPageServingGate;
 
     /** Private so construction only happens through `setDependencies`. */
     private constructor(deps: IPageTranslationServiceDependencies) {
         this.contentService = deps.contentService;
         this.pages = deps.pages;
         this.markdown = new MarkdownService(deps.cacheService, deps.markdownRenderer);
+        this.servingGate = deps.servingGate ?? SERVE_EVERY_PAGE;
     }
 
     /**
@@ -109,14 +119,29 @@ export class PageTranslationService implements IPageTranslationService {
         PageTranslationService.instance = null;
     }
 
-    /** @inheritdoc */
+    /**
+     * Render a page's published translation into a language, from the cache
+     * when it holds one.
+     *
+     * A cached render is checked against the required embeds in its own
+     * translated body, so a page built around a disabled plugin's widget is
+     * withheld in every language. A translation whose body leaves out a
+     * widget block the English body requires is still served from the cache
+     * until the cache expires; translators are told to copy the block
+     * unchanged.
+     *
+     * @param slug - The page's current slug.
+     * @param language - Language code requested.
+     * @returns The translated render, or null when it is not served.
+     */
     async renderPublicTranslation(slug: string, language: string): Promise<IPublicPageRender | null> {
         // An anonymous caller supplies the language, so it is checked before
         // it becomes part of a cache key.
-        let render = LANGUAGE_CODE_PATTERN.test(language)
+        const cached = LANGUAGE_CODE_PATTERN.test(language)
             ? await this.markdown.getCachedTranslationRender(slug, language)
             : null;
-        if (!render && LANGUAGE_CODE_PATTERN.test(language)) {
+        let render = cached && this.servingGate.isServable(cached.html) ? cached : null;
+        if (!cached && LANGUAGE_CODE_PATTERN.test(language)) {
             const served = await this.resolvePublic(slug, language);
             if (served) {
                 const metadata = this.toMetadata(served);

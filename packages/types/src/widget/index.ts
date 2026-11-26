@@ -32,3 +32,4 @@ export { WIDGET_EMBED_MARKUP } from './WIDGET_EMBED_MARKUP.js';
 export { parseWidgetEmbed } from './parseWidgetEmbed.js';
 export { encodeWidgetEmbed } from './encodeWidgetEmbed.js';
 export { splitWidgetEmbeds } from './splitWidgetEmbeds.js';
+export { listRequiredWidgetTypes } from './listRequiredWidgetTypes.js';

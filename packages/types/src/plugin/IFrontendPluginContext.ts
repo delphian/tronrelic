@@ -7,6 +7,7 @@ import type { IClickHouseTableBrowserProps } from '../ui/IClickHouseTableBrowser
 import type { ISystemLogsMonitorProps } from '../ui/ISystemLogsMonitorProps.js';
 import type { IAiToolSchemaViewProps } from '../ui/IAiToolSchemaViewProps.js';
 import type { IContentTranslationsProps } from '../ui/IContentTranslationsProps.js';
+import type { IPageBootstrapPanelProps } from '../ui/IPageBootstrapPanelProps.js';
 import type { ITranslationStatusBadgesProps } from '../ui/ITranslationStatusBadgesProps.js';
 import type { IPanelProps } from '../ui/IPanelProps.js';
 import type { ILinkProps } from '../ui/ILinkProps.js';
@@ -1351,6 +1352,25 @@ export interface ISystemComponents {
      * ```
      */
     TranslationStatusBadges: ComponentType<ITranslationStatusBadgesProps>;
+
+    /**
+     * The Bootstrap panel: one row per default CMS page the plugin offers,
+     * with each address's state and a Create button while the address is
+     * free. Creating proposes the page for curator review, so visitors see
+     * nothing until a curator approves it. The plugin's backend builds the
+     * rows with the core `'page-bootstrap'` service, and its admin routes
+     * serve them; the panel only draws them and calls `onCreate`.
+     *
+     * @example
+     * ```tsx
+     * <context.system.PageBootstrapPanel
+     *   rows={rows}
+     *   onRowUpdated={replaceRow}
+     *   onCreate={async (id) => (await context.api.post(`/plugins/my-plugin/system/bootstrap/${id}`)).page}
+     * />
+     * ```
+     */
+    PageBootstrapPanel: ComponentType<IPageBootstrapPanelProps>;
 }
 
 /**
