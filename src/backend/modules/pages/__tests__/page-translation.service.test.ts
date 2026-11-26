@@ -209,6 +209,29 @@ describe('page translations', () => {
             expect(await rendering.renderPublicTranslation('/about', 'zh')).toBeNull();
         });
 
+        /**
+         * A translated body can require a widget its English body does not,
+         * since translations carry no widget-parity rule. The first, uncached
+         * request must be withheld too, not only the cached ones after it.
+         */
+        it('withholds a translation whose own body requires a missing widget, from the first request', async () => {
+            const pageId = await createPage('/about');
+            await translations.saveTranslation('core:page', pageId, 'zh', { values: values('关于', 'Dashboard widget'), published: true }, curator);
+            PageTranslationService.resetForTests();
+            PageTranslationService.setDependencies({
+                cacheService: new MockCacheService(),
+                contentService: ContentService.getInstance(),
+                pages,
+                markdownRenderer: createTestMarkdownRenderer(),
+                // Stands in for the widgets lookup: the translated body names a widget that is not registered.
+                servingGate: { isServable: (html: string) => !html.includes('Dashboard widget') }
+            });
+            const gated = PageTranslationService.getInstance();
+
+            expect(await gated.renderPublicTranslation('/about', 'zh')).toBeNull();
+            expect(await gated.renderPublicTranslation('/about', 'zh')).toBeNull();
+        });
+
         it('returns null for a malformed language code', async () => {
             await createPage('/about');
             expect(await rendering.renderPublicTranslation('/about', '../x')).toBeNull();

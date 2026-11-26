@@ -57,9 +57,10 @@ export interface IPageTranslationServiceDependencies {
     /** The shared markdown renderer translated bodies are rendered through. */
     markdownRenderer: IMarkdownRendererService;
     /**
-     * Withholds a cached translated render whose required embedded widget is
-     * unregistered. An uncached render needs no check here, because it
-     * resolves the English page through `pages`, which already applies it.
+     * Withholds a translated render whose required embedded widget is
+     * unregistered. Both paths need it: `pages` applies the gate to the
+     * English body, and a translated body can require a widget the English
+     * body does not, because translations impose no widget-parity rule.
      * Defaults to serving every page, for tests with no widgets to check.
      */
     servingGate?: IPageServingGate;
@@ -123,12 +124,14 @@ export class PageTranslationService implements IPageTranslationService {
      * Render a page's published translation into a language, from the cache
      * when it holds one.
      *
-     * A cached render is checked against the required embeds in its own
-     * translated body, so a page built around a disabled plugin's widget is
-     * withheld in every language. A translation whose body leaves out a
-     * widget block the English body requires is still served from the cache
-     * until the cache expires; translators are told to copy the block
-     * unchanged.
+     * Every render, fresh or cached, is checked against the required embeds
+     * in its own translated body, so a page built around a disabled plugin's
+     * widget is withheld in every language, and a translated body that
+     * requires a widget the English body does not is withheld on its first
+     * request rather than after it is cached. A translation whose body leaves
+     * out a widget block the English body requires is still served from the
+     * cache until the cache expires; translators are told to copy a widget
+     * block unchanged.
      *
      * @param slug - The page's current slug.
      * @param language - Language code requested.
@@ -145,7 +148,7 @@ export class PageTranslationService implements IPageTranslationService {
             const served = await this.resolvePublic(slug, language);
             if (served) {
                 const metadata = this.toMetadata(served);
-                render = {
+                const fresh: IPublicPageRender = {
                     html: await this.markdown.renderMarkdown(this.text(served, 'body')),
                     metadata: {
                         title: metadata.title,
@@ -154,7 +157,11 @@ export class PageTranslationService implements IPageTranslationService {
                         ogImage: metadata.ogImage
                     }
                 };
-                await this.markdown.cacheTranslationRender(slug, language, render);
+                // Cached before the gate runs, as on the cached path: the gate
+                // is asked again on every read, so the page comes back by
+                // itself once the widget's plugin is enabled.
+                await this.markdown.cacheTranslationRender(slug, language, fresh);
+                render = this.servingGate.isServable(fresh.html) ? fresh : null;
             }
         }
 
