@@ -1325,12 +1325,14 @@ export class TrafficService {
      * The operator ignore list, in two cached forms. `ignoredUserIds` is the raw
      * Better Auth account list from Mongo; `ignoredCandidateUids` is the resolved
      * "whole person" tid set — every `candidate_uid` that has ever logged in as
-     * one of those accounts. The exclusion injects the *resolved tid set* as a
-     * literal, never a subquery: `candidate_uid` is the second column of the
-     * table's `ORDER BY (timestamp, candidate_uid)` sort key (migration 010), so
-     * a literal `candidate_uid NOT IN (…)` is index-friendly, whereas the old
-     * `WHERE user_id IN (…)` subquery scanned unindexed `user_id` on *every* read.
-     * Both empty means "exclude nobody".
+     * one of those accounts. The exclusion injects both as literals, never a
+     * subquery: `candidate_uid` is the second column of the table's
+     * `ORDER BY (timestamp, candidate_uid)` sort key (migration 010), so a
+     * literal `candidate_uid NOT IN (…)` is index-friendly, whereas a
+     * `WHERE user_id IN (…)` subquery would scan unindexed `user_id` across the
+     * whole table on *every* read. The account literal only tests rows the
+     * window already selected, so it adds no scan. Both empty means "exclude
+     * nobody".
      */
     private ignoredUserIds: string[] = [];
     private ignoredCandidateUids: string[] = [];
@@ -1354,13 +1356,12 @@ export class TrafficService {
      * add/remove — the *only* moments the list changes — so the expensive
      * `user_id`-keyed scan runs here (once per mutation) instead of inside every
      * dashboard read. Reads then filter against the cached literal tid set,
-     * which prunes on the sort key. The tradeoff is bounded staleness: a login as
-     * an ignored account between refreshes is not excluded until the next refresh
-     * (a re-save of the list, or the next boot) rather than instantly — an
-     * accepted cost for collapsing ~18 subquery scans per dashboard load plus the
-     * 30s live-counter poll into one scan per list change. On a resolution error
-     * the previous tid set is kept (best-effort), matching the "re-syncs on next
-     * boot" contract of the controller cache refresh.
+     * which prunes on the sort key. A browser that first logs in as an ignored
+     * account after this runs is added to the set by {@link noteIgnoredLogin}
+     * on its first logged-in event, so the set does not wait for the next
+     * refresh. On a resolution error the previous tid set is kept (best-effort),
+     * matching the "re-syncs on next boot" contract of the controller cache
+     * refresh.
      *
      * @param ids - The full set of Better Auth account ids to exclude.
      */
@@ -1414,25 +1415,75 @@ export class TrafficService {
     }
 
     /**
+     * Add a browser to the ignored tid set the moment it is seen logged in as
+     * an ignored account. Without this, the set only grows when
+     * {@link setIgnoredUserIds} runs (at boot and on each list edit), so an
+     * operator who opened a new browser, cleared cookies, or used a private
+     * window was counted in every dashboard figure until the next restart.
+     *
+     * The ingestion path calls this for every event that carries an account,
+     * so it must stay cheap: two set lookups, and an array copy only the first
+     * time a browser is added. No ClickHouse query runs. Because the read
+     * filter is applied at read time, adding the tid also removes the
+     * browser's earlier anonymous rows from every figure.
+     *
+     * If a list refresh is in flight when this runs, the refresh replaces the
+     * set with what ClickHouse held when it queried, which may not include the
+     * row being written. The browser's next logged-in event adds it back, and
+     * the account-id literal in {@link ignoredUsersExclusion} excludes its
+     * logged-in rows in the meantime.
+     *
+     * @param subject - The account id and `tronrelic_tid` of the event being
+     *   recorded; either may be missing.
+     * @returns True when the tid was newly added, so a caller or test can tell
+     *   a first sighting from a repeat one.
+     */
+    public noteIgnoredLogin(subject: ITrafficIgnoreSubject): boolean {
+        let added = false;
+        if (typeof subject.userId === 'string' && typeof subject.tid === 'string' && this.ignoredUserIdSet.has(subject.userId)) {
+            const tid = subject.tid.toLowerCase();
+            if (!this.ignoredCandidateUidSet.has(tid)) {
+                // Replace rather than mutate, so a read that already took the
+                // previous array as a bound parameter keeps a consistent value.
+                this.ignoredCandidateUids = [...this.ignoredCandidateUids, tid];
+                this.ignoredCandidateUidSet = new Set(this.ignoredCandidateUids);
+                added = true;
+            }
+        }
+        return added;
+    }
+
+    /**
      * The always-on "whole person" exclusion for the ignore list. Filters out
      * every row of any resolved ignored tid — including that tid's anonymous,
      * pre-login rows — via a literal `candidate_uid NOT IN (…)` against the
      * cached set (see {@link setIgnoredUserIds} for how it is resolved and why a
-     * literal beats the previous per-read subquery). Returns an empty fragment
-     * when nobody is ignored (an `IN ()` would be invalid SQL), so the common
-     * path adds no cost.
+     * literal beats a per-read subquery). It also filters out every row
+     * carrying an ignored account id, so a logged-in row is excluded even when
+     * its browser is not yet in the tid set. `ifNull` keeps anonymous rows,
+     * whose `user_id` is NULL and would otherwise make `NOT IN` drop them.
+     * Each part is left out when its list is empty (an `IN ()` would be
+     * invalid SQL), so the common path adds no cost.
      *
-     * @returns The ` AND candidate_uid NOT IN (…)` fragment and its bound param,
-     *   ready to append to any `traffic_events` WHERE clause.
+     * Every caller applies the fragment to a scan of `traffic_events` or
+     * `traffic_goal_events`, both of which carry `candidate_uid` and
+     * `user_id`.
+     *
+     * @returns The leading-AND fragment and its bound params, ready to append
+     *   to any WHERE clause over those two tables.
      */
     private ignoredUsersExclusion(): { fragment: string; params: Record<string, unknown> } {
-        if (this.ignoredCandidateUids.length === 0) {
-            return { fragment: '', params: {} };
+        let fragment = '';
+        const params: Record<string, unknown> = {};
+        if (this.ignoredCandidateUids.length > 0) {
+            fragment += ' AND candidate_uid NOT IN ({ignoredCandidateUids:Array(String)})';
+            params.ignoredCandidateUids = this.ignoredCandidateUids;
         }
-        return {
-            fragment: ' AND candidate_uid NOT IN ({ignoredCandidateUids:Array(String)})',
-            params: { ignoredCandidateUids: this.ignoredCandidateUids }
-        };
+        if (this.ignoredUserIds.length > 0) {
+            fragment += " AND ifNull(user_id, '') NOT IN ({ignoredUserIds:Array(String)})";
+            params.ignoredUserIds = this.ignoredUserIds;
+        }
+        return { fragment, params };
     }
 
     /**

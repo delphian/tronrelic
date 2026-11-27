@@ -1543,7 +1543,38 @@ describe('TrafficService', () => {
             await TrafficService.getInstance().getGeoDistribution({ since: new Date('2026-06-01T00:00:00.000Z') });
 
             expect(captured.sql).not.toContain('ignoredCandidateUids');
+            expect(captured.sql).not.toContain('ignoredUserIds');
             expect(captured.params?.ignoredCandidateUids).toBeUndefined();
+            expect(captured.params?.ignoredUserIds).toBeUndefined();
+        });
+
+        /**
+         * Guards the backstop: a logged-in row from a browser not yet in the
+         * resolved tid set must still drop out, because it carries the
+         * ignored account id itself.
+         */
+        it('also excludes rows carrying an ignored account id, keeping anonymous rows', async () => {
+            const captured: { sql?: string; params?: Record<string, unknown> } = {};
+            TrafficService.setDependencies(mockWithResolver(captured), createMockLogger());
+            const svc = TrafficService.getInstance();
+            await svc.setIgnoredUserIds(IGNORED);
+
+            await svc.getGeoDistribution({ since: new Date('2026-06-01T00:00:00.000Z') });
+
+            expect(captured.sql).toContain("ifNull(user_id, '') NOT IN ({ignoredUserIds:Array(String)})");
+            expect(captured.params?.ignoredUserIds).toEqual(IGNORED);
+        });
+
+        it('excludes a browser that first logs in as an ignored account after the last refresh', async () => {
+            const captured: { sql?: string; params?: Record<string, unknown> } = {};
+            TrafficService.setDependencies(mockWithResolver(captured), createMockLogger());
+            const svc = TrafficService.getInstance();
+            await svc.setIgnoredUserIds(IGNORED);
+
+            svc.noteIgnoredLogin({ userId: IGNORED[0], tid: 'TID-NEW' });
+            await svc.getGeoDistribution({ since: new Date('2026-06-01T00:00:00.000Z') });
+
+            expect(captured.params?.ignoredCandidateUids).toEqual(['tid-a', 'tid-b', 'tid-new']);
         });
 
         it('excludes ignored accounts from the live visitor count (own WHERE path)', async () => {
@@ -1712,6 +1743,66 @@ describe('TrafficService', () => {
 
             expect(svc.isIgnored({ userId: IGNORED[0] })).toBe(true);
             expect(svc.isIgnored({ tid: 'tid-a' })).toBe(false);
+        });
+    });
+
+    describe('noteIgnoredLogin()', () => {
+        const IGNORED = ['665f00000000000000000001'];
+
+        /**
+         * Build a service whose resolved tid set holds only `tid-a`, the
+         * browser the ignored account used before the last refresh.
+         *
+         * @returns The configured service instance.
+         */
+        async function serviceWithTidA(): Promise<TrafficService> {
+            const ch = createMockClickHouse();
+            ch.queue.push({ candidate_uid: 'tid-a' });
+            TrafficService.setDependencies(ch, createMockLogger());
+            const svc = TrafficService.getInstance();
+            await svc.setIgnoredUserIds(IGNORED);
+            return svc;
+        }
+
+        it('adds a new browser of an ignored account, so its anonymous requests match too', async () => {
+            const svc = await serviceWithTidA();
+
+            expect(svc.noteIgnoredLogin({ userId: IGNORED[0], tid: 'tid-new' })).toBe(true);
+            expect(svc.isIgnored({ userId: null, tid: 'tid-new' })).toBe(true);
+        });
+
+        it('stores the tid in lowercase, matching the set ClickHouse returns', async () => {
+            const svc = await serviceWithTidA();
+
+            svc.noteIgnoredLogin({ userId: IGNORED[0], tid: '550E8400-E29B-41D4-A716-446655440000' });
+
+            expect(svc.isIgnored({ tid: '550e8400-e29b-41d4-a716-446655440000' })).toBe(true);
+        });
+
+        it('reports a browser already in the set as not newly added', async () => {
+            const svc = await serviceWithTidA();
+
+            expect(svc.noteIgnoredLogin({ userId: IGNORED[0], tid: 'tid-a' })).toBe(false);
+            svc.noteIgnoredLogin({ userId: IGNORED[0], tid: 'tid-new' });
+            expect(svc.noteIgnoredLogin({ userId: IGNORED[0], tid: 'tid-new' })).toBe(false);
+        });
+
+        it('ignores accounts that are not on the list and events without both identifiers', async () => {
+            const svc = await serviceWithTidA();
+
+            expect(svc.noteIgnoredLogin({ userId: 'someone-else', tid: 'tid-z' })).toBe(false);
+            expect(svc.noteIgnoredLogin({ userId: null, tid: 'tid-z' })).toBe(false);
+            expect(svc.noteIgnoredLogin({ userId: IGNORED[0], tid: null })).toBe(false);
+            expect(svc.isIgnored({ tid: 'tid-z' })).toBe(false);
+        });
+
+        it('forgets added browsers when the account is removed from the list', async () => {
+            const svc = await serviceWithTidA();
+            svc.noteIgnoredLogin({ userId: IGNORED[0], tid: 'tid-new' });
+
+            await svc.setIgnoredUserIds([]);
+
+            expect(svc.isIgnored({ tid: 'tid-new' })).toBe(false);
         });
     });
 });
