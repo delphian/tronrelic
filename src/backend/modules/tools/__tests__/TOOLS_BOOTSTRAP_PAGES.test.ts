@@ -5,7 +5,8 @@
  *
  * Listing and creating them is the pages module's shared bootstrap service,
  * tested in `page-bootstrap.service.test.ts`. What belongs to this module is
- * what each proposed page says, so approving it changes no visible text.
+ * what each proposed page says. Each page is the only thing served at its
+ * calculator's address, so its body must embed the calculator.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -17,21 +18,26 @@ describe('TOOLS_BOOTSTRAP_PAGES', () => {
 
         expect(proposal.slug).toBe('/tools/stake-calculator');
         expect(proposal.source).toBe('tools-module');
-        expect(proposal.body).toContain('```widget\n{"type":"tools:stake-calculator","config":{}}\n```');
+        expect(proposal.body).toContain('```widget\n{"type":"tools:stake-calculator","config":{},"required":true}\n```');
+    });
+
+    it('proposes the staking rewards page with its calculator widget at its default address', () => {
+        const { proposal } = TOOLS_BOOTSTRAP_PAGES[1];
+
+        expect(proposal.slug).toBe('/tools/staking-rewards');
+        expect(proposal.source).toBe('tools-module');
+        expect(proposal.body).toContain('```widget\n{"type":"tools:staking-rewards","config":{},"required":true}\n```');
     });
 
     /**
-     * Approving the page must change no visible text, so the proposal repeats
-     * the built-in page's title, description, heading, and intro line. These
-     * literals mirror the `t()` defaults in StakeCalculator.tsx and the
-     * stake calculator route's metadata.
+     * The pages module describes a page as a `WebApplication` only when its
+     * body has a required embed. Without the flag each calculator page goes
+     * out to search engines as an `Article`.
      */
-    it('proposes the same visible text the built-in page shows', () => {
-        const { proposal } = TOOLS_BOOTSTRAP_PAGES[0];
-
-        expect(proposal.title).toBe('TRON Stake Calculator | TRX Staking Energy & Bandwidth Yield');
-        expect(proposal.description).toBe('Calculate energy and bandwidth yield from staking TRX on the TRON network. Compare staking returns against renting energy from delegation markets.');
-        expect(proposal.body.startsWith('# Stake Calculator\n\nCalculate energy from TRX or TRX from energy using live network parameters\n\n```widget')).toBe(true);
+    it('marks every calculator embed required', () => {
+        for (const { proposal } of TOOLS_BOOTSTRAP_PAGES) {
+            expect(proposal.body).toContain('"required":true');
+        }
     });
 
     it('gives every entry its own id', () => {

@@ -1,16 +1,19 @@
 /**
  * @fileoverview The CMS page the tools module proposes for the staking rewards calculator.
  *
- * An admin creates this page from the Bootstrap tab of `/system/tools`, which
- * proposes it through the pages module, and a curator approves or rejects it
- * on `/system/curation`. After approval admins edit and translate it on
- * `/system/pages`, which is how a language version can be written for that
- * language's own searches. Its slug is only the default address.
+ * `/tools/staking-rewards` belongs to the CMS: no route in code serves that
+ * address, so it answers 404 until this page exists. An admin creates it from
+ * the Bootstrap tab of `/system/tools`, which proposes it through the pages
+ * module, and a curator approves or rejects it on `/system/curation`. After
+ * approval admins edit and translate it on `/system/pages`, which is how a
+ * language version can be written for that language's own searches, and each
+ * language is served only once the page has a published translation into it.
+ * Its slug is only the default address.
  *
- * Every visible field matches the built-in page the route serves until this
- * one is approved, so approving it changes no visible text. Keep these values
- * in step with the `t()` defaults in `StakingRewards.tsx` and the route's
- * metadata until this page is approved.
+ * The body embeds the calculator as a required widget, so the pages module
+ * describes the page as a `WebApplication` in its structured data. The widget
+ * type is core and always registered, so the flag never withholds the page.
+ * The widget's own server-side fetcher supplies the rewards snapshot.
  */
 
 import type { IPageProposal } from '@/types';
@@ -22,13 +25,12 @@ import { STAKING_REWARDS_PATH, STAKING_REWARDS_WIDGET_TYPE_ID, WIDGET_EMBED_MARK
  */
 const CALCULATOR_EMBED = [
     '```' + WIDGET_EMBED_MARKUP.fenceLanguage,
-    JSON.stringify({ type: STAKING_REWARDS_WIDGET_TYPE_ID, config: {} }),
+    JSON.stringify({ type: STAKING_REWARDS_WIDGET_TYPE_ID, config: {}, required: true }),
     '```'
 ].join('\n');
 
 /**
- * Markdown body: the built-in page's heading and intro line, then the
- * calculator. Opens with the page's only `<h1>`, because the CMS route adds
+ * Markdown body: a heading and an intro line, then the calculator. Opens with the page's only `<h1>`, because the CMS route adds
  * no heading of its own.
  */
 const BODY = `# Staking Rewards Calculator

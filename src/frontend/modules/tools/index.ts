@@ -8,8 +8,8 @@
 export { AddressConverter } from './components/AddressConverter';
 export { AddressGenerator } from './components/AddressGenerator';
 export { EnergyEstimator } from './components/EnergyEstimator';
-export { StakeCalculator, StakeCalculatorForm, StakeCalculatorWidget } from './components/StakeCalculator';
-export { StakingRewards, StakingRewardsCalculator, StakingRewardsWidget } from './components/StakingRewards';
+export { StakeCalculatorForm, StakeCalculatorWidget } from './components/StakeCalculator';
+export { StakingRewardsCalculator, StakingRewardsWidget } from './components/StakingRewards';
 export { SignatureVerifier } from './components/SignatureVerifier';
 export { ApprovalChecker } from './components/ApprovalChecker';
 export { AddressOrigins } from './components/AddressOrigins';

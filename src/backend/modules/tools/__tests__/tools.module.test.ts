@@ -496,7 +496,7 @@ describe('ToolsModule', () => {
          * The tool pages reach the sitemap only through this hook, since core
          * no longer lists them, so a missed registration drops them from it.
          */
-        it('should declare /tools and every tool page to the sitemap during run(), appending to earlier entries', async () => {
+        it('should declare /tools and every route-served tool page to the sitemap during run(), appending to earlier entries', async () => {
             const module = new ToolsModule();
 
             await module.init({
@@ -524,18 +524,16 @@ describe('ToolsModule', () => {
             expect(paths).toContain('/tools');
             expect(paths).toContain('/tools/energy-estimator');
             expect(paths).toContain('/tools/address-generator');
-            expect(paths).toHaveLength(11);
+            expect(paths).toHaveLength(9);
         });
 
         /**
-         * A moved CMS page leaves its tool address only redirecting, and a
-         * sitemap must not list a redirect, so that address is left out.
+         * The calculator addresses belong to CMS pages, which the pages module
+         * lists once published. Declaring them here would list an address that
+         * answers 404 before its page exists, or that only redirects after an
+         * admin moves the page.
          */
-        it('should leave a tool address out of the sitemap while a moved CMS page holds it as a redirect', async () => {
-            mockPageBootstrap.createCatalog.mockReturnValue({
-                list: vi.fn().mockResolvedValue([{ id: 'stake-calculator', slug: '/tools/stake-calculator', state: 'redirect' }]),
-                create: vi.fn()
-            });
+        it('should leave the CMS-owned calculator addresses out of its sitemap entries', async () => {
             const module = new ToolsModule();
 
             await module.init({
@@ -554,8 +552,8 @@ describe('ToolsModule', () => {
             const handler = call![2] as (ctx: unknown, entries: Array<{ path: string }>) => Promise<Array<{ path: string }>>;
             const paths = (await handler({ generatedAt: new Date().toISOString() }, [])).map(entry => entry.path);
             expect(paths).not.toContain('/tools/stake-calculator');
-            expect(paths).toContain('/tools/staking-rewards');
-            expect(paths).toHaveLength(9);
+            expect(paths).not.toContain('/tools/staking-rewards');
+            expect(paths).toHaveLength(8);
         });
 
         /** Pages are created only when an admin clicks Create, never at boot. */

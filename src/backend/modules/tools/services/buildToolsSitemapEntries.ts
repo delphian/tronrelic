@@ -2,11 +2,11 @@
  * @fileoverview Builds the sitemap entries the tools module declares through
  * the `http.sitemapEntries` hook.
  *
- * The tools module owns `/tools` and every tool page, so it declares them
- * itself rather than core listing them in `sitemap.ts`. When a tool page is
- * also served as a CMS page, the sitemap lists that address once, from the CMS
- * entry, which carries a real modification date. When that CMS page has been
- * moved, the tool address only redirects, so it is left out.
+ * The tools module owns `/tools` and the tool pages served by routes in code,
+ * so it declares them itself rather than core listing them in `sitemap.ts`. A
+ * tool whose address belongs to a CMS page is left out: the pages module lists
+ * that page once it is published, under whatever address it has, and an
+ * address with no page yet answers 404.
  */
 
 import type { ISitemapEntry } from '@/types';
@@ -19,22 +19,18 @@ import type { ISitemapEntry } from '@/types';
  * `lastModified` rather than stamp a made-up date.
  *
  * @param categoryPath - Address of the Tools landing page, which lists every tool.
- * @param pages - The tool pages to declare; only their `url` is read.
- * @param redirectingPaths - Tool addresses a CMS page now holds only in its
- *   redirect history, so the route sends a visitor elsewhere. They are left
- *   out because a sitemap must name the address that serves the page, and the
- *   CMS page is already listed under its current address.
- * @returns One entry for the landing page and one per tool page still served here.
+ * @param pages - The tool pages; `url` is the address and `cmsPage` marks one
+ *   a CMS page owns, which is skipped.
+ * @returns One entry for the landing page and one per tool page a route serves.
  */
 export function buildToolsSitemapEntries(
     categoryPath: string,
-    pages: ReadonlyArray<{ url: string }>,
-    redirectingPaths: ReadonlySet<string> = new Set()
+    pages: ReadonlyArray<{ url: string; cmsPage?: boolean }>
 ): ISitemapEntry[] {
     const entries: ISitemapEntry[] = [
         { path: categoryPath, changeFrequency: 'weekly', priority: 0.8 },
         ...pages
-            .filter((page) => !redirectingPaths.has(page.url))
+            .filter((page) => !page.cmsPage)
             .map((page): ISitemapEntry => ({ path: page.url, changeFrequency: 'weekly', priority: 0.7 }))
     ];
     return entries;

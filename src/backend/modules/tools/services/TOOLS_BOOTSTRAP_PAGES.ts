@@ -17,13 +17,13 @@ export const TOOLS_BOOTSTRAP_PAGES: ReadonlyArray<IPageBootstrapItem> = [
     {
         id: 'stake-calculator',
         label: 'Stake Calculator page',
-        description: 'An editable page at the stake calculator\'s address, with the calculator embedded as a widget. Until it is approved, the built-in calculator page stays in place.',
+        description: 'The page at the stake calculator\'s address, with the calculator embedded as a required widget. No built-in page serves this address, so it answers 404 until this page is approved.',
         proposal: STAKE_CALCULATOR_PAGE_PROPOSAL
     },
     {
         id: 'staking-rewards',
         label: 'Staking Rewards Calculator page',
-        description: 'An editable page at the staking rewards calculator\'s address, with the calculator embedded as a widget. Until it is approved, the built-in calculator page stays in place.',
+        description: 'The page at the staking rewards calculator\'s address, with the calculator embedded as a required widget. No built-in page serves this address, so it answers 404 until this page is approved.',
         proposal: STAKING_REWARDS_PAGE_PROPOSAL
     }
 ];

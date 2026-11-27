@@ -1,22 +1,19 @@
 /**
  * @fileoverview The CMS page the tools module proposes for the stake calculator.
  *
- * The calculator's page used to be fixed in code, so its text and search
- * metadata could only change with a deploy. An admin now creates this page
- * from the Bootstrap tab of `/system/tools`, which proposes it through the
- * pages module, and a curator approves or rejects it on `/system/curation`.
- * After approval the page belongs to the admins, who edit and translate it on
- * `/system/pages` like any other page. Its slug is only the default address:
- * an admin may move it, and the CMS then redirects the old address.
+ * `/tools/stake-calculator` belongs to the CMS: no route in code serves that
+ * address, so it answers 404 until this page exists. An admin creates it from
+ * the Bootstrap tab of `/system/tools`, which proposes it through the pages
+ * module, and a curator approves or rejects it on `/system/curation`. After
+ * approval the page belongs to the admins, who edit and translate it on
+ * `/system/pages` like any other page, and each language is served only once
+ * the page has a published translation into it. Its slug is only the default
+ * address: an admin may move it, and the CMS then redirects the old address.
  *
- * Every field a visitor or search engine can see matches the built-in page
- * the route serves until this one is approved: the same title, description,
- * and keywords, and a body with the same heading and intro line followed by
- * the calculator. Approving the page therefore changes no visible text; admins
- * add or change text afterwards through the CMS. The body embeds the
- * calculator with a ` ```widget ` block, so the form renders where the block
- * sits. Keep these values in step with the built-in page's `t()` defaults in
- * `StakeCalculator.tsx` and the route's metadata until this page is approved.
+ * The body embeds the calculator as a required widget. The pages module
+ * describes a page with a required embed as a `WebApplication` in its
+ * structured data, because the page is that widget's tool page. The widget
+ * type is core and always registered, so the flag never withholds the page.
  */
 
 import type { IPageProposal } from '@/types';
@@ -28,14 +25,14 @@ import { STAKE_CALCULATOR_PATH, STAKE_CALCULATOR_WIDGET_TYPE_ID, WIDGET_EMBED_MA
  */
 const CALCULATOR_EMBED = [
     '```' + WIDGET_EMBED_MARKUP.fenceLanguage,
-    JSON.stringify({ type: STAKE_CALCULATOR_WIDGET_TYPE_ID, config: {} }),
+    JSON.stringify({ type: STAKE_CALCULATOR_WIDGET_TYPE_ID, config: {}, required: true }),
     '```'
 ].join('\n');
 
 /**
- * Markdown body of the proposed page: the built-in page's heading and intro
- * line, then the calculator. Opens with the page's only `<h1>`, because the
- * CMS route renders the body as the whole page and adds no heading of its own.
+ * Markdown body of the proposed page: a heading, an intro line, then the
+ * calculator. Opens with the page's only `<h1>`, because the CMS route renders
+ * the body as the whole page and adds no heading of its own.
  */
 const BODY = `# Stake Calculator
 
