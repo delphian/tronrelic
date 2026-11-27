@@ -94,6 +94,7 @@ export function localizedAbsoluteUrl(siteUrl: string, path: string = '/', langua
  */
 const OPEN_GRAPH_LOCALES: Record<string, string> = {
   en: 'en_US',
+  es: 'es_ES',
   ru: 'ru_RU',
   vi: 'vi_VN',
   zh: 'zh_CN',
