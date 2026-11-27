@@ -23,7 +23,7 @@ import { translateKeywords } from '../../../../../../lib/translateKeywords';
 import { getServerTranslator, resolveMetadataLanguage } from '../../../../../../modules/localization/server';
 import { CmsPageArticle } from '../../../../../../modules/pages/server';
 import type { IPublicPageRenderResponse, IPublicPageResponse } from '../../../../../../modules/pages';
-import { fetchPublicPageMetadata, fetchPublicPageRender } from '../../../../../../modules/pages/server';
+import { fetchPublicPageMetadata, fetchPublicPageRender, resolvePageBreadcrumbs } from '../../../../../../modules/pages/server';
 import { StakeCalculator } from '../../../../../../modules/tools';
 
 /** Route props; `params.lang` is the language the middleware routed to. */
@@ -145,7 +145,10 @@ export default async function StakeCalculatorPage({ params }: IStakeCalculatorPa
         redirect(localizePath(render.currentSlug, language));
     }
 
+    const page = data?.page ?? null;
+    const breadcrumbs = render ? await resolvePageBreadcrumbs(page, language, siteUrl) : [];
+
     return render
-        ? <CmsPageArticle render={render} page={data?.page ?? null} language={language} siteUrl={siteUrl} />
+        ? <CmsPageArticle render={render} page={page} breadcrumbs={breadcrumbs} language={language} siteUrl={siteUrl} />
         : <StakeCalculator />;
 }

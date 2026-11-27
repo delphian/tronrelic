@@ -9,3 +9,6 @@
  */
 
 export { fetchMenuNamespace } from './lib/fetchMenuNamespace';
+export { fetchMenuCategory } from './lib/fetchMenuCategory';
+export { CATEGORY_MENU_NAMESPACE } from './lib/CATEGORY_MENU_NAMESPACE';
+export type { IMenuCategory } from './types/IMenuCategory';

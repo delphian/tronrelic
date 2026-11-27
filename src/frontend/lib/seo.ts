@@ -9,6 +9,7 @@
 
 import type { Metadata } from 'next';
 import { DEFAULT_LANGUAGE, localizePath } from '@/types';
+import { buildPublisherReference } from './buildPublisherReference';
 
 export const SITE_NAME = 'TronRelic';
 
@@ -290,12 +291,7 @@ export function buildArticleStructuredData(options: BuildArticleStructuredDataOp
     'dateModified': dateModified,
     ...(image ? { image: absoluteUrl(siteUrl, image) } : {}),
     ...(keywords?.length ? { keywords: keywords.join(', ') } : {}),
-    'publisher': {
-      '@type': 'Organization',
-      '@id': `${siteUrl}/#organization`,
-      'name': 'TronRelic',
-      'url': siteUrl
-    },
+    'publisher': buildPublisherReference(siteUrl),
     'mainEntityOfPage': {
       '@type': 'WebPage',
       '@id': absoluteUrl(siteUrl, path)

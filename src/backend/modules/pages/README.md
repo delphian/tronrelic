@@ -131,6 +131,18 @@ A page built around one widget, such as the whale-alerts dashboard page, makes n
 
 Nothing is stored, so the page comes back as soon as the plugin is enabled again; the frontend's 60-second fetch cache bounds how long a visitor may still see the old answer. If the widgets service itself is missing, a page with a required embed is withheld, because the embed would render as nothing, which is what the flag exists to prevent. A page with no required embed is never affected. A translation whose body leaves out a block the English body requires is still served from its cache until the cache expires, so copy the block into translations unchanged.
 
+### Structured Data
+
+`CmsPageArticle` (`src/frontend/modules/pages/components/CmsPageArticle/`) writes two JSON-LD blocks into every served page, in English and in each translation.
+
+| Block | When | Built by |
+|---|---|---|
+| `WebApplication` | The body has a required embed (`listRequiredWidgetTypes(render.html)` is non-empty), so the page is that widget's tool page. Carries `dateModified` but no `datePublished`, and no `offers` | `buildWebApplicationStructuredData` in `src/frontend/lib/` |
+| `Article` | Every other page | `buildArticleStructuredData` in `src/frontend/lib/seo.ts` |
+| `BreadcrumbList` | The trail has at least two steps | `buildBreadcrumbStructuredData` in `src/frontend/lib/` |
+
+The trail comes from `resolvePageBreadcrumbs` (`src/frontend/modules/pages/lib/`), which each route serving a CMS page calls and passes in as the `breadcrumbs` prop, so the component stays synchronous and renders in the component workbench. It runs Home, then each parent path of the slug that is a menu category (`fetchMenuCategory`, the lookup behind category landing pages), then the page under its title. A parent that is not a category, such as `/p` above `/p/mcp`, is left out, because a crumb linking a 404 is invalid markup. Names go through `t()`: Home under `breadcrumbs.home`, a category under the same `menuTranslationKey` its landing page uses. Links pass through `localizeHref`, so a parent not published in the page's language links its English address.
+
 ### Page Bootstrap
 
 `PageBootstrapService` (`services/page-bootstrap.service.ts`) lets a module or plugin offer default CMS pages that an admin creates from a Bootstrap tab, such as a tool page whose text admins then edit without a deploy. It is the only page access the registry offers.

@@ -5,8 +5,10 @@ import { cache } from 'react';
 import { PluginPageWithZones } from '../../../../components/PluginPageWithZones';
 import { CorePageZones } from '../../../../components/widgets';
 import { CategoryLandingPage } from '../../../../modules/menu';
+import { CATEGORY_MENU_NAMESPACE, fetchMenuCategory } from '../../../../modules/menu/server';
+import type { IMenuCategory } from '../../../../modules/menu/server';
 import { CmsPageArticle } from '../../../../modules/pages/server';
-import { fetchPublicPageMetadata, fetchPublicPageRender } from '../../../../modules/pages/server';
+import { fetchPublicPageMetadata, fetchPublicPageRender, resolvePageBreadcrumbs } from '../../../../modules/pages/server';
 import { getServerSideApiUrlWithPath } from '../../../../lib/api-url';
 import { buildMetadata, localizedAbsoluteUrl, toOpenGraphLocale } from '../../../../lib/seo';
 import { localizeHref, localizePath, serializeInlineJson } from '@/types';
@@ -28,34 +30,6 @@ interface IPageParams {
 }
 
 /**
- * Menu category node data from the resolve endpoint.
- */
-interface ICategoryResolveResponse {
-    success: boolean;
-    node: {
-        _id?: string;
-        label: string;
-        description?: string;
-        url?: string;
-        icon?: string;
-    };
-    children: {
-        _id?: string;
-        label: string;
-        description?: string;
-        url: string;
-        icon?: string;
-    }[];
-}
-
-/**
- * Menu namespace category pages resolve in. `resolveSlug` calls
- * `/menu/resolve` without a namespace, and the backend then searches `main`,
- * so the landing page's translation keys belong to `main` as well.
- */
-const CATEGORY_MENU_NAMESPACE = 'main';
-
-/**
  * Discriminated result from resolving a slug to a page type.
  *
  * The catch-all route must determine which system owns a given URL:
@@ -67,7 +41,7 @@ const CATEGORY_MENU_NAMESPACE = 'main';
 type ISlugResolution =
     | { type: 'custom' }
     | { type: 'plugin'; config: NonNullable<Awaited<ReturnType<typeof getEnabledPluginPageConfig>>> }
-    | { type: 'category'; data: ICategoryResolveResponse }
+    | { type: 'category'; data: IMenuCategory }
     | { type: 'notFound' };
 
 /**
@@ -103,19 +77,9 @@ const resolveSlug = cache(async (slug: string): Promise<ISlugResolution> => {
     }
 
     // 3. Menu category page
-    try {
-        const response = await fetch(
-            `${apiUrl}/menu/resolve?url=${encodeURIComponent(slug)}`,
-            { next: { revalidate: 60 } }
-        );
-        if (response.ok) {
-            const data: ICategoryResolveResponse = await response.json();
-            if (data.success) {
-                return { type: 'category', data };
-            }
-        }
-    } catch {
-        // Not a category page — continue
+    const category = await fetchMenuCategory(slug);
+    if (category) {
+        return { type: 'category', data: category };
     }
 
     return { type: 'notFound' };
@@ -395,7 +359,7 @@ export default async function UnifiedPage({ params }: { params: Promise<IPagePar
     const slug = '/' + resolvedParams.slug.join('/');
     const resolution = await resolveSlug(slug);
 
-    // Custom CMS page — render server-side with Article structured data. A
+    // Custom CMS page — render server-side with its structured data. A
     // translated request gets the page's translation into that language, or a
     // 404 when the page has no published translation into it.
     if (resolution.type === 'custom') {
@@ -418,11 +382,14 @@ export default async function UnifiedPage({ params }: { params: Promise<IPagePar
             redirect(localizePath(renderData.currentSlug, language));
         }
 
+        const page = pageData?.page ?? null;
+        const breadcrumbs = await resolvePageBreadcrumbs(page, language, siteUrl);
+
         // CorePageZones gives a markdown page the same main-before and
         // main-after zones as a page in the (core) route group.
         return (
             <CorePageZones>
-                <CmsPageArticle render={renderData} page={pageData?.page ?? null} language={language} siteUrl={siteUrl} />
+                <CmsPageArticle render={renderData} page={page} breadcrumbs={breadcrumbs} language={language} siteUrl={siteUrl} />
             </CorePageZones>
         );
     }
