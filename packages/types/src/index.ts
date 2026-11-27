@@ -383,7 +383,7 @@ export type {
     SitemapChangeFrequency
 } from './hooks/index.js';
 export { HookAbortError, isHookAbortError } from './hooks/index.js';
-export type { IHeadFragment, HeadFragmentTag, ISsrHeadContext } from './ssr/index.js';
+export type { IHeadFragment, HeadFragmentTag, ISsrHeadContext, IBreadcrumbItem } from './ssr/index.js';
 export { serializeInlineJson } from './ssr/index.js';
 export type {
     IZoneDescriptor,
