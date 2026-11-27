@@ -163,18 +163,20 @@ export const HOOKS = {
                 'change the link outcome.'
         }),
         /**
-         * Waterfall that aggregates plugin-contributed sitemap URLs while the
-         * `GET /api/sitemap-data` endpoint assembles the sitemap. Handlers
-         * receive the generation context plus the entries accumulated so far
-         * and return the next list — conventionally by concatenating their own
-         * entries onto the input. Seeded with an empty array by the endpoint.
+         * Waterfall that aggregates the sitemap URLs plugins and modules
+         * contribute while the `GET /api/sitemap-data` endpoint assembles the
+         * sitemap. Handlers receive the generation context plus the entries
+         * accumulated so far and return the next list — conventionally by
+         * concatenating their own entries onto the input. Seeded with an empty
+         * array by the endpoint.
          *
-         * This seam is the only way a plugin URL reaches the sitemap. Core
-         * never names or guesses a plugin's pages, because they are under the
-         * plugin's authority: a plugin declares its landing page here, plus
-         * any per-resource URLs it publishes (a blog's posts), and a plugin
-         * that declares nothing is left out. Grouped under the `http.api`
-         * track because it fires inside the sitemap-data request.
+         * This seam is the only way a page a plugin or module owns reaches the
+         * sitemap. Core never names or guesses those pages, because they are
+         * under the owning component's authority: a component declares its
+         * landing page here, plus any per-resource URLs it publishes (a blog's
+         * posts, the tools module's tool pages), and one that declares nothing
+         * is left out. Grouped under the `http.api` track because it fires
+         * inside the sitemap-data request.
          */
         sitemapEntries: defineHook<ISitemapHookContext, ReadonlyArray<ISitemapEntry>, 'waterfall'>({
             id: 'http.sitemapEntries',
@@ -184,9 +186,9 @@ export const HOOKS = {
             description:
                 'Contribute sitemap URLs while GET /api/sitemap-data assembles the sitemap. Handlers thread ' +
                 'an array of { path, lastModified?, changeFrequency?, priority? } entries; core absolutizes ' +
-                'each root-relative path against the runtime site origin. The only source of plugin URLs: ' +
-                'a plugin declares its landing page and any per-resource pages (blog posts) here, because ' +
-                'core never guesses plugin URLs.'
+                'each root-relative path against the runtime site origin. The only source of URLs a plugin ' +
+                'or module owns: each declares its landing page and any per-resource pages (blog posts, ' +
+                'tool pages) here, because core never guesses those URLs.'
         }),
         /**
          * Observer fired after an admin deletes a user group, once its members

@@ -19,6 +19,7 @@ import type {
     ICacheService,
     IChainParametersService,
     IDatabaseService,
+    IHookRegistry,
     IMenuService,
     IModule,
     IModuleMetadata,
@@ -30,6 +31,7 @@ import type {
 import { TOOLS_ADMIN_SUBMENU_NAMESPACE, TOOLS_JOB_PREFIX } from '@/types';
 import { logger } from '../../lib/logger.js';
 import { blockchainConfig } from '../../config/blockchain.js';
+import { HOOKS } from '../../hooks/registry.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
 import { createAdminRateLimiter } from '../../api/middleware/rate-limit.js';
@@ -50,6 +52,8 @@ import { TOOLS_BOOTSTRAP_PAGES } from './services/TOOLS_BOOTSTRAP_PAGES.js';
 import { STAKE_CALCULATOR_WIDGET_TYPE } from './services/STAKE_CALCULATOR_WIDGET_TYPE.js';
 import { StakingRewardsService } from './services/StakingRewardsService.js';
 import { createStakingRewardsWidgetType } from './services/createStakingRewardsWidgetType.js';
+import { TOOL_PAGES, TOOLS_CATEGORY_PATH } from './services/TOOL_PAGES.js';
+import { buildToolsSitemapEntries } from './services/buildToolsSitemapEntries.js';
 
 /** Collection name for transaction lookups used by the calculator service. */
 const TRANSACTIONS_COLLECTION = 'transactions';
@@ -105,6 +109,12 @@ export interface IToolsModuleDependencies {
     /** The widgets service, used to register the calculators as embeddable widgets. */
     widgetsService: IWidgetsService;
     /**
+     * Hook registry the module declares its pages to the sitemap through
+     * (`http.sitemapEntries`), because the module owns those pages and core
+     * does not list them.
+     */
+    hookRegistry: IHookRegistry;
+    /**
      * Scheduler the staking rewards refresh registers on. Optional so tests can
      * leave it out; with none, including `ENABLE_SCHEDULER=false`, the rewards
      * snapshot is never refreshed and the calculator says so.
@@ -137,6 +147,7 @@ export interface IToolsModuleDependencies {
  * ### run() phase:
  * - Registers "Tools" container menu node in 'main' namespace
  * - Registers child menu items for each tool
+ * - Declares `/tools` and every tool page to the sitemap through `http.sitemapEntries`
  * - Mounts tools router at /api/tools
  * - Registers the stake and staking rewards calculators as embeddable widget types
  * - Registers the staking rewards refresh job when a scheduler is present
@@ -157,6 +168,7 @@ export class ToolsModule implements IModule<IToolsModuleDependencies> {
     private serviceRegistry!: IServiceRegistry;
     private app!: Express;
     private widgetsService!: IWidgetsService;
+    private hookRegistry!: IHookRegistry;
     private scheduler: ISchedulerService | null = null;
 
     /** Services created during init() phase. */
@@ -186,6 +198,7 @@ export class ToolsModule implements IModule<IToolsModuleDependencies> {
         this.serviceRegistry = dependencies.serviceRegistry;
         this.app = dependencies.app;
         this.widgetsService = dependencies.widgetsService;
+        this.hookRegistry = dependencies.hookRegistry;
         this.scheduler = dependencies.scheduler ?? null;
 
         this.database.registerModel(TRANSACTIONS_COLLECTION, TransactionModel);
@@ -250,6 +263,7 @@ export class ToolsModule implements IModule<IToolsModuleDependencies> {
         this.logger.info('ToolsService registered on service registry as "tools"');
 
         await this.registerMenuItems();
+        this.registerSitemapEntries();
 
         const router = createToolsRouter(this.controller);
         this.app.use('/api/tools', router);
@@ -298,6 +312,25 @@ export class ToolsModule implements IModule<IToolsModuleDependencies> {
         } else {
             this.logger.warn('No scheduler; the staking rewards snapshot will not be refreshed');
         }
+    }
+
+    /**
+     * Declare `/tools` and every tool page to the sitemap.
+     *
+     * The module owns these pages, so it declares them through the
+     * `http.sitemapEntries` hook, the same way a plugin declares its own,
+     * instead of core listing them in `sitemap.ts`. The entries come from the
+     * same `TOOL_PAGES` list as the menu, so the two cannot drift apart. They
+     * never change at runtime, so they are built once here.
+     */
+    private registerSitemapEntries(): void {
+        const sitemapEntries = buildToolsSitemapEntries(TOOLS_CATEGORY_PATH, TOOL_PAGES);
+        this.hookRegistry.register(
+            'core',
+            HOOKS.http.sitemapEntries,
+            async (_ctx, entries) => [...entries, ...sitemapEntries]
+        );
+        this.logger.info({ count: sitemapEntries.length }, 'Registered http.sitemapEntries handler for the tool pages');
     }
 
     /**
@@ -360,19 +393,7 @@ export class ToolsModule implements IModule<IToolsModuleDependencies> {
 
             const parentId = container._id?.toString() ?? null;
 
-            const children = [
-                { label: 'Address Converter', url: '/tools/address-converter', icon: 'ArrowLeftRight', order: 10, description: 'Convert a TRON address between its Base58 form (starting with T) and its hex form (starting with 41).' },
-                { label: 'Address Generator', url: '/tools/address-generator', icon: 'KeyRound', order: 15, description: 'Create a new TRON wallet with a recovery phrase, or search for a vanity address. Everything runs in your browser, so keys never leave your device.' },
-                { label: 'Energy Estimator', url: '/tools/energy-estimator', icon: 'Zap', order: 20, description: 'Estimate how much energy your smart contract calls need each day, and compare staking TRX for it with burning TRX to pay the fees.' },
-                { label: 'Stake Calculator', url: '/tools/stake-calculator', icon: 'Calculator', order: 30, description: 'See how much energy and bandwidth a TRX stake gives you, or how much TRX to stake for the energy you need, at live network rates.' },
-                { label: 'Staking Rewards', url: '/tools/staking-rewards', icon: 'Coins', order: 35, description: 'Estimate the TRX you earn each year by voting with staked TRX, and compare every Super Representative by commission and reward rate.' },
-                { label: 'Signature Verifier', url: '/tools/signature-verifier', icon: 'ShieldCheck', order: 40, description: 'Check whether a TRON wallet signed a message, to confirm who controls an address. A link carrying the wallet, message, and signature verifies on load.' },
-                { label: 'Approval Checker', url: '/tools/approval-checker', icon: 'Shield', order: 45, description: 'Scan a TRON wallet\'s recent TRC20 token approvals for unlimited allowances, and see which contracts can spend its tokens.' },
-                { label: 'Address Origins', url: '/tools/address-origins', icon: 'GitBranch', order: 48, description: 'Trace a TRON wallet back through the accounts that activated it to find where it came from, and spot ancestors shared by several wallets.' },
-                { label: 'Timestamp Converter', url: '/tools/timestamp-converter', icon: 'Clock', order: 50, description: 'Convert between Unix timestamps, calendar dates, and TRON block numbers, in either direction.' },
-            ];
-
-            await Promise.all(children.map(child =>
+            await Promise.all(TOOL_PAGES.map(child =>
                 this.menuService.create({
                     namespace: 'main',
                     label: child.label,

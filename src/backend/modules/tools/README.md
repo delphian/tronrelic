@@ -10,7 +10,7 @@ TRON developers and users frequently need to convert address formats, estimate e
 
 The module follows TronRelic's two-phase lifecycle with dependency injection. The calculator service reads from the shared `transactions` collection for energy statistics and calls ChainParametersService for live network parameters. The address converter and signature verifier are stateless. The one thing the module stores and schedules is the [staking rewards snapshot](#staking-rewards-calculator): one collection, `module_tools_staking_rewards`, and one job, `tools:staking-rewards-refresh`.
 
-Besides the shared dependencies, `init()` receives `pageBootstrap` (`IPageBootstrapService`), the pages module's bootstrap service, which the [Bootstrap tab](#admin-page-and-bootstrap-pages) lists and creates the module's CMS pages through, `widgetsService` (`IWidgetsService`), used to register the [stake calculator widget](#stake-calculator-page) and the staking rewards widget, and an optional `scheduler` (`ISchedulerService | null`), which runs the staking rewards refresh. With no scheduler, including `ENABLE_SCHEDULER=false`, the snapshot is never refreshed.
+Besides the shared dependencies, which include `hookRegistry` (`IHookRegistry`), used to declare the module's pages to the [sitemap](#sitemap-entries), `init()` receives `pageBootstrap` (`IPageBootstrapService`), the pages module's bootstrap service, which the [Bootstrap tab](#admin-page-and-bootstrap-pages) lists and creates the module's CMS pages through, `widgetsService` (`IWidgetsService`), used to register the [stake calculator widget](#stake-calculator-page) and the staking rewards widget, and an optional `scheduler` (`ISchedulerService | null`), which runs the staking rewards refresh. With no scheduler, including `ENABLE_SCHEDULER=false`, the snapshot is never refreshed.
 
 **Backend** (`src/backend/modules/tools/`): ToolsModule implements IModule, creates services in `init()`, mounts routes and registers menu items in `run()`. Public routes are mounted at `/api/tools/*` and admin routes at `/api/admin/tools/*` via IoC.
 
@@ -34,6 +34,7 @@ The module resolves two shared services from `IServiceRegistry` during `init()`:
 | Tool | URL | API Endpoint | Description |
 |------|-----|-------------|-------------|
 | Address Converter | `/tools/address-converter` | `POST /api/tools/address/convert` | Hex to base58check and reverse |
+| Address Generator | `/tools/address-generator` | None; runs in the browser | New wallet with a recovery phrase, or a vanity address search; keys never leave the device |
 | Energy Estimator | `/tools/energy-estimator` | `POST /api/tools/energy/estimate` | Daily energy needs, the stake that covers them, and the burn cost of not staking |
 | Stake Calculator | `/tools/stake-calculator` | `POST /api/tools/stake/from-trx` and `/from-energy` | Bidirectional TRX/energy calculation |
 | Staking Rewards | `/tools/staking-rewards` | `GET /api/tools/staking-rewards` | Yearly voting reward through each top-127 Super Representative, after commission |
@@ -171,13 +172,19 @@ The `contractType` value flows into a Redis cache key for energy stats aggregati
 
 ## Menu Registration
 
-The module creates a "Tools" container node in the `main` namespace with child entries for each tool. Menu items use memory-only persistence (recreated on each boot). The container has no URL (category-only), while children link to their respective `/tools/*` pages.
+The module creates a "Tools" container node in the `main` namespace with child entries for each tool, taken from `TOOL_PAGES` in `services/TOOL_PAGES.ts`. Menu items use memory-only persistence (recreated on each boot). The container sets no URL; the menu derives `/tools` from its label, and that address serves the category landing page listing every tool. Children link to their respective `/tools/*` pages.
+
+## Sitemap Entries
+
+The module owns `/tools` and every tool page, so it declares them to the sitemap itself, through the `http.sitemapEntries` hook, rather than core listing them in `src/frontend/app/sitemap.ts`. In `run()` it registers a handler as `'core'` that appends one entry for `/tools` (priority 0.8) and one per tool page (priority 0.7), all `weekly` and without `lastModified`, since the pages record no modification time. `services/buildToolsSitemapEntries.ts` builds them from the same `TOOL_PAGES` list as the menu, so adding a tool to that list adds its menu entry and its sitemap entry together. Each `url` in the list must match a route folder under `src/frontend/app/[lang]/(site)/(core)/tools/`.
+
+When a tool's address is also served by an approved CMS page, such as `/tools/stake-calculator` after an admin creates it from the Bootstrap tab, the sitemap lists that address once, from the CMS entry, because the sitemap adds CMS pages before hook entries and skips an address it has already listed.
 
 ## Module Lifecycle
 
 **init() phase:** Stores injected dependencies, registers TransactionModel with the database service, resolves `IChainParametersService` from the service registry, builds a TronWeb instance from `TronGridClient`, creates the address, calculator, signature, approval, timestamp, address-origins, and staking rewards services, creates ToolsController, and binds `TOOLS_BOOTSTRAP_PAGES` with the injected `pageBootstrap` and creates `ToolsAdminController` over the resulting catalog. Does NOT mount routes or register menu items.
 
-**run() phase:** Registers the Tools menu category and child items in the `main` namespace, the `/system/tools` entry under the System container, and the `tools-admin` tab row; mounts the tools router at `/api/tools` with rate limiting and async error handling and the admin router at `/api/admin/tools`; registers the `tools:stake-calculator` and `tools:staking-rewards` widget types on the injected `widgetsService`; and, when a scheduler is present, registers `tools:staking-rewards-refresh` with the module logger and starts a first refresh if nothing is stored.
+**run() phase:** Registers the Tools menu category and child items in the `main` namespace, the `/system/tools` entry under the System container, and the `tools-admin` tab row; registers the `http.sitemapEntries` handler that declares `/tools` and every tool page; mounts the tools router at `/api/tools` with rate limiting and async error handling and the admin router at `/api/admin/tools`; registers the `tools:stake-calculator` and `tools:staking-rewards` widget types on the injected `widgetsService`; and, when a scheduler is present, registers `tools:staking-rewards-refresh` with the module logger and starts a first refresh if nothing is stored.
 
 ## Further Reading
 

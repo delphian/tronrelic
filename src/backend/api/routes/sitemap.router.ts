@@ -7,13 +7,13 @@
  *
  * Returns:
  * - Published CMS page slugs with updatedAt timestamps
- * - URLs plugins declare through the `http.sitemapEntries` hook
+ * - URLs plugins and modules declare through the `http.sitemapEntries` hook
  *
- * Core never names a plugin URL itself. A plugin's pages are under the
- * plugin's authority, so a plugin that wants a page listed declares it
- * through the hook, and a plugin that declares nothing is left out. Guessing
- * `/{plugin-id}` would put 404s and redirects into the sitemap, because most
- * plugins serve their pages elsewhere.
+ * Core never names a URL a component owns. A plugin's or module's pages are
+ * under that component's authority, so a component that wants a page listed
+ * declares it through the hook, and one that declares nothing is left out.
+ * Guessing `/{plugin-id}` would put 404s and redirects into the sitemap,
+ * because most plugins serve their pages elsewhere.
  *
  * Cached for 10 minutes to avoid repeated database queries from
  * sitemap.xml requests.
@@ -33,9 +33,10 @@ interface SitemapCache {
 interface SitemapData {
     pages: Array<{ slug: string; updatedAt: string }>;
     /**
-     * URLs contributed by plugins through the `http.sitemapEntries` hook:
-     * each plugin's landing page and any per-resource pages it publishes,
-     * such as every blog post.
+     * URLs contributed through the `http.sitemapEntries` hook: each plugin's
+     * landing page and any per-resource pages it publishes, such as every blog
+     * post, and the pages modules own, such as the tool pages. The name
+     * predates module contributions and is kept because the frontend reads it.
      */
     pluginEntries: ISitemapEntry[];
 }

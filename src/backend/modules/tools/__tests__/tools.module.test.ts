@@ -167,6 +167,7 @@ describe('ToolsModule', () => {
     let mockApp: MockExpressApp;
     let mockPageBootstrap: { createCatalog: ReturnType<typeof vi.fn> };
     let mockWidgets: { registerType: ReturnType<typeof vi.fn> };
+    let mockHooks: { register: ReturnType<typeof vi.fn> };
 
     beforeEach(() => {
         vi.clearAllMocks();
@@ -181,6 +182,7 @@ describe('ToolsModule', () => {
             createCatalog: vi.fn(() => ({ list: vi.fn().mockResolvedValue([]), create: vi.fn() }))
         };
         mockWidgets = { registerType: vi.fn(() => () => undefined) };
+        mockHooks = { register: vi.fn(() => () => undefined) };
     });
 
     // ============================================================================
@@ -214,6 +216,7 @@ describe('ToolsModule', () => {
                 serviceRegistry: mockServiceRegistry,
                 app: mockApp as any,
                 pageBootstrap: mockPageBootstrap as any,
+                hookRegistry: mockHooks as any,
                 widgetsService: mockWidgets as any
             })).resolves.not.toThrow();
         });
@@ -228,6 +231,7 @@ describe('ToolsModule', () => {
                 serviceRegistry: mockServiceRegistry,
                 app: mockApp as any,
                 pageBootstrap: mockPageBootstrap as any,
+                hookRegistry: mockHooks as any,
                 widgetsService: mockWidgets as any
             });
 
@@ -245,6 +249,7 @@ describe('ToolsModule', () => {
                 serviceRegistry: mockServiceRegistry,
                 app: mockApp as any,
                 pageBootstrap: mockPageBootstrap as any,
+                hookRegistry: mockHooks as any,
                 widgetsService: mockWidgets as any
             });
 
@@ -261,6 +266,7 @@ describe('ToolsModule', () => {
                 serviceRegistry: mockServiceRegistry,
                 app: mockApp as any,
                 pageBootstrap: mockPageBootstrap as any,
+                hookRegistry: mockHooks as any,
                 widgetsService: mockWidgets as any
             });
 
@@ -278,6 +284,7 @@ describe('ToolsModule', () => {
                 serviceRegistry: emptyRegistry,
                 app: mockApp as any,
                 pageBootstrap: mockPageBootstrap as any,
+                hookRegistry: mockHooks as any,
                 widgetsService: mockWidgets as any
             })).rejects.toThrow('ChainParametersService not found on service registry');
         });
@@ -293,6 +300,7 @@ describe('ToolsModule', () => {
                 serviceRegistry: mockServiceRegistry,
                 app: mockApp as any,
                 pageBootstrap: mockPageBootstrap as any,
+                hookRegistry: mockHooks as any,
                 widgetsService: mockWidgets as any
             });
 
@@ -321,6 +329,7 @@ describe('ToolsModule', () => {
                 serviceRegistry: mockServiceRegistry,
                 app: mockApp as any,
                 pageBootstrap: mockPageBootstrap as any,
+                hookRegistry: mockHooks as any,
                 widgetsService: mockWidgets as any
             });
 
@@ -348,6 +357,7 @@ describe('ToolsModule', () => {
                 serviceRegistry: mockServiceRegistry,
                 app: mockApp as any,
                 pageBootstrap: mockPageBootstrap as any,
+                hookRegistry: mockHooks as any,
                 widgetsService: mockWidgets as any
             });
 
@@ -388,6 +398,7 @@ describe('ToolsModule', () => {
                 serviceRegistry: mockServiceRegistry,
                 app: mockApp as any,
                 pageBootstrap: mockPageBootstrap as any,
+                hookRegistry: mockHooks as any,
                 widgetsService: mockWidgets as any
             });
 
@@ -408,6 +419,7 @@ describe('ToolsModule', () => {
                 serviceRegistry: mockServiceRegistry,
                 app: mockApp as any,
                 pageBootstrap: mockPageBootstrap as any,
+                hookRegistry: mockHooks as any,
                 widgetsService: mockWidgets as any
             });
 
@@ -429,6 +441,7 @@ describe('ToolsModule', () => {
                 serviceRegistry: mockServiceRegistry,
                 app: mockApp as any,
                 pageBootstrap: mockPageBootstrap as any,
+                hookRegistry: mockHooks as any,
                 widgetsService: mockWidgets as any
             });
             expect(mockWidgets.registerType).not.toHaveBeenCalled();
@@ -465,6 +478,7 @@ describe('ToolsModule', () => {
                 serviceRegistry: mockServiceRegistry,
                 app: mockApp as any,
                 pageBootstrap: mockPageBootstrap as any,
+                hookRegistry: mockHooks as any,
                 widgetsService: mockWidgets as any,
                 scheduler: scheduler as any
             });
@@ -478,6 +492,41 @@ describe('ToolsModule', () => {
             expect(options).toEqual(expect.objectContaining({ logger: expect.anything() }));
         });
 
+        /**
+         * The tool pages reach the sitemap only through this hook, since core
+         * no longer lists them, so a missed registration drops them from it.
+         */
+        it('should declare /tools and every tool page to the sitemap during run(), appending to earlier entries', async () => {
+            const module = new ToolsModule();
+
+            await module.init({
+                database: mockDatabase,
+                cacheService: mockCache,
+                menuService: mockMenu,
+                serviceRegistry: mockServiceRegistry,
+                app: mockApp as any,
+                pageBootstrap: mockPageBootstrap as any,
+                hookRegistry: mockHooks as any,
+                widgetsService: mockWidgets as any
+            });
+            expect(mockHooks.register).not.toHaveBeenCalled();
+
+            await module.run();
+
+            const call = mockHooks.register.mock.calls.find((c: unknown[]) => (c[1] as { id: string }).id === 'http.sitemapEntries');
+            expect(call).toBeDefined();
+            expect(call![0]).toBe('core');
+
+            const handler = call![2] as (ctx: unknown, entries: Array<{ path: string }>) => Promise<Array<{ path: string }>>;
+            const result = await handler({ generatedAt: new Date().toISOString() }, [{ path: '/blog' }]);
+            const paths = result.map(entry => entry.path);
+            expect(paths[0]).toBe('/blog');
+            expect(paths).toContain('/tools');
+            expect(paths).toContain('/tools/energy-estimator');
+            expect(paths).toContain('/tools/address-generator');
+            expect(paths).toHaveLength(11);
+        });
+
         /** Pages are created only when an admin clicks Create, never at boot. */
         it('should not propose any page during the lifecycle', async () => {
             const module = new ToolsModule();
@@ -489,6 +538,7 @@ describe('ToolsModule', () => {
                 serviceRegistry: mockServiceRegistry,
                 app: mockApp as any,
                 pageBootstrap: mockPageBootstrap as any,
+                hookRegistry: mockHooks as any,
                 widgetsService: mockWidgets as any
             });
             await module.run();
@@ -509,6 +559,7 @@ describe('ToolsModule', () => {
                 serviceRegistry: mockServiceRegistry,
                 app: mockApp as any,
                 pageBootstrap: mockPageBootstrap as any,
+                hookRegistry: mockHooks as any,
                 widgetsService: mockWidgets as any
             });
             await module.run();
@@ -530,6 +581,7 @@ describe('ToolsModule', () => {
                 serviceRegistry: mockServiceRegistry,
                 app: mockApp as any,
                 pageBootstrap: mockPageBootstrap as any,
+                hookRegistry: mockHooks as any,
                 widgetsService: mockWidgets as any
             });
 
@@ -552,6 +604,7 @@ describe('ToolsModule', () => {
                 serviceRegistry: mockServiceRegistry,
                 app: mockApp as any,
                 pageBootstrap: mockPageBootstrap as any,
+                hookRegistry: mockHooks as any,
                 widgetsService: mockWidgets as any
             });
 
@@ -581,6 +634,7 @@ describe('ToolsModule', () => {
                 serviceRegistry: mockServiceRegistry,
                 app: mockApp as any,
                 pageBootstrap: mockPageBootstrap as any,
+                hookRegistry: mockHooks as any,
                 widgetsService: mockWidgets as any
             });
 
@@ -599,6 +653,7 @@ describe('ToolsModule', () => {
                 serviceRegistry: mockServiceRegistry,
                 app: mockApp as any,
                 pageBootstrap: mockPageBootstrap as any,
+                hookRegistry: mockHooks as any,
                 widgetsService: mockWidgets as any
             });
 
@@ -617,6 +672,7 @@ describe('ToolsModule', () => {
                 serviceRegistry: mockServiceRegistry,
                 app: mockApp as any,
                 pageBootstrap: mockPageBootstrap as any,
+                hookRegistry: mockHooks as any,
                 widgetsService: mockWidgets as any
             });
 
@@ -636,6 +692,7 @@ describe('ToolsModule', () => {
                 serviceRegistry: mockServiceRegistry,
                 app: mockApp as any,
                 pageBootstrap: mockPageBootstrap as any,
+                hookRegistry: mockHooks as any,
                 widgetsService: mockWidgets as any
             });
 
@@ -661,6 +718,7 @@ describe('ToolsModule', () => {
                 serviceRegistry: mockServiceRegistry,
                 app: mockApp as any,
                 pageBootstrap: mockPageBootstrap as any,
+                hookRegistry: mockHooks as any,
                 widgetsService: mockWidgets as any
             });
 
@@ -678,6 +736,7 @@ describe('ToolsModule', () => {
                 serviceRegistry: emptyRegistry,
                 app: mockApp as any,
                 pageBootstrap: mockPageBootstrap as any,
+                hookRegistry: mockHooks as any,
                 widgetsService: mockWidgets as any
             })).rejects.toThrow();
         });

@@ -1,13 +1,14 @@
 /**
  * @fileoverview Types for the `http.sitemapEntries` waterfall hook.
  *
- * Core lists only what core owns in the sitemap: its own static routes and
- * published CMS pages. A plugin's URLs are under the plugin's authority, so
- * core never names or guesses them. Instead core invites each plugin to declare
- * its own entries at generation time through this seam: its landing page, plus
- * any per-resource pages it publishes (a blog's posts). A plugin that declares
- * nothing does not appear in the sitemap, and core never learns the plugin's
- * routes or storage schema.
+ * Core lists only what no component owns in the sitemap: a few static routes
+ * and published CMS pages. A plugin's or module's URLs are under that
+ * component's authority, so core never names or guesses them. Instead core
+ * invites each component to declare its own entries at generation time through
+ * this seam: its landing page, plus any per-resource pages it publishes (a
+ * blog's posts, the tools module's tool pages). A component that declares
+ * nothing does not appear in the sitemap, and core never learns its routes or
+ * storage schema.
  *
  * @module types/hooks/ISitemapEntry
  */
