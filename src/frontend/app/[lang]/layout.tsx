@@ -97,6 +97,10 @@ function buildSiteStructuredData(siteUrl: string) {
  * environment variables. The siteUrl is fetched once at container startup and cached,
  * so this function has zero overhead after the first call.
  *
+ * These are site-wide defaults that every page inherits, so they deliberately
+ * carry no canonical URL or og:url: those name one page and must come from
+ * that page.
+ *
  * @param props - Route props; `params.lang` selects the language described.
  * @returns Metadata object with runtime siteUrl for metadataBase
  */
@@ -122,6 +126,12 @@ export async function generateMetadata({ params }: { params: Promise<ILanguagePa
 
   return {
     ...rootMetadata,
+    // Every page inherits this layout's metadata unless it overrides a field,
+    // so a canonical or og:url here would make a page that sets no metadata of
+    // its own tell search engines it is a copy of the home page. The home page
+    // sets both itself; every other page sets its own or goes without.
+    alternates: null,
+    openGraph: { ...rootMetadata.openGraph, url: undefined },
     metadataBase: new URL(siteUrl), // Uses runtime config, not build-time
     applicationName: SITE_NAME,
     manifest: '/images/favicon/manifest.json',

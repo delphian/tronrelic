@@ -326,10 +326,13 @@ export async function generateMetadata({ params }: { params: Promise<IPageParams
         const title = category.node.label
             ? t(menuTranslationKey(CATEGORY_MENU_NAMESPACE, keyNode), category.node.label)
             : '';
+        // A landing page is indexable and listed in the sitemap, so it always
+        // gets its own canonical. A menu node saved without a description
+        // falls back to a generic one rather than inheriting the home page's.
         const description = category.node.description
             ? t(menuTranslationKey(CATEGORY_MENU_NAMESPACE, keyNode, 'description'), category.node.description)
-            : '';
-        if (title && description) {
+            : t('category.meta.fallbackDescription', 'Browse {title} on TronRelic.', { title });
+        if (title) {
             return buildMetadata({
                 siteUrl,
                 language,
@@ -338,7 +341,7 @@ export async function generateMetadata({ params }: { params: Promise<IPageParams
                 path: slug
             });
         }
-        return title ? { title } : {};
+        return {};
     }
 
     return {};

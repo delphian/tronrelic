@@ -20,16 +20,16 @@ interface SitemapData {
 /**
  * Core-owned routes that always appear in the sitemap.
  *
- * Only routes core itself serves belong here. A plugin's page, such as
- * `/resource-markets` or `/forum`, is under that plugin's authority, and the
- * plugin declares it through the `http.sitemapEntries` hook. Listing a plugin
- * path here would keep it in the sitemap after the plugin is disabled or
- * moves the page, which is how the sitemap came to list 404s.
+ * Only routes that no module or plugin owns belong here. A page a component
+ * owns, such as a plugin's `/resource-markets` or the tools module's `/tools`
+ * and tool pages, is declared by that component through the
+ * `http.sitemapEntries` hook. Listing such a path here would keep it in the
+ * sitemap after the component stops serving it, which is how the sitemap came
+ * to list 404s, and leaves new pages out until someone remembers this file.
  */
 const staticRoutes: Array<{ path: string; priority: number; changeFrequency: MetadataRoute.Sitemap[number]['changeFrequency'] }> = [
   { path: '/', priority: 1, changeFrequency: 'hourly' },
-  { path: '/articles', priority: 0.8, changeFrequency: 'daily' },
-  { path: '/tools', priority: 0.8, changeFrequency: 'weekly' }
+  { path: '/articles', priority: 0.8, changeFrequency: 'daily' }
 ];
 
 /**
@@ -73,8 +73,9 @@ async function fetchDynamicData(): Promise<SitemapData> {
  *
  * Combines hardcoded core routes with dynamically discovered content:
  * - Published CMS pages (articles, documentation, announcements)
- * - URLs plugins declare through the http.sitemapEntries hook (landing pages,
- *   blog posts, per-market pages). Core never guesses a plugin URL.
+ * - URLs plugins and modules declare through the http.sitemapEntries hook
+ *   (landing pages, tool pages, blog posts, per-market pages). Core never
+ *   guesses a URL a component owns.
  *
  * Dynamic entries are fetched from the backend's /api/sitemap-data endpoint
  * which caches results for 10 minutes. Static entries that overlap with
