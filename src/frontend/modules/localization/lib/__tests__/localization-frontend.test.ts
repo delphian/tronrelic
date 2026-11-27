@@ -129,6 +129,7 @@ describe('toOpenGraphLocale', () => {
     });
 
     it('maps the bare codes of the other languages the site serves', () => {
+        expect(toOpenGraphLocale('es')).toBe('es_ES');
         expect(toOpenGraphLocale('ru')).toBe('ru_RU');
         expect(toOpenGraphLocale('vi')).toBe('vi_VN');
     });
