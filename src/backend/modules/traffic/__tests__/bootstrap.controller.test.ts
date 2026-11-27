@@ -48,6 +48,7 @@ function buildRes(): { res: Response; cookies: SetCookie[]; json: ReturnType<typ
 
 describe('BootstrapController', () => {
     let recordEvent: ReturnType<typeof vi.fn>;
+    let noteIgnoredLogin: ReturnType<typeof vi.fn>;
     let trafficService: TrafficService;
     let rules: ICompiledBotRule[];
     let botRules: IBotRuleMatcher;
@@ -60,7 +61,8 @@ describe('BootstrapController', () => {
 
     beforeEach(() => {
         recordEvent = vi.fn();
-        trafficService = { recordEvent } as unknown as TrafficService;
+        noteIgnoredLogin = vi.fn(() => false);
+        trafficService = { recordEvent, noteIgnoredLogin } as unknown as TrafficService;
         // The real matcher over a rule list each test can set, so the controller
         // is exercised with the same selection logic the service uses.
         rules = [];
@@ -108,6 +110,25 @@ describe('BootstrapController', () => {
         await controller.bootstrap(req, res);
 
         expect(recordEvent.mock.calls[0][0].user_id).toBe('ba_user_42');
+    });
+
+    /**
+     * Guards the fix for an ignored operator being counted from a new
+     * browser: the ignore list's tid set only refreshed at boot or on a list
+     * edit, so the controller must report each logged-in browser as it is seen.
+     */
+    it('reports the logged-in account and its browser to the ignore list', async () => {
+        const req = buildReq({
+            cookies: { [TID_COOKIE_NAME]: EXISTING_TID },
+            body: { landingPath: '/system/traffic' },
+            authSession: { user: { id: 'ba_user_42' } }
+        } as unknown as Partial<Request>);
+        const { res } = buildRes();
+
+        await controller.page(req, res);
+
+        expect(noteIgnoredLogin).toHaveBeenCalledWith({ userId: 'ba_user_42', tid: EXISTING_TID });
+        expect(recordEvent).toHaveBeenCalledTimes(1);
     });
 
     it('captures a first-touch referral from the body and sets the ref cookie', async () => {

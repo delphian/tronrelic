@@ -13,10 +13,9 @@
  *
  * Both methods answer from an in-memory cache the traffic module refreshes
  * whenever the list changes, so they are synchronous and cheap enough to call on
- * every request. The cache has the same bounded staleness as the dashboard: a
- * browser that first logs in as an ignored account after the last refresh is
- * matched by its user id while logged in, but its anonymous requests are not
- * matched until the next refresh.
+ * every request. A browser that first logs in as an ignored account after the
+ * last refresh is added to the cache when its first logged-in page event is
+ * recorded, so from then on its anonymous requests are matched too.
  */
 
 import type { IHttpRequest } from '../http/IHttpRequest.js';

@@ -211,6 +211,12 @@ export class BootstrapController {
      * page report recalls them, so a bot rule can test whether the two came
      * from different networks. Both steps are in-memory and never block.
      *
+     * An event carrying an account also tells the traffic service which
+     * browser that account is using, so a browser logging in as an ignored
+     * account drops out of the dashboard figures from its first logged-in
+     * event instead of at the next ignore-list refresh. That step is
+     * in-memory too.
+     *
      * @param eventType - `'bootstrap'` (first touch) or `'page'` (navigation).
      * @param req - Express request.
      * @param res - Express response.
@@ -220,10 +226,12 @@ export class BootstrapController {
         try {
             const { tid, referralCode } = this.resolveTrafficCookies(req, res);
             const now = Date.now();
+            const userId = req.authSession?.user?.id ?? null;
+            this.trafficService.noteIgnoredLogin({ userId, tid });
 
             const event = buildTrafficEvent(eventType, tid, req, {
                 ...this.extractEventInputs(req),
-                userId: req.authSession?.user?.id ?? null,
+                userId,
                 referralCode,
                 botRules: this.botRules,
                 firstTouch: eventType === 'page' ? this.firstTouch.recall(tid, now) : null
