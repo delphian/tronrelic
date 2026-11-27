@@ -527,6 +527,37 @@ describe('ToolsModule', () => {
             expect(paths).toHaveLength(11);
         });
 
+        /**
+         * A moved CMS page leaves its tool address only redirecting, and a
+         * sitemap must not list a redirect, so that address is left out.
+         */
+        it('should leave a tool address out of the sitemap while a moved CMS page holds it as a redirect', async () => {
+            mockPageBootstrap.createCatalog.mockReturnValue({
+                list: vi.fn().mockResolvedValue([{ id: 'stake-calculator', slug: '/tools/stake-calculator', state: 'redirect' }]),
+                create: vi.fn()
+            });
+            const module = new ToolsModule();
+
+            await module.init({
+                database: mockDatabase,
+                cacheService: mockCache,
+                menuService: mockMenu,
+                serviceRegistry: mockServiceRegistry,
+                app: mockApp as any,
+                pageBootstrap: mockPageBootstrap as any,
+                hookRegistry: mockHooks as any,
+                widgetsService: mockWidgets as any
+            });
+            await module.run();
+
+            const call = mockHooks.register.mock.calls.find((c: unknown[]) => (c[1] as { id: string }).id === 'http.sitemapEntries');
+            const handler = call![2] as (ctx: unknown, entries: Array<{ path: string }>) => Promise<Array<{ path: string }>>;
+            const paths = (await handler({ generatedAt: new Date().toISOString() }, [])).map(entry => entry.path);
+            expect(paths).not.toContain('/tools/stake-calculator');
+            expect(paths).toContain('/tools/staking-rewards');
+            expect(paths).toHaveLength(9);
+        });
+
         /** Pages are created only when an admin clicks Create, never at boot. */
         it('should not propose any page during the lifecycle', async () => {
             const module = new ToolsModule();

@@ -180,6 +180,8 @@ The module owns `/tools` and every tool page, so it declares them to the sitemap
 
 When a tool's address is also served by an approved CMS page, such as `/tools/stake-calculator` after an admin creates it from the Bootstrap tab, the sitemap lists that address once, from the CMS entry, because the sitemap adds CMS pages before hook entries and skips an address it has already listed.
 
+When an admin moves that CMS page to a new slug, the tool address only redirects, so the handler leaves it out; the CMS page is listed under its new address. The handler asks the Bootstrap catalog on each call, so its rows in the `redirect` state are the ones dropped, and core's ten-minute sitemap cache bounds how often that lookup runs. A failed lookup drops nothing. The `redirect` state also covers a moved page that was later deleted, when the route serves the built-in tool again, so that address is left out for as long as the deleted page keeps it in its redirect history. This is a known gap: telling the two cases apart would need a lookup of whether the holding page is live, which the module does not have.
+
 ## Module Lifecycle
 
 **init() phase:** Stores injected dependencies, registers TransactionModel with the database service, resolves `IChainParametersService` from the service registry, builds a TronWeb instance from `TronGridClient`, creates the address, calculator, signature, approval, timestamp, address-origins, and staking rewards services, creates ToolsController, and binds `TOOLS_BOOTSTRAP_PAGES` with the injected `pageBootstrap` and creates `ToolsAdminController` over the resulting catalog. Does NOT mount routes or register menu items.

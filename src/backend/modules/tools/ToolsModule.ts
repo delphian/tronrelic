@@ -23,6 +23,7 @@ import type {
     IMenuService,
     IModule,
     IModuleMetadata,
+    IPageBootstrapCatalog,
     IPageBootstrapService,
     ISchedulerService,
     IServiceRegistry,
@@ -176,6 +177,8 @@ export class ToolsModule implements IModule<IToolsModuleDependencies> {
     private toolsService!: ToolsService;
     private adminController!: ToolsAdminController;
     private stakingRewardsService!: StakingRewardsService;
+    /** The module's CMS page catalog; also tells the sitemap which tool addresses now redirect. */
+    private bootstrapCatalog!: IPageBootstrapCatalog;
 
     /** Logger instance for this module. */
     private readonly logger = logger.child({ module: 'tools' });
@@ -242,8 +245,8 @@ export class ToolsModule implements IModule<IToolsModuleDependencies> {
             this.stakingRewardsService
         );
 
-        const bootstrapCatalog = dependencies.pageBootstrap.createCatalog(TOOLS_BOOTSTRAP_PAGES, this.logger);
-        this.adminController = new ToolsAdminController(bootstrapCatalog, this.logger);
+        this.bootstrapCatalog = dependencies.pageBootstrap.createCatalog(TOOLS_BOOTSTRAP_PAGES, this.logger);
+        this.adminController = new ToolsAdminController(this.bootstrapCatalog, this.logger);
 
         this.logger.info('Tools module initialized');
     }
@@ -320,17 +323,47 @@ export class ToolsModule implements IModule<IToolsModuleDependencies> {
      * The module owns these pages, so it declares them through the
      * `http.sitemapEntries` hook, the same way a plugin declares its own,
      * instead of core listing them in `sitemap.ts`. The entries come from the
-     * same `TOOL_PAGES` list as the menu, so the two cannot drift apart. They
-     * never change at runtime, so they are built once here.
+     * same `TOOL_PAGES` list as the menu, so the two cannot drift apart.
+     *
+     * The list is rebuilt per invocation because a tool address can stop
+     * serving its page. When an admin moves the CMS page created at
+     * `/tools/stake-calculator` or `/tools/staking-rewards`, the route only
+     * redirects from the original address, and a sitemap must name the address
+     * that serves the page. Core caches the hook result for ten minutes, so
+     * this costs one bootstrap lookup per cache refresh.
      */
     private registerSitemapEntries(): void {
-        const sitemapEntries = buildToolsSitemapEntries(TOOLS_CATEGORY_PATH, TOOL_PAGES);
         this.hookRegistry.register(
             'core',
             HOOKS.http.sitemapEntries,
-            async (_ctx, entries) => [...entries, ...sitemapEntries]
+            async (_ctx, entries) => [
+                ...entries,
+                ...buildToolsSitemapEntries(TOOLS_CATEGORY_PATH, TOOL_PAGES, await this.redirectingToolPaths())
+            ]
         );
-        this.logger.info({ count: sitemapEntries.length }, 'Registered http.sitemapEntries handler for the tool pages');
+        this.logger.info({ count: TOOL_PAGES.length + 1 }, 'Registered http.sitemapEntries handler for the tool pages');
+    }
+
+    /**
+     * The tool addresses a CMS page now holds only in its redirect history, so
+     * the sitemap can leave them out.
+     *
+     * A failed lookup excludes nothing rather than throwing: a sitemap naming
+     * one redirect is a smaller fault than a handler that throws and drops
+     * every tool page from the sitemap.
+     *
+     * @returns The tool addresses that now redirect elsewhere.
+     */
+    private async redirectingToolPaths(): Promise<ReadonlySet<string>> {
+        let paths = new Set<string>();
+        try {
+            const rows = await this.bootstrapCatalog.list();
+            paths = new Set(rows.filter((row) => row.state === 'redirect').map((row) => row.slug));
+        } catch (error) {
+            this.logger.warn({ error }, 'Could not read which tool addresses redirect; listing every tool page in the sitemap');
+        }
+
+        return paths;
     }
 
     /**
