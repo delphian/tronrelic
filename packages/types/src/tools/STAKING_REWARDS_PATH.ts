@@ -1,9 +1,9 @@
 /**
  * @fileoverview Address of the staking rewards calculator page.
  *
- * The backend proposes a CMS page at this address, and the frontend's fixed
- * route at the same address serves that page once a curator approves it. Both
- * sides must name the same path, so it lives here once.
+ * The tools module proposes its CMS page at this address from the Bootstrap
+ * tab of `/system/tools`. No route in code serves it; once a curator approves
+ * the page, the catch-all route does, as for any CMS page.
  */
 
 /**

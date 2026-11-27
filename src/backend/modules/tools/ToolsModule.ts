@@ -9,7 +9,8 @@
  * Also registers the stake and staking rewards calculators as embeddable
  * widgets, refreshes the staking rewards snapshot on a schedule, and runs the
  * `/system/tools` admin page, whose Bootstrap tab lets an admin create the CMS
- * pages this module ships for curator review.
+ * pages this module ships for curator review. Those pages are the only thing
+ * served at the two calculators' addresses; no route in code serves them.
  *
  * Follows TronRelic's two-phase initialization pattern with dependency injection.
  */
@@ -23,7 +24,6 @@ import type {
     IMenuService,
     IModule,
     IModuleMetadata,
-    IPageBootstrapCatalog,
     IPageBootstrapService,
     ISchedulerService,
     IServiceRegistry,
@@ -177,8 +177,6 @@ export class ToolsModule implements IModule<IToolsModuleDependencies> {
     private toolsService!: ToolsService;
     private adminController!: ToolsAdminController;
     private stakingRewardsService!: StakingRewardsService;
-    /** The module's CMS page catalog; also tells the sitemap which tool addresses now redirect. */
-    private bootstrapCatalog!: IPageBootstrapCatalog;
 
     /** Logger instance for this module. */
     private readonly logger = logger.child({ module: 'tools' });
@@ -245,8 +243,8 @@ export class ToolsModule implements IModule<IToolsModuleDependencies> {
             this.stakingRewardsService
         );
 
-        this.bootstrapCatalog = dependencies.pageBootstrap.createCatalog(TOOLS_BOOTSTRAP_PAGES, this.logger);
-        this.adminController = new ToolsAdminController(this.bootstrapCatalog, this.logger);
+        const bootstrapCatalog = dependencies.pageBootstrap.createCatalog(TOOLS_BOOTSTRAP_PAGES, this.logger);
+        this.adminController = new ToolsAdminController(bootstrapCatalog, this.logger);
 
         this.logger.info('Tools module initialized');
     }
@@ -318,52 +316,23 @@ export class ToolsModule implements IModule<IToolsModuleDependencies> {
     }
 
     /**
-     * Declare `/tools` and every tool page to the sitemap.
+     * Declare `/tools` and every tool page a route serves to the sitemap.
      *
      * The module owns these pages, so it declares them through the
      * `http.sitemapEntries` hook, the same way a plugin declares its own,
      * instead of core listing them in `sitemap.ts`. The entries come from the
-     * same `TOOL_PAGES` list as the menu, so the two cannot drift apart.
-     *
-     * The list is rebuilt per invocation because a tool address can stop
-     * serving its page. When an admin moves the CMS page created at
-     * `/tools/stake-calculator` or `/tools/staking-rewards`, the route only
-     * redirects from the original address, and a sitemap must name the address
-     * that serves the page. Core caches the hook result for ten minutes, so
-     * this costs one bootstrap lookup per cache refresh.
+     * same `TOOL_PAGES` list as the menu, so the two cannot drift apart. Tools
+     * whose address belongs to a CMS page are left to the pages module, which
+     * lists each published page under its current address.
      */
     private registerSitemapEntries(): void {
+        const toolEntries = buildToolsSitemapEntries(TOOLS_CATEGORY_PATH, TOOL_PAGES);
         this.hookRegistry.register(
             'core',
             HOOKS.http.sitemapEntries,
-            async (_ctx, entries) => [
-                ...entries,
-                ...buildToolsSitemapEntries(TOOLS_CATEGORY_PATH, TOOL_PAGES, await this.redirectingToolPaths())
-            ]
+            async (_ctx, entries) => [...entries, ...toolEntries]
         );
-        this.logger.info({ count: TOOL_PAGES.length + 1 }, 'Registered http.sitemapEntries handler for the tool pages');
-    }
-
-    /**
-     * The tool addresses a CMS page now holds only in its redirect history, so
-     * the sitemap can leave them out.
-     *
-     * A failed lookup excludes nothing rather than throwing: a sitemap naming
-     * one redirect is a smaller fault than a handler that throws and drops
-     * every tool page from the sitemap.
-     *
-     * @returns The tool addresses that now redirect elsewhere.
-     */
-    private async redirectingToolPaths(): Promise<ReadonlySet<string>> {
-        let paths = new Set<string>();
-        try {
-            const rows = await this.bootstrapCatalog.list();
-            paths = new Set(rows.filter((row) => row.state === 'redirect').map((row) => row.slug));
-        } catch (error) {
-            this.logger.warn({ error }, 'Could not read which tool addresses redirect; listing every tool page in the sitemap');
-        }
-
-        return paths;
+        this.logger.info({ count: toolEntries.length }, 'Registered http.sitemapEntries handler for the tool pages');
     }
 
     /**

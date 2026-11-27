@@ -1,21 +1,18 @@
 /**
  * @fileoverview Renders a CMS page's body with its structured data.
  *
- * Two routes serve CMS pages: the catch-all route, for any slug no other route
- * owns, and a fixed route that hands its address over to a CMS page once one
- * is approved there, such as `/tools/stake-calculator`. Both render the page
- * through this component so a CMS page looks and reads the same to visitors
- * and search engines whichever route served it.
+ * The catch-all route serves every CMS page, including tool pages such as
+ * `/tools/whales` and `/tools/stake-calculator` that no route in code owns,
+ * and renders each through this component.
  *
- * A page built around a required widget, such as the whale tracker, is
- * described as a `WebApplication`; every other page as an `Article`. The
- * breadcrumb trail is worked out by the route with `resolvePageBreadcrumbs`
- * and passed in, so this component stays synchronous and renders in the
- * component workbench.
+ * A page built around a required widget, such as a calculator or the whale
+ * tracker, is described as a `WebApplication`; every other page as an
+ * `Article`. The breadcrumb trail is worked out by the route with
+ * `resolvePageBreadcrumbs` and passed in, so this component stays synchronous
+ * and renders in the component workbench.
  *
  * It renders no widget zones of its own: the catch-all wraps it in
- * `CorePageZones`, and a fixed route in the `(core)` group already gets them
- * from that group's layout.
+ * `CorePageZones`.
  */
 
 import type { IBreadcrumbItem } from '@/types';
