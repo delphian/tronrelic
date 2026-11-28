@@ -1,19 +1,23 @@
 /**
- * @fileoverview Token approval checker tool page.
+ * @fileoverview The token approval checker's form and results, without page chrome.
+ *
+ * The checker is served inside a CMS page body as the
+ * `tools:approval-checker` widget, and the CMS page supplies the heading and
+ * text around it, so this component draws no page header of its own.
  *
  * Scans a TRON wallet for active TRC20 token approvals by querying TronGrid
  * for historical Approval events and checking live allowance values. Displays
- * results in a table with unlimited approval warnings.
+ * results in a table with unlimited approval warnings. The endpoint requires a
+ * session, so a signed-out visitor sees a sign-in note in place of the form.
  * User-triggered action — loading state is appropriate here.
  */
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useState } from 'react';
 import { Shield, ShieldAlert } from 'lucide-react';
 // Direct import (not the modules/user barrel) keeps component CSS out of the bundle.
 import { useAuthSession } from '../../../user/components/SessionProvider';
-import { Page, PageHeader, Stack } from '../../../../components/layout';
+import { Stack } from '../../../../components/layout';
 import { Card } from '../../../../components/ui/Card';
 import { AddressSelector } from '../../../../components/ui/AddressSelector';
 import { isValidTronAddress } from '../../../../lib/tronAddress';
@@ -26,54 +30,55 @@ import { checkApprovals } from '../../api/client';
 import type { IApprovalCheckResult } from '../../types';
 import styles from './ApprovalChecker.module.scss';
 
+/** Props for {@link ApprovalCheckerForm}. */
+interface IApprovalCheckerFormProps {
+    /**
+     * Address to start with, taken from the page link's `?address=`, which
+     * the address chip menu sends. Anyone can edit a link, so the form uses it
+     * only when it is a valid TRON address: an unchecked value would show as
+     * the selector's chosen address and arm the Check button with something
+     * the backend rejects. Read once, so it never overrides later typing.
+     */
+    initialAddress?: string;
+}
+
 /**
- * Token approval checker tool.
+ * Token approval checker form.
  *
- * Users paste a TRON address and receive a list of all active TRC20 token
+ * Users choose a TRON address and receive a list of all active TRC20 token
  * approvals with spender addresses, allowance amounts, and unlimited flags.
- * No SSR data needed — purely interactive.
+ * The address is kept while the visitor is signed out, so the field is ready
+ * the moment they sign in.
+ *
+ * @param props - Component props.
+ * @param props.initialAddress - Address the field starts with, if the page link carried a valid one.
+ * @returns The sign-in note for a signed-out visitor, or the checker card.
  */
-export function ApprovalChecker() {
+export function ApprovalCheckerForm({ initialAddress = '' }: IApprovalCheckerFormProps) {
     const { isLoggedIn } = useAuthSession();
-    const searchParams = useSearchParams();
     // Null rather than '' because AddressSelector only ever hands back a
     // validated address or nothing — there is no partial value to hold.
-    const [address, setAddress] = useState<string | null>(null);
+    const [address, setAddress] = useState<string | null>(() => {
+        const trimmed = initialAddress.trim();
+        return trimmed && isValidTronAddress(trimmed) ? trimmed : null;
+    });
     const [result, setResult] = useState<IApprovalCheckResult | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const { t } = useTranslation();
-    const title = t('tools.approvalChecker.title', 'Token Approval Checker');
-    const subtitle = t('tools.approvalChecker.subtitle', 'Scan a TRON wallet for active TRC20 token approvals');
-
-    /**
-     * Pre-fill from a forwarded `?address=` param on mount, why: the shared
-     * TronAddress chip forwards a full address here via that param. The param
-     * is anyone-editable, so it is validated before it becomes state — an
-     * unchecked value would render as AddressSelector's selected chip and arm
-     * the Check button with something the backend will reject. Pre-filling
-     * still runs when the visitor is signed out, so the field is ready the
-     * moment they authenticate. Mount only so it never overrides later typing.
-     */
-    useEffect(() => {
-        const forwarded = searchParams.get('address')?.trim();
-        if (forwarded && isValidTronAddress(forwarded)) setAddress(forwarded);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
 
     /** Submit the address for approval scanning. */
     const handleCheck = async () => {
         // AddressSelector guarantees a validated address or null, so presence
         // is the whole precondition — no length heuristic needed.
-        const trimmed = address;
-        if (!trimmed) return;
+        if (!address) return;
 
         setLoading(true);
         setError(null);
         setResult(null);
 
         try {
-            const data = await checkApprovals(trimmed);
+            const data = await checkApprovals(address);
             setResult(data);
         } catch (err) {
             setError(err instanceof Error ? err.message : t('tools.approvalChecker.error.failed', 'Failed to check approvals'));
@@ -84,36 +89,31 @@ export function ApprovalChecker() {
 
     if (!isLoggedIn) {
         return (
-            <Page>
-                <PageHeader title={title} subtitle={subtitle} />
-                <div className={styles.container}>
-                    <Card>
-                        <Stack gap="md">
-                            <div className={styles.gate_message}>
-                                <ShieldAlert size={24} />
-                                <p>
-                                    {t(
-                                        'tools.approvalChecker.signInRequired',
-                                        'This tool requires you to be signed in. Use the sign-in button in the page header to authenticate, then return here.'
-                                    )}
-                                </p>
-                            </div>
-                        </Stack>
-                    </Card>
-                </div>
-            </Page>
+            <div className={styles.container}>
+                <Card>
+                    <Stack gap="md">
+                        <div className={styles.gate_message}>
+                            <ShieldAlert size={24} />
+                            <p>
+                                {t(
+                                    'tools.approvalChecker.signInRequired',
+                                    'This tool requires you to be signed in. Use the sign-in button in the page header to authenticate, then return here.'
+                                )}
+                            </p>
+                        </div>
+                    </Stack>
+                </Card>
+            </div>
         );
     }
 
     return (
-        <Page>
-            <PageHeader title={title} subtitle={subtitle} />
-            <div className={styles.container}>
+        <div className={styles.container}>
             <Card>
                 <Stack gap="md">
                     {/* A span, not a <label>: AddressSelector owns its own
                         input and names it via aria-label, so a `htmlFor`
-                        pointing at an id this component no longer renders
+                        pointing at an id this component does not render
                         would be a dangling association. */}
                     <span className={styles.label}>{t('tools.approvalChecker.addressLabel', 'TRON Wallet Address')}</span>
                     <div className={styles.input_row}>
@@ -141,7 +141,11 @@ export function ApprovalChecker() {
 
                     {result && result.approvals.length > 0 && (
                         <div className={styles.results}>
-                            <Table variant="compact">
+                            {/* Four columns fit a tablet but not a phone, where the
+                                status badge was pushed out of the card, so each
+                                approval stacks into a labelled entry below 768px.
+                                The token cell names the entry and so has no label. */}
+                            <Table variant="compact" stackAt="mobile">
                                 <Thead>
                                     <Tr>
                                         <Th>{t('tools.approvalChecker.column.token', 'Token')}</Th>
@@ -161,11 +165,11 @@ export function ApprovalChecker() {
                                                     {approval.tokenName}
                                                 </span>
                                             </Td>
-                                            <Td>
+                                            <Td label={t('tools.approvalChecker.column.spender', 'Spender')}>
                                                 <TronAddress address={approval.spenderAddress} />
                                             </Td>
-                                            <Td>{approval.allowanceFormatted}</Td>
-                                            <Td>
+                                            <Td label={t('tools.approvalChecker.column.allowance', 'Allowance')}>{approval.allowanceFormatted}</Td>
+                                            <Td label={t('tools.approvalChecker.column.status', 'Status')}>
                                                 {approval.isUnlimited ? (
                                                     <Badge tone="danger" size="sm">{t('tools.approvalChecker.unlimited', 'Unlimited')}</Badge>
                                                 ) : (
@@ -186,7 +190,6 @@ export function ApprovalChecker() {
                     )}
                 </Stack>
             </Card>
-            </div>
-        </Page>
+        </div>
     );
 }

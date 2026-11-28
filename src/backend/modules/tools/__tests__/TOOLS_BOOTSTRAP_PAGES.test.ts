@@ -11,6 +11,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { TOOLS_BOOTSTRAP_PAGES } from '../services/TOOLS_BOOTSTRAP_PAGES.js';
+import { TOOL_PAGES } from '../services/TOOL_PAGES.js';
 
 describe('TOOLS_BOOTSTRAP_PAGES', () => {
     it('proposes a page whose body embeds the calculator widget at its default address', () => {
@@ -59,6 +60,42 @@ describe('TOOLS_BOOTSTRAP_PAGES', () => {
         expect(proposal.slug).toBe('/tools/address-generator');
         expect(proposal.source).toBe('tools-module');
         expect(proposal.body).toContain('```widget\n{"type":"tools:address-generator","config":{},"required":true}\n```');
+    });
+
+    it('proposes the signature verifier page with its verifier widget at its default address', () => {
+        const { proposal } = TOOLS_BOOTSTRAP_PAGES[6];
+
+        expect(proposal.slug).toBe('/tools/signature-verifier');
+        expect(proposal.source).toBe('tools-module');
+        expect(proposal.body).toContain('```widget\n{"type":"tools:signature-verifier","config":{},"required":true}\n```');
+    });
+
+    it('proposes the approval checker page with its checker widget at its default address', () => {
+        const { proposal } = TOOLS_BOOTSTRAP_PAGES[7];
+
+        expect(proposal.slug).toBe('/tools/approval-checker');
+        expect(proposal.source).toBe('tools-module');
+        expect(proposal.body).toContain('```widget\n{"type":"tools:approval-checker","config":{},"required":true}\n```');
+    });
+
+    it('proposes the Address Origins page with its tracer widget at its default address', () => {
+        const { proposal } = TOOLS_BOOTSTRAP_PAGES[8];
+
+        expect(proposal.slug).toBe('/tools/address-origins');
+        expect(proposal.source).toBe('tools-module');
+        expect(proposal.body).toContain('```widget\n{"type":"tools:address-origins","config":{},"required":true}\n```');
+    });
+
+    /**
+     * Every tool address belongs to a CMS page, so a tool with no entry here
+     * would have no way to get a page and would answer 404 for good.
+     */
+    it('offers a page for every tool in the Tools menu', () => {
+        const slugs = TOOLS_BOOTSTRAP_PAGES.map((item) => item.proposal.slug);
+
+        for (const page of TOOL_PAGES) {
+            expect(slugs).toContain(page.url);
+        }
     });
 
     /**

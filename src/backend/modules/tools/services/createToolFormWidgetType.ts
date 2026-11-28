@@ -10,8 +10,10 @@
  *   supplies no data and the fetcher returns an empty object.
  * - It takes no settings, so it declares an empty settings schema and the
  *   Insert widget picker shows no form for it.
- * - It renders nothing taken from its settings and nothing specific to the
- *   visitor, so it is safe to embed in a page any author can propose.
+ * - It renders nothing taken from its settings, and the server sends it
+ *   nothing specific to the visitor, so it is safe to embed in a page any
+ *   author can propose. A tool that shows more to a signed-in visitor, such
+ *   as the approval checker, decides that in the browser from the session.
  */
 
 import type { IRegisterWidgetTypeInput } from '@/types';

@@ -10,9 +10,9 @@ export { AddressGeneratorForm, AddressGeneratorWidget } from './components/Addre
 export { EnergyEstimatorForm, EnergyEstimatorWidget } from './components/EnergyEstimator';
 export { StakeCalculatorForm, StakeCalculatorWidget } from './components/StakeCalculator';
 export { StakingRewardsCalculator, StakingRewardsWidget } from './components/StakingRewards';
-export { SignatureVerifier } from './components/SignatureVerifier';
-export { ApprovalChecker } from './components/ApprovalChecker';
-export { AddressOrigins } from './components/AddressOrigins';
+export { SignatureVerifierForm, SignatureVerifierWidget } from './components/SignatureVerifier';
+export { ApprovalCheckerForm, ApprovalCheckerWidget } from './components/ApprovalChecker';
+export { AddressOriginsTool, AddressOriginsWidget } from './components/AddressOrigins';
 export { TimestampConverterForm, TimestampConverterWidget } from './components/TimestampConverter';
 export { ToolsAdminClient } from './components/ToolsAdmin';
 

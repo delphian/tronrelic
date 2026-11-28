@@ -20,7 +20,10 @@ import type { WidgetComponent } from '@/types';
 import {
     ADDRESS_CONVERTER_WIDGET_TYPE_ID,
     ADDRESS_GENERATOR_WIDGET_TYPE_ID,
+    ADDRESS_ORIGINS_WIDGET_TYPE_ID,
+    APPROVAL_CHECKER_WIDGET_TYPE_ID,
     ENERGY_ESTIMATOR_WIDGET_TYPE_ID,
+    SIGNATURE_VERIFIER_WIDGET_TYPE_ID,
     STAKE_CALCULATOR_WIDGET_TYPE_ID,
     STAKING_REWARDS_WIDGET_TYPE_ID,
     TIMESTAMP_CONVERTER_WIDGET_TYPE_ID
@@ -34,6 +37,9 @@ import { EnergyEstimatorWidget } from '../../modules/tools/components/EnergyEsti
 import { TimestampConverterWidget } from '../../modules/tools/components/TimestampConverter/TimestampConverterWidget';
 import { AddressConverterWidget } from '../../modules/tools/components/AddressConverter/AddressConverterWidget';
 import { AddressGeneratorWidget } from '../../modules/tools/components/AddressGenerator/AddressGeneratorWidget';
+import { SignatureVerifierWidget } from '../../modules/tools/components/SignatureVerifier/SignatureVerifierWidget';
+import { ApprovalCheckerWidget } from '../../modules/tools/components/ApprovalChecker/ApprovalCheckerWidget';
+import { AddressOriginsWidget } from '../../modules/tools/components/AddressOrigins/AddressOriginsWidget';
 import { RawHtmlWidget } from './RawHtmlWidget';
 import { WorldClocksWidget } from './WorldClocksWidget';
 import { BlockTickerWidget } from './BlockTickerWidget';
@@ -69,5 +75,8 @@ export const coreWidgetComponents: Record<string, WidgetComponent> = {
     [ENERGY_ESTIMATOR_WIDGET_TYPE_ID]: EnergyEstimatorWidget,
     [TIMESTAMP_CONVERTER_WIDGET_TYPE_ID]: TimestampConverterWidget,
     [ADDRESS_CONVERTER_WIDGET_TYPE_ID]: AddressConverterWidget,
-    [ADDRESS_GENERATOR_WIDGET_TYPE_ID]: AddressGeneratorWidget
+    [ADDRESS_GENERATOR_WIDGET_TYPE_ID]: AddressGeneratorWidget,
+    [SIGNATURE_VERIFIER_WIDGET_TYPE_ID]: SignatureVerifierWidget,
+    [APPROVAL_CHECKER_WIDGET_TYPE_ID]: ApprovalCheckerWidget,
+    [ADDRESS_ORIGINS_WIDGET_TYPE_ID]: AddressOriginsWidget
 };
