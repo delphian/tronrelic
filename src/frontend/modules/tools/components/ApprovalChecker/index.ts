@@ -1,2 +1,3 @@
 /** @fileoverview ApprovalChecker barrel export. */
-export { ApprovalChecker } from './ApprovalChecker';
+export { ApprovalCheckerForm } from './ApprovalCheckerForm';
+export { ApprovalCheckerWidget } from './ApprovalCheckerWidget';

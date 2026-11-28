@@ -1,5 +1,10 @@
 /**
- * @fileoverview Address Origins tool page.
+ * @fileoverview Address Origins tool, without page chrome.
+ *
+ * The tool is served inside a CMS page body as the `tools:address-origins`
+ * widget, and the CMS page supplies the heading and text around it, so this
+ * component draws no page header of its own. The reading guide stays here, so
+ * editing the page text cannot remove it.
  *
  * Traces one or more TRON wallets back through their chain of activator accounts
  * toward a final originator, streaming each parent in the moment it resolves
@@ -18,10 +23,8 @@
 
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useMemo, useRef, useState } from 'react';
 import { GitBranch } from 'lucide-react';
-import { Page, PageHeader } from '../../../../components/layout';
 import { StatGrid, StatTile } from '../../../../components/ui/StatTile';
 // Direct import (not the modules/user barrel) keeps that component's CSS out of the bundle.
 import { useAuthSession } from '../../../user/components/SessionProvider';
@@ -38,6 +41,17 @@ import { ReadingGuide } from './ReadingGuide';
 import { TracePanel } from './TracePanel';
 import styles from './AddressOrigins.module.scss';
 
+/** Props for {@link AddressOriginsTool}. */
+interface IAddressOriginsToolProps {
+    /**
+     * Wallet for the first row, taken from the page link's `?address=`, which
+     * the address chip menu sends. Used only when it is a valid TRON address,
+     * since anyone can edit a link. Read once, so it never clobbers rows the
+     * reader edits afterwards.
+     */
+    initialAddress?: string;
+}
+
 /**
  * Address Origins tool.
  *
@@ -45,37 +59,28 @@ import styles from './AddressOrigins.module.scss';
  * lays the whole thing out as a results column beside a rail that keeps the
  * interpretation aids in view while a long chain is scrolled.
  *
- * @returns The rendered tool page.
+ * @param props - Component props.
+ * @param props.initialAddress - Wallet the first row starts with, if the page link carried a valid one.
+ * @returns The trace panel, the results, and the reading aids.
  */
-export function AddressOrigins() {
+export function AddressOriginsTool({ initialAddress = '' }: IAddressOriginsToolProps) {
     const { isLoggedIn } = useAuthSession();
     const { t } = useTranslation();
-    const searchParams = useSearchParams();
     const { ladders, streaming, limited, error, trace, reportProblem } = useOriginTrace();
 
     // Row ids come from a counter rather than a random source so the server and
     // the client agree on the first row's key during hydration.
     const nextRowId = useRef(1);
-    const [rows, setRows] = useState<IWalletRow[]>([{ id: 'w0', value: '' }]);
+    const [rows, setRows] = useState<IWalletRow[]>(() => {
+        const forwarded = initialAddress.trim();
+        return [{ id: 'w0', value: isValidTronAddress(forwarded) ? forwarded : '' }];
+    });
 
     /**
      * Wrap an address (empty for a blank row) in a row with an id of its own, so
      * React can follow the row through insertions and deletions.
      */
     const makeRow = (value: string): IWalletRow => ({ id: `w${nextRowId.current++}`, value });
-
-    /**
-     * Seed the first wallet row from a forwarded `?address=` param on mount.
-     * The shared TronAddress chip forwards a full address here through that
-     * param. Mount-only, so it never clobbers rows the reader edits afterwards.
-     */
-    useEffect(() => {
-        const forwarded = searchParams.get('address')?.trim();
-        if (forwarded && isValidTronAddress(forwarded)) {
-            setRows([{ id: 'w0', value: forwarded }]);
-        }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
 
     const sharedParties = useMemo(() => collectSharedParties(ladders), [ladders]);
     const sharedAddresses = useMemo(
@@ -181,15 +186,7 @@ export function AddressOrigins() {
     const hasResults = ladders.length > 0;
 
     return (
-        <Page>
-            <PageHeader
-                title={t('tools.addressOrigins.page.title', 'Address Origins')}
-                subtitle={t(
-                    'tools.addressOrigins.page.subtitle',
-                    'A TRON account only exists once another account pays to create it. Trace that chain back as far as the record goes.'
-                )}
-            />
-
+        <div className={styles.tool}>
             <TracePanel
                 rows={rows}
                 isLoggedIn={isLoggedIn}
@@ -279,6 +276,6 @@ export function AddressOrigins() {
                     </aside>
                 </div>
             </div>
-        </Page>
+        </div>
     );
 }

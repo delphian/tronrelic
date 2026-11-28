@@ -6,13 +6,11 @@
  * and timestamp/block conversion. Registers a "Tools" menu category with individual
  * entries for each tool.
  *
- * Also registers the stake calculator, staking rewards calculator, energy
- * estimator, timestamp converter, address converter, and address generator as
- * embeddable widgets, refreshes the staking rewards snapshot on a schedule,
- * and runs the `/system/tools` admin page, whose Bootstrap tab lets an admin
- * create the CMS pages this module ships for curator review. Those pages are
- * the only thing served at those six tools' addresses; no route in code
- * serves them.
+ * Also registers every tool as an embeddable widget, refreshes the staking
+ * rewards snapshot on a schedule, and runs the `/system/tools` admin page,
+ * whose Bootstrap tab lets an admin create the CMS pages this module ships for
+ * curator review. Those pages are the only thing served at the tools'
+ * addresses; no route in code serves any of them.
  *
  * Follows TronRelic's two-phase initialization pattern with dependency injection.
  */
@@ -150,7 +148,7 @@ export interface IToolsModuleDependencies {
  * ### run() phase:
  * - Registers "Tools" container menu node in 'main' namespace
  * - Registers child menu items for each tool
- * - Declares `/tools` and every tool page to the sitemap through `http.sitemapEntries`
+ * - Declares `/tools` to the sitemap through `http.sitemapEntries`; the tool pages are CMS pages the pages module lists
  * - Mounts tools router at /api/tools
  * - Registers the form tools in `TOOL_FORM_WIDGET_TYPES` and the staking rewards calculator as embeddable widget types
  * - Registers the staking rewards refresh job when a scheduler is present
@@ -161,7 +159,7 @@ export class ToolsModule implements IModule<IToolsModuleDependencies> {
     readonly metadata: IModuleMetadata = {
         id: 'tools',
         name: 'Tools',
-        version: '1.4.0',
+        version: '1.5.0',
         description: 'User-facing TRON utility tools: address converter, address generator, energy estimator, stake calculator, staking rewards calculator, signature verifier, approval checker, timestamp converter'
     };
 

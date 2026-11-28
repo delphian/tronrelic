@@ -1,2 +1,3 @@
 /** @fileoverview SignatureVerifier barrel export. */
-export { SignatureVerifier } from './SignatureVerifier';
+export { SignatureVerifierForm } from './SignatureVerifierForm';
+export { SignatureVerifierWidget } from './SignatureVerifierWidget';

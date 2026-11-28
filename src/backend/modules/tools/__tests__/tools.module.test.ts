@@ -36,12 +36,16 @@ import type { ICacheService, IChainParameters, IChainParametersService, IMenuSer
 import {
     ADDRESS_CONVERTER_WIDGET_TYPE_ID,
     ADDRESS_GENERATOR_WIDGET_TYPE_ID,
+    ADDRESS_ORIGINS_WIDGET_TYPE_ID,
+    APPROVAL_CHECKER_WIDGET_TYPE_ID,
     ENERGY_ESTIMATOR_WIDGET_TYPE_ID,
+    SIGNATURE_VERIFIER_WIDGET_TYPE_ID,
     STAKE_CALCULATOR_WIDGET_TYPE_ID,
     STAKING_REWARDS_WIDGET_TYPE_ID,
     TIMESTAMP_CONVERTER_WIDGET_TYPE_ID,
     TOOLS_JOB_PREFIX
 } from '@/types';
+import { TOOL_PAGES } from '../services/TOOL_PAGES.js';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 import { createMockServiceRegistry } from '../../../tests/vitest/mocks/service-registry.js';
 
@@ -204,7 +208,7 @@ describe('ToolsModule', () => {
             expect(module.metadata).toBeDefined();
             expect(module.metadata.id).toBe('tools');
             expect(module.metadata.name).toBe('Tools');
-            expect(module.metadata.version).toBe('1.4.0');
+            expect(module.metadata.version).toBe('1.5.0');
             expect(module.metadata.description).toBeDefined();
         });
     });
@@ -466,7 +470,10 @@ describe('ToolsModule', () => {
                 ENERGY_ESTIMATOR_WIDGET_TYPE_ID,
                 TIMESTAMP_CONVERTER_WIDGET_TYPE_ID,
                 ADDRESS_CONVERTER_WIDGET_TYPE_ID,
-                ADDRESS_GENERATOR_WIDGET_TYPE_ID
+                ADDRESS_GENERATOR_WIDGET_TYPE_ID,
+                SIGNATURE_VERIFIER_WIDGET_TYPE_ID,
+                APPROVAL_CHECKER_WIDGET_TYPE_ID,
+                ADDRESS_ORIGINS_WIDGET_TYPE_ID
             ]) {
                 expect(mockWidgets.registerType).toHaveBeenCalledWith(
                     expect.objectContaining({ id, embeddable: true }),
@@ -510,10 +517,10 @@ describe('ToolsModule', () => {
         });
 
         /**
-         * The tool pages reach the sitemap only through this hook, since core
-         * no longer lists them, so a missed registration drops them from it.
+         * The /tools landing page reaches the sitemap only through this hook,
+         * since core no longer lists it, so a missed registration drops it.
          */
-        it('should declare /tools and every route-served tool page to the sitemap during run(), appending to earlier entries', async () => {
+        it('should declare the /tools landing page to the sitemap during run(), appending to earlier entries', async () => {
             const module = new ToolsModule();
 
             await module.init({
@@ -537,21 +544,16 @@ describe('ToolsModule', () => {
             const handler = call![2] as (ctx: unknown, entries: Array<{ path: string }>) => Promise<Array<{ path: string }>>;
             const result = await handler({ generatedAt: new Date().toISOString() }, [{ path: '/blog' }]);
             const paths = result.map(entry => entry.path);
-            expect(paths[0]).toBe('/blog');
-            expect(paths).toContain('/tools');
-            expect(paths).toContain('/tools/signature-verifier');
-            expect(paths).toContain('/tools/approval-checker');
-            expect(paths).toContain('/tools/address-origins');
-            expect(paths).toHaveLength(5);
+            expect(paths).toEqual(['/blog', '/tools']);
         });
 
         /**
-         * The calculator, estimator, converter, and generator addresses belong to CMS
-         * pages, which the pages module lists once published. Declaring them
-         * here would list an address that answers 404 before its page exists,
-         * or that only redirects after an admin moves the page.
+         * Every tool address belongs to a CMS page, which the pages module
+         * lists once published. Declaring them here would list an address that
+         * answers 404 before its page exists, or that only redirects after an
+         * admin moves the page.
          */
-        it('should leave the CMS-owned tool addresses out of its sitemap entries', async () => {
+        it('should leave every CMS-owned tool address out of its sitemap entries', async () => {
             const module = new ToolsModule();
 
             await module.init({
@@ -569,13 +571,11 @@ describe('ToolsModule', () => {
             const call = mockHooks.register.mock.calls.find((c: unknown[]) => (c[1] as { id: string }).id === 'http.sitemapEntries');
             const handler = call![2] as (ctx: unknown, entries: Array<{ path: string }>) => Promise<Array<{ path: string }>>;
             const paths = (await handler({ generatedAt: new Date().toISOString() }, [])).map(entry => entry.path);
-            expect(paths).not.toContain('/tools/stake-calculator');
-            expect(paths).not.toContain('/tools/staking-rewards');
-            expect(paths).not.toContain('/tools/energy-estimator');
-            expect(paths).not.toContain('/tools/timestamp-converter');
-            expect(paths).not.toContain('/tools/address-converter');
-            expect(paths).not.toContain('/tools/address-generator');
-            expect(paths).toHaveLength(4);
+            for (const page of TOOL_PAGES) {
+                expect(page.cmsPage).toBe(true);
+                expect(paths).not.toContain(page.url);
+            }
+            expect(paths).toEqual(['/tools']);
         });
 
         /** Pages are created only when an admin clicks Create, never at boot. */

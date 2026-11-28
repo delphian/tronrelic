@@ -19,6 +19,17 @@
 
 @use '../../../../app/breakpoints' as *;
 
+/*
+ * The trace panel above the results, one gap apart. A single `minmax(0, 1fr)`
+ * column, as the page grid uses, so a wide rung folds inside its own box
+ * instead of widening the CMS page body the tool sits in.
+ */
+.tool {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--gap-lg);
+}
+
 .container {
     container-type: inline-size;
     container-name: address-origins;

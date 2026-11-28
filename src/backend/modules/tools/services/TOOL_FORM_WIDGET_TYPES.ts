@@ -2,8 +2,9 @@
  * @fileoverview The tools that are only a form, registered as embeddable widgets.
  *
  * Each tool here is the widget its CMS page embeds: the stake calculator, the
- * energy estimator, the timestamp converter, the address converter, and the
- * address generator. None of them needs server data, so they share one
+ * energy estimator, the timestamp converter, the address converter, the
+ * address generator, the signature verifier, the approval checker, and
+ * Address Origins. None of them needs server data, so they share one
  * registration shape from `createToolFormWidgetType`.
  * The staking rewards calculator is not here, because its fetcher reads the
  * stored rewards snapshot. Add a form tool to this list to register it; the
@@ -14,7 +15,10 @@ import type { IRegisterWidgetTypeInput } from '@/types';
 import {
     ADDRESS_CONVERTER_WIDGET_TYPE_ID,
     ADDRESS_GENERATOR_WIDGET_TYPE_ID,
+    ADDRESS_ORIGINS_WIDGET_TYPE_ID,
+    APPROVAL_CHECKER_WIDGET_TYPE_ID,
     ENERGY_ESTIMATOR_WIDGET_TYPE_ID,
+    SIGNATURE_VERIFIER_WIDGET_TYPE_ID,
     STAKE_CALCULATOR_WIDGET_TYPE_ID,
     TIMESTAMP_CONVERTER_WIDGET_TYPE_ID
 } from '@/types';
@@ -48,5 +52,20 @@ export const TOOL_FORM_WIDGET_TYPES: ReadonlyArray<IRegisterWidgetTypeInput> = [
         ADDRESS_GENERATOR_WIDGET_TYPE_ID,
         'Address Generator',
         'The interactive address generator: a new wallet with a recovery phrase, or a vanity address search. Keys are generated in the visitor\'s browser and never sent anywhere.'
+    ),
+    createToolFormWidgetType(
+        SIGNATURE_VERIFIER_WIDGET_TYPE_ID,
+        'Signature Verifier',
+        'The interactive signature verifier: checks that a TRON wallet signed a message. A page link carrying ?wallet=, ?message=, and ?signature= fills the form and verifies on load.'
+    ),
+    createToolFormWidgetType(
+        APPROVAL_CHECKER_WIDGET_TYPE_ID,
+        'Approval Checker',
+        'The interactive token approval checker: a wallet\'s active TRC20 approvals and unlimited allowances. Signed-in visitors only; others see a sign-in note. Pre-fills from an ?address= value in the page link.'
+    ),
+    createToolFormWidgetType(
+        ADDRESS_ORIGINS_WIDGET_TYPE_ID,
+        'Address Origins',
+        'The interactive activation tracer: follows wallets back through the accounts that activated them, with a reading guide beside the results. Pre-fills from an ?address= value in the page link.'
     )
 ];
