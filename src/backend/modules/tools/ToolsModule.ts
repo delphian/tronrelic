@@ -6,11 +6,12 @@
  * and timestamp/block conversion. Registers a "Tools" menu category with individual
  * entries for each tool.
  *
- * Also registers the stake and staking rewards calculators as embeddable
- * widgets, refreshes the staking rewards snapshot on a schedule, and runs the
- * `/system/tools` admin page, whose Bootstrap tab lets an admin create the CMS
- * pages this module ships for curator review. Those pages are the only thing
- * served at the two calculators' addresses; no route in code serves them.
+ * Also registers the stake calculator, staking rewards calculator, energy
+ * estimator, and timestamp converter as embeddable widgets, refreshes the
+ * staking rewards snapshot on a schedule, and runs the `/system/tools` admin
+ * page, whose Bootstrap tab lets an admin create the CMS pages this module
+ * ships for curator review. Those pages are the only thing served at those
+ * four tools' addresses; no route in code serves them.
  *
  * Follows TronRelic's two-phase initialization pattern with dependency injection.
  */
@@ -50,7 +51,7 @@ import { createToolsRouter } from './api/tools.router.js';
 import { ToolsAdminController } from './api/ToolsAdminController.js';
 import { createToolsAdminRouter } from './api/createToolsAdminRouter.js';
 import { TOOLS_BOOTSTRAP_PAGES } from './services/TOOLS_BOOTSTRAP_PAGES.js';
-import { STAKE_CALCULATOR_WIDGET_TYPE } from './services/STAKE_CALCULATOR_WIDGET_TYPE.js';
+import { TOOL_FORM_WIDGET_TYPES } from './services/TOOL_FORM_WIDGET_TYPES.js';
 import { StakingRewardsService } from './services/StakingRewardsService.js';
 import { createStakingRewardsWidgetType } from './services/createStakingRewardsWidgetType.js';
 import { TOOL_PAGES, TOOLS_CATEGORY_PATH } from './services/TOOL_PAGES.js';
@@ -107,7 +108,7 @@ export interface IToolsModuleDependencies {
      * reach the same service as `'page-bootstrap'`.
      */
     pageBootstrap: IPageBootstrapService;
-    /** The widgets service, used to register the calculators as embeddable widgets. */
+    /** The widgets service, used to register the CMS-served tools as embeddable widgets. */
     widgetsService: IWidgetsService;
     /**
      * Hook registry the module declares its pages to the sitemap through
@@ -150,7 +151,7 @@ export interface IToolsModuleDependencies {
  * - Registers child menu items for each tool
  * - Declares `/tools` and every tool page to the sitemap through `http.sitemapEntries`
  * - Mounts tools router at /api/tools
- * - Registers the stake and staking rewards calculators as embeddable widget types
+ * - Registers the form tools in `TOOL_FORM_WIDGET_TYPES` and the staking rewards calculator as embeddable widget types
  * - Registers the staking rewards refresh job when a scheduler is present
  * - Registers the `/system/tools` menu entry and tab row, and mounts the admin router at /api/admin/tools
  */
@@ -159,7 +160,7 @@ export class ToolsModule implements IModule<IToolsModuleDependencies> {
     readonly metadata: IModuleMetadata = {
         id: 'tools',
         name: 'Tools',
-        version: '1.2.0',
+        version: '1.3.0',
         description: 'User-facing TRON utility tools: address converter, energy estimator, stake calculator, staking rewards calculator, signature verifier, approval checker, timestamp converter'
     };
 
@@ -273,8 +274,10 @@ export class ToolsModule implements IModule<IToolsModuleDependencies> {
         this.app.use('/api/admin/tools', createAdminRateLimiter('tools-admin'), requireAdmin, createToolsAdminRouter(this.adminController));
         this.logger.info('Tools admin router mounted at /api/admin/tools');
 
-        this.widgetsService.registerType(STAKE_CALCULATOR_WIDGET_TYPE, this.metadata.id);
-        this.logger.info({ typeId: STAKE_CALCULATOR_WIDGET_TYPE.id }, 'Stake calculator registered as an embeddable widget');
+        for (const widgetType of TOOL_FORM_WIDGET_TYPES) {
+            this.widgetsService.registerType(widgetType, this.metadata.id);
+            this.logger.info({ typeId: widgetType.id }, `${widgetType.label} registered as an embeddable widget`);
+        }
 
         const stakingRewardsWidget = createStakingRewardsWidgetType(() => this.stakingRewardsService.getSnapshot());
         this.widgetsService.registerType(stakingRewardsWidget, this.metadata.id);

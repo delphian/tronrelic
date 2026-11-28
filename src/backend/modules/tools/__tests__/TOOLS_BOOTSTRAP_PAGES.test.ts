@@ -6,7 +6,7 @@
  * Listing and creating them is the pages module's shared bootstrap service,
  * tested in `page-bootstrap.service.test.ts`. What belongs to this module is
  * what each proposed page says. Each page is the only thing served at its
- * calculator's address, so its body must embed the calculator.
+ * tool's address, so its body must embed the tool.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -29,12 +29,28 @@ describe('TOOLS_BOOTSTRAP_PAGES', () => {
         expect(proposal.body).toContain('```widget\n{"type":"tools:staking-rewards","config":{},"required":true}\n```');
     });
 
+    it('proposes the energy estimator page with its estimator widget at its default address', () => {
+        const { proposal } = TOOLS_BOOTSTRAP_PAGES[2];
+
+        expect(proposal.slug).toBe('/tools/energy-estimator');
+        expect(proposal.source).toBe('tools-module');
+        expect(proposal.body).toContain('```widget\n{"type":"tools:energy-estimator","config":{},"required":true}\n```');
+    });
+
+    it('proposes the timestamp converter page with its converter widget at its default address', () => {
+        const { proposal } = TOOLS_BOOTSTRAP_PAGES[3];
+
+        expect(proposal.slug).toBe('/tools/timestamp-converter');
+        expect(proposal.source).toBe('tools-module');
+        expect(proposal.body).toContain('```widget\n{"type":"tools:timestamp-converter","config":{},"required":true}\n```');
+    });
+
     /**
      * The pages module describes a page as a `WebApplication` only when its
-     * body has a required embed. Without the flag each calculator page goes
-     * out to search engines as an `Article`.
+     * body has a required embed. Without the flag each tool page goes out to
+     * search engines as an `Article`.
      */
-    it('marks every calculator embed required', () => {
+    it('marks every tool embed required', () => {
         for (const { proposal } of TOOLS_BOOTSTRAP_PAGES) {
             expect(proposal.body).toContain('"required":true');
         }

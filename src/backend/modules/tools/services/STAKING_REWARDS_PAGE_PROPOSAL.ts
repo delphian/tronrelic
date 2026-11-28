@@ -17,21 +17,15 @@
  */
 
 import type { IPageProposal } from '@/types';
-import { STAKING_REWARDS_PATH, STAKING_REWARDS_WIDGET_TYPE_ID, WIDGET_EMBED_MARKUP } from '@/types';
+import { STAKING_REWARDS_PATH, STAKING_REWARDS_WIDGET_TYPE_ID } from '@/types';
+import { buildRequiredWidgetEmbed } from './buildRequiredWidgetEmbed.js';
+
+/** The fenced block that embeds the calculator as a required widget. */
+const CALCULATOR_EMBED = buildRequiredWidgetEmbed(STAKING_REWARDS_WIDGET_TYPE_ID);
 
 /**
- * The fenced block that embeds the calculator, written from the shared markup
- * constants so a change to the embed syntax cannot leave this page behind.
- */
-const CALCULATOR_EMBED = [
-    '```' + WIDGET_EMBED_MARKUP.fenceLanguage,
-    JSON.stringify({ type: STAKING_REWARDS_WIDGET_TYPE_ID, config: {}, required: true }),
-    '```'
-].join('\n');
-
-/**
- * Markdown body: a heading and an intro line, then the calculator. Opens with the page's only `<h1>`, because the CMS route adds
- * no heading of its own.
+ * Markdown body: a heading and an intro line, then the calculator. Opens with
+ * the page's only `<h1>`, because the CMS route adds no heading of its own.
  */
 const BODY = `# Staking Rewards Calculator
 

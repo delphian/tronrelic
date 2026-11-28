@@ -17,12 +17,19 @@
  */
 
 import type { WidgetComponent } from '@/types';
-import { STAKE_CALCULATOR_WIDGET_TYPE_ID, STAKING_REWARDS_WIDGET_TYPE_ID } from '@/types';
+import {
+    ENERGY_ESTIMATOR_WIDGET_TYPE_ID,
+    STAKE_CALCULATOR_WIDGET_TYPE_ID,
+    STAKING_REWARDS_WIDGET_TYPE_ID,
+    TIMESTAMP_CONVERTER_WIDGET_TYPE_ID
+} from '@/types';
 // Imported by path rather than through the tools barrel: this registry is
 // loaded with the site layout, and the barrel would pull every tool's
 // components and styles into that bundle.
 import { StakeCalculatorWidget } from '../../modules/tools/components/StakeCalculator/StakeCalculatorWidget';
 import { StakingRewardsWidget } from '../../modules/tools/components/StakingRewards/StakingRewardsWidget';
+import { EnergyEstimatorWidget } from '../../modules/tools/components/EnergyEstimator/EnergyEstimatorWidget';
+import { TimestampConverterWidget } from '../../modules/tools/components/TimestampConverter/TimestampConverterWidget';
 import { RawHtmlWidget } from './RawHtmlWidget';
 import { WorldClocksWidget } from './WorldClocksWidget';
 import { BlockTickerWidget } from './BlockTickerWidget';
@@ -54,5 +61,7 @@ export const coreWidgetComponents: Record<string, WidgetComponent> = {
     'core:language-switcher': LanguageSwitcherWidget,
     'core:tab-bar': TabBarWidget,
     [STAKE_CALCULATOR_WIDGET_TYPE_ID]: StakeCalculatorWidget,
-    [STAKING_REWARDS_WIDGET_TYPE_ID]: StakingRewardsWidget
+    [STAKING_REWARDS_WIDGET_TYPE_ID]: StakingRewardsWidget,
+    [ENERGY_ESTIMATOR_WIDGET_TYPE_ID]: EnergyEstimatorWidget,
+    [TIMESTAMP_CONVERTER_WIDGET_TYPE_ID]: TimestampConverterWidget
 };

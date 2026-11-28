@@ -217,7 +217,7 @@ The threshold is measured with `@container body`, against the `body` size contai
 
 A core widget type needs a matching frontend renderer keyed by its `typeId` in `components/widgets/widgets.core.ts`. That hand-written registry is merged ahead of the generator-owned `widgets.generated.ts` by `components/widgets/getWidgetComponent.ts`, so core components resolve without the plugin-registry generator touching them. **`core:layout-group` is the one exception** — it has no registry entry because it has no UI of its own; `WidgetZone` special-cases its `typeId`, drawing its children inside a nested flex container.
 
-A core module can also register a widget type for a feature it owns, through the same `registerType` call, with its own module id as the owner. The tools module registers `tools:stake-calculator` this way so CMS pages can embed the calculator (see the [Tools README](../tools/README.md#stake-calculator-page)). Its renderer goes in `widgets.core.ts` like any core type, because the generated file only holds plugin components.
+A core module can also register a widget type for a feature it owns, through the same `registerType` call, with its own module id as the owner. The tools module registers `tools:stake-calculator` this way so CMS pages can embed the calculator (see the [Tools README](../tools/README.md#tool-pages-served-by-the-cms)). Its renderer goes in `widgets.core.ts` like any core type, because the generated file only holds plugin components.
 
 ## Single-level grouping
 
