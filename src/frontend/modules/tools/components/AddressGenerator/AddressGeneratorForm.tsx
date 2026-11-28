@@ -1,5 +1,11 @@
 /**
- * @fileoverview TRON address generator tool page.
+ * @fileoverview The address generator's tool, without page chrome.
+ *
+ * The generator is served inside a CMS page body as the
+ * `tools:address-generator` widget, and the CMS page supplies the heading and
+ * text around it, so this component draws no page header of its own. The
+ * notice that keys never leave the browser stays here, so editing the page
+ * text cannot remove it.
  *
  * Generates random TRON addresses in-browser using a Web Worker so private
  * keys never leave the client. Supports single generation and continuous
@@ -8,11 +14,11 @@
  */
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useId } from 'react';
 import { KeyRound, Search, Square, Copy, Check, Eye, EyeOff, ShieldCheck, TriangleAlert, QrCode } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import type { ITranslator } from '@/types';
-import { Page, PageHeader, Stack } from '../../../../components/layout';
+import { Stack } from '../../../../components/layout';
 import { Card } from '../../../../components/ui/Card';
 import { Input } from '../../../../components/ui/Input';
 import { Button } from '../../../../components/ui/Button';
@@ -492,10 +498,16 @@ function AddressRow({ entry, index, pattern, caseSensitive }: {
  * Provides two modes: single random address generation and continuous vanity
  * search. All cryptographic operations run in a Web Worker — private keys
  * are generated in-browser and never sent to a server.
+ *
+ * @returns The generate and vanity search cards and the security notice.
  */
-export function AddressGenerator() {
+export function AddressGeneratorForm() {
     const { t } = useTranslation();
     const workerRef = useRef<Worker | null>(null);
+    // A page can embed the generator more than once, so each instance needs
+    // its own input ids for the labels to point at the right field.
+    const vanityInputId = useId();
+    const caseToggleId = useId();
 
     const [singleResult, setSingleResult] = useState<IGeneratedAddress | null>(null);
     const [generating, setGenerating] = useState(false);
@@ -589,145 +601,139 @@ export function AddressGenerator() {
         : '';
 
     return (
-        <Page>
-            <PageHeader
-                title={t('tools.addressGenerator.title', 'Address Generator')}
-                subtitle={t('tools.addressGenerator.subtitle', 'Generate random TRON addresses and search for vanity patterns')}
-            />
-            <div className={styles.container}>
-                {/* Single generation */}
-                <Card>
-                    <Stack gap="md">
-                        <div className={styles.section_header}>
-                            <span className={styles.section_title}>{t('tools.addressGenerator.generate.title', 'Generate Address')}</span>
+        <div className={styles.container}>
+            {/* Single generation */}
+            <Card>
+                <Stack gap="md">
+                    <div className={styles.section_header}>
+                        <span className={styles.section_title}>{t('tools.addressGenerator.generate.title', 'Generate Address')}</span>
+                        <Button
+                            variant="primary"
+                            onClick={handleGenerate}
+                            disabled={generating}
+                            loading={generating}
+                        >
+                            <KeyRound size={18} />
+                            {t('tools.addressGenerator.generate.button', 'Generate')}
+                        </Button>
+                    </div>
+
+                    {singleResult && <SingleAddressResult entry={singleResult} />}
+                </Stack>
+            </Card>
+
+            {/* Vanity search */}
+            <Card>
+                <Stack gap="md">
+                    <span className={styles.section_title}>{t('tools.addressGenerator.vanity.title', 'Vanity Search')}</span>
+
+                    <label className={styles.label} htmlFor={vanityInputId}>
+                        {t('tools.addressGenerator.vanity.patternLabel', 'Search pattern (matched anywhere in address)')}
+                    </label>
+                    <div className={styles.input_row}>
+                        <Input
+                            id={vanityInputId}
+                            value={vanityPattern}
+                            onChange={e => handlePatternChange(e.target.value)}
+                            placeholder={t('tools.addressGenerator.vanity.patternPlaceholder', 'e.g. cafe, TRON, abc')}
+                            disabled={searching}
+                            onKeyDown={e => e.key === 'Enter' && !searching && !base58Warning && handleStartSearch()}
+                        />
+                        <label className={styles.toggle} htmlFor={caseToggleId}>
+                            <input
+                                id={caseToggleId}
+                                type="checkbox"
+                                checked={caseSensitive}
+                                onChange={e => setCaseSensitive(e.target.checked)}
+                                disabled={searching}
+                            />
+                            <span className={styles.toggle__label}>{t('tools.addressGenerator.vanity.caseSensitive', 'Case sensitive')}</span>
+                        </label>
+                        {searching ? (
+                            <Button variant="danger" onClick={handleStopSearch}>
+                                <Square size={18} />
+                                {t('tools.addressGenerator.vanity.stop', 'Stop')}
+                            </Button>
+                        ) : (
                             <Button
                                 variant="primary"
-                                onClick={handleGenerate}
-                                disabled={generating}
-                                loading={generating}
+                                onClick={handleStartSearch}
+                                disabled={!vanityPattern.trim() || !!base58Warning}
                             >
-                                <KeyRound size={18} />
-                                {t('tools.addressGenerator.generate.button', 'Generate')}
+                                <Search size={18} />
+                                {t('tools.addressGenerator.vanity.search', 'Search')}
                             </Button>
-                        </div>
+                        )}
+                    </div>
 
-                        {singleResult && <SingleAddressResult entry={singleResult} />}
-                    </Stack>
-                </Card>
+                    {base58Warning && (
+                        <p className={styles.warning}>
+                            <TriangleAlert size={14} />
+                            {base58Warning}
+                        </p>
+                    )}
 
-                {/* Vanity search */}
-                <Card>
-                    <Stack gap="md">
-                        <span className={styles.section_title}>{t('tools.addressGenerator.vanity.title', 'Vanity Search')}</span>
+                    {difficulty && !base58Warning && (
+                        <p className={styles.difficulty}>
+                            {t('tools.addressGenerator.vanity.difficulty', 'Expected difficulty: {difficulty}', { difficulty })}
+                        </p>
+                    )}
 
-                        <label className={styles.label} htmlFor="vanity-input">
-                            {t('tools.addressGenerator.vanity.patternLabel', 'Search pattern (matched anywhere in address)')}
-                        </label>
-                        <div className={styles.input_row}>
-                            <Input
-                                id="vanity-input"
-                                value={vanityPattern}
-                                onChange={e => handlePatternChange(e.target.value)}
-                                placeholder={t('tools.addressGenerator.vanity.patternPlaceholder', 'e.g. cafe, TRON, abc')}
-                                disabled={searching}
-                                onKeyDown={e => e.key === 'Enter' && !searching && !base58Warning && handleStartSearch()}
-                            />
-                            <label className={styles.toggle} htmlFor="case-toggle">
-                                <input
-                                    id="case-toggle"
-                                    type="checkbox"
-                                    checked={caseSensitive}
-                                    onChange={e => setCaseSensitive(e.target.checked)}
-                                    disabled={searching}
-                                />
-                                <span className={styles.toggle__label}>{t('tools.addressGenerator.vanity.caseSensitive', 'Case sensitive')}</span>
-                            </label>
-                            {searching ? (
-                                <Button variant="danger" onClick={handleStopSearch}>
-                                    <Square size={18} />
-                                    {t('tools.addressGenerator.vanity.stop', 'Stop')}
-                                </Button>
-                            ) : (
-                                <Button
-                                    variant="primary"
-                                    onClick={handleStartSearch}
-                                    disabled={!vanityPattern.trim() || !!base58Warning}
-                                >
-                                    <Search size={18} />
-                                    {t('tools.addressGenerator.vanity.search', 'Search')}
-                                </Button>
+                    {(searching || stats.checked > 0) && (
+                        <div className={styles.stats}>
+                            <Badge tone={searching ? 'success' : 'neutral'} showLiveIndicator={searching}>
+                                {searching
+                                    ? t('tools.addressGenerator.vanity.searching', 'Searching')
+                                    : t('tools.addressGenerator.vanity.stopped', 'Stopped')}
+                            </Badge>
+                            <span className={styles.stats__text}>
+                                {t('tools.addressGenerator.vanity.progress', '{checked} attempts — ~{rate}/sec', {
+                                    checked: formatNumber(stats.checked),
+                                    rate: formatNumber(stats.rate)
+                                })}
+                            </span>
+                            {matches.length > 0 && (
+                                <span className={styles.stats__matches}>
+                                    {matches.length === 1
+                                        ? t('tools.addressGenerator.vanity.matchOne', '{count} match', { count: matches.length })
+                                        : t('tools.addressGenerator.vanity.matchMany', '{count} matches', { count: matches.length })}
+                                </span>
                             )}
                         </div>
+                    )}
 
-                        {base58Warning && (
-                            <p className={styles.warning}>
-                                <TriangleAlert size={14} />
-                                {base58Warning}
-                            </p>
-                        )}
+                    {matches.length > 0 && (
+                        <div className={styles.matches}>
+                            <table className={styles.match_table}>
+                                <thead>
+                                    <tr>
+                                        <th className={styles.match_table__th}>#</th>
+                                        <th className={styles.match_table__th}>{t('tools.addressGenerator.label.address', 'Address')}</th>
+                                        <th className={styles.match_table__th}>{t('tools.addressGenerator.label.gender', 'Gender')}</th>
+                                        <th className={styles.match_table__th}>{t('tools.addressGenerator.label.privateKey', 'Private Key')}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {matches.map((entry, i) => (
+                                        <AddressRow key={`${entry.address}-${i}`} entry={entry} index={i + 1} pattern={vanityPattern.trim()} caseSensitive={caseSensitive} />
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </Stack>
+            </Card>
 
-                        {difficulty && !base58Warning && (
-                            <p className={styles.difficulty}>
-                                {t('tools.addressGenerator.vanity.difficulty', 'Expected difficulty: {difficulty}', { difficulty })}
-                            </p>
-                        )}
-
-                        {(searching || stats.checked > 0) && (
-                            <div className={styles.stats}>
-                                <Badge tone={searching ? 'success' : 'neutral'} showLiveIndicator={searching}>
-                                    {searching
-                                        ? t('tools.addressGenerator.vanity.searching', 'Searching')
-                                        : t('tools.addressGenerator.vanity.stopped', 'Stopped')}
-                                </Badge>
-                                <span className={styles.stats__text}>
-                                    {t('tools.addressGenerator.vanity.progress', '{checked} attempts — ~{rate}/sec', {
-                                        checked: formatNumber(stats.checked),
-                                        rate: formatNumber(stats.rate)
-                                    })}
-                                </span>
-                                {matches.length > 0 && (
-                                    <span className={styles.stats__matches}>
-                                        {matches.length === 1
-                                            ? t('tools.addressGenerator.vanity.matchOne', '{count} match', { count: matches.length })
-                                            : t('tools.addressGenerator.vanity.matchMany', '{count} matches', { count: matches.length })}
-                                    </span>
-                                )}
-                            </div>
-                        )}
-
-                        {matches.length > 0 && (
-                            <div className={styles.matches}>
-                                <table className={styles.match_table}>
-                                    <thead>
-                                        <tr>
-                                            <th className={styles.match_table__th}>#</th>
-                                            <th className={styles.match_table__th}>{t('tools.addressGenerator.label.address', 'Address')}</th>
-                                            <th className={styles.match_table__th}>{t('tools.addressGenerator.label.gender', 'Gender')}</th>
-                                            <th className={styles.match_table__th}>{t('tools.addressGenerator.label.privateKey', 'Private Key')}</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {matches.map((entry, i) => (
-                                            <AddressRow key={`${entry.address}-${i}`} entry={entry} index={i + 1} pattern={vanityPattern.trim()} caseSensitive={caseSensitive} />
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
-                    </Stack>
-                </Card>
-
-                {/* Security notice */}
-                <div className={styles.notice}>
-                    <ShieldCheck size={16} />
-                    <p>
-                        {t(
-                            'tools.addressGenerator.securityNotice',
-                            'Keys are generated entirely in your browser using a Web Worker. No private keys are ever sent to a server. Use caution before sending real funds to a web-generated address — consider hardware wallets for significant holdings.'
-                        )}
-                    </p>
-                </div>
+            {/* Security notice */}
+            <div className={styles.notice}>
+                <ShieldCheck size={16} />
+                <p>
+                    {t(
+                        'tools.addressGenerator.securityNotice',
+                        'Keys are generated entirely in your browser using a Web Worker. No private keys are ever sent to a server. Use caution before sending real funds to a web-generated address — consider hardware wallets for significant holdings.'
+                    )}
+                </p>
             </div>
-        </Page>
+        </div>
     );
 }

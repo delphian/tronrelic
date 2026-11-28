@@ -2,8 +2,8 @@
  * @fileoverview Tools module component barrel exports.
  */
 
-export { AddressConverter } from './AddressConverter';
-export { AddressGenerator } from './AddressGenerator';
+export { AddressConverterForm } from './AddressConverter';
+export { AddressGeneratorForm } from './AddressGenerator';
 export { EnergyEstimatorForm } from './EnergyEstimator';
 export { StakeCalculatorForm } from './StakeCalculator';
 export { StakingRewardsCalculator } from './StakingRewards';

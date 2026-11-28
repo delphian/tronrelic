@@ -11,6 +11,8 @@ import { STAKE_CALCULATOR_PAGE_PROPOSAL } from './STAKE_CALCULATOR_PAGE_PROPOSAL
 import { STAKING_REWARDS_PAGE_PROPOSAL } from './STAKING_REWARDS_PAGE_PROPOSAL.js';
 import { ENERGY_ESTIMATOR_PAGE_PROPOSAL } from './ENERGY_ESTIMATOR_PAGE_PROPOSAL.js';
 import { TIMESTAMP_CONVERTER_PAGE_PROPOSAL } from './TIMESTAMP_CONVERTER_PAGE_PROPOSAL.js';
+import { ADDRESS_CONVERTER_PAGE_PROPOSAL } from './ADDRESS_CONVERTER_PAGE_PROPOSAL.js';
+import { ADDRESS_GENERATOR_PAGE_PROPOSAL } from './ADDRESS_GENERATOR_PAGE_PROPOSAL.js';
 
 /**
  * Pages offered on the Bootstrap tab, in display order.
@@ -39,5 +41,17 @@ export const TOOLS_BOOTSTRAP_PAGES: ReadonlyArray<IPageBootstrapItem> = [
         label: 'Timestamp Converter page',
         description: 'The page at the timestamp converter\'s address, with the converter embedded as a required widget. No built-in page serves this address, so it answers 404 until this page is approved.',
         proposal: TIMESTAMP_CONVERTER_PAGE_PROPOSAL
+    },
+    {
+        id: 'address-converter',
+        label: 'Address Converter page',
+        description: 'The page at the address converter\'s address, with the converter embedded as a required widget. No built-in page serves this address, so it answers 404 until this page is approved.',
+        proposal: ADDRESS_CONVERTER_PAGE_PROPOSAL
+    },
+    {
+        id: 'address-generator',
+        label: 'Address Generator page',
+        description: 'The page at the address generator\'s address, with the generator embedded as a required widget. No built-in page serves this address, so it answers 404 until this page is approved.',
+        proposal: ADDRESS_GENERATOR_PAGE_PROPOSAL
     }
 ];

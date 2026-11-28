@@ -1,2 +1,3 @@
 /** @fileoverview AddressConverter barrel export. */
-export { AddressConverter } from './AddressConverter';
+export { AddressConverterForm } from './AddressConverterForm';
+export { AddressConverterWidget } from './AddressConverterWidget';

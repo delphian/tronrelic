@@ -34,8 +34,8 @@ export const TOOLS_CATEGORY_PATH = '/tools';
 
 /** Every tool page, in menu order. */
 export const TOOL_PAGES: ReadonlyArray<IToolPage> = [
-    { label: 'Address Converter', url: '/tools/address-converter', icon: 'ArrowLeftRight', order: 10, description: 'Convert a TRON address between its Base58 form (starting with T) and its hex form (starting with 41).' },
-    { label: 'Address Generator', url: '/tools/address-generator', icon: 'KeyRound', order: 15, description: 'Create a new TRON wallet with a recovery phrase, or search for a vanity address. Everything runs in your browser, so keys never leave your device.' },
+    { label: 'Address Converter', url: '/tools/address-converter', icon: 'ArrowLeftRight', order: 10, description: 'Convert a TRON address between its Base58 form (starting with T) and its hex form (starting with 41).', cmsPage: true },
+    { label: 'Address Generator', url: '/tools/address-generator', icon: 'KeyRound', order: 15, description: 'Create a new TRON wallet with a recovery phrase, or search for a vanity address. Everything runs in your browser, so keys never leave your device.', cmsPage: true },
     { label: 'Energy Estimator', url: '/tools/energy-estimator', icon: 'Zap', order: 20, description: 'Estimate how much energy your smart contract calls need each day, and compare staking TRX for it with burning TRX to pay the fees.', cmsPage: true },
     { label: 'Stake Calculator', url: '/tools/stake-calculator', icon: 'Calculator', order: 30, description: 'See how much energy and bandwidth a TRX stake gives you, or how much TRX to stake for the energy you need, at live network rates.', cmsPage: true },
     { label: 'Staking Rewards', url: '/tools/staking-rewards', icon: 'Coins', order: 35, description: 'Estimate the TRX you earn each year by voting with staked TRX, and compare every Super Representative by commission and reward rate.', cmsPage: true },
