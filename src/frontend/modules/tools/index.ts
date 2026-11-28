@@ -5,8 +5,8 @@
  */
 
 // Components
-export { AddressConverter } from './components/AddressConverter';
-export { AddressGenerator } from './components/AddressGenerator';
+export { AddressConverterForm, AddressConverterWidget } from './components/AddressConverter';
+export { AddressGeneratorForm, AddressGeneratorWidget } from './components/AddressGenerator';
 export { EnergyEstimatorForm, EnergyEstimatorWidget } from './components/EnergyEstimator';
 export { StakeCalculatorForm, StakeCalculatorWidget } from './components/StakeCalculator';
 export { StakingRewardsCalculator, StakingRewardsWidget } from './components/StakingRewards';

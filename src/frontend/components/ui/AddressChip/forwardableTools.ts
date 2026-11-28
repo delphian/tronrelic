@@ -15,9 +15,11 @@
  * The list is co-located with the component rather than pulled from the tools
  * module because a `components/ui/` primitive must not depend upward on a
  * domain module, and there is no iterable tool registry to read (the tools'
- * `IToolDescriptor` is unused dead code). These routes are stable platform
- * paths; adding a new address-consuming tool means adding one row here plus the
- * `?address=` pre-fill on that tool's page.
+ * `IToolDescriptor` is unused dead code). These are the tools' default
+ * addresses. The address converter's belongs to a CMS page, where the
+ * converter widget reads the `?address=` value; the others are routes in code.
+ * Adding a new address-consuming tool means adding one row here plus the
+ * `?address=` pre-fill on that tool's page or widget.
  */
 
 /**

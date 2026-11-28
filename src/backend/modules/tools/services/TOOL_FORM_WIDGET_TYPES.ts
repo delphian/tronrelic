@@ -2,8 +2,9 @@
  * @fileoverview The tools that are only a form, registered as embeddable widgets.
  *
  * Each tool here is the widget its CMS page embeds: the stake calculator, the
- * energy estimator, and the timestamp converter. None of them needs server
- * data, so they share one registration shape from `createToolFormWidgetType`.
+ * energy estimator, the timestamp converter, the address converter, and the
+ * address generator. None of them needs server data, so they share one
+ * registration shape from `createToolFormWidgetType`.
  * The staking rewards calculator is not here, because its fetcher reads the
  * stored rewards snapshot. Add a form tool to this list to register it; the
  * module registers every entry in `run()`.
@@ -11,6 +12,8 @@
 
 import type { IRegisterWidgetTypeInput } from '@/types';
 import {
+    ADDRESS_CONVERTER_WIDGET_TYPE_ID,
+    ADDRESS_GENERATOR_WIDGET_TYPE_ID,
     ENERGY_ESTIMATOR_WIDGET_TYPE_ID,
     STAKE_CALCULATOR_WIDGET_TYPE_ID,
     TIMESTAMP_CONVERTER_WIDGET_TYPE_ID
@@ -35,5 +38,15 @@ export const TOOL_FORM_WIDGET_TYPES: ReadonlyArray<IRegisterWidgetTypeInput> = [
         TIMESTAMP_CONVERTER_WIDGET_TYPE_ID,
         'Timestamp Converter',
         'The interactive timestamp converter: a Unix timestamp, a date, or a TRON block number, converted to the other two.'
+    ),
+    createToolFormWidgetType(
+        ADDRESS_CONVERTER_WIDGET_TYPE_ID,
+        'Address Converter',
+        'The interactive address converter: a TRON address in Base58 or hex form, shown in both. Pre-fills from an ?address= value in the page link.'
+    ),
+    createToolFormWidgetType(
+        ADDRESS_GENERATOR_WIDGET_TYPE_ID,
+        'Address Generator',
+        'The interactive address generator: a new wallet with a recovery phrase, or a vanity address search. Keys are generated in the visitor\'s browser and never sent anywhere.'
     )
 ];

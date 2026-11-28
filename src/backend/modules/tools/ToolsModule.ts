@@ -7,11 +7,12 @@
  * entries for each tool.
  *
  * Also registers the stake calculator, staking rewards calculator, energy
- * estimator, and timestamp converter as embeddable widgets, refreshes the
- * staking rewards snapshot on a schedule, and runs the `/system/tools` admin
- * page, whose Bootstrap tab lets an admin create the CMS pages this module
- * ships for curator review. Those pages are the only thing served at those
- * four tools' addresses; no route in code serves them.
+ * estimator, timestamp converter, address converter, and address generator as
+ * embeddable widgets, refreshes the staking rewards snapshot on a schedule,
+ * and runs the `/system/tools` admin page, whose Bootstrap tab lets an admin
+ * create the CMS pages this module ships for curator review. Those pages are
+ * the only thing served at those six tools' addresses; no route in code
+ * serves them.
  *
  * Follows TronRelic's two-phase initialization pattern with dependency injection.
  */
@@ -160,8 +161,8 @@ export class ToolsModule implements IModule<IToolsModuleDependencies> {
     readonly metadata: IModuleMetadata = {
         id: 'tools',
         name: 'Tools',
-        version: '1.3.0',
-        description: 'User-facing TRON utility tools: address converter, energy estimator, stake calculator, staking rewards calculator, signature verifier, approval checker, timestamp converter'
+        version: '1.4.0',
+        description: 'User-facing TRON utility tools: address converter, address generator, energy estimator, stake calculator, staking rewards calculator, signature verifier, approval checker, timestamp converter'
     };
 
     /** Stored dependencies from init() phase. */

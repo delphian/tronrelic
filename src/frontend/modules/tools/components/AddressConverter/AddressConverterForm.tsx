@@ -1,5 +1,9 @@
 /**
- * @fileoverview Address converter tool page.
+ * @fileoverview The address converter's form and result, without page chrome.
+ *
+ * The converter is served inside a CMS page body as the
+ * `tools:address-converter` widget, and the CMS page supplies the heading and
+ * text around it, so this component draws no page header of its own.
  *
  * Converts between TRON hex (41-prefixed) and base58check (T-prefixed) formats.
  * Accepts input in either format and displays both representations.
@@ -7,10 +11,9 @@
  */
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useId, useState } from 'react';
 import { ArrowLeftRight } from 'lucide-react';
-import { Page, PageHeader, Stack } from '../../../../components/layout';
+import { Stack } from '../../../../components/layout';
 import { Card } from '../../../../components/ui/Card';
 import { Input } from '../../../../components/ui/Input';
 import { Button } from '../../../../components/ui/Button';
@@ -19,31 +22,36 @@ import { convertAddress } from '../../api/client';
 import type { IAddressConversionResult } from '../../types';
 import styles from './AddressConverter.module.scss';
 
+/** Props for {@link AddressConverterForm}. */
+interface IAddressConverterFormProps {
+    /**
+     * Address to start the field with. The address chip menu links here with
+     * an `?address=` value, and the widget passes it in so the field arrives
+     * filled. Read once, so it never overwrites what the visitor types.
+     */
+    initialAddress?: string;
+}
+
 /**
- * Address converter tool.
+ * Address converter form.
  *
  * Users paste a TRON address in either hex or base58check format and
- * receive both representations. No SSR data needed — purely interactive.
+ * receive both representations. Nothing is shown until the visitor converts,
+ * so the server renders the form and the loading state belongs to a user action.
+ *
+ * @param props - Component props.
+ * @param props.initialAddress - Address the field starts with, if the page link carried one.
+ * @returns The converter card.
  */
-export function AddressConverter() {
-    const searchParams = useSearchParams();
+export function AddressConverterForm({ initialAddress = '' }: IAddressConverterFormProps) {
     const { t } = useTranslation();
-    const [input, setInput] = useState('');
+    const [input, setInput] = useState(initialAddress);
     const [result, setResult] = useState<IAddressConversionResult | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
-
-    /**
-     * Pre-fill from a forwarded `?address=` param on mount, why: the shared
-     * TronAddress chip forwards a full address here via that param (its
-     * canonical forward contract), so the field should arrive populated. Mount
-     * only so it never fights the user's own typing after the first paint.
-     */
-    useEffect(() => {
-        const forwarded = searchParams.get('address');
-        if (forwarded) setInput(forwarded);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    // A page can embed the converter more than once, so each instance needs
+    // its own input id for the label to point at the right field.
+    const inputId = useId();
 
     /** Determine format and submit to the API. */
     const handleConvert = async () => {
@@ -67,20 +75,15 @@ export function AddressConverter() {
     };
 
     return (
-        <Page>
-            <PageHeader
-                title={t('tools.addressConverter.title', 'Address Converter')}
-                subtitle={t('tools.addressConverter.subtitle', 'Convert between TRON hex and base58check formats')}
-            />
-            <div className={styles.container}>
+        <div className={styles.container}>
             <Card>
                 <Stack gap="md">
-                    <label className={styles.label} htmlFor="address-input">
+                    <label className={styles.label} htmlFor={inputId}>
                         {t('tools.addressConverter.inputLabel', 'TRON Address (hex or base58check)')}
                     </label>
                     <div className={styles.input_row}>
                         <Input
-                            id="address-input"
+                            id={inputId}
                             value={input}
                             onChange={e => setInput(e.target.value)}
                             placeholder={t('tools.addressConverter.inputPlaceholder', 'T... or 41...')}
@@ -113,7 +116,6 @@ export function AddressConverter() {
                     )}
                 </Stack>
             </Card>
-            </div>
-        </Page>
+        </div>
     );
 }

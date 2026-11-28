@@ -2,4 +2,5 @@
  * @fileoverview AddressGenerator barrel export.
  */
 
-export { AddressGenerator } from './AddressGenerator';
+export { AddressGeneratorForm } from './AddressGeneratorForm';
+export { AddressGeneratorWidget } from './AddressGeneratorWidget';

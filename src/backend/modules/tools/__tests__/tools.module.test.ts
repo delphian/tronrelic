@@ -34,6 +34,8 @@ vi.mock('../../blockchain/tron-grid.client.js', () => ({
 import { ToolsModule } from '../index.js';
 import type { ICacheService, IChainParameters, IChainParametersService, IMenuService, IServiceRegistry } from '@/types';
 import {
+    ADDRESS_CONVERTER_WIDGET_TYPE_ID,
+    ADDRESS_GENERATOR_WIDGET_TYPE_ID,
     ENERGY_ESTIMATOR_WIDGET_TYPE_ID,
     STAKE_CALCULATOR_WIDGET_TYPE_ID,
     STAKING_REWARDS_WIDGET_TYPE_ID,
@@ -202,7 +204,7 @@ describe('ToolsModule', () => {
             expect(module.metadata).toBeDefined();
             expect(module.metadata.id).toBe('tools');
             expect(module.metadata.name).toBe('Tools');
-            expect(module.metadata.version).toBe('1.3.0');
+            expect(module.metadata.version).toBe('1.4.0');
             expect(module.metadata.description).toBeDefined();
         });
     });
@@ -462,7 +464,9 @@ describe('ToolsModule', () => {
                 STAKE_CALCULATOR_WIDGET_TYPE_ID,
                 STAKING_REWARDS_WIDGET_TYPE_ID,
                 ENERGY_ESTIMATOR_WIDGET_TYPE_ID,
-                TIMESTAMP_CONVERTER_WIDGET_TYPE_ID
+                TIMESTAMP_CONVERTER_WIDGET_TYPE_ID,
+                ADDRESS_CONVERTER_WIDGET_TYPE_ID,
+                ADDRESS_GENERATOR_WIDGET_TYPE_ID
             ]) {
                 expect(mockWidgets.registerType).toHaveBeenCalledWith(
                     expect.objectContaining({ id, embeddable: true }),
@@ -536,12 +540,13 @@ describe('ToolsModule', () => {
             expect(paths[0]).toBe('/blog');
             expect(paths).toContain('/tools');
             expect(paths).toContain('/tools/signature-verifier');
-            expect(paths).toContain('/tools/address-generator');
-            expect(paths).toHaveLength(7);
+            expect(paths).toContain('/tools/approval-checker');
+            expect(paths).toContain('/tools/address-origins');
+            expect(paths).toHaveLength(5);
         });
 
         /**
-         * The calculator, estimator, and converter addresses belong to CMS
+         * The calculator, estimator, converter, and generator addresses belong to CMS
          * pages, which the pages module lists once published. Declaring them
          * here would list an address that answers 404 before its page exists,
          * or that only redirects after an admin moves the page.
@@ -568,7 +573,9 @@ describe('ToolsModule', () => {
             expect(paths).not.toContain('/tools/staking-rewards');
             expect(paths).not.toContain('/tools/energy-estimator');
             expect(paths).not.toContain('/tools/timestamp-converter');
-            expect(paths).toHaveLength(6);
+            expect(paths).not.toContain('/tools/address-converter');
+            expect(paths).not.toContain('/tools/address-generator');
+            expect(paths).toHaveLength(4);
         });
 
         /** Pages are created only when an admin clicks Create, never at boot. */

@@ -18,6 +18,8 @@
 
 import type { WidgetComponent } from '@/types';
 import {
+    ADDRESS_CONVERTER_WIDGET_TYPE_ID,
+    ADDRESS_GENERATOR_WIDGET_TYPE_ID,
     ENERGY_ESTIMATOR_WIDGET_TYPE_ID,
     STAKE_CALCULATOR_WIDGET_TYPE_ID,
     STAKING_REWARDS_WIDGET_TYPE_ID,
@@ -30,6 +32,8 @@ import { StakeCalculatorWidget } from '../../modules/tools/components/StakeCalcu
 import { StakingRewardsWidget } from '../../modules/tools/components/StakingRewards/StakingRewardsWidget';
 import { EnergyEstimatorWidget } from '../../modules/tools/components/EnergyEstimator/EnergyEstimatorWidget';
 import { TimestampConverterWidget } from '../../modules/tools/components/TimestampConverter/TimestampConverterWidget';
+import { AddressConverterWidget } from '../../modules/tools/components/AddressConverter/AddressConverterWidget';
+import { AddressGeneratorWidget } from '../../modules/tools/components/AddressGenerator/AddressGeneratorWidget';
 import { RawHtmlWidget } from './RawHtmlWidget';
 import { WorldClocksWidget } from './WorldClocksWidget';
 import { BlockTickerWidget } from './BlockTickerWidget';
@@ -63,5 +67,7 @@ export const coreWidgetComponents: Record<string, WidgetComponent> = {
     [STAKE_CALCULATOR_WIDGET_TYPE_ID]: StakeCalculatorWidget,
     [STAKING_REWARDS_WIDGET_TYPE_ID]: StakingRewardsWidget,
     [ENERGY_ESTIMATOR_WIDGET_TYPE_ID]: EnergyEstimatorWidget,
-    [TIMESTAMP_CONVERTER_WIDGET_TYPE_ID]: TimestampConverterWidget
+    [TIMESTAMP_CONVERTER_WIDGET_TYPE_ID]: TimestampConverterWidget,
+    [ADDRESS_CONVERTER_WIDGET_TYPE_ID]: AddressConverterWidget,
+    [ADDRESS_GENERATOR_WIDGET_TYPE_ID]: AddressGeneratorWidget
 };

@@ -45,6 +45,22 @@ describe('TOOLS_BOOTSTRAP_PAGES', () => {
         expect(proposal.body).toContain('```widget\n{"type":"tools:timestamp-converter","config":{},"required":true}\n```');
     });
 
+    it('proposes the address converter page with its converter widget at its default address', () => {
+        const { proposal } = TOOLS_BOOTSTRAP_PAGES[4];
+
+        expect(proposal.slug).toBe('/tools/address-converter');
+        expect(proposal.source).toBe('tools-module');
+        expect(proposal.body).toContain('```widget\n{"type":"tools:address-converter","config":{},"required":true}\n```');
+    });
+
+    it('proposes the address generator page with its generator widget at its default address', () => {
+        const { proposal } = TOOLS_BOOTSTRAP_PAGES[5];
+
+        expect(proposal.slug).toBe('/tools/address-generator');
+        expect(proposal.source).toBe('tools-module');
+        expect(proposal.body).toContain('```widget\n{"type":"tools:address-generator","config":{},"required":true}\n```');
+    });
+
     /**
      * The pages module describes a page as a `WebApplication` only when its
      * body has a required embed. Without the flag each tool page goes out to
