@@ -7,13 +7,13 @@
 // Components
 export { AddressConverter } from './components/AddressConverter';
 export { AddressGenerator } from './components/AddressGenerator';
-export { EnergyEstimator } from './components/EnergyEstimator';
+export { EnergyEstimatorForm, EnergyEstimatorWidget } from './components/EnergyEstimator';
 export { StakeCalculatorForm, StakeCalculatorWidget } from './components/StakeCalculator';
 export { StakingRewardsCalculator, StakingRewardsWidget } from './components/StakingRewards';
 export { SignatureVerifier } from './components/SignatureVerifier';
 export { ApprovalChecker } from './components/ApprovalChecker';
 export { AddressOrigins } from './components/AddressOrigins';
-export { TimestampConverter } from './components/TimestampConverter';
+export { TimestampConverterForm, TimestampConverterWidget } from './components/TimestampConverter';
 export { ToolsAdminClient } from './components/ToolsAdmin';
 
 // API

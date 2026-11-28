@@ -1,2 +1,3 @@
 /** @fileoverview EnergyEstimator barrel export. */
-export { EnergyEstimator } from './EnergyEstimator';
+export { EnergyEstimatorForm } from './EnergyEstimatorForm';
+export { EnergyEstimatorWidget } from './EnergyEstimatorWidget';

@@ -1,5 +1,9 @@
 /**
- * @fileoverview Bidirectional timestamp, date, and TRON block number converter.
+ * @fileoverview The timestamp converter's form and results, without page chrome.
+ *
+ * The converter is served inside a CMS page body as the
+ * `tools:timestamp-converter` widget, and the CMS page supplies the heading
+ * and text around it, so this component draws no page header of its own.
  *
  * Accepts one of three input types (Unix timestamp, ISO date string, or TRON
  * block number) and converts to all three representations using live network
@@ -8,9 +12,9 @@
  */
 'use client';
 
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { Clock } from 'lucide-react';
-import { Page, PageHeader, Stack } from '../../../../components/layout';
+import { Stack } from '../../../../components/layout';
 import { Card } from '../../../../components/ui/Card';
 import { Input } from '../../../../components/ui/Input';
 import { Button } from '../../../../components/ui/Button';
@@ -35,19 +39,23 @@ const INPUT_CONFIG: Record<InputType, { placeholder: string; type: string }> = {
 };
 
 /**
- * Timestamp converter tool.
+ * Timestamp converter form.
  *
  * Users select an input type, enter a value, and receive all three
  * representations (timestamp, date, block number) plus relative time.
- * No SSR data needed — purely interactive.
+ * Nothing is shown until the visitor converts, so the server renders the
+ * empty form and the loading state belongs to a user action.
  */
-export function TimestampConverter() {
+export function TimestampConverterForm() {
     const [inputType, setInputType] = useState<InputType>('timestamp');
     const [inputValue, setInputValue] = useState('');
     const [result, setResult] = useState<ITimestampConversionResult | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const { t } = useTranslation();
+    // A page can embed the converter more than once, so each instance needs
+    // its own input id for the label to point at the right field.
+    const inputId = useId();
 
     /** Short labels for the input type switch. */
     const tabLabels: Record<InputType, string> = {
@@ -106,12 +114,7 @@ export function TimestampConverter() {
     const config = INPUT_CONFIG[inputType];
 
     return (
-        <Page>
-            <PageHeader
-                title={t('tools.timestampConverter.title', 'Timestamp Converter')}
-                subtitle={t('tools.timestampConverter.subtitle', 'Convert between Unix timestamps, dates, and TRON block numbers')}
-            />
-            <div className={styles.container}>
+        <div className={styles.container}>
             <Card>
                 <Stack gap="md">
                     <div className="segmented-control">
@@ -127,12 +130,12 @@ export function TimestampConverter() {
                         ))}
                     </div>
 
-                    <label className={styles.label} htmlFor="timestamp-input">
+                    <label className={styles.label} htmlFor={inputId}>
                         {fieldLabels[inputType]}
                     </label>
                     <div className={styles.input_row}>
                         <Input
-                            id="timestamp-input"
+                            id={inputId}
                             type={config.type}
                             value={inputValue}
                             onChange={e => setInputValue(e.target.value)}
@@ -201,7 +204,6 @@ export function TimestampConverter() {
                     )}
                 </Stack>
             </Card>
-            </div>
-        </Page>
+        </div>
     );
 }

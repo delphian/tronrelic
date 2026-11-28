@@ -10,13 +10,13 @@ TRON developers and users frequently need to convert address formats, estimate e
 
 The module follows TronRelic's two-phase lifecycle with dependency injection. The calculator service reads from the shared `transactions` collection for energy statistics and calls ChainParametersService for live network parameters. The address converter and signature verifier are stateless. The one thing the module stores and schedules is the [staking rewards snapshot](#staking-rewards-calculator): one collection, `module_tools_staking_rewards`, and one job, `tools:staking-rewards-refresh`.
 
-Besides the shared dependencies, which include `hookRegistry` (`IHookRegistry`), used to declare the module's pages to the [sitemap](#sitemap-entries), `init()` receives `pageBootstrap` (`IPageBootstrapService`), the pages module's bootstrap service, which the [Bootstrap tab](#admin-page-and-bootstrap-pages) lists and creates the module's CMS pages through, `widgetsService` (`IWidgetsService`), used to register the [stake calculator widget](#stake-calculator-page) and the staking rewards widget, and an optional `scheduler` (`ISchedulerService | null`), which runs the staking rewards refresh. With no scheduler, including `ENABLE_SCHEDULER=false`, the snapshot is never refreshed.
+Besides the shared dependencies, which include `hookRegistry` (`IHookRegistry`), used to declare the module's pages to the [sitemap](#sitemap-entries), `init()` receives `pageBootstrap` (`IPageBootstrapService`), the pages module's bootstrap service, which the [Bootstrap tab](#admin-page-and-bootstrap-pages) lists and creates the module's CMS pages through, `widgetsService` (`IWidgetsService`), used to register the [tool widgets](#tool-pages-served-by-the-cms) those pages embed, and an optional `scheduler` (`ISchedulerService | null`), which runs the staking rewards refresh. With no scheduler, including `ENABLE_SCHEDULER=false`, the snapshot is never refreshed.
 
 **Backend** (`src/backend/modules/tools/`): ToolsModule implements IModule, creates services in `init()`, mounts routes and registers menu items in `run()`. Public routes are mounted at `/api/tools/*` and admin routes at `/api/admin/tools/*` via IoC.
 
 **Frontend** (`src/frontend/modules/tools/`): Interactive client components for each tool. No SSR data fetching — tools are user-driven forms where loading states are appropriate for user-triggered API calls.
 
-**Pages** (`src/frontend/app/[lang]/(site)/(core)/tools/`): Thin Next.js route wrappers importing from the tools module, one per tool except the stake calculator and the staking rewards calculator. Those two addresses belong to CMS pages, served by the catch-all route like `/tools/whales`; see [Stake Calculator Page](#stake-calculator-page).
+**Pages** (`src/frontend/app/[lang]/(site)/(core)/tools/`): Thin Next.js route wrappers importing from the tools module, one per tool except the stake calculator, the staking rewards calculator, the energy estimator, and the timestamp converter. Those four addresses belong to CMS pages, served by the catch-all route like `/tools/whales`; see [Tool Pages Served by the CMS](#tool-pages-served-by-the-cms).
 
 ## Service Registry Dependencies
 
@@ -31,40 +31,50 @@ The module resolves two shared services from `IServiceRegistry` during `init()`:
 
 ## Available Tools
 
-| Tool | URL | API Endpoint | Description |
-|------|-----|-------------|-------------|
-| Address Converter | `/tools/address-converter` | `POST /api/tools/address/convert` | Hex to base58check and reverse |
-| Address Generator | `/tools/address-generator` | None; runs in the browser | New wallet with a recovery phrase, or a vanity address search; keys never leave the device |
-| Energy Estimator | `/tools/energy-estimator` | `POST /api/tools/energy/estimate` | Daily energy needs, the stake that covers them, and the burn cost of not staking |
-| Stake Calculator | `/tools/stake-calculator` | `POST /api/tools/stake/from-trx` and `/from-energy` | Bidirectional TRX/energy calculation |
-| Staking Rewards | `/tools/staking-rewards` | `GET /api/tools/staking-rewards` | Yearly voting reward through each top-127 Super Representative, after commission |
-| Signature Verifier | `/tools/signature-verifier` | `POST /api/tools/signature/verify` | Wallet signature verification |
-| Approval Checker | `/tools/approval-checker` | `POST /api/tools/approval/check` | Scan TRC20 token approvals (requires login) |
-| Address Origins | `/tools/address-origins` | `GET /api/tools/origins/stream` (SSE) | Trace a wallet's activation chain to its originator; multi-wallet + full ladder require login |
-| Timestamp Converter | `/tools/timestamp-converter` | `POST /api/tools/timestamp/convert` | Bidirectional timestamp/block/date conversion |
+The Served by column says whether a route in code or a [CMS page](#tool-pages-served-by-the-cms) answers at the tool's address.
+
+| Tool | URL | Served by | API Endpoint | Description |
+|------|-----|-----------|-------------|-------------|
+| Address Converter | `/tools/address-converter` | Route | `POST /api/tools/address/convert` | Hex to base58check and reverse |
+| Address Generator | `/tools/address-generator` | Route | None; runs in the browser | New wallet with a recovery phrase, or a vanity address search; keys never leave the device |
+| Energy Estimator | `/tools/energy-estimator` | CMS page | `POST /api/tools/energy/estimate` | Daily energy needs, the stake that covers them, and the burn cost of not staking |
+| Stake Calculator | `/tools/stake-calculator` | CMS page | `POST /api/tools/stake/from-trx` and `/from-energy` | Bidirectional TRX/energy calculation |
+| Staking Rewards | `/tools/staking-rewards` | CMS page | `GET /api/tools/staking-rewards` | Yearly voting reward through each top-127 Super Representative, after commission |
+| Signature Verifier | `/tools/signature-verifier` | Route | `POST /api/tools/signature/verify` | Wallet signature verification |
+| Approval Checker | `/tools/approval-checker` | Route | `POST /api/tools/approval/check` | Scan TRC20 token approvals (requires login) |
+| Address Origins | `/tools/address-origins` | Route | `GET /api/tools/origins/stream` (SSE) | Trace a wallet's activation chain to its originator; multi-wallet + full ladder require login |
+| Timestamp Converter | `/tools/timestamp-converter` | CMS page | `POST /api/tools/timestamp/convert` | Bidirectional timestamp/block/date conversion |
 
 ### Energy Estimator Costs Are Burn Costs
 
 The estimator prices its cost figures with the chain's `energyFee`, which is what the network burns in TRX for each unit of energy an account lacks (100 SUN today). That is not a rental price: energy rental markets usually charge a fraction of it, so calling the figure "rent" overstated renting several times over. The response therefore names the figures `burnPriceSun`, `burnCostPerDayTRX`, `burnCostPerMonthTRX`, and `burnMatchesStakeDays` (the days of burning that add up to the TRX staking would lock), and the page labels them as burn costs. Core holds no energy market data, so a rental price cannot be computed here without a contract that a market plugin publishes.
 
-### Stake Calculator Page
+### Tool Pages Served by the CMS
 
-`/tools/stake-calculator` belongs to the CMS, the same way `/tools/whales` does: no route in code serves it, and the catch-all route serves the CMS page managed by the [pages module](../pages/README.md). An admin creates that page from the [Bootstrap tab](#admin-page-and-bootstrap-pages); nothing is created automatically, and the address answers 404 until a curator approves it. The page text and search metadata are then edited on `/system/pages` without a deploy.
+The stake calculator, staking rewards calculator, energy estimator, and timestamp converter belong to the CMS, the same way `/tools/whales` does: no route in code serves their addresses, and the catch-all route serves the CMS page managed by the [pages module](../pages/README.md). An admin creates each page from the [Bootstrap tab](#admin-page-and-bootstrap-pages); nothing is created automatically, and each address answers 404 until a curator approves its page. The page text and search metadata are then edited on `/system/pages` without a deploy.
 
-| Part | Where | What it does |
-|---|---|---|
-| Widget type | `services/STAKE_CALCULATOR_WIDGET_TYPE.ts`, id `tools:stake-calculator` (`STAKE_CALCULATOR_WIDGET_TYPE_ID` in `@/types`) | Registered in `run()` through `IWidgetsService.registerType` with `tools` as the owner. Embeddable, takes no settings, and its fetcher returns `{}`. The frontend renders it with `StakeCalculatorWidget` from `components/widgets/widgets.core.ts`, which draws `StakeCalculatorForm` |
-| Proposed page | `services/STAKE_CALCULATOR_PAGE_PROPOSAL.ts` | Title, description, keywords, and a body of a heading and intro line followed by the widget in a ` ```widget ` block marked `"required": true`. Its default address is `/tools/stake-calculator` (`STAKE_CALCULATOR_PATH` in `@/types`), and `source: 'tools-module'` is the actor a curator sees |
+Each tool takes three parts: a widget type the page embeds, a frontend renderer for it in `components/widgets/widgets.core.ts`, and a proposed page offered on the Bootstrap tab. The ids and default addresses live in `@/types` so the backend and frontend name the same strings.
+
+| Tool | Widget type id (`@/types`) | Frontend renderer, draws | Proposed page | Default address (`@/types`) |
+|---|---|---|---|---|
+| Stake Calculator | `tools:stake-calculator` (`STAKE_CALCULATOR_WIDGET_TYPE_ID`) | `StakeCalculatorWidget`, `StakeCalculatorForm` | `services/STAKE_CALCULATOR_PAGE_PROPOSAL.ts` | `STAKE_CALCULATOR_PATH` |
+| Staking Rewards | `tools:staking-rewards` (`STAKING_REWARDS_WIDGET_TYPE_ID`) | `StakingRewardsWidget`, `StakingRewardsCalculator` | `services/STAKING_REWARDS_PAGE_PROPOSAL.ts` | `STAKING_REWARDS_PATH` |
+| Energy Estimator | `tools:energy-estimator` (`ENERGY_ESTIMATOR_WIDGET_TYPE_ID`) | `EnergyEstimatorWidget`, `EnergyEstimatorForm` | `services/ENERGY_ESTIMATOR_PAGE_PROPOSAL.ts` | `ENERGY_ESTIMATOR_PATH` |
+| Timestamp Converter | `tools:timestamp-converter` (`TIMESTAMP_CONVERTER_WIDGET_TYPE_ID`) | `TimestampConverterWidget`, `TimestampConverterForm` | `services/TIMESTAMP_CONVERTER_PAGE_PROPOSAL.ts` | `TIMESTAMP_CONVERTER_PATH` |
+
+**Widget types.** Every widget type is registered in `run()` through `IWidgetsService.registerType` with `tools` as the owner, is embeddable, and takes no settings. The three tools that are only a form are listed in `services/TOOL_FORM_WIDGET_TYPES.ts`, built by `createToolFormWidgetType`, and their fetcher returns `{}`; add a form tool to that list to register it. The staking rewards widget is built separately because its fetcher reads the stored snapshot; see [Staking Rewards Calculator](#staking-rewards-calculator).
+
+**Proposed pages.** Each proposal has a title, description, keywords, and a body of a heading and intro line followed by the widget in a ` ```widget ` block that `buildRequiredWidgetEmbed` writes with `"required": true`. `source: 'tools-module'` is the actor a curator sees. The energy estimator and timestamp converter proposals carry the title, description, keywords, heading, and intro line their built-in pages used, so approving them changes no visible text.
 
 **Why the embed is required.** The pages module describes a page with a required embed as a `WebApplication` in its structured data, because the page is that widget's tool page; without the flag the page goes out as an `Article`. The flag also withholds a page whose widget type is unregistered, but these widget types are core and always registered, so that never happens here. A page created before the flag was added keeps its old body, so an admin adds `"required": true` to its ` ```widget ` block on `/system/pages`.
 
-**The address is a default, not a fixture.** The page is created at `/tools/stake-calculator`, and from then on the CMS rules apply to it like any page. If an admin changes its slug, the pages module keeps the old address in the page's redirect history, and the catch-all route redirects visitors to the new one.
+**The address is a default, not a fixture.** Each page is created at its default address, and from then on the CMS rules apply to it like any page. If an admin changes its slug, the pages module keeps the old address in the page's redirect history, and the catch-all route redirects visitors to the new one.
 
-**Translated addresses.** A page is served in a language only while it has a published translation into that language, with no English fallback, so `/ru/tools/stake-calculator` answers 404 until the page's Russian translation is published on `/system/pages`. Copy the ` ```widget ` block into each translated body unchanged.
+**Translated addresses.** A page is served in a language only while it has a published translation into that language, with no English fallback, so `/ru/tools/stake-calculator` answers 404 until the page's Russian translation is published on `/system/pages`. Copy the ` ```widget ` block into each translated body unchanged. Translations stored for the old built-in pages under `tools.energyEstimator.meta.*`, `tools.timestampConverter.meta.*`, and their `title` and `subtitle` keys are no longer read; a translated page's metadata and heading come from its CMS translation.
 
 ## Staking Rewards Calculator
 
-`/tools/staking-rewards` shows the yearly reward a voter earns through each of the top 127 Super Representatives (SRs), after the SR's commission, and applies the chosen SR's rate to a stake the visitor types. One staked TRX is one vote. The address belongs to a CMS page on the same terms as the [stake calculator's](#stake-calculator-page): it answers 404 until that page is approved, and its embed is marked required.
+`/tools/staking-rewards` shows the yearly reward a voter earns through each of the top 127 Super Representatives (SRs), after the SR's commission, and applies the chosen SR's rate to a stake the visitor types. One staked TRX is one vote. The address belongs to a CMS page on the same terms as the [other CMS-served tools](#tool-pages-served-by-the-cms): it answers 404 until that page is approved, and its embed is marked required.
 
 **Why it is stored, not computed per request.** Each SR's commission (TRON's "brokerage") is one `/wallet/getBrokerage` call, so a full computation is about 130 TronGrid requests on the queue block sync shares. The `tools:staking-rewards-refresh` job (`0 10 */6 * * *`) does it every six hours and stores the result; the widget and the endpoint only read the stored copy. `run()` also starts one refresh, not awaited, when nothing is stored yet, so a new deployment does not wait six hours. Concurrent refreshes share one run.
 
@@ -178,13 +188,13 @@ The module creates a "Tools" container node in the `main` namespace with child e
 
 The module owns `/tools` and the tool pages its routes serve, so it declares them to the sitemap itself, through the `http.sitemapEntries` hook, rather than core listing them in `src/frontend/app/sitemap.ts`. In `run()` it registers a handler as `'core'` that appends one entry for `/tools` (priority 0.8) and one per route-served tool page (priority 0.7), all `weekly` and without `lastModified`, since the pages record no modification time. `services/buildToolsSitemapEntries.ts` builds them once from the same `TOOL_PAGES` list as the menu, so adding a tool to that list adds its menu entry and its sitemap entry together. Each `url` in the list must match a route folder under `src/frontend/app/[lang]/(site)/(core)/tools/`, unless the entry is marked `cmsPage`.
 
-The stake calculator and staking rewards entries are marked `cmsPage`, so the handler leaves them out. The pages module lists each published CMS page in the sitemap under its current address, with its real modification date and its language versions. Declaring the addresses here as well would list one that answers 404 before its page is approved, or that only redirects after an admin moves the page.
+The stake calculator, staking rewards, energy estimator, and timestamp converter entries are marked `cmsPage`, so the handler leaves them out. The pages module lists each published CMS page in the sitemap under its current address, with its real modification date and its language versions. Declaring the addresses here as well would list one that answers 404 before its page is approved, or that only redirects after an admin moves the page.
 
 ## Module Lifecycle
 
 **init() phase:** Stores injected dependencies, registers TransactionModel with the database service, resolves `IChainParametersService` from the service registry, builds a TronWeb instance from `TronGridClient`, creates the address, calculator, signature, approval, timestamp, address-origins, and staking rewards services, creates ToolsController, and binds `TOOLS_BOOTSTRAP_PAGES` with the injected `pageBootstrap` and creates `ToolsAdminController` over the resulting catalog. Does NOT mount routes or register menu items.
 
-**run() phase:** Registers the Tools menu category and child items in the `main` namespace, the `/system/tools` entry under the System container, and the `tools-admin` tab row; registers the `http.sitemapEntries` handler that declares `/tools` and every route-served tool page; mounts the tools router at `/api/tools` with rate limiting and async error handling and the admin router at `/api/admin/tools`; registers the `tools:stake-calculator` and `tools:staking-rewards` widget types on the injected `widgetsService`; and, when a scheduler is present, registers `tools:staking-rewards-refresh` with the module logger and starts a first refresh if nothing is stored.
+**run() phase:** Registers the Tools menu category and child items in the `main` namespace, the `/system/tools` entry under the System container, and the `tools-admin` tab row; registers the `http.sitemapEntries` handler that declares `/tools` and every route-served tool page; mounts the tools router at `/api/tools` with rate limiting and async error handling and the admin router at `/api/admin/tools`; registers every entry of `TOOL_FORM_WIDGET_TYPES` (`tools:stake-calculator`, `tools:energy-estimator`, `tools:timestamp-converter`) and the `tools:staking-rewards` widget type on the injected `widgetsService`; and, when a scheduler is present, registers `tools:staking-rewards-refresh` with the module logger and starts a first refresh if nothing is stored.
 
 ## Further Reading
 

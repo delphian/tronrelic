@@ -17,17 +17,11 @@
  */
 
 import type { IPageProposal } from '@/types';
-import { STAKE_CALCULATOR_PATH, STAKE_CALCULATOR_WIDGET_TYPE_ID, WIDGET_EMBED_MARKUP } from '@/types';
+import { STAKE_CALCULATOR_PATH, STAKE_CALCULATOR_WIDGET_TYPE_ID } from '@/types';
+import { buildRequiredWidgetEmbed } from './buildRequiredWidgetEmbed.js';
 
-/**
- * The fenced block that embeds the calculator. Written from the shared markup
- * constants so a change to the embed syntax cannot leave this page behind.
- */
-const CALCULATOR_EMBED = [
-    '```' + WIDGET_EMBED_MARKUP.fenceLanguage,
-    JSON.stringify({ type: STAKE_CALCULATOR_WIDGET_TYPE_ID, config: {}, required: true }),
-    '```'
-].join('\n');
+/** The fenced block that embeds the calculator as a required widget. */
+const CALCULATOR_EMBED = buildRequiredWidgetEmbed(STAKE_CALCULATOR_WIDGET_TYPE_ID);
 
 /**
  * Markdown body of the proposed page: a heading, an intro line, then the

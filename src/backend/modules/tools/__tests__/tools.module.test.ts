@@ -33,7 +33,13 @@ vi.mock('../../blockchain/tron-grid.client.js', () => ({
 
 import { ToolsModule } from '../index.js';
 import type { ICacheService, IChainParameters, IChainParametersService, IMenuService, IServiceRegistry } from '@/types';
-import { STAKE_CALCULATOR_WIDGET_TYPE_ID, STAKING_REWARDS_WIDGET_TYPE_ID, TOOLS_JOB_PREFIX } from '@/types';
+import {
+    ENERGY_ESTIMATOR_WIDGET_TYPE_ID,
+    STAKE_CALCULATOR_WIDGET_TYPE_ID,
+    STAKING_REWARDS_WIDGET_TYPE_ID,
+    TIMESTAMP_CONVERTER_WIDGET_TYPE_ID,
+    TOOLS_JOB_PREFIX
+} from '@/types';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 import { createMockServiceRegistry } from '../../../tests/vitest/mocks/service-registry.js';
 
@@ -196,7 +202,7 @@ describe('ToolsModule', () => {
             expect(module.metadata).toBeDefined();
             expect(module.metadata.id).toBe('tools');
             expect(module.metadata.name).toBe('Tools');
-            expect(module.metadata.version).toBe('1.2.0');
+            expect(module.metadata.version).toBe('1.3.0');
             expect(module.metadata.description).toBeDefined();
         });
     });
@@ -431,7 +437,11 @@ describe('ToolsModule', () => {
             expect(call!.length).toBe(4);
         });
 
-        it('should register the stake calculator as an embeddable widget owned by the tools module', async () => {
+        /**
+         * Each CMS-served tool page embeds its tool as a required widget, so a
+         * widget type left unregistered would withhold that page entirely.
+         */
+        it('should register every CMS-served tool as an embeddable widget owned by the tools module', async () => {
             const module = new ToolsModule();
 
             await module.init({
@@ -448,14 +458,17 @@ describe('ToolsModule', () => {
 
             await module.run();
 
-            expect(mockWidgets.registerType).toHaveBeenCalledWith(
-                expect.objectContaining({ id: STAKE_CALCULATOR_WIDGET_TYPE_ID, embeddable: true }),
-                'tools'
-            );
-            expect(mockWidgets.registerType).toHaveBeenCalledWith(
-                expect.objectContaining({ id: STAKING_REWARDS_WIDGET_TYPE_ID, embeddable: true }),
-                'tools'
-            );
+            for (const id of [
+                STAKE_CALCULATOR_WIDGET_TYPE_ID,
+                STAKING_REWARDS_WIDGET_TYPE_ID,
+                ENERGY_ESTIMATOR_WIDGET_TYPE_ID,
+                TIMESTAMP_CONVERTER_WIDGET_TYPE_ID
+            ]) {
+                expect(mockWidgets.registerType).toHaveBeenCalledWith(
+                    expect.objectContaining({ id, embeddable: true }),
+                    'tools'
+                );
+            }
         });
 
         /**
@@ -522,18 +535,18 @@ describe('ToolsModule', () => {
             const paths = result.map(entry => entry.path);
             expect(paths[0]).toBe('/blog');
             expect(paths).toContain('/tools');
-            expect(paths).toContain('/tools/energy-estimator');
+            expect(paths).toContain('/tools/signature-verifier');
             expect(paths).toContain('/tools/address-generator');
-            expect(paths).toHaveLength(9);
+            expect(paths).toHaveLength(7);
         });
 
         /**
-         * The calculator addresses belong to CMS pages, which the pages module
-         * lists once published. Declaring them here would list an address that
-         * answers 404 before its page exists, or that only redirects after an
-         * admin moves the page.
+         * The calculator, estimator, and converter addresses belong to CMS
+         * pages, which the pages module lists once published. Declaring them
+         * here would list an address that answers 404 before its page exists,
+         * or that only redirects after an admin moves the page.
          */
-        it('should leave the CMS-owned calculator addresses out of its sitemap entries', async () => {
+        it('should leave the CMS-owned tool addresses out of its sitemap entries', async () => {
             const module = new ToolsModule();
 
             await module.init({
@@ -553,7 +566,9 @@ describe('ToolsModule', () => {
             const paths = (await handler({ generatedAt: new Date().toISOString() }, [])).map(entry => entry.path);
             expect(paths).not.toContain('/tools/stake-calculator');
             expect(paths).not.toContain('/tools/staking-rewards');
-            expect(paths).toHaveLength(8);
+            expect(paths).not.toContain('/tools/energy-estimator');
+            expect(paths).not.toContain('/tools/timestamp-converter');
+            expect(paths).toHaveLength(6);
         });
 
         /** Pages are created only when an admin clicks Create, never at boot. */

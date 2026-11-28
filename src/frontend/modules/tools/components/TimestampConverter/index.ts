@@ -1,2 +1,3 @@
 /** @fileoverview TimestampConverter barrel export. */
-export { TimestampConverter } from './TimestampConverter';
+export { TimestampConverterForm } from './TimestampConverterForm';
+export { TimestampConverterWidget } from './TimestampConverterWidget';
